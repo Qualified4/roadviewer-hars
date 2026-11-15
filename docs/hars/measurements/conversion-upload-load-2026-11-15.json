@@ -1,0 +1,21 @@
+{
+  "real_recording": true,
+  "synthetic_upload_bytes": 16777216,
+  "processing_with_upload_samples": 43,
+  "api": {
+    "samples": 165,
+    "p50_ms": 0.6119629997556331,
+    "p95_ms": 0.820250999822747,
+    "p99_ms": 0.9882280000965693,
+    "max_ms": 1.1450820002210094
+  },
+  "chunks": {
+    "samples": 64,
+    "p50_ms": 4.962059999343182,
+    "p95_ms": 6.987732999732543,
+    "p99_ms": 7.196859999567096,
+    "max_ms": 7.196859999567096
+  },
+  "request_failures": 0,
+  "scope": "one loopback run, no TLS or HAOS"
+}

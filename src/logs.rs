@@ -38,6 +38,7 @@ struct Limited<R> {
 }
 impl<R: Read> Read for Limited<R> {
     fn read(&mut self, out: &mut [u8]) -> std::io::Result<usize> {
+        let _profile = crate::profile::Scope::new("zstd_read");
         if out.is_empty() {
             return Ok(0);
         }
@@ -57,6 +58,7 @@ impl<R: Read> Read for Limited<R> {
 }
 
 pub fn decode(path: &Path) -> anyhow::Result<Decoded> {
+    let _profile = crate::profile::Scope::new("log_decode");
     let source = std::fs::File::open(path)?;
     let mut decoder = zstd::stream::read::Decoder::new(source)?;
     decoder.window_log_max(29)?;
@@ -167,7 +169,7 @@ fn to_json(value: Dynamic<'_>, selection: Option<&Value>, depth: usize) -> anyho
             for i in 0..v.len() {
                 out.push(to_json(v.get(i)?, selection, depth + 1)?);
             }
-            json!(out)
+            Value::Array(out)
         }
         Dynamic::Struct(v) => {
             let mut out = serde_json::Map::new();
@@ -215,10 +217,17 @@ fn to_json(value: Dynamic<'_>, selection: Option<&Value>, depth: usize) -> anyho
 }
 
 pub fn write_gzip(path: &Path, value: &Value) -> anyhow::Result<()> {
+    let _profile = crate::profile::Scope::new("json_gzip_write");
     use std::io::Write;
     let file = std::fs::File::create(path)?;
     let mut gz = flate2::write::GzEncoder::new(file, flate2::Compression::best());
-    serde_json::to_writer(&mut gz, value)?;
+    // Feed the compressor blocks rather than a call per JSON punctuation/number.
+    // This bounds extra memory while keeping streaming and compression level 9.
+    {
+        let mut buffered = std::io::BufWriter::with_capacity(64 * 1024, &mut gz);
+        serde_json::to_writer(&mut buffered, value)?;
+        buffered.into_inner().map_err(|e| e.into_error())?;
+    }
     gz.flush()?;
     gz.finish()?.sync_all()?;
     Ok(())

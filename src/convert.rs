@@ -80,6 +80,7 @@ async fn camera(
     let mut source_pts = source_pts;
     let mut spread = None;
     let mut pts0 = 0.;
+    let mut scanned = None;
     if qcamera {
         let info = media::probe(source, kind, true).await?;
         let mut pts = info["packets"]
@@ -113,8 +114,9 @@ async fn camera(
         } else {
             pts
         };
+        scanned = Some(info);
     }
-    let info = media::remux(source, kind, out, &times).await?;
+    let info = media::remux_probed(source, kind, out, &times, scanned).await?;
     let stream = &info["streams"][0];
     let duration = timestamp(&stream["duration_ts"], &stream["time_base"])
         .or_else(|| seconds(&stream["duration"]))
@@ -133,6 +135,7 @@ pub async fn prepare(
     label: String,
     mut progress: impl FnMut(&str, f64),
 ) -> anyhow::Result<Value> {
+    let _profile = crate::profile::Scope::new("convert_total");
     anyhow::ensure!(source.is_file(), "missing rlog source");
     anyhow::ensure!(!dest.exists(), "conversion destination must be new");
     tokio::fs::create_dir_all(&dest).await?;
@@ -144,31 +147,13 @@ pub async fn prepare(
     );
     progress("log_read", 0.);
     let src = source.clone();
-    let (mut decoded, mut frames, origin) =
-        tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
-            let mut decoded = logs::decode(&src)?;
-            let (frames, origin) = replay::frames(&decoded, |_, _| {})?;
-            // Rendered model/radar geometry is now in frames. Keep only streams
-            // needed by the remaining telemetry, GPS and camera stages.
-            decoded.streams.retain(|kind, _| {
-                matches!(
-                    kind.as_str(),
-                    "carState"
-                        | "carControl"
-                        | "carOutput"
-                        | "controlsState"
-                        | "gpsLocationExternal"
-                        | "gpsLocation"
-                        | "carrotMan"
-                        | "qRoadEncodeIdx"
-                        | "roadEncodeIdx"
-                        | "wideRoadEncodeIdx"
-                )
-            });
-            Ok((decoded, frames, origin))
-        })
-        .await??;
-    progress("log_analysis", 100.);
+    let (decoded, origin) = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+        let decoded = logs::decode(&src)?;
+        let origin = replay::origin(&decoded)?;
+        Ok((decoded, origin))
+    })
+    .await??;
+    progress("log_read", 100.);
     let meta: Value = store::read_json(&source.with_file_name("meta.json"))
         .await
         .unwrap_or(json!({}));
@@ -241,6 +226,30 @@ pub async fn prepare(
         warnings.push("재생 가능한 영상이 없어 도로 형태만 표시합니다.".to_owned());
     }
     progress("video_verify", 100.);
+    // Inspect cameras before allocating the frame tree. Native processes no
+    // longer overlap the largest render allocation in the process-tree RSS.
+    progress("log_analysis", 0.);
+    let (mut decoded, mut frames) = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+        let mut decoded = decoded;
+        let _profile = crate::profile::Scope::new("frame_analysis");
+        let (frames, _) = replay::frames(&decoded, |_, _| {})?;
+        decoded.streams.retain(|kind, _| {
+            matches!(
+                kind.as_str(),
+                "carState"
+                    | "carControl"
+                    | "carOutput"
+                    | "controlsState"
+                    | "gpsLocationExternal"
+                    | "gpsLocation"
+                    | "carrotMan"
+            )
+        });
+        Ok((decoded, frames))
+    })
+    .await??;
+    progress("log_analysis", 100.);
+
     let default_video = ["front", "qcamera", "wide"]
         .into_iter()
         .find(|v| videos.contains_key(*v));
@@ -265,9 +274,11 @@ pub async fn prepare(
     let target = dest.clone();
     let label = label.clone();
     let summary=tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
+        let telemetry_profile=crate::profile::Scope::new("telemetry_build");
         let telem=telemetry::extract(&decoded.streams,telemetry_origin,duration,&frames);
+        drop(telemetry_profile);
         let drive=telemetry::drive_summary(&telem);
-        logs::write_gzip(&target.join("telemetry.json.gz"),&telem)?;
+        {let _p=crate::profile::Scope::new("telemetry_save");logs::write_gzip(&target.join("telemetry.json.gz"),&telem)?;}
         drop(telem);
         let track=track::collect(&decoded,telemetry_origin);let track_fields=track::summary(&track);
         if track["points"].as_array().is_some_and(|p|!p.is_empty()){logs::write_gzip(&target.join("track.json.gz"),&track)?;}
@@ -282,7 +293,7 @@ pub async fn prepare(
         // Transfer ownership instead; compact the sole frame tree in place.
         data["frames"]=Value::Array(frames);
         replay::compact(&mut data);
-        logs::write_gzip(&target.join("data.json.gz"),&data)?;
+        {let _p=crate::profile::Scope::new("replay_save");logs::write_gzip(&target.join("data.json.gz"),&data)?;}
         Ok(summary)
     }).await??;
     progress("telemetry_compress", 100.);

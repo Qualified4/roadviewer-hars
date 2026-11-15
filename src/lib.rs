@@ -8,6 +8,7 @@ pub mod logs;
 pub mod media;
 pub mod migration;
 pub mod native_video;
+pub mod profile;
 pub mod replay;
 pub mod store;
 pub mod telemetry;

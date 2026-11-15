@@ -19,6 +19,7 @@ pub fn set_worker_executable(path: PathBuf) -> anyhow::Result<()> {
 }
 const OUTPUT_LIMIT: u64 = 64 * 1024 * 1024;
 async fn run(command: &mut Command) -> anyhow::Result<Vec<u8>> {
+    let _profile = crate::profile::Scope::new("native_process_ipc");
     use std::process::Stdio;
     let _permit = WORKERS.acquire().await?;
     command
@@ -57,6 +58,7 @@ fn input_format(kind: &str) -> &'static str {
     }
 }
 pub async fn probe(path: &Path, kind: &str, packets: bool) -> anyhow::Result<Value> {
+    let _profile = crate::profile::Scope::new("video_probe");
     let mut cmd = Command::new("ffprobe");
     cmd.args([
         "-v",
@@ -76,6 +78,10 @@ pub async fn probe(path: &Path, kind: &str, packets: bool) -> anyhow::Result<Val
 }
 pub async fn validate_upload(path: &Path, kind: &str) -> anyhow::Result<Value> {
     let info = probe(path, kind, false).await?;
+    validate_info(&info, kind)?;
+    Ok(info)
+}
+fn validate_info(info: &Value, kind: &str) -> anyhow::Result<()> {
     let streams = info["streams"].as_array().context("missing media stream")?;
     let video = streams
         .iter()
@@ -98,7 +104,7 @@ pub async fn validate_upload(path: &Path, kind: &str) -> anyhow::Result<Value> {
         w > 0 && w <= 4096 && h > 0 && h <= 2160 && w % 2 == 0 && h % 2 == 0,
         "unsupported camera dimensions"
     );
-    Ok(info)
+    Ok(())
 }
 
 #[derive(Debug, PartialEq, Eq)]
@@ -152,8 +158,13 @@ impl NalHasher {
                 self.searched = self.buffer.len().saturating_sub(3).max(begin);
                 break;
             };
-            let unit = self.buffer[begin..end].to_vec();
-            self.add(&unit)?;
+            Self::add(
+                self.hevc,
+                &mut self.hash,
+                &mut self.headers,
+                &mut self.pictures,
+                &self.buffer[begin..end],
+            )?;
             self.buffer.drain(..end);
             self.searched = 0;
         }
@@ -163,27 +174,29 @@ impl NalHasher {
         );
         Ok(())
     }
-    fn add(&mut self, mut unit: &[u8]) -> anyhow::Result<()> {
+    fn add(
+        hevc: bool,
+        hash: &mut Sha256,
+        headers: &mut BTreeSet<(u8, String)>,
+        pictures: &mut u64,
+        mut unit: &[u8],
+    ) -> anyhow::Result<()> {
         while unit.last() == Some(&0) {
             unit = &unit[..unit.len() - 1];
         }
-        anyhow::ensure!(
-            unit.len() >= if self.hevc { 2 } else { 1 },
-            "truncated NAL unit"
-        );
-        let kind = if self.hevc {
+        anyhow::ensure!(unit.len() >= if hevc { 2 } else { 1 }, "truncated NAL unit");
+        let kind = if hevc {
             (unit[0] >> 1) & 63
         } else {
             unit[0] & 31
         };
-        if (self.hevc && matches!(kind, 32..=34)) || (!self.hevc && matches!(kind, 7 | 8)) {
-            self.headers
-                .insert((kind, hex::encode(Sha256::digest(unit))));
+        if (hevc && matches!(kind, 32..=34)) || (!hevc && matches!(kind, 7 | 8)) {
+            headers.insert((kind, hex::encode(Sha256::digest(unit))));
         }
-        if (self.hevc && kind < 32) || (!self.hevc && (1..=5).contains(&kind)) {
-            self.hash.update((unit.len() as u32).to_be_bytes());
-            self.hash.update(unit);
-            self.pictures += 1;
+        if (hevc && kind < 32) || (!hevc && (1..=5).contains(&kind)) {
+            hash.update((unit.len() as u32).to_be_bytes());
+            hash.update(unit);
+            *pictures += 1;
         }
         Ok(())
     }
@@ -193,8 +206,13 @@ impl NalHasher {
                 self.buffer[..prefix].iter().all(|b| *b == 0),
                 "non Annex B prefix"
             );
-            let unit = self.buffer[begin..].to_vec();
-            self.add(&unit)?;
+            Self::add(
+                self.hevc,
+                &mut self.hash,
+                &mut self.headers,
+                &mut self.pictures,
+                &self.buffer[begin..],
+            )?;
         }
         let required: &[u8] = if self.hevc { &[32, 33, 34] } else { &[7, 8] };
         anyhow::ensure!(
@@ -211,6 +229,7 @@ impl NalHasher {
     }
 }
 async fn signature(path: &Path, kind: &str) -> anyhow::Result<Signature> {
+    let _profile = crate::profile::Scope::new("video_bitstream_hash");
     let hevc = kind != "qcamera.ts" && kind != "camera.mp4" && kind != "qcamera.mp4";
     let mut cmd = Command::new("ffmpeg");
     cmd.args([
@@ -308,7 +327,23 @@ pub async fn remux(
     output: &Path,
     times: &[f64],
 ) -> anyhow::Result<Value> {
-    validate_upload(source, kind).await?;
+    remux_probed(source, kind, output, times, None).await
+}
+
+// A scan may be shared only inside the same conversion, never across jobs or requests.
+pub(crate) async fn remux_probed(
+    source: &Path,
+    kind: &str,
+    output: &Path,
+    times: &[f64],
+    provided: Option<Value>,
+) -> anyhow::Result<Value> {
+    let input_info = if let Some(info) = provided {
+        info
+    } else {
+        probe(source, kind, kind.ends_with(".mp4")).await?
+    };
+    validate_info(&input_info, kind)?;
     anyhow::ensure!(source != output, "source and output must differ");
     anyhow::ensure!(
         !times.is_empty()
@@ -317,17 +352,16 @@ pub async fn remux(
         "invalid camera clock"
     );
     if kind.ends_with(".mp4") {
-        let info = probe(source, kind, true).await?;
-        validate_times(&info, times)?;
+        validate_times(&input_info, times)?;
         signature(source, kind).await?;
-        return Ok(info);
+        return Ok(input_info);
     }
     let before = signature(source, kind).await?;
     let temp = output.with_extension(format!("{}.tmp.mp4", crate::store::id()));
     let result = async {
         if kind.ends_with(".hevc") {
             anyhow::ensure!(
-                probe(source, kind, false).await?["streams"][0]["has_b_frames"] == 0,
+                input_info["streams"][0]["has_b_frames"] == 0,
                 "unsupported HEVC B frames"
             );
             if let Some(worker) = WORKER_EXECUTABLE.get() {
@@ -385,9 +419,9 @@ pub async fn remux(
         } else {
             "fcamera.mp4"
         };
-        let info = validate_upload(&temp, target_kind).await?;
-        let packets = probe(&temp, target_kind, true).await?;
-        validate_times(&packets, times)?;
+        let info = probe(&temp, target_kind, true).await?;
+        validate_info(&info, target_kind)?;
+        validate_times(&info, times)?;
         anyhow::ensure!(
             before == signature(&temp, target_kind).await?,
             "compressed pictures changed during remux"

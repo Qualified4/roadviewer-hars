@@ -59,3 +59,18 @@ Rust 구조화 로그는 요청 ID, 경로, 서버 진입, 인증/파일 락 대
 ```
 
 실제 코퍼스는 `<route>--<segment>--rlog.zst`와카메라MP4 파일명으로 전달한다. 결과폴더는 새 경로를 사용하며 이미 끝난 기준 실행은 재사용한다. 비교 출력/좌표 원문을 Git에 넣지 않는다. `/api/settings/processing`, `/api/progress`, `/api/logs/<id>/convert`, `/prepared` DELETE, `/cancel` POST가 큐를 제어한다. `/cancel`은 HARS의 추가 API이며 기존UI의 queued 제거 경로도 유지한다.
+
+## 변환 성능 재현
+
+기준 커밋과 후보의 release 실행 파일을 각각 영문 로컬 경로에 보존한다. 별도 기준 측정용 PR이나 CI를 만들지 않는다. 같은 입력과 출력 파일 시스템에서 다음 도구가 구현별 워밍업 1회 후 순서를 교차해 측정한다.
+
+```sh
+python integration/benchmark_conversion.py /private/corpus/route--6--rlog.zst /private/new-results \
+  --binary baseline=/private/baseline --binary final=/private/candidate --runs 5
+```
+
+측정 구간 밖에서 각 결과를 원본 Python 전체 출력과 `1e-6` 기준으로 비교한다. Rust 기준/후보의 썸네일 메타·JPEG 바이트, 입력 SHA-256 불변과 산출물 크기도 검사한다. CPU는 회수된 자식/후손을 포함하고 RSS는 20ms 프로세스 트리 표본이다. 공유 페이지 중복, 짧은 자식 누락, 캐시·라이브러리 버전 차이를 함께 기록한다. 원시 replay·GPS·로그·영상은 공개하지 않는다.
+
+`HARS_PROFILE_FILE=/private/stages.jsonl roadviewer-hars convert-log ...`은 진단용 단계 wall/CPU/자식 CPU·호출 수·누적 RSS high water를 숫자로 기록한다. 기본은 꺼져 있다. 출력 실패는 변환을 실패시키지 않는다. 범위는 중첩되므로 합산하지 않으며, 단계 종료의 누적 RSS를 그 단계만의 Peak로 해석하지 않는다. 작은 zstd read마다 계측하므로 진단 실행의 시간은 정상 성능 표본으로 사용하지 않는다. CPU 함수 비용은 Linux `perf record -e cpu-clock -F 199 --call-graph dwarf`, 할당은 Valgrind DHAT로 별도 확인할 수 있다. 원시 perf/DHAT에는 메모리·개인 경로가 포함될 수 있어 저장소 밖에서 보관한다.
+
+`integration/conversion_load_smoke.py`는 준비된 실주행 레코드가 있는 **전용 loopback 테스트 서버**에서만 사용한다. 해당 레코드의 파생 출력 제거·수동 재변환과 16MiB 합성 조각 업로드를 겹쳐 목록 API/조각 응답 표본을 기록한다. 자동 변환의 업로드 대기 정책을 바꾸지 않는다. 운영 서버에 실행하지 않는다.

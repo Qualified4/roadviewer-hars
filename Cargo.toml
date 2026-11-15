@@ -16,6 +16,7 @@ ffmpeg-next = { version = "9", default-features = false, features = ["format", "
 fs2 = "0.4"
 hex = "0.4"
 hmac = "0.12"
+libc = "0.2"
 rand = "0.9"
 regex = "1"
 serde = { version = "1", features = ["derive"] }

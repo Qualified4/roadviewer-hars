@@ -41,7 +41,8 @@ fn corrupt_and_truncated_logs_are_rejected() {
 fn gzip_prepared_json_roundtrip() {
     let temp = tempfile::tempdir().unwrap();
     let path = temp.path().join("data.json.gz");
-    let value = serde_json::json!({"route":"한글","frames":[{"t":0.0}]});
+    let value = serde_json::json!({"route":"한글","frames":[{"t":0.0}],"buffer_boundary":"한글\"\\".repeat(20000)});
     logs::write_gzip(&path, &value).unwrap();
     assert_eq!(logs::read_gzip(&path).unwrap(), value);
+    assert_eq!(&std::fs::read(path).unwrap()[4..8], &[0; 4]);
 }

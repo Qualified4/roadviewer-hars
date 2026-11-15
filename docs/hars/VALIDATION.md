@@ -48,3 +48,18 @@ GitHub Actions는 최신 커밋의 `HARS CI` 실행을 확인해야 한다. 로�
 최초 alpha.2 후보 `f4b124a`의 CI43708871726은 Rust/amd64/aarch64/HARS required 모두 성공했다. 이후 UI 다운로드 점검에서 `video_downloads` 목록 누락, 준비폴더 MP4를 찾지 못하는 original 경로와 단일영상 alias 누락을 발견해 별도 수정했다. 준비된 기존 레코드도 재변환 없이 시작 시 다운로드 메타를 채운다. 수정 범위의 Range206·Content-Range·파일명과 기존 레코드 복구 테스트를 추가했으며 최신 커밋 CI는 별도로 확인한다.
 
 실제 와이드6번구간의3카메라를 새서버에서 다운로드했다. 각 MP4 전체 SHA256이 입력 MP4와 일치하고206부분응답도 원본바이트와 일치했다. 원본형식TS/HEVC 역변환을 실제 API로 완료했고 서버의 native 압축비트스트림 검사를 통과했다. [실제 다운로드 결과](measurements/download-real-wide-2026-11-15.json). 위치정보는 지도 API에만 제공하고 `private, no-cache`를 적용한다.
+
+## 성능 최적화 회귀 검증 (2026-11-15)
+
+최적화 소스 `3a645e9`에 다음을 수행했다. Python/openpilot 원본·운영 HAOS·업로드 설정은 변경하지 않았다.
+
+- `cargo fmt --all --check`, Clippy `--all-targets -D warnings`, 전체35테스트 통과. 기존34개에 origin의 camera→model→event fallback/0시각/모델 없음 검사를 추가했다. gzip은64KiB 경계를 넘는 UTF-8·escape roundtrip과 mtime0을 검사한다. 기존 보안/손상/단절/복구/미디어 검사를 약화하지 않았다.
+- 실제14+47구간/72749모델 프레임 전체 replayV2/telemetry/GPS/summary를 새 Python oracle과 다시 비교했다. cache key만 제외하고 `1e-6` 절대오차·필드 존재·null/bool·순서 기준을 유지해 차이0이다. [14구간](measurements/conversion-optimized-real14-2026-11-15.json), [47구간](measurements/conversion-optimized-real47-2026-11-15.json). 이 전체 실행은 기능 검증용 각1회이며 대표 교차 반복 성능 측정과 구분한다.
+- 대표 MP4 2종과 실제 MP4에서 무손실 추출한 TS/HEVC 1종은 구현별 warmup1/교차5회로 매 결과를 비교했다. 모든 카메라가 경고·실패 fallback 없이 생성됐으며 Rust 전후 thumbnail JSON/JPEG 바이트 동일, 입력 SHA 불변이다. 파생 raw는 센서 원본 raw가 아니다. Python/Rust 사이의 기존 thumbnail score±0.01/FFmpeg 픽셀 차이는 그대로 별도 범위로 남겨 두며 출력 허용오차를 넓히지 않았다.
+- `integration/pipeline_contract.py`의 합성120모델·H.264 TS/2개 HEVC 전체 oracle 통과. 제품 경로가 frame 수·PTS/DTS·정규화 압축 그림 SHA·decoder header·hvc1·faststart 검사를 유지한다. 합성 시험을 실제 센서 raw 검증으로 표현하지 않는다.
+- 원본 ccnc 클라이언트 HTTP lifecycle·재페어링 없는 오프라인 인증/완료 영수증 이전을 최종 release로 재검증했다. 실제 와이드 구간4파일 업로드→활성 업로드 중 자동 변환 대기→queued/processing/ready·1201프레임/3카메라·원본 SHA 불변도 통과했다.
+- 전용 서버의 명시적 재변환+16MiB 합성 조각 업로드가 겹친 동안 목록 API165개/조각64개가 실패 없이 완료됐다. 결과와 표본 한계는 [성능 문서](PERFORMANCE.md) 및 [측정 JSON](measurements/conversion-upload-load-2026-11-15.json)에 기록했다.
+- ego Chromium 실제 UI에서 전방 재생/일시정지·15초 탐색, 와이드 전환/44.999989초 탐색, qcamera 전환/45초 동기화·readyState4/오류없음, 지도 경로·영상 overlay·실제 차량 그래프를 확인했다. [수치 기록](measurements/conversion-optimized-browser-2026-11-15.json). 대표1구간의 검증으로, 전체61구간 브라우저/HAOS 검증은 아니다. 사진·지도·좌표는 공개하지 않았다. 테스트 서버는 모든 작업 완료를 확인하고 종료했다.
+- 원본286파일 정규화 내용과 HARS 버전/slug/포트/정식 릴리스 차단 검사를 통과했다. Rust release 설정과 API·출력 스키마·프론트엔드를 유지했다.
+
+CI는 기존 `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS required` 이름과 모든 의존 결과 success 검사 규칙을 유지한다. 저장소 ruleset은 없고 main 보호 API는 `Branch not protected`였다. 로컬 결과를 CI 성공으로 대신하지 않으며 최종 PR/main 커밋과 연결된 실행 상태를 확인한다. HAOS 실기기·추가 차량·장시간 실장치·순수 단계별 비용의 완전한 분리는 미검증이다.

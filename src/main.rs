@@ -21,6 +21,7 @@ async fn main() -> anyhow::Result<()> {
             std::path::Path::new(&args[3]),
         )?;
         println!("{result}");
+        roadviewer_hars::profile::finish();
         return Ok(());
     }
     if args.get(1).is_some_and(|v| v == "__native-hevc") {
@@ -40,13 +41,15 @@ async fn main() -> anyhow::Result<()> {
             (4..=5).contains(&args.len()),
             "usage: roadviewer-hars convert-log RLOG NEW_OUTPUT [LABEL]"
         );
-        roadviewer_hars::convert::prepare(
+        let result = roadviewer_hars::convert::prepare(
             PathBuf::from(&args[2]),
             PathBuf::from(&args[3]),
             args.get(4).cloned().unwrap_or_else(|| "recording".into()),
             |stage, percent| println!("{}", serde_json::json!({"stage":stage,"percent":percent})),
         )
-        .await?;
+        .await;
+        roadviewer_hars::profile::finish();
+        result?;
         return Ok(());
     }
     if args.get(1).is_some_and(|v| v == "analyze-log") {
