@@ -46,7 +46,7 @@ worker_processes auto;
 error_log /dev/stderr warn;
 events {{ worker_connections 256; }}
 http {{
- log_format diagnostics escape=json '{{"event":"nginx_complete","nginx_id":"$request_id","rust_id":"$upstream_http_x_request_id","status":$status,"request_s":$request_time,"upstream_connect_s":"$upstream_connect_time","upstream_header_s":"$upstream_header_time","upstream_response_s":"$upstream_response_time","request_bytes":$request_length,"response_bytes":$bytes_sent}}';
+ log_format diagnostics escape=json '{{"event":"nginx_complete","ts":$msec,"nginx_id":"$request_id","rust_id":"$upstream_http_x_request_id","status":$status,"request_s":$request_time,"upstream_connect_s":"$upstream_connect_time","upstream_header_s":"$upstream_header_time","upstream_response_s":"$upstream_response_time","request_bytes":$request_length,"response_bytes":$bytes_sent}}';
  access_log /dev/stdout diagnostics;
  client_body_temp_path /tmp/hars-nginx-body;
  proxy_temp_path /tmp/hars-nginx-proxy;
@@ -70,6 +70,7 @@ http {{
    proxy_set_header Connection "";
    proxy_set_header Host $host;
    proxy_set_header X-Forwarded-Proto https;
+   proxy_set_header X-Request-ID $request_id;
    proxy_request_buffering on;
    proxy_read_timeout 180s;
   }}

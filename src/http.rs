@@ -202,7 +202,13 @@ async fn device_access(request: Request, next: Next) -> Response {
     next.run(request).await
 }
 async fn diagnostics(mut request: Request, next: Next) -> Response {
-    let request_id = id();
+    let request_id = request
+        .headers()
+        .get("x-request-id")
+        .and_then(|v| v.to_str().ok())
+        .filter(|v| crate::store::valid_id(v))
+        .map(str::to_owned)
+        .unwrap_or_else(id);
     let time = std::time::Instant::now();
     let path = request.uri().path().to_owned();
     tracing::info!(request_id=%request_id,method=%request.method(),path=%request.uri().path(),"request_enter");
@@ -412,7 +418,7 @@ async fn list(State(app): State<App>, headers: HeaderMap) -> Result<Response> {
         .into_response())
 }
 async fn progress() -> Json<Value> {
-    Json(json!({"jobs":{}}))
+    Json(json!({"progress":{}}))
 }
 async fn devices(State(app): State<App>) -> Json<Value> {
     let mut value = app.auth.manage().await;

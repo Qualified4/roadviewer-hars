@@ -4,6 +4,7 @@ fn tls_configuration_restricts_external_paths_and_omits_credentials_from_diagnos
     let options = Options::default();
     let config = nginx_config(&options).unwrap();
     assert!(config.contains("location /api/device/"));
+    assert!(config.contains("proxy_set_header X-Request-ID $request_id;"));
     assert!(config.contains("location / { return 404; }"));
     assert!(
         !config.contains("$http_authorization")

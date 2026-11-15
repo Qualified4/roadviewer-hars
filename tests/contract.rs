@@ -508,3 +508,37 @@ fn root_secret_derivation_matches_python_hmac() {
             == String::from_utf8(expected.stdout).unwrap().trim()
     );
 }
+
+#[tokio::test]
+async fn proxy_request_id_is_correlated_and_progress_keeps_the_python_schema() {
+    let temp = tempfile::tempdir().unwrap();
+    let a = app(temp.path()).await;
+    let correlation = "0123456789abcdef0123456789abcdef";
+    let response = ingress(a.clone())
+        .oneshot(
+            Request::builder()
+                .uri("/api/progress")
+                .header("x-request-id", correlation)
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert_eq!(response.headers()["x-request-id"], correlation);
+    let bytes = to_bytes(response.into_body(), 4096).await.unwrap();
+    let value: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(value, json!({"progress":{}}));
+    let response = ingress(a)
+        .oneshot(
+            Request::builder()
+                .uri("/api/progress")
+                .header("x-request-id", "invalid-log-input")
+                .body(Body::empty())
+                .unwrap(),
+        )
+        .await
+        .unwrap();
+    assert!(roadviewer_hars::store::valid_id(
+        response.headers()["x-request-id"].to_str().unwrap()
+    ));
+}
