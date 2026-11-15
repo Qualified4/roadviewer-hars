@@ -1,0 +1,20 @@
+{
+  "binary_source_commit": "3a645e9",
+  "real_recording": true,
+  "cameras": [
+    "front",
+    "wide",
+    "qcamera"
+  ],
+  "play_pause": true,
+  "front_seek_seconds": 15,
+  "wide_seek_seconds": 44.999989,
+  "qcamera_seek_seconds": 45,
+  "ready_state": 4,
+  "video_errors": 0,
+  "frame_at_45_seconds": 8102,
+  "map_and_gps_route": true,
+  "telemetry_graphs": true,
+  "overlay_visible": true,
+  "scope": "one representative real segment in ego Chromium on Windows, standalone loopback HARS; not HAOS; no screenshot or GPS payload published"
+}

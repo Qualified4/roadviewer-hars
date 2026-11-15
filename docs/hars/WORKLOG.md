@@ -80,3 +80,23 @@ Windows 작업 폴더 안의 소스를 WSL Ubuntu 24.04에서 빌드했다. Rust
 - 독립서버exec19369종료전진행작업없음확인,현재exec9050에서최신debugbinary로root `/tmp/hars-alpha2-upload-wide/data`18199/18198실행중. 테스트끝나면같은root/pid확인후종료할것. 원래HAOS아님.
 - 실제3카메라 MP4다운로드 SHA256입력과일치,Range206바이트일치,원본TS/HEVC역변환API완료(nativeNAL검사내장). docs측정download-real-wide JSON에안전한수치보존.
 - 아직추가수정미커밋,다음작업은해당fix커밋/푸시→최신커밋CI확인. 이전f4CIgreen을새fix커밋CIgreen으로보고하면안됨. 전체61구간비교·CPU측정은반복안함. release노트준비됐으나tag/GHCR/Release게시없음,운영변경없음.
+
+
+## 2026-11-15 변환 성능 최적화 (perf/conversion-pipeline)
+
+- 목표: 프로파일에 근거한 실제 속도·메모리 개선, 전체 출력 1e-6·영상 무손실·보안 유지. Python/openpilot/HAOS/운영 업로드 설정은 변경하지 않는다. 사용자 요청에 PR·커밋·병합이 포함되어 있다. 에이전트 위임은 하지 않았다.
+- 기준은 main `98ca2997be1e7c85895e60018871511b77bad5a0`, 기존 CI43709708605 전체 성공. 환경 재부팅으로 이전 /tmp 산출물이 없어 불변 기준 release를 다시 빌드했다. 영구 실험 경로 `/home/dabin/hars-performance`; baseline SHA256 `4a9197e22300ce9b49d33f181601eabdd3cf1a76ee5ee59f1099ad3416b6d375`.
+- WSL Ubuntu24.04/16 logical CPU/Rust1.100 stable. 입력 NTFS/출력 ext4. Rust system FFmpeg6.1.1, 원본 Python PyAV16.1 wheel의 FFmpeg8 계열로 라이브러리 버전은 다르다. venv는 원본 requirements로 준비했다.
+- CPU perf 914표본/199Hz/lost0: memset19.80%(GzEncoder 아래), miniz compress_inner13.24%, float format2.95%, malloc2.63%. DHAT 기준 누적970198580 bytes/8480770할당, live heap peak232062491 bytes. NAL 복사77.3MB, compact 임시 배열28.6MB가 상위 할당이다. 원시 perf/DHAT/실제 출력에는 개인 데이터가 있을 수 있어 Git 밖에 둔다.
+- 유지: Serde→64KiB BufWriter→Gzip9(기존 finish/fsync 유지), DynamicList/telemetry 소유권 이동 및 열 용량 예약, NAL slice borrow, compact 직접 비교, 동일 작업의 ffprobe 결과 재사용, 영상 검사 후 frame geometry 구성. 모든 프레임·시각·헤더·비트스트림 검증/제한은 유지했다.
+- 제외: 렌더링 배열 owner 이동은 RSS 회귀, telemetry 선계산은 CPU/시간 회귀, native zlib는 5회 중앙값 시간2.6% 회귀로 되돌렸다. 기존 테스트의 assertion은 삭제하지 않았다. codegen-units=1은 시간0.2% 차이로 채택하지 않았고 LTO 해제는 CPU가 늘었다. thin LTO/default CGU/generic CPU를 유지하며 PGO는 적용하지 않았다.
+- 각 실험: 구현별 warmup1+교차5회, 프로파일 OFF, 모든 출력 Python1e-6 비교, Rust 전후 thumbnail JSON/JPEG 바이트 동일, 입력 SHA 불변. baseline/buffered/allocation/candidate/reserved/folded/ordered/zlib/final/cgu1/nolto 불변 실행 파일과 각 bench-*/benchmark.json 보존.
+- 최종 대표 wide6: Python3.898547s/CPU3.333185/meanRSS237279/peak327404KiB; 기존Rust4.750616s/CPU4.153492/mean281378/peak348944; 최종Rust3.494705s/CPU2.986633/mean234555/peak341944. 시간26.4%, 평균RSS16.6%, Peak2.0% 감소. Python 대비 Peak는 여전히 높다.
+- 대표 14코퍼스0: Python2.908867s/CPU2.583351/mean195773/peak274132; 기존Rust3.429724s/CPU3.090948/mean239429/peak310216; 최종2.413979s/CPU2.117385/mean206624/peak300388. 서로 다른 실험의 절대시간을 직접 개선율로 사용하지 않는다.
+- 최종 DHAT: 누적671629886 bytes/7424303할당, live heap peak232067694 bytes. 누적할당은30.8% 감소하지만 live heap peak는 거의 같다. opt-in Scope 진단은 중첩/계측 overhead/누적RSS이므로 정상 벤치와 분리한다. 최종 gzip JSON 저장 wall0.553s(기준1.523), probe4회(기준8), signature3회 유지. 총 native 프로세스12→8.
+- core 최적화 커밋 `3a645e9`. 로컬 fmt/clippy/전체35테스트 성공, 원본286파일·release gate 성공. 전체61 oracle/합성 파이프라인/ccnc/실제 업로드를 순차 실행 중인 세션92335. 14구간 완료·차이0, 47구간 진행 중. 추가 raw는 실제 MP4를 무손실 추출한 파생 입력이며 센서 원본 raw로 표현하지 않는다.
+- 전체61구간/72749모델 프레임 차이0, 합성3cam raw oracle, 원본 ccnc lifecycle/인증 이전, 실제4파일 업로드/자동 변환 모두 통과했다. 파생 raw 교차5회는 기존Rust4.959281→최종3.515262초, Python3.430890초로 Rust가 여전히 약2.5% 느리다. 원본센서 raw가 아닌 실제 MP4 무손실 추출 입력이다.
+- 최종 perf647표본/lost0: miniz14.99%, memset1%미만. strace 자식12→8/openat2841→1921/read13202→11775/write9684→8474, fsync5유지. 동시 스레드 wait 합계를 전체 경과로 보지 않는다.
+- 전용 loopback 재변환+16MiB 업로드: API165표본 p95 0.820ms/p99 0.988ms, 조각64개 실패0, processing/upload 겹침43표본. ego Space13에서 실제 전방/와이드/qcamera·재생/일시정지/15·45초 시킹/지도/overlay/그래프를 확인하고 Space를 닫았다. 모든 로그 ready를 확인해 소유한 테스트 서버만 종료했다.
+- PRIVATE raw/perf/DHAT/영상/좌표는 `/home/dabin/hars-performance` 및 사용자 ego 임시 폴더에만 있다. 공개할 숫자 집계/비교 결과는 docs/hars/measurements에 저장했다. STATUS/VALIDATION/PERFORMANCE/DEVELOPMENT를 갱신했다.
+- 다음: 도구·문서 커밋→PR1개 생성→amd64/aarch64/필수 CI 확인→병합 후 최신 main CI 확인. 실행 링크·최종 커밋·완료 여부는 PR 및 최종 사용자 보고에 기록한다. 운영 전환/릴리스/배포는 하지 않는다.

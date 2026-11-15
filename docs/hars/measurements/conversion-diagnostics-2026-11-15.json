@@ -1,0 +1,1093 @@
+{
+  "inclusive": true,
+  "rss_is_cumulative_not_stage_peak": true,
+  "diagnostic_times_include_instrumentation_overhead": true,
+  "stages": {
+    "baseline": [
+      {
+        "thumbnail_native": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.043877,
+          "cumulative_peak_rss_kib": 307052,
+          "wall_seconds": 0.034169577
+        }
+      },
+      {
+        "ccnc_geometry": {
+          "calls": 1201,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.021891000000000327,
+          "cumulative_peak_rss_kib": 290948,
+          "wall_seconds": 0.02432894399999999
+        },
+        "convert_total": {
+          "calls": 1,
+          "child_cpu_seconds": 1.013068,
+          "cpu_seconds": 3.60557,
+          "cumulative_peak_rss_kib": 307052,
+          "wall_seconds": 5.166297343
+        },
+        "frame_analysis": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.3303369999999999,
+          "cumulative_peak_rss_kib": 291076,
+          "wall_seconds": 0.336782879
+        },
+        "gps_build": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.004855000000000054,
+          "cumulative_peak_rss_kib": 307052,
+          "wall_seconds": 0.004957957
+        },
+        "json_gzip_write": {
+          "calls": 3,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 1.4714299999999998,
+          "cumulative_peak_rss_kib": 307052,
+          "wall_seconds": 1.5232695520000001
+        },
+        "log_decode": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.9857859999999999,
+          "cumulative_peak_rss_kib": 194940,
+          "wall_seconds": 1.062355803
+        },
+        "native_process_ipc": {
+          "calls": 9,
+          "child_cpu_seconds": 0.546262,
+          "cpu_seconds": 0.08343199999999973,
+          "cumulative_peak_rss_kib": 307052,
+          "wall_seconds": 0.9651772580000001
+        },
+        "overlay_geometry": {
+          "calls": 1201,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.0956539999999988,
+          "cumulative_peak_rss_kib": 291076,
+          "wall_seconds": 0.0992667800000001
+        },
+        "replay_compact": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.3341560000000001,
+          "cumulative_peak_rss_kib": 307052,
+          "wall_seconds": 0.340699711
+        },
+        "replay_save": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 1.191491,
+          "cumulative_peak_rss_kib": 307052,
+          "wall_seconds": 1.226062448
+        },
+        "telemetry_build": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.06934700000000005,
+          "cumulative_peak_rss_kib": 306796,
+          "wall_seconds": 0.070706429
+        },
+        "telemetry_save": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.2795289999999997,
+          "cumulative_peak_rss_kib": 307052,
+          "wall_seconds": 0.293095503
+        },
+        "video_bitstream_hash": {
+          "calls": 3,
+          "child_cpu_seconds": 0.46680600000000005,
+          "cpu_seconds": 0.200658,
+          "cumulative_peak_rss_kib": 292716,
+          "wall_seconds": 0.7069265060000001
+        },
+        "video_probe": {
+          "calls": 8,
+          "child_cpu_seconds": 0.4812949999999999,
+          "cpu_seconds": 0.08976799999999918,
+          "cumulative_peak_rss_kib": 307052,
+          "wall_seconds": 0.9173527450000001
+        },
+        "zstd_read": {
+          "calls": 178040,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.2699819999999907,
+          "cumulative_peak_rss_kib": 194940,
+          "wall_seconds": 0.5520921400004386
+        }
+      }
+    ],
+    "final": [
+      {
+        "thumbnail_native": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.042447,
+          "cumulative_peak_rss_kib": 296824,
+          "wall_seconds": 0.032695203
+        }
+      },
+      {
+        "ccnc_geometry": {
+          "calls": 1201,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.0212089999999987,
+          "cumulative_peak_rss_kib": 293200,
+          "wall_seconds": 0.023571425999999993
+        },
+        "convert_total": {
+          "calls": 1,
+          "child_cpu_seconds": 0.818314,
+          "cpu_seconds": 2.530285,
+          "cumulative_peak_rss_kib": 296824,
+          "wall_seconds": 3.887913097
+        },
+        "frame_analysis": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.3511280000000001,
+          "cumulative_peak_rss_kib": 293328,
+          "wall_seconds": 0.359747177
+        },
+        "gps_build": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.004259000000000235,
+          "cumulative_peak_rss_kib": 296824,
+          "wall_seconds": 0.004367465
+        },
+        "json_gzip_write": {
+          "calls": 3,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.5196939999999999,
+          "cumulative_peak_rss_kib": 296824,
+          "wall_seconds": 0.552516908
+        },
+        "log_decode": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.961982,
+          "cumulative_peak_rss_kib": 195192,
+          "wall_seconds": 1.044494117
+        },
+        "native_process_ipc": {
+          "calls": 5,
+          "child_cpu_seconds": 0.3712219999999999,
+          "cpu_seconds": 0.07433299999999976,
+          "cumulative_peak_rss_kib": 296824,
+          "wall_seconds": 0.763774715
+        },
+        "overlay_geometry": {
+          "calls": 1201,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.0948680000000035,
+          "cumulative_peak_rss_kib": 293328,
+          "wall_seconds": 0.09890590399999993
+        },
+        "replay_compact": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.2970569999999997,
+          "cumulative_peak_rss_kib": 296824,
+          "wall_seconds": 0.304321634
+        },
+        "replay_save": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.432229,
+          "cumulative_peak_rss_kib": 296824,
+          "wall_seconds": 0.452473077
+        },
+        "telemetry_build": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.04637099999999994,
+          "cumulative_peak_rss_kib": 296120,
+          "wall_seconds": 0.04750655
+        },
+        "telemetry_save": {
+          "calls": 1,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.08730000000000016,
+          "cumulative_peak_rss_kib": 296824,
+          "wall_seconds": 0.096517603
+        },
+        "video_bitstream_hash": {
+          "calls": 3,
+          "child_cpu_seconds": 0.4470920000000001,
+          "cpu_seconds": 0.20933500000000005,
+          "cumulative_peak_rss_kib": 195192,
+          "wall_seconds": 0.717767724
+        },
+        "video_probe": {
+          "calls": 4,
+          "child_cpu_seconds": 0.30691699999999994,
+          "cpu_seconds": 0.07841900000000013,
+          "cumulative_peak_rss_kib": 296824,
+          "wall_seconds": 0.7144480430000001
+        },
+        "zstd_read": {
+          "calls": 178040,
+          "child_cpu_seconds": 0.0,
+          "cpu_seconds": 0.2763429999999889,
+          "cumulative_peak_rss_kib": 195192,
+          "wall_seconds": 0.565337541999858
+        }
+      }
+    ]
+  },
+  "allocations": {
+    "baseline": {
+      "total_bytes": 970198580,
+      "total_blocks": 8480770,
+      "global_peak_live_bytes": 232062491,
+      "global_peak_live_blocks": 1840824,
+      "main_process_only": true
+    },
+    "final": {
+      "total_bytes": 671629886,
+      "total_blocks": 7424303,
+      "global_peak_live_bytes": 232067694,
+      "global_peak_live_blocks": 1840861,
+      "main_process_only": true
+    }
+  },
+  "python_cprofile": [
+    {
+      "module": "~",
+      "function": "<built-in method builtins.round>",
+      "calls": 2186264,
+      "self_seconds": 0.574300338,
+      "inclusive_seconds": 0.574300338
+    },
+    {
+      "module": "~",
+      "function": "<method 'compress' of 'zlib.Compress' objects>",
+      "calls": 37,
+      "self_seconds": 0.551811394,
+      "inclusive_seconds": 0.551811394
+    },
+    {
+      "module": "video_packets.py",
+      "function": "inspect_mp4",
+      "calls": 3,
+      "self_seconds": 0.5206425720000001,
+      "inclusive_seconds": 0.687123045
+    },
+    {
+      "module": "decoder.py",
+      "function": "prepare",
+      "calls": 1,
+      "self_seconds": 0.49218029700000004,
+      "inclusive_seconds": 5.815579856
+    },
+    {
+      "module": "compact.py",
+      "function": "round_coordinates",
+      "calls": 1137347,
+      "self_seconds": 0.399640023,
+      "inclusive_seconds": 0.748703651
+    },
+    {
+      "module": "~",
+      "function": "<built-in method builtins.getattr>",
+      "calls": 504746,
+      "self_seconds": 0.307656737,
+      "inclusive_seconds": 0.30765818100000003
+    },
+    {
+      "module": "decoder.py",
+      "function": "pick",
+      "calls": 90691,
+      "self_seconds": 0.26350339,
+      "inclusive_seconds": 0.615021598
+    },
+    {
+      "module": "~",
+      "function": "<built-in method builtins.isinstance>",
+      "calls": 3594090,
+      "self_seconds": 0.22401899300000003,
+      "inclusive_seconds": 0.226991076
+    },
+    {
+      "module": "encoder.py",
+      "function": "iterencode",
+      "calls": 1265,
+      "self_seconds": 0.19543991700000002,
+      "inclusive_seconds": 0.19543991700000002
+    },
+    {
+      "module": "telemetry.py",
+      "function": "extract_telemetry",
+      "calls": 1,
+      "self_seconds": 0.158025659,
+      "inclusive_seconds": 0.587933264
+    },
+    {
+      "module": "compact.py",
+      "function": "flat_line",
+      "calls": 8407,
+      "self_seconds": 0.14897565200000001,
+      "inclusive_seconds": 0.60180731
+    },
+    {
+      "module": "compact.py",
+      "function": "<genexpr>",
+      "calls": 832293,
+      "self_seconds": 0.140092123,
+      "inclusive_seconds": 0.210572421
+    },
+    {
+      "module": "telemetry.py",
+      "function": "nested",
+      "calls": 275974,
+      "self_seconds": 0.13388840200000002,
+      "inclusive_seconds": 0.243378577
+    },
+    {
+      "module": "decoder.py",
+      "function": "points",
+      "calls": 8407,
+      "self_seconds": 0.12550985,
+      "inclusive_seconds": 0.286307859
+    },
+    {
+      "module": "compact.py",
+      "function": "<genexpr>",
+      "calls": 285838,
+      "self_seconds": 0.114988027,
+      "inclusive_seconds": 0.17087802900000001
+    },
+    {
+      "module": "~",
+      "function": "<built-in method builtins.all>",
+      "calls": 306960,
+      "self_seconds": 0.114411964,
+      "inclusive_seconds": 0.8711555400000001
+    },
+    {
+      "module": "decoder.py",
+      "function": "<module>",
+      "calls": 1,
+      "self_seconds": 0.10841054700000001,
+      "inclusive_seconds": 6.0176029380000005
+    },
+    {
+      "module": "~",
+      "function": "<method 'get' of 'dict' objects>",
+      "calls": 701988,
+      "self_seconds": 0.084982466,
+      "inclusive_seconds": 0.084982466
+    },
+    {
+      "module": "decoder.py",
+      "function": "_layout",
+      "calls": 90691,
+      "self_seconds": 0.080607235,
+      "inclusive_seconds": 0.088394395
+    },
+    {
+      "module": "~",
+      "function": "<built-in method math.isfinite>",
+      "calls": 1517195,
+      "self_seconds": 0.07999690500000001,
+      "inclusive_seconds": 0.07999690500000001
+    },
+    {
+      "module": "~",
+      "function": "<method 'read' of 'zstandard.backend_c.ZstdDecompressionReader' objects>",
+      "calls": 1,
+      "self_seconds": 0.070609506,
+      "inclusive_seconds": 0.13725599400000002
+    },
+    {
+      "module": "wall_clock.py",
+      "function": "add",
+      "calls": 88186,
+      "self_seconds": 0.07052191000000001,
+      "inclusive_seconds": 0.071970476
+    },
+    {
+      "module": "telemetry.py",
+      "function": "number",
+      "calls": 167999,
+      "self_seconds": 0.06712488900000001,
+      "inclusive_seconds": 0.129898704
+    },
+    {
+      "module": "~",
+      "function": "<method 'read' of '_io.BufferedReader' objects>",
+      "calls": 184,
+      "self_seconds": 0.066715942,
+      "inclusive_seconds": 0.066715942
+    },
+    {
+      "module": "compact.py",
+      "function": "<genexpr>",
+      "calls": 245004,
+      "self_seconds": 0.050777204000000006,
+      "inclusive_seconds": 0.071055623
+    },
+    {
+      "module": "~",
+      "function": "<built-in method posix.stat>",
+      "calls": 675,
+      "self_seconds": 0.050022286000000006,
+      "inclusive_seconds": 0.050319581
+    },
+    {
+      "module": "~",
+      "function": "<built-in method builtins.len>",
+      "calls": 892482,
+      "self_seconds": 0.049984515,
+      "inclusive_seconds": 0.050012623000000006
+    },
+    {
+      "module": "~",
+      "function": "<method 'update' of '_hashlib.HASH' objects>",
+      "calls": 14400,
+      "self_seconds": 0.040818553,
+      "inclusive_seconds": 0.040818553
+    },
+    {
+      "module": "~",
+      "function": "<method 'append' of 'list' objects>",
+      "calls": 384318,
+      "self_seconds": 0.036641786,
+      "inclusive_seconds": 0.036641786
+    },
+    {
+      "module": "~",
+      "function": "<method 'split' of 'str' objects>",
+      "calls": 276252,
+      "self_seconds": 0.033043631000000004,
+      "inclusive_seconds": 0.033043631000000004
+    },
+    {
+      "module": "~",
+      "function": "<method 'split' of 're.Pattern' objects>",
+      "calls": 4800,
+      "self_seconds": 0.029893816,
+      "inclusive_seconds": 0.029893816
+    },
+    {
+      "module": "~",
+      "function": "<built-in method builtins.abs>",
+      "calls": 571724,
+      "self_seconds": 0.028129366000000003,
+      "inclusive_seconds": 0.028129366000000003
+    },
+    {
+      "module": "overlay.py",
+      "function": "points3",
+      "calls": 10813,
+      "self_seconds": 0.027735229,
+      "inclusive_seconds": 0.030178851000000003
+    },
+    {
+      "module": "~",
+      "function": "<method 'decode' of 'av.packet.Packet' objects>",
+      "calls": 117,
+      "self_seconds": 0.023246529000000002,
+      "inclusive_seconds": 0.023256835
+    },
+    {
+      "module": "decoder.py",
+      "function": "add",
+      "calls": 7200,
+      "self_seconds": 0.023063966,
+      "inclusive_seconds": 0.024674731000000002
+    }
+  ],
+  "python_cprofile_total_seconds": 6.017576377000007,
+  "perf_cpu_sampling": {
+    "frequency_hz": 199,
+    "event": "cpu-clock",
+    "baseline": {
+      "samples": 914,
+      "lost": 0,
+      "event_seconds_approx": 4.59296425,
+      "self_percent": {
+        "memset": 19.8,
+        "miniz_compress_inner": 13.24,
+        "float_format_exact": 2.95,
+        "int_malloc": 2.63
+      }
+    },
+    "final": {
+      "samples": 647,
+      "lost": 0,
+      "event_seconds_approx": 3.251255875,
+      "self_percent": {
+        "miniz_compress_inner": 14.99,
+        "memmove": 3.55,
+        "NalHasher_feed": 2.94,
+        "float_format_exact": 2.47,
+        "logs_to_json": 2.01
+      },
+      "memset_below_report_threshold_percent": 1
+    }
+  },
+  "syscalls": {
+    "thread_times_overlap_and_are_not_job_wall_time": true,
+    "read_write_include_pipes_and_libraries": true,
+    "baseline": {
+      "futex": {
+        "calls": 32156,
+        "errors": 4084,
+        "thread_summed_seconds": 103.444454
+      },
+      "epoll_wait": {
+        "calls": 5998,
+        "errors": 0,
+        "thread_summed_seconds": 5.998655
+      },
+      "wait4": {
+        "calls": 12,
+        "errors": 0,
+        "thread_summed_seconds": 2.69899
+      },
+      "mprotect": {
+        "calls": 64445,
+        "errors": 0,
+        "thread_summed_seconds": 1.109423
+      },
+      "read": {
+        "calls": 13202,
+        "errors": 212,
+        "thread_summed_seconds": 0.630694
+      },
+      "write": {
+        "calls": 9684,
+        "errors": 0,
+        "thread_summed_seconds": 0.333419
+      },
+      "mmap": {
+        "calls": 11936,
+        "errors": 0,
+        "thread_summed_seconds": 0.304661
+      },
+      "openat": {
+        "calls": 2841,
+        "errors": 73,
+        "thread_summed_seconds": 0.068645
+      },
+      "fstat": {
+        "calls": 2825,
+        "errors": 0,
+        "thread_summed_seconds": 0.051243
+      },
+      "close": {
+        "calls": 2815,
+        "errors": 0,
+        "thread_summed_seconds": 0.050459
+      },
+      "sched_yield": {
+        "calls": 146,
+        "errors": 0,
+        "thread_summed_seconds": 0.013159
+      },
+      "clone3": {
+        "calls": 55,
+        "errors": 0,
+        "thread_summed_seconds": 0.009318
+      },
+      "munmap": {
+        "calls": 165,
+        "errors": 0,
+        "thread_summed_seconds": 0.007948
+      },
+      "rt_sigprocmask": {
+        "calls": 225,
+        "errors": 0,
+        "thread_summed_seconds": 0.00694
+      },
+      "sigaltstack": {
+        "calls": 109,
+        "errors": 0,
+        "thread_summed_seconds": 0.005159
+      },
+      "prctl": {
+        "calls": 109,
+        "errors": 44,
+        "thread_summed_seconds": 0.003731
+      },
+      "gettid": {
+        "calls": 72,
+        "errors": 0,
+        "thread_summed_seconds": 0.003506
+      },
+      "sched_getaffinity": {
+        "calls": 65,
+        "errors": 0,
+        "thread_summed_seconds": 0.002584
+      },
+      "statx": {
+        "calls": 18,
+        "errors": 4,
+        "thread_summed_seconds": 0.002459
+      },
+      "getrandom": {
+        "calls": 62,
+        "errors": 0,
+        "thread_summed_seconds": 0.002205
+      },
+      "rseq": {
+        "calls": 56,
+        "errors": 0,
+        "thread_summed_seconds": 0.002081
+      },
+      "brk": {
+        "calls": 156,
+        "errors": 0,
+        "thread_summed_seconds": 0.002026
+      },
+      "set_robust_list": {
+        "calls": 56,
+        "errors": 0,
+        "thread_summed_seconds": 0.001809
+      },
+      "madvise": {
+        "calls": 43,
+        "errors": 0,
+        "thread_summed_seconds": 0.001604
+      },
+      "epoll_ctl": {
+        "calls": 52,
+        "errors": 0,
+        "thread_summed_seconds": 0.000662
+      },
+      "newfstatat": {
+        "calls": 46,
+        "errors": 33,
+        "thread_summed_seconds": 0.000659
+      },
+      "prlimit64": {
+        "calls": 63,
+        "errors": 0,
+        "thread_summed_seconds": 0.000639
+      },
+      "statfs": {
+        "calls": 27,
+        "errors": 13,
+        "thread_summed_seconds": 0.000467
+      },
+      "getdents64": {
+        "calls": 26,
+        "errors": 0,
+        "thread_summed_seconds": 0.000453
+      },
+      "lseek": {
+        "calls": 29,
+        "errors": 0,
+        "thread_summed_seconds": 0.000436
+      },
+      "mkdir": {
+        "calls": 1,
+        "errors": 0,
+        "thread_summed_seconds": 0.000419
+      },
+      "fcntl": {
+        "calls": 43,
+        "errors": 0,
+        "thread_summed_seconds": 0.000369
+      },
+      "pread64": {
+        "calls": 26,
+        "errors": 0,
+        "thread_summed_seconds": 0.000304
+      },
+      "access": {
+        "calls": 39,
+        "errors": 39,
+        "thread_summed_seconds": 0.0003
+      },
+      "rt_sigaction": {
+        "calls": 39,
+        "errors": 0,
+        "thread_summed_seconds": 0.000297
+      },
+      "execve": {
+        "calls": 46,
+        "errors": 33,
+        "thread_summed_seconds": 0.000194
+      },
+      "getpid": {
+        "calls": 11,
+        "errors": 0,
+        "thread_summed_seconds": 0.00019
+      },
+      "mremap": {
+        "calls": 5,
+        "errors": 0,
+        "thread_summed_seconds": 0.000181
+      },
+      "mlock": {
+        "calls": 13,
+        "errors": 0,
+        "thread_summed_seconds": 0.000167
+      },
+      "pipe2": {
+        "calls": 12,
+        "errors": 0,
+        "thread_summed_seconds": 0.000153
+      },
+      "set_tid_address": {
+        "calls": 13,
+        "errors": 0,
+        "thread_summed_seconds": 0.000152
+      },
+      "arch_prctl": {
+        "calls": 13,
+        "errors": 0,
+        "thread_summed_seconds": 0.000146
+      },
+      "getuid": {
+        "calls": 13,
+        "errors": 0,
+        "thread_summed_seconds": 9.2e-05
+      },
+      "ioctl": {
+        "calls": 3,
+        "errors": 3,
+        "thread_summed_seconds": 8.7e-05
+      },
+      "pidfd_open": {
+        "calls": 12,
+        "errors": 0,
+        "thread_summed_seconds": 8.6e-05
+      },
+      "getrusage": {
+        "calls": 3,
+        "errors": 0,
+        "thread_summed_seconds": 7.5e-05
+      },
+      "rename": {
+        "calls": 3,
+        "errors": 0,
+        "thread_summed_seconds": 7.1e-05
+      },
+      "readlink": {
+        "calls": 1,
+        "errors": 0,
+        "thread_summed_seconds": 5.8e-05
+      },
+      "socketpair": {
+        "calls": 2,
+        "errors": 0,
+        "thread_summed_seconds": 5.4e-05
+      },
+      "dup": {
+        "calls": 3,
+        "errors": 0,
+        "thread_summed_seconds": 4.9e-05
+      },
+      "epoll_create1": {
+        "calls": 2,
+        "errors": 0,
+        "thread_summed_seconds": 4.5e-05
+      },
+      "eventfd2": {
+        "calls": 2,
+        "errors": 0,
+        "thread_summed_seconds": 4.2e-05
+      },
+      "poll": {
+        "calls": 2,
+        "errors": 0,
+        "thread_summed_seconds": 1.9e-05
+      },
+      "dup2": {
+        "calls": 24,
+        "errors": 0,
+        "thread_summed_seconds": 0.0
+      },
+      "fsync": {
+        "calls": 5,
+        "errors": 0,
+        "thread_summed_seconds": 0.0
+      }
+    },
+    "final": {
+      "futex": {
+        "calls": 31455,
+        "errors": 4030,
+        "thread_summed_seconds": 88.339076
+      },
+      "epoll_wait": {
+        "calls": 5592,
+        "errors": 0,
+        "thread_summed_seconds": 4.905064
+      },
+      "wait4": {
+        "calls": 8,
+        "errors": 0,
+        "thread_summed_seconds": 2.038198
+      },
+      "mprotect": {
+        "calls": 63326,
+        "errors": 0,
+        "thread_summed_seconds": 1.046175
+      },
+      "read": {
+        "calls": 11775,
+        "errors": 213,
+        "thread_summed_seconds": 0.569052
+      },
+      "write": {
+        "calls": 8474,
+        "errors": 0,
+        "thread_summed_seconds": 0.291371
+      },
+      "mmap": {
+        "calls": 8086,
+        "errors": 0,
+        "thread_summed_seconds": 0.203776
+      },
+      "openat": {
+        "calls": 1921,
+        "errors": 49,
+        "thread_summed_seconds": 0.04454
+      },
+      "close": {
+        "calls": 1907,
+        "errors": 0,
+        "thread_summed_seconds": 0.03366
+      },
+      "fstat": {
+        "calls": 1901,
+        "errors": 0,
+        "thread_summed_seconds": 0.03292
+      },
+      "sched_yield": {
+        "calls": 129,
+        "errors": 0,
+        "thread_summed_seconds": 0.011144
+      },
+      "clone3": {
+        "calls": 50,
+        "errors": 0,
+        "thread_summed_seconds": 0.008829
+      },
+      "rt_sigprocmask": {
+        "calls": 205,
+        "errors": 0,
+        "thread_summed_seconds": 0.007758
+      },
+      "munmap": {
+        "calls": 135,
+        "errors": 0,
+        "thread_summed_seconds": 0.007585
+      },
+      "sigaltstack": {
+        "calls": 106,
+        "errors": 0,
+        "thread_summed_seconds": 0.005825
+      },
+      "gettid": {
+        "calls": 70,
+        "errors": 0,
+        "thread_summed_seconds": 0.003554
+      },
+      "prctl": {
+        "calls": 84,
+        "errors": 28,
+        "thread_summed_seconds": 0.003325
+      },
+      "getrandom": {
+        "calls": 54,
+        "errors": 0,
+        "thread_summed_seconds": 0.002473
+      },
+      "sched_getaffinity": {
+        "calls": 56,
+        "errors": 0,
+        "thread_summed_seconds": 0.002384
+      },
+      "madvise": {
+        "calls": 42,
+        "errors": 0,
+        "thread_summed_seconds": 0.002204
+      },
+      "statx": {
+        "calls": 18,
+        "errors": 4,
+        "thread_summed_seconds": 0.001994
+      },
+      "set_robust_list": {
+        "calls": 51,
+        "errors": 0,
+        "thread_summed_seconds": 0.001929
+      },
+      "rseq": {
+        "calls": 51,
+        "errors": 0,
+        "thread_summed_seconds": 0.001684
+      },
+      "brk": {
+        "calls": 112,
+        "errors": 0,
+        "thread_summed_seconds": 0.001628
+      },
+      "newfstatat": {
+        "calls": 30,
+        "errors": 21,
+        "thread_summed_seconds": 0.000525
+      },
+      "execve": {
+        "calls": 30,
+        "errors": 21,
+        "thread_summed_seconds": 0.000465
+      },
+      "mkdir": {
+        "calls": 1,
+        "errors": 0,
+        "thread_summed_seconds": 0.000407
+      },
+      "epoll_ctl": {
+        "calls": 36,
+        "errors": 0,
+        "thread_summed_seconds": 0.000378
+      },
+      "rt_sigaction": {
+        "calls": 35,
+        "errors": 0,
+        "thread_summed_seconds": 0.000376
+      },
+      "prlimit64": {
+        "calls": 43,
+        "errors": 0,
+        "thread_summed_seconds": 0.000299
+      },
+      "pread64": {
+        "calls": 18,
+        "errors": 0,
+        "thread_summed_seconds": 0.000249
+      },
+      "fcntl": {
+        "calls": 31,
+        "errors": 0,
+        "thread_summed_seconds": 0.000234
+      },
+      "statfs": {
+        "calls": 19,
+        "errors": 9,
+        "thread_summed_seconds": 0.000231
+      },
+      "lseek": {
+        "calls": 21,
+        "errors": 0,
+        "thread_summed_seconds": 0.000211
+      },
+      "access": {
+        "calls": 27,
+        "errors": 27,
+        "thread_summed_seconds": 0.000205
+      },
+      "ioctl": {
+        "calls": 3,
+        "errors": 3,
+        "thread_summed_seconds": 0.000204
+      },
+      "getdents64": {
+        "calls": 18,
+        "errors": 0,
+        "thread_summed_seconds": 0.000188
+      },
+      "mremap": {
+        "calls": 5,
+        "errors": 0,
+        "thread_summed_seconds": 0.000154
+      },
+      "mlock": {
+        "calls": 9,
+        "errors": 0,
+        "thread_summed_seconds": 0.00014
+      },
+      "arch_prctl": {
+        "calls": 9,
+        "errors": 0,
+        "thread_summed_seconds": 0.000131
+      },
+      "set_tid_address": {
+        "calls": 9,
+        "errors": 0,
+        "thread_summed_seconds": 0.000127
+      },
+      "getpid": {
+        "calls": 7,
+        "errors": 0,
+        "thread_summed_seconds": 0.000109
+      },
+      "getuid": {
+        "calls": 9,
+        "errors": 0,
+        "thread_summed_seconds": 9.3e-05
+      },
+      "socketpair": {
+        "calls": 2,
+        "errors": 0,
+        "thread_summed_seconds": 7.5e-05
+      },
+      "pipe2": {
+        "calls": 8,
+        "errors": 0,
+        "thread_summed_seconds": 7.5e-05
+      },
+      "getrusage": {
+        "calls": 3,
+        "errors": 0,
+        "thread_summed_seconds": 7.1e-05
+      },
+      "readlink": {
+        "calls": 1,
+        "errors": 0,
+        "thread_summed_seconds": 5e-05
+      },
+      "dup": {
+        "calls": 3,
+        "errors": 0,
+        "thread_summed_seconds": 4.9e-05
+      },
+      "dup2": {
+        "calls": 16,
+        "errors": 0,
+        "thread_summed_seconds": 4.9e-05
+      },
+      "eventfd2": {
+        "calls": 2,
+        "errors": 0,
+        "thread_summed_seconds": 4.5e-05
+      },
+      "epoll_create1": {
+        "calls": 2,
+        "errors": 0,
+        "thread_summed_seconds": 4.1e-05
+      },
+      "poll": {
+        "calls": 2,
+        "errors": 0,
+        "thread_summed_seconds": 2.8e-05
+      },
+      "pidfd_open": {
+        "calls": 8,
+        "errors": 0,
+        "thread_summed_seconds": 2.8e-05
+      },
+      "fsync": {
+        "calls": 5,
+        "errors": 0,
+        "thread_summed_seconds": 0.0
+      },
+      "rename": {
+        "calls": 3,
+        "errors": 0,
+        "thread_summed_seconds": 0.0
+      }
+    }
+  }
+}

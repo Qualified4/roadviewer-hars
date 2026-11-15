@@ -1,0 +1,5323 @@
+{
+  "baseline_commit": "98ca2997be1e7c85895e60018871511b77bad5a0",
+  "candidate_source_commit": "3a645e9",
+  "platform": "WSL2 Ubuntu 24.04 x86_64, 16 logical CPUs",
+  "input_filesystem": "NTFS for original MP4 experiments; WSL ext4 for derived raw experiment",
+  "output_filesystem": "WSL ext4",
+  "versions": {
+    "rust": "1.100.0 stable",
+    "system_ffmpeg": "6.1.1",
+    "system_avformat": "60.16.100",
+    "system_swscale": "7.5.100",
+    "python": "3.12.3",
+    "pyav": "16.1.0",
+    "pyav_avcodec": "62.11.100",
+    "pyav_avformat": "62.3.100",
+    "pyav_swscale": "9.1.100",
+    "python_zlib": "1.3",
+    "rust_miniz_oxide": "0.9.1"
+  },
+  "experiments": {
+    "buffered": {
+      "conditions": {
+        "kernel": "6.18.33.2-microsoft-standard-WSL2",
+        "python": "3.12.3",
+        "logical_cpus": 16,
+        "warmups_per_variant": 1,
+        "runs": 5,
+        "cache": "warm, no global drop_caches",
+        "input_filesystem": "caller path; same input for all variants",
+        "output_filesystem": "WSL ext4",
+        "compression_level": 9,
+        "diagnostics": false
+      },
+      "binary_sha256": {
+        "baseline": "4a9197e22300ce9b49d33f181601eabdd3cf1a76ee5ee59f1099ad3416b6d375",
+        "buffered": "d5232d19ddfcfbf2f51969cdddc3c58606d6fda6ff165a3234b82ea208051914"
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 3.9649756169999364,
+          "total_cpu_seconds": 3.442363999999999,
+          "cpu_percent_one_core": 86.81929808699891,
+          "rss_samples": 192,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 242224.49575692238,
+          "peak_rss_tree_kib": 327636,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.42
+          },
+          "variant": "python",
+          "round": "1-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 5.892244874000198,
+          "total_cpu_seconds": 5.202408,
+          "cpu_percent_one_core": 88.29246087439212,
+          "rss_samples": 278,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 276554.5707120349,
+          "peak_rss_tree_kib": 348892,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 1.41,
+            "log_analysis": 0.010000000000000009,
+            "video_read": 1.2200000000000006,
+            "telemetry_build": 2.21,
+            "telemetry_compress": 0.09000000000000002,
+            "summary_save": 0.019999999999999574
+          },
+          "variant": "baseline",
+          "round": "1-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.7301061979999304,
+          "total_cpu_seconds": 3.170797,
+          "cpu_percent_one_core": 85.00554224703227,
+          "rss_samples": 178,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 278681.1338941394,
+          "peak_rss_tree_kib": 348860,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.84,
+            "log_analysis": 0.030000000000000027,
+            "video_read": 1.0000000000000004,
+            "telemetry_build": 0.96,
+            "telemetry_compress": 0.07000000000000002,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "buffered",
+          "round": "1-buffered",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.9555904030000875,
+          "total_cpu_seconds": 3.4187790000000007,
+          "cpu_percent_one_core": 86.42904476173908,
+          "rss_samples": 192,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239743.2107207539,
+          "peak_rss_tree_kib": 327584,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.4
+          },
+          "variant": "python",
+          "round": "2-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.9574425529999644,
+          "total_cpu_seconds": 3.3936219999999997,
+          "cpu_percent_one_core": 85.75290619007073,
+          "rss_samples": 188,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 276991.55102954747,
+          "peak_rss_tree_kib": 348996,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.02,
+            "log_read": 0.96,
+            "video_read": 1.0600000000000005,
+            "video_verify": 0.010000000000000009,
+            "telemetry_build": 0.9999999999999998,
+            "telemetry_compress": 0.060000000000000234,
+            "summary_save": 0.020000000000000018
+          },
+          "variant": "buffered",
+          "round": "2-buffered",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 4.699541540999917,
+          "total_cpu_seconds": 4.130979999999997,
+          "cpu_percent_one_core": 87.90176582035389,
+          "rss_samples": 224,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 281861.1841632821,
+          "peak_rss_tree_kib": 348912,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.87,
+            "video_read": 1.0000000000000002,
+            "telemetry_build": 1.9500000000000002,
+            "telemetry_compress": 0.06999999999999978,
+            "summary_save": 0.020000000000000018
+          },
+          "variant": "baseline",
+          "round": "2-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.782511925000108,
+          "total_cpu_seconds": 3.2520849999999983,
+          "cpu_percent_one_core": 85.97686046951209,
+          "rss_samples": 180,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 276537.35953382245,
+          "peak_rss_tree_kib": 348820,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.91,
+            "log_analysis": 0.019999999999999907,
+            "video_read": 0.9900000000000004,
+            "telemetry_build": 0.99,
+            "telemetry_compress": 0.07000000000000002,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "buffered",
+          "round": "3-buffered",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.903985057,
+          "total_cpu_seconds": 3.3883480000000015,
+          "cpu_percent_one_core": 86.79203302596046,
+          "rss_samples": 189,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 238419.91967463613,
+          "peak_rss_tree_kib": 327700,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.36
+          },
+          "variant": "python",
+          "round": "3-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 4.810686196000006,
+          "total_cpu_seconds": 4.263838000000002,
+          "cpu_percent_one_core": 88.6326363075875,
+          "rss_samples": 230,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 282380.5040309594,
+          "peak_rss_tree_kib": 348868,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.89,
+            "video_read": 1.0100000000000002,
+            "telemetry_build": 2.04,
+            "telemetry_compress": 0.06000000000000023,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "baseline",
+          "round": "3-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.6776544960000592,
+          "total_cpu_seconds": 3.15949,
+          "cpu_percent_one_core": 85.91046286257634,
+          "rss_samples": 176,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 276840.1023861349,
+          "peak_rss_tree_kib": 348864,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.86,
+            "video_read": 0.9900000000000003,
+            "telemetry_build": 0.96,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "buffered",
+          "round": "4-buffered",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 4.660998526999947,
+          "total_cpu_seconds": 4.121915000000003,
+          "cpu_percent_one_core": 88.43416225349195,
+          "rss_samples": 221,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 282670.89700793324,
+          "peak_rss_tree_kib": 348744,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.02,
+            "log_read": 0.8099999999999999,
+            "log_analysis": 0.030000000000000027,
+            "video_read": 1.0300000000000005,
+            "telemetry_build": 1.9100000000000001,
+            "telemetry_compress": 0.09000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "baseline",
+          "round": "4-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.684955367000157,
+          "total_cpu_seconds": 3.148170000000002,
+          "cpu_percent_one_core": 85.4330564813017,
+          "rss_samples": 178,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 238411.45242118466,
+          "peak_rss_tree_kib": 327528,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.12
+          },
+          "variant": "python",
+          "round": "4-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 4.654584524000029,
+          "total_cpu_seconds": 4.109694000000006,
+          "cpu_percent_one_core": 88.29346591107216,
+          "rss_samples": 221,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 280600.96213473834,
+          "peak_rss_tree_kib": 348684,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.85,
+            "log_analysis": 0.030000000000000027,
+            "video_read": 1.0300000000000002,
+            "telemetry_build": 1.9300000000000002,
+            "telemetry_compress": 0.06,
+            "summary_save": 0.0
+          },
+          "variant": "baseline",
+          "round": "5-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.6014032680000128,
+          "total_cpu_seconds": 3.090764999999994,
+          "cpu_percent_one_core": 85.82113054271774,
+          "rss_samples": 172,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 277370.55100068526,
+          "peak_rss_tree_kib": 348924,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.83,
+            "video_read": 0.9900000000000004,
+            "telemetry_build": 0.95,
+            "telemetry_compress": 0.08000000000000024,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "buffered",
+          "round": "5-buffered",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.745241862000057,
+          "total_cpu_seconds": 3.2159869999999966,
+          "cpu_percent_one_core": 85.86860658132704,
+          "rss_samples": 182,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 238704.81184445045,
+          "peak_rss_tree_kib": 327532,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.19
+          },
+          "variant": "python",
+          "round": "5-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        }
+      ],
+      "summary": {
+        "python": {
+          "elapsed_seconds": 3.903985057,
+          "total_cpu_seconds": 3.3883480000000015,
+          "mean_rss_tree_kib": 238704.81184445045,
+          "peak_rss_tree_kib": 327584,
+          "output_bytes": 2106799
+        },
+        "baseline": {
+          "elapsed_seconds": 4.699541540999917,
+          "total_cpu_seconds": 4.130979999999997,
+          "mean_rss_tree_kib": 281861.1841632821,
+          "peak_rss_tree_kib": 348868,
+          "output_bytes": 2119165
+        },
+        "buffered": {
+          "elapsed_seconds": 3.7301061979999304,
+          "total_cpu_seconds": 3.170797,
+          "mean_rss_tree_kib": 276991.55102954747,
+          "peak_rss_tree_kib": 348864,
+          "output_bytes": 2119165
+        }
+      },
+      "input_hashes_unchanged": true
+    },
+    "allocation": {
+      "conditions": {
+        "kernel": "6.18.33.2-microsoft-standard-WSL2",
+        "python": "3.12.3",
+        "logical_cpus": 16,
+        "warmups_per_variant": 1,
+        "runs": 5,
+        "cache": "warm, no global drop_caches",
+        "input_filesystem": "caller path; same input for all variants",
+        "output_filesystem": "WSL ext4",
+        "compression_level": 9,
+        "diagnostics": false
+      },
+      "binary_sha256": {
+        "baseline": "d5232d19ddfcfbf2f51969cdddc3c58606d6fda6ff165a3234b82ea208051914",
+        "allocation": "3c4a16f3bd5f96c150af138df488877e23da7828d6c38c05d8a4eec32affac6f"
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 3.7432379209999453,
+          "total_cpu_seconds": 3.2021020000000004,
+          "cpu_percent_one_core": 85.54364076180899,
+          "rss_samples": 182,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 240630.7725479717,
+          "peak_rss_tree_kib": 327420,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.18
+          },
+          "variant": "python",
+          "round": "1-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.6479612690000067,
+          "total_cpu_seconds": 3.107136000000001,
+          "cpu_percent_one_core": 85.17458851342852,
+          "rss_samples": 174,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 277399.0347996085,
+          "peak_rss_tree_kib": 349008,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.85,
+            "log_analysis": 0.020000000000000018,
+            "video_read": 0.9900000000000003,
+            "telemetry_build": 0.9400000000000002,
+            "telemetry_compress": 0.0799999999999998,
+            "summary_save": 0.0
+          },
+          "variant": "baseline",
+          "round": "1-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.504527509000127,
+          "total_cpu_seconds": 3.0050900000000014,
+          "cpu_percent_one_core": 85.74879187800641,
+          "rss_samples": 167,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 286154.19481741084,
+          "peak_rss_tree_kib": 357876,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.73,
+            "video_read": 0.9600000000000004,
+            "telemetry_build": 0.95,
+            "telemetry_compress": 0.09000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "allocation",
+          "round": "1-allocation",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.664765983000052,
+          "total_cpu_seconds": 3.159268999999999,
+          "cpu_percent_one_core": 86.20656856822703,
+          "rss_samples": 178,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 238711.424366415,
+          "peak_rss_tree_kib": 327576,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.13
+          },
+          "variant": "python",
+          "round": "2-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.605809458000067,
+          "total_cpu_seconds": 3.0526109999999997,
+          "cpu_percent_one_core": 84.65813392405671,
+          "rss_samples": 170,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 287226.5791160486,
+          "peak_rss_tree_kib": 357492,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.73,
+            "log_analysis": 0.020000000000000018,
+            "video_read": 1.0300000000000005,
+            "video_verify": 0.010000000000000009,
+            "telemetry_build": 0.9299999999999999,
+            "telemetry_compress": 0.09000000000000002
+          },
+          "variant": "allocation",
+          "round": "2-allocation",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.7643533760001446,
+          "total_cpu_seconds": 3.214024,
+          "cpu_percent_one_core": 85.38050706108513,
+          "rss_samples": 179,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 277109.943485263,
+          "peak_rss_tree_kib": 348824,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.91,
+            "log_analysis": 0.019999999999999907,
+            "video_read": 1.0200000000000005,
+            "telemetry_build": 0.96,
+            "telemetry_compress": 0.07000000000000023,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "baseline",
+          "round": "2-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.5975134069999513,
+          "total_cpu_seconds": 3.0520960000000006,
+          "cpu_percent_one_core": 84.8390444928241,
+          "rss_samples": 171,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 290820.9033041006,
+          "peak_rss_tree_kib": 357632,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.7,
+            "video_read": 1.1000000000000005,
+            "telemetry_build": 0.95,
+            "telemetry_compress": 0.07,
+            "summary_save": 0.020000000000000018
+          },
+          "variant": "allocation",
+          "round": "3-allocation",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.9615391669999553,
+          "total_cpu_seconds": 3.418779999999999,
+          "cpu_percent_one_core": 86.29928560289905,
+          "rss_samples": 192,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 236760.26757025116,
+          "peak_rss_tree_kib": 327472,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.4
+          },
+          "variant": "python",
+          "round": "3-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.6511981700000433,
+          "total_cpu_seconds": 3.1486790000000067,
+          "cpu_percent_one_core": 86.23686947126097,
+          "rss_samples": 174,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 277131.5741957791,
+          "peak_rss_tree_kib": 352044,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.89,
+            "video_read": 1.0000000000000004,
+            "telemetry_build": 0.9199999999999999,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "baseline",
+          "round": "3-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.4032066329998543,
+          "total_cpu_seconds": 2.8901549999999965,
+          "cpu_percent_one_core": 84.92446423837586,
+          "rss_samples": 163,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 286922.303562597,
+          "peak_rss_tree_kib": 360044,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.7,
+            "video_read": 0.9600000000000004,
+            "telemetry_build": 0.8899999999999999,
+            "telemetry_compress": 0.07000000000000002,
+            "summary_save": 0.010000000000000009
+          },
+          "variant": "allocation",
+          "round": "4-allocation",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.6570022410001,
+          "total_cpu_seconds": 3.174913000000002,
+          "cpu_percent_one_core": 86.81736544771002,
+          "rss_samples": 175,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 277004.40455971827,
+          "peak_rss_tree_kib": 348640,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.86,
+            "video_read": 0.9700000000000003,
+            "telemetry_build": 1.04,
+            "telemetry_compress": 0.08000000000000024,
+            "summary_save": 0.0
+          },
+          "variant": "baseline",
+          "round": "4-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.778576206000025,
+          "total_cpu_seconds": 3.2140039999999956,
+          "cpu_percent_one_core": 85.05859945067293,
+          "rss_samples": 183,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239727.3529446672,
+          "peak_rss_tree_kib": 327524,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.2
+          },
+          "variant": "python",
+          "round": "4-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.8117953959999795,
+          "total_cpu_seconds": 3.2288660000000036,
+          "cpu_percent_one_core": 84.7072223075853,
+          "rss_samples": 180,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 279177.1916106338,
+          "peak_rss_tree_kib": 348868,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.83,
+            "video_read": 1.0400000000000003,
+            "telemetry_build": 1.0200000000000002,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "baseline",
+          "round": "5-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.5430442070000936,
+          "total_cpu_seconds": 3.0302270000000036,
+          "cpu_percent_one_core": 85.52608499812385,
+          "rss_samples": 169,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 288036.1581715397,
+          "peak_rss_tree_kib": 357688,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.75,
+            "video_read": 1.0100000000000005,
+            "telemetry_build": 0.95,
+            "telemetry_compress": 0.05999999999999979,
+            "summary_save": 0.020000000000000018
+          },
+          "variant": "allocation",
+          "round": "5-allocation",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.8367063889998008,
+          "total_cpu_seconds": 3.3068999999999935,
+          "cpu_percent_one_core": 86.19111458414405,
+          "rss_samples": 187,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239168.12792344327,
+          "peak_rss_tree_kib": 327488,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.28
+          },
+          "variant": "python",
+          "round": "5-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        }
+      ],
+      "summary": {
+        "python": {
+          "elapsed_seconds": 3.778576206000025,
+          "total_cpu_seconds": 3.2140039999999956,
+          "mean_rss_tree_kib": 239168.12792344327,
+          "peak_rss_tree_kib": 327488,
+          "output_bytes": 2106799
+        },
+        "baseline": {
+          "elapsed_seconds": 3.6570022410001,
+          "total_cpu_seconds": 3.174913000000002,
+          "mean_rss_tree_kib": 277131.5741957791,
+          "peak_rss_tree_kib": 348868,
+          "output_bytes": 2119165
+        },
+        "allocation": {
+          "elapsed_seconds": 3.5430442070000936,
+          "total_cpu_seconds": 3.0302270000000036,
+          "mean_rss_tree_kib": 287226.5791160486,
+          "peak_rss_tree_kib": 357688,
+          "output_bytes": 2119165
+        }
+      },
+      "input_hashes_unchanged": true
+    },
+    "candidate": {
+      "conditions": {
+        "kernel": "6.18.33.2-microsoft-standard-WSL2",
+        "python": "3.12.3",
+        "logical_cpus": 16,
+        "warmups_per_variant": 1,
+        "runs": 5,
+        "cache": "warm, no global drop_caches",
+        "input_filesystem": "caller path; same input for all variants",
+        "output_filesystem": "WSL ext4",
+        "compression_level": 9,
+        "diagnostics": false
+      },
+      "binary_sha256": {
+        "baseline": "4a9197e22300ce9b49d33f181601eabdd3cf1a76ee5ee59f1099ad3416b6d375",
+        "candidate": "a2cef938fd429e97adf5be1d7b072fee8d75111762981d8e9b8d9a25b77989c3"
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 3.63709457799996,
+          "total_cpu_seconds": 3.1276559999999995,
+          "cpu_percent_one_core": 85.99325458618948,
+          "rss_samples": 177,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239012.73700301402,
+          "peak_rss_tree_kib": 327424,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.11
+          },
+          "variant": "python",
+          "round": "1-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 4.623971698999867,
+          "total_cpu_seconds": 4.080770999999999,
+          "cpu_percent_one_core": 88.25250813889369,
+          "rss_samples": 221,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 281575.6313028625,
+          "peak_rss_tree_kib": 348812,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.85,
+            "video_read": 0.9700000000000003,
+            "telemetry_build": 1.92,
+            "telemetry_compress": 0.060000000000000234,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "baseline",
+          "round": "1-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.359247618000154,
+          "total_cpu_seconds": 2.841969000000001,
+          "cpu_percent_one_core": 84.60135492160883,
+          "rss_samples": 160,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 275978.5095596465,
+          "peak_rss_tree_kib": 348944,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.8,
+            "video_read": 0.8600000000000003,
+            "video_verify": 0.010000000000000009,
+            "telemetry_build": 0.9099999999999997,
+            "telemetry_compress": 0.05000000000000023,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "candidate",
+          "round": "1-candidate",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 4.27685213399991,
+          "total_cpu_seconds": 3.675856999999999,
+          "cpu_percent_one_core": 85.94772240961642,
+          "rss_samples": 207,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 237066.97160952468,
+          "peak_rss_tree_kib": 327504,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.65
+          },
+          "variant": "python",
+          "round": "2-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.9071045450000383,
+          "total_cpu_seconds": 3.301478000000002,
+          "cpu_percent_one_core": 84.49935142444389,
+          "rss_samples": 184,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 277572.67151830666,
+          "peak_rss_tree_kib": 348780,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.87,
+            "log_analysis": 0.020000000000000018,
+            "video_read": 1.0300000000000005,
+            "telemetry_build": 1.09,
+            "telemetry_compress": 0.0899999999999998,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "candidate",
+          "round": "2-candidate",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 4.782931447999999,
+          "total_cpu_seconds": 4.1963180000000015,
+          "cpu_percent_one_core": 87.7352737671937,
+          "rss_samples": 227,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 280673.76771657856,
+          "peak_rss_tree_kib": 348684,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.87,
+            "log_analysis": 0.020000000000000018,
+            "video_read": 1.0100000000000002,
+            "telemetry_build": 1.9700000000000002,
+            "telemetry_compress": 0.0799999999999998,
+            "summary_save": 0.0
+          },
+          "variant": "baseline",
+          "round": "2-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.5865965860000415,
+          "total_cpu_seconds": 3.011534999999996,
+          "cpu_percent_one_core": 83.96637112061204,
+          "rss_samples": 170,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 275349.3408592984,
+          "peak_rss_tree_kib": 348592,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.02,
+            "log_read": 0.83,
+            "log_analysis": 0.020000000000000018,
+            "video_read": 0.9500000000000004,
+            "telemetry_build": 0.9500000000000002,
+            "telemetry_compress": 0.05999999999999979,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "candidate",
+          "round": "3-candidate",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.775080508999963,
+          "total_cpu_seconds": 3.2404780000000004,
+          "cpu_percent_one_core": 85.83864615005042,
+          "rss_samples": 184,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 238222.82063473968,
+          "peak_rss_tree_kib": 327508,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.23
+          },
+          "variant": "python",
+          "round": "3-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 4.783673651000072,
+          "total_cpu_seconds": 4.205626000000003,
+          "cpu_percent_one_core": 87.91623983631864,
+          "rss_samples": 227,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 281009.4183759483,
+          "peak_rss_tree_kib": 348716,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.87,
+            "video_read": 1.0300000000000005,
+            "telemetry_build": 1.97,
+            "telemetry_compress": 0.07000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "baseline",
+          "round": "3-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.434676678999949,
+          "total_cpu_seconds": 2.9190089999999955,
+          "cpu_percent_one_core": 84.98642733527694,
+          "rss_samples": 166,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 277044.26100571913,
+          "peak_rss_tree_kib": 348660,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.82,
+            "video_read": 0.8800000000000004,
+            "telemetry_build": 0.9599999999999997,
+            "telemetry_compress": 0.07000000000000023,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "candidate",
+          "round": "4-candidate",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 4.7040906889999405,
+          "total_cpu_seconds": 4.1630769999999995,
+          "cpu_percent_one_core": 88.49908037986918,
+          "rss_samples": 225,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 281730.17304509034,
+          "peak_rss_tree_kib": 352728,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.9299999999999999,
+            "log_analysis": 0.010000000000000009,
+            "video_read": 0.9900000000000004,
+            "telemetry_build": 1.93,
+            "telemetry_compress": 0.07000000000000002,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "baseline",
+          "round": "4-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.6662666910001462,
+          "total_cpu_seconds": 3.160727000000003,
+          "cpu_percent_one_core": 86.21104972420233,
+          "rss_samples": 179,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 238233.93338024762,
+          "peak_rss_tree_kib": 327556,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.13
+          },
+          "variant": "python",
+          "round": "4-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 4.567725415000041,
+          "total_cpu_seconds": 4.029859000000002,
+          "cpu_percent_one_core": 88.22463335397244,
+          "rss_samples": 219,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 281945.73143454274,
+          "peak_rss_tree_kib": 351816,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.02,
+            "log_read": 0.82,
+            "log_analysis": 0.020000000000000018,
+            "video_read": 1.0000000000000002,
+            "telemetry_build": 1.88,
+            "telemetry_compress": 0.07000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "baseline",
+          "round": "5-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.3592696779999187,
+          "total_cpu_seconds": 2.841377999999999,
+          "cpu_percent_one_core": 84.58320624296324,
+          "rss_samples": 159,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 275317.468844377,
+          "peak_rss_tree_kib": 348744,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.79,
+            "log_analysis": 0.019999999999999907,
+            "video_read": 0.8400000000000005,
+            "telemetry_build": 0.9399999999999997,
+            "telemetry_compress": 0.06,
+            "summary_save": 0.0
+          },
+          "variant": "candidate",
+          "round": "5-candidate",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.9335656450000442,
+          "total_cpu_seconds": 3.370014999999997,
+          "cpu_percent_one_core": 85.6732873972403,
+          "rss_samples": 190,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 243181.08931206213,
+          "peak_rss_tree_kib": 327436,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.34
+          },
+          "variant": "python",
+          "round": "5-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        }
+      ],
+      "summary": {
+        "python": {
+          "elapsed_seconds": 3.775080508999963,
+          "total_cpu_seconds": 3.2404780000000004,
+          "mean_rss_tree_kib": 238233.93338024762,
+          "peak_rss_tree_kib": 327504,
+          "output_bytes": 2106799
+        },
+        "baseline": {
+          "elapsed_seconds": 4.7040906889999405,
+          "total_cpu_seconds": 4.1630769999999995,
+          "mean_rss_tree_kib": 281575.6313028625,
+          "peak_rss_tree_kib": 348812,
+          "output_bytes": 2119165
+        },
+        "candidate": {
+          "elapsed_seconds": 3.434676678999949,
+          "total_cpu_seconds": 2.9190089999999955,
+          "mean_rss_tree_kib": 275978.5095596465,
+          "peak_rss_tree_kib": 348744,
+          "output_bytes": 2119165
+        }
+      },
+      "input_hashes_unchanged": true
+    },
+    "folded": {
+      "conditions": {
+        "kernel": "6.18.33.2-microsoft-standard-WSL2",
+        "python": "3.12.3",
+        "logical_cpus": 16,
+        "warmups_per_variant": 1,
+        "runs": 5,
+        "cache": "warm, no global drop_caches",
+        "input_filesystem": "caller path; same input for all variants",
+        "output_filesystem": "WSL ext4",
+        "compression_level": 9,
+        "diagnostics": false
+      },
+      "binary_sha256": {
+        "baseline": "33c7935ca0080fa9071321e3fe513e847574f6f48586a6a1ebb3be8c5f1390f3",
+        "folded": "8576df02eaed8f652a5086af3cfccf0c35173049f9bb8458638529b7e91903c0"
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 4.032954398000129,
+          "total_cpu_seconds": 3.496031,
+          "cpu_percent_one_core": 86.68659883021786,
+          "rss_samples": 195,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 233483.43476670867,
+          "peak_rss_tree_kib": 327292,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.46
+          },
+          "variant": "python",
+          "round": "1-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.4170168090004154,
+          "total_cpu_seconds": 2.886329000000002,
+          "cpu_percent_one_core": 84.46926548319627,
+          "rss_samples": 162,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 275669.28821817535,
+          "peak_rss_tree_kib": 348584,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.02,
+            "log_read": 0.79,
+            "video_read": 0.8800000000000003,
+            "telemetry_build": 0.9299999999999999,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "baseline",
+          "round": "1-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.42450879099988,
+          "total_cpu_seconds": 2.8886879999999993,
+          "cpu_percent_one_core": 84.35335332155964,
+          "rss_samples": 163,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 261672.73458662874,
+          "peak_rss_tree_kib": 334156,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.87,
+            "video_read": 0.8700000000000003,
+            "telemetry_build": 0.8900000000000001,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "folded",
+          "round": "1-folded",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.649814392999815,
+          "total_cpu_seconds": 3.145459999999999,
+          "cpu_percent_one_core": 86.18136873022513,
+          "rss_samples": 178,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239538.81220517878,
+          "peak_rss_tree_kib": 327500,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.12
+          },
+          "variant": "python",
+          "round": "2-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.527273450999928,
+          "total_cpu_seconds": 2.9760269999999975,
+          "cpu_percent_one_core": 84.37188217308015,
+          "rss_samples": 168,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 264247.99800914596,
+          "peak_rss_tree_kib": 334448,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.87,
+            "video_read": 0.9400000000000003,
+            "telemetry_build": 0.9100000000000001,
+            "telemetry_compress": 0.09000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "folded",
+          "round": "2-folded",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.3784631210000953,
+          "total_cpu_seconds": 2.8625300000000014,
+          "cpu_percent_one_core": 84.72876267930471,
+          "rss_samples": 161,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 273653.45866208256,
+          "peak_rss_tree_kib": 348480,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.85,
+            "video_read": 0.8600000000000002,
+            "telemetry_build": 0.8900000000000001,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "baseline",
+          "round": "2-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.420223386000089,
+          "total_cpu_seconds": 2.8995309999999996,
+          "cpu_percent_one_core": 84.7760708224081,
+          "rss_samples": 163,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 262884.843707206,
+          "peak_rss_tree_kib": 334348,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.84,
+            "log_analysis": 0.030000000000000027,
+            "video_read": 0.8600000000000003,
+            "telemetry_build": 0.9000000000000001,
+            "telemetry_compress": 0.09000000000000002,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "folded",
+          "round": "3-folded",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.7331426430000647,
+          "total_cpu_seconds": 3.2000030000000033,
+          "cpu_percent_one_core": 85.71874439355432,
+          "rss_samples": 181,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239444.41206300887,
+          "peak_rss_tree_kib": 327336,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.18
+          },
+          "variant": "python",
+          "round": "3-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.436613949000275,
+          "total_cpu_seconds": 2.9063459999999948,
+          "cpu_percent_one_core": 84.57004607239817,
+          "rss_samples": 163,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 274519.1054005097,
+          "peak_rss_tree_kib": 348456,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.88,
+            "video_read": 0.8600000000000002,
+            "telemetry_build": 0.8999999999999999,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "baseline",
+          "round": "3-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.534291732999918,
+          "total_cpu_seconds": 2.9971330000000016,
+          "cpu_percent_one_core": 84.80151686448434,
+          "rss_samples": 168,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 259067.9881398993,
+          "peak_rss_tree_kib": 334448,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.9299999999999999,
+            "video_read": 0.8900000000000003,
+            "telemetry_build": 0.9200000000000002,
+            "telemetry_compress": 0.0799999999999998,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "folded",
+          "round": "4-folded",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.4143138079998607,
+          "total_cpu_seconds": 2.924276000000008,
+          "cpu_percent_one_core": 85.64754631364941,
+          "rss_samples": 163,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 273177.4552962606,
+          "peak_rss_tree_kib": 348540,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.87,
+            "video_read": 0.8700000000000002,
+            "telemetry_build": 0.9300000000000002,
+            "telemetry_compress": 0.0799999999999998,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "baseline",
+          "round": "4-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.727753180000036,
+          "total_cpu_seconds": 3.210134,
+          "cpu_percent_one_core": 86.11444602134225,
+          "rss_samples": 181,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239464.34847852195,
+          "peak_rss_tree_kib": 327340,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.2
+          },
+          "variant": "python",
+          "round": "4-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.3713968449997083,
+          "total_cpu_seconds": 2.8548749999999927,
+          "cpu_percent_one_core": 84.67929262715555,
+          "rss_samples": 161,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 275243.22624887753,
+          "peak_rss_tree_kib": 348512,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.83,
+            "log_analysis": 0.010000000000000009,
+            "video_read": 0.8600000000000005,
+            "telemetry_build": 0.8899999999999997,
+            "telemetry_compress": 0.060000000000000234,
+            "summary_save": 0.029999999999999805
+          },
+          "variant": "baseline",
+          "round": "5-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.477482651000173,
+          "total_cpu_seconds": 2.9452060000000024,
+          "cpu_percent_one_core": 84.69362166775784,
+          "rss_samples": 165,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 259429.78823561693,
+          "peak_rss_tree_kib": 338444,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.94,
+            "video_read": 0.8800000000000003,
+            "telemetry_build": 0.9100000000000001,
+            "telemetry_compress": 0.05,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "folded",
+          "round": "5-folded",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.7872309360000145,
+          "total_cpu_seconds": 3.2567919999999972,
+          "cpu_percent_one_core": 85.99401660569833,
+          "rss_samples": 184,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 235939.53417615686,
+          "peak_rss_tree_kib": 327316,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.23
+          },
+          "variant": "python",
+          "round": "5-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        }
+      ],
+      "summary": {
+        "python": {
+          "elapsed_seconds": 3.7331426430000647,
+          "total_cpu_seconds": 3.210134,
+          "mean_rss_tree_kib": 239444.41206300887,
+          "peak_rss_tree_kib": 327336,
+          "output_bytes": 2106799
+        },
+        "baseline": {
+          "elapsed_seconds": 3.4143138079998607,
+          "total_cpu_seconds": 2.886329000000002,
+          "mean_rss_tree_kib": 274519.1054005097,
+          "peak_rss_tree_kib": 348512,
+          "output_bytes": 2119165
+        },
+        "folded": {
+          "elapsed_seconds": 3.477482651000173,
+          "total_cpu_seconds": 2.9452060000000024,
+          "mean_rss_tree_kib": 261672.73458662874,
+          "peak_rss_tree_kib": 334448,
+          "output_bytes": 2119165
+        }
+      },
+      "input_hashes_unchanged": true
+    },
+    "ordered": {
+      "conditions": {
+        "kernel": "6.18.33.2-microsoft-standard-WSL2",
+        "python": "3.12.3",
+        "logical_cpus": 16,
+        "warmups_per_variant": 1,
+        "runs": 5,
+        "cache": "warm, no global drop_caches",
+        "input_filesystem": "caller path; same input for all variants",
+        "output_filesystem": "WSL ext4",
+        "compression_level": 9,
+        "diagnostics": false
+      },
+      "binary_sha256": {
+        "baseline": "33c7935ca0080fa9071321e3fe513e847574f6f48586a6a1ebb3be8c5f1390f3",
+        "ordered": "d2c515dc0c771734aeeba3f9fbeda6af74e60b569e230483edd563fb92719d37"
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 3.8537468999998055,
+          "total_cpu_seconds": 3.330609,
+          "cpu_percent_one_core": 86.42521386135057,
+          "rss_samples": 187,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239362.51497185457,
+          "peak_rss_tree_kib": 327360,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.3
+          },
+          "variant": "python",
+          "round": "1-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.3710970300003282,
+          "total_cpu_seconds": 2.853409,
+          "cpu_percent_one_core": 84.6433364156155,
+          "rss_samples": 161,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 275478.4005851197,
+          "peak_rss_tree_kib": 348548,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.83,
+            "video_read": 0.8700000000000006,
+            "telemetry_build": 0.8999999999999997,
+            "telemetry_compress": 0.07000000000000023,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "baseline",
+          "round": "1-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.368733648000216,
+          "total_cpu_seconds": 2.865950000000001,
+          "cpu_percent_one_core": 85.0749955165294,
+          "rss_samples": 160,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 237546.02683135777,
+          "peak_rss_tree_kib": 341988,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.48,
+            "video_read": 0.8600000000000004,
+            "log_analysis": 0.33000000000000007,
+            "telemetry_build": 0.95,
+            "telemetry_compress": 0.05999999999999979,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "ordered",
+          "round": "1-ordered",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 4.02671195999983,
+          "total_cpu_seconds": 3.4508550000000007,
+          "cpu_percent_one_core": 85.69907741799706,
+          "rss_samples": 194,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 240399.00158830508,
+          "peak_rss_tree_kib": 327368,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.42
+          },
+          "variant": "python",
+          "round": "2-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.4855508519999603,
+          "total_cpu_seconds": 2.971868999999998,
+          "cpu_percent_one_core": 85.26253456594333,
+          "rss_samples": 166,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 237916.88118558232,
+          "peak_rss_tree_kib": 338952,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.02,
+            "log_read": 0.47,
+            "video_read": 0.9000000000000005,
+            "log_analysis": 0.32000000000000006,
+            "telemetry_build": 1.02,
+            "telemetry_compress": 0.04999999999999979,
+            "summary_save": 0.020000000000000018
+          },
+          "variant": "ordered",
+          "round": "2-ordered",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 5.001496842000051,
+          "total_cpu_seconds": 4.006997999999998,
+          "cpu_percent_one_core": 80.1159758085069,
+          "rss_samples": 234,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 279850.6509325774,
+          "peak_rss_tree_kib": 348404,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 1.18,
+            "log_analysis": 0.030000000000000027,
+            "video_read": 1.1600000000000006,
+            "telemetry_build": 1.28,
+            "telemetry_compress": 0.14,
+            "summary_save": 0.029999999999999805
+          },
+          "variant": "baseline",
+          "round": "2-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 6.049127176000184,
+          "total_cpu_seconds": 4.821398000000005,
+          "cpu_percent_one_core": 79.70402770053877,
+          "rss_samples": 282,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 233302.16483867983,
+          "peak_rss_tree_kib": 345984,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.96,
+            "video_read": 1.3300000000000007,
+            "log_analysis": 0.7699999999999998,
+            "telemetry_build": 1.4700000000000002,
+            "telemetry_compress": 0.12999999999999978,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "ordered",
+          "round": "3-ordered",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 6.316038363000189,
+          "total_cpu_seconds": 5.433376999999996,
+          "cpu_percent_one_core": 86.02507913550862,
+          "rss_samples": 303,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 238813.84509458172,
+          "peak_rss_tree_kib": 327380,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 5.42
+          },
+          "variant": "python",
+          "round": "3-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 4.413716553000086,
+          "total_cpu_seconds": 3.7263360000000008,
+          "cpu_percent_one_core": 84.42626424361438,
+          "rss_samples": 207,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 266798.95676467847,
+          "peak_rss_tree_kib": 348524,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 1.27,
+            "log_analysis": 0.010000000000000009,
+            "video_read": 1.0600000000000005,
+            "telemetry_build": 1.1099999999999999,
+            "telemetry_compress": 0.09000000000000023,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "baseline",
+          "round": "3-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 4.595093236000139,
+          "total_cpu_seconds": 3.7762590000000067,
+          "cpu_percent_one_core": 82.18024762620709,
+          "rss_samples": 215,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 235640.46169403012,
+          "peak_rss_tree_kib": 343436,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.66,
+            "video_read": 1.1300000000000003,
+            "log_analysis": 0.5,
+            "telemetry_build": 1.2000000000000002,
+            "telemetry_compress": 0.09,
+            "summary_save": 0.0
+          },
+          "variant": "ordered",
+          "round": "4-ordered",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.587702953000189,
+          "total_cpu_seconds": 3.0498679999999982,
+          "cpu_percent_one_core": 85.00893301240477,
+          "rss_samples": 170,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 266559.1430022142,
+          "peak_rss_tree_kib": 348668,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 1.03,
+            "video_read": 0.8500000000000003,
+            "telemetry_build": 0.8999999999999999,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "baseline",
+          "round": "4-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.8551398969998445,
+          "total_cpu_seconds": 3.3198540000000083,
+          "cpu_percent_one_core": 86.11500720333372,
+          "rss_samples": 188,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239294.61968340375,
+          "peak_rss_tree_kib": 327372,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.3
+          },
+          "variant": "python",
+          "round": "4-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.8337802920000286,
+          "total_cpu_seconds": 3.2914609999999946,
+          "cpu_percent_one_core": 85.85418958066808,
+          "rss_samples": 182,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 271298.01307632076,
+          "peak_rss_tree_kib": 348768,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.02,
+            "log_read": 1.0,
+            "video_read": 0.9300000000000005,
+            "telemetry_build": 1.0099999999999998,
+            "telemetry_compress": 0.14,
+            "summary_save": 0.03000000000000025
+          },
+          "variant": "baseline",
+          "round": "5-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.553013947999716,
+          "total_cpu_seconds": 3.0217410000000076,
+          "cpu_percent_one_core": 85.04725971315689,
+          "rss_samples": 169,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 234130.38744699434,
+          "peak_rss_tree_kib": 344540,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.54,
+            "video_read": 0.9100000000000003,
+            "log_analysis": 0.38,
+            "telemetry_build": 0.9300000000000002,
+            "telemetry_compress": 0.05999999999999979,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "ordered",
+          "round": "5-ordered",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.714962724000088,
+          "total_cpu_seconds": 3.1907489999999967,
+          "cpu_percent_one_core": 85.88912559974104,
+          "rss_samples": 180,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239065.33078892546,
+          "peak_rss_tree_kib": 327444,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.17
+          },
+          "variant": "python",
+          "round": "5-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        }
+      ],
+      "summary": {
+        "python": {
+          "elapsed_seconds": 3.8551398969998445,
+          "total_cpu_seconds": 3.330609,
+          "mean_rss_tree_kib": 239294.61968340375,
+          "peak_rss_tree_kib": 327372,
+          "output_bytes": 2106799
+        },
+        "baseline": {
+          "elapsed_seconds": 3.8337802920000286,
+          "total_cpu_seconds": 3.2914609999999946,
+          "mean_rss_tree_kib": 271298.01307632076,
+          "peak_rss_tree_kib": 348548,
+          "output_bytes": 2119165
+        },
+        "ordered": {
+          "elapsed_seconds": 3.553013947999716,
+          "total_cpu_seconds": 3.0217410000000076,
+          "mean_rss_tree_kib": 235640.46169403012,
+          "peak_rss_tree_kib": 343436,
+          "output_bytes": 2119165
+        }
+      },
+      "input_hashes_unchanged": true
+    },
+    "zlib": {
+      "conditions": {
+        "kernel": "6.18.33.2-microsoft-standard-WSL2",
+        "python": "3.12.3",
+        "logical_cpus": 16,
+        "warmups_per_variant": 1,
+        "runs": 5,
+        "cache": "warm, no global drop_caches",
+        "input_filesystem": "caller path; same input for all variants",
+        "output_filesystem": "WSL ext4",
+        "compression_level": 9,
+        "diagnostics": false
+      },
+      "binary_sha256": {
+        "baseline": "d2c515dc0c771734aeeba3f9fbeda6af74e60b569e230483edd563fb92719d37",
+        "zlib": "085dad9cd1c74da0f540cc811f059feed78344d557119caa8e3926f13dcfc8e5"
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 3.839209425000263,
+          "total_cpu_seconds": 3.2668519999999996,
+          "cpu_percent_one_core": 85.09178943786782,
+          "rss_samples": 184,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 238574.08608219516,
+          "peak_rss_tree_kib": 327412,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.24
+          },
+          "variant": "python",
+          "round": "1-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.4138529410001865,
+          "total_cpu_seconds": 2.8744180000000004,
+          "cpu_percent_one_core": 84.19864738396895,
+          "rss_samples": 162,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 235587.01782155022,
+          "peak_rss_tree_kib": 339252,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.47,
+            "video_read": 0.9200000000000005,
+            "log_analysis": 0.33999999999999986,
+            "telemetry_build": 0.8999999999999999,
+            "telemetry_compress": 0.07000000000000023,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "baseline",
+          "round": "1-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.76223029699986,
+          "total_cpu_seconds": 3.0614090000000016,
+          "cpu_percent_one_core": 81.37218506908738,
+          "rss_samples": 178,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 236856.2970550203,
+          "peak_rss_tree_kib": 339368,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.5,
+            "video_read": 0.9900000000000004,
+            "log_analysis": 0.3699999999999999,
+            "telemetry_build": 0.9600000000000002,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "zlib",
+          "round": "1-zlib",
+          "output_bytes": 2104449,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1901602,
+            "telemetry.json.gz": 192816,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.9823379249996833,
+          "total_cpu_seconds": 3.3848439999999984,
+          "cpu_percent_one_core": 84.99640321207215,
+          "rss_samples": 193,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 232667.39631605946,
+          "peak_rss_tree_kib": 327400,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.36
+          },
+          "variant": "python",
+          "round": "2-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.3672308679997514,
+          "total_cpu_seconds": 2.8653390000000014,
+          "cpu_percent_one_core": 85.09481863066043,
+          "rss_samples": 161,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 235075.15979751147,
+          "peak_rss_tree_kib": 335944,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.48,
+            "video_read": 0.8600000000000003,
+            "log_analysis": 0.33000000000000007,
+            "telemetry_build": 0.9299999999999997,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "zlib",
+          "round": "2-zlib",
+          "output_bytes": 2104449,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1901602,
+            "telemetry.json.gz": 192816,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.4122362000002795,
+          "total_cpu_seconds": 2.9232049999999985,
+          "cpu_percent_one_core": 85.66830748703033,
+          "rss_samples": 164,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 235406.2627117985,
+          "peak_rss_tree_kib": 345680,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.51,
+            "video_read": 0.8800000000000003,
+            "log_analysis": 0.33999999999999986,
+            "telemetry_build": 0.94,
+            "telemetry_compress": 0.060000000000000234,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "baseline",
+          "round": "2-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.392237884000224,
+          "total_cpu_seconds": 2.9082619999999997,
+          "cpu_percent_one_core": 85.73284361091133,
+          "rss_samples": 163,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 236774.3798810109,
+          "peak_rss_tree_kib": 339836,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.02,
+            "log_read": 0.47,
+            "video_read": 0.8800000000000003,
+            "log_analysis": 0.3400000000000001,
+            "telemetry_build": 0.9599999999999997,
+            "telemetry_compress": 0.09000000000000022,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "zlib",
+          "round": "3-zlib",
+          "output_bytes": 2104449,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1901602,
+            "telemetry.json.gz": 192816,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.7263629620001666,
+          "total_cpu_seconds": 3.204508000000005,
+          "cpu_percent_one_core": 85.9955949723145,
+          "rss_samples": 181,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239831.8688942515,
+          "peak_rss_tree_kib": 327444,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.19
+          },
+          "variant": "python",
+          "round": "3-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.3813064370001484,
+          "total_cpu_seconds": 2.883863999999999,
+          "cpu_percent_one_core": 85.28845444006922,
+          "rss_samples": 162,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 233850.0030576464,
+          "peak_rss_tree_kib": 339176,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.5,
+            "video_read": 0.8800000000000004,
+            "log_analysis": 0.33000000000000007,
+            "telemetry_build": 0.9099999999999997,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "baseline",
+          "round": "3-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.499599585999931,
+          "total_cpu_seconds": 2.894537999999999,
+          "cpu_percent_one_core": 82.71054813183578,
+          "rss_samples": 167,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 237279.68804127158,
+          "peak_rss_tree_kib": 339024,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.49,
+            "video_read": 0.8900000000000005,
+            "log_analysis": 0.32000000000000006,
+            "telemetry_build": 0.9399999999999997,
+            "telemetry_compress": 0.07000000000000002,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "zlib",
+          "round": "4-zlib",
+          "output_bytes": 2104449,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1901602,
+            "telemetry.json.gz": 192816,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.502833263999946,
+          "total_cpu_seconds": 2.951813999999997,
+          "cpu_percent_one_core": 84.2693265002648,
+          "rss_samples": 166,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 234946.7450082101,
+          "peak_rss_tree_kib": 339316,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.5,
+            "video_read": 0.8800000000000003,
+            "log_analysis": 0.33999999999999986,
+            "telemetry_build": 0.9300000000000002,
+            "telemetry_compress": 0.10999999999999979,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "baseline",
+          "round": "4-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.7358865940000214,
+          "total_cpu_seconds": 3.2100010000000054,
+          "cpu_percent_one_core": 85.92340584308398,
+          "rss_samples": 182,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 237311.81410886417,
+          "peak_rss_tree_kib": 327304,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.18
+          },
+          "variant": "python",
+          "round": "4-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.3431269239999892,
+          "total_cpu_seconds": 2.833959000000002,
+          "cpu_percent_one_core": 84.7697100476587,
+          "rss_samples": 159,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 235578.95803907057,
+          "peak_rss_tree_kib": 339120,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.48,
+            "video_read": 0.8700000000000004,
+            "log_analysis": 0.32000000000000006,
+            "telemetry_build": 0.9099999999999999,
+            "telemetry_compress": 0.06999999999999978,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "baseline",
+          "round": "5-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.5319602810000106,
+          "total_cpu_seconds": 2.9919809999999973,
+          "cpu_percent_one_core": 84.71162646123733,
+          "rss_samples": 168,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 236499.73843593884,
+          "peak_rss_tree_kib": 344388,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.5,
+            "video_read": 0.8900000000000003,
+            "log_analysis": 0.3599999999999999,
+            "telemetry_build": 1.0,
+            "telemetry_compress": 0.06,
+            "summary_save": 0.020000000000000018
+          },
+          "variant": "zlib",
+          "round": "5-zlib",
+          "output_bytes": 2104449,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1901602,
+            "telemetry.json.gz": 192816,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.8378518319996147,
+          "total_cpu_seconds": 3.3162200000000013,
+          "cpu_percent_one_core": 86.40823421971893,
+          "rss_samples": 186,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 238847.0041339996,
+          "peak_rss_tree_kib": 327448,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.3
+          },
+          "variant": "python",
+          "round": "5-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        }
+      ],
+      "summary": {
+        "python": {
+          "elapsed_seconds": 3.8378518319996147,
+          "total_cpu_seconds": 3.2668519999999996,
+          "mean_rss_tree_kib": 238574.08608219516,
+          "peak_rss_tree_kib": 327412,
+          "output_bytes": 2106799
+        },
+        "baseline": {
+          "elapsed_seconds": 3.4122362000002795,
+          "total_cpu_seconds": 2.883863999999999,
+          "mean_rss_tree_kib": 235406.2627117985,
+          "peak_rss_tree_kib": 339252,
+          "output_bytes": 2119165
+        },
+        "zlib": {
+          "elapsed_seconds": 3.499599585999931,
+          "total_cpu_seconds": 2.9082619999999997,
+          "mean_rss_tree_kib": 236774.3798810109,
+          "peak_rss_tree_kib": 339368,
+          "output_bytes": 2104449
+        }
+      },
+      "input_hashes_unchanged": true
+    },
+    "build": {
+      "conditions": {
+        "kernel": "6.18.33.2-microsoft-standard-WSL2",
+        "python": "3.12.3",
+        "logical_cpus": 16,
+        "warmups_per_variant": 1,
+        "runs": 5,
+        "cache": "warm, no global drop_caches",
+        "input_filesystem": "caller path; same input for all variants",
+        "output_filesystem": "WSL ext4",
+        "compression_level": 9,
+        "diagnostics": false
+      },
+      "binary_sha256": {
+        "baseline": "d2c515dc0c771734aeeba3f9fbeda6af74e60b569e230483edd563fb92719d37",
+        "cgu1": "d4dfac438d321806a1c9468460dd123f7c31995aa8c18f5eecdfde76e9f29297",
+        "nolto": "0a087765894445040a85a8b999ad5ef9ca7e216fa408dc243ab21fb5080bc9ba"
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 3.8248925859998053,
+          "total_cpu_seconds": 3.2778669999999988,
+          "cpu_percent_one_core": 85.69827586787467,
+          "rss_samples": 185,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 238016.55472834985,
+          "peak_rss_tree_kib": 327408,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.26
+          },
+          "variant": "python",
+          "round": "1-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.494513439000002,
+          "total_cpu_seconds": 2.9544349999999993,
+          "cpu_percent_one_core": 84.54496030913668,
+          "rss_samples": 166,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 234971.8963678398,
+          "peak_rss_tree_kib": 341668,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.51,
+            "video_read": 0.9300000000000004,
+            "log_analysis": 0.32999999999999996,
+            "telemetry_build": 0.9300000000000002,
+            "telemetry_compress": 0.060000000000000026,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "baseline",
+          "round": "1-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.486021275999974,
+          "total_cpu_seconds": 2.9297519999999997,
+          "cpu_percent_one_core": 84.04286055768816,
+          "rss_samples": 166,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 234750.85858928115,
+          "peak_rss_tree_kib": 338376,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.52,
+            "video_read": 0.9000000000000004,
+            "log_analysis": 0.33999999999999986,
+            "telemetry_build": 0.9199999999999999,
+            "telemetry_compress": 0.07000000000000002,
+            "summary_save": 0.020000000000000018
+          },
+          "variant": "cgu1",
+          "round": "1-cgu1",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.7034421560001647,
+          "total_cpu_seconds": 3.4906910000000027,
+          "cpu_percent_one_core": 94.25531311038648,
+          "rss_samples": 175,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 234003.51341210358,
+          "peak_rss_tree_kib": 339548,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.5599999999999999,
+            "video_read": 1.2300000000000002,
+            "log_analysis": 0.42999999999999994,
+            "telemetry_build": 0.99,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "nolto",
+          "round": "1-nolto",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.7757882680002695,
+          "total_cpu_seconds": 3.2483660000000008,
+          "cpu_percent_one_core": 86.0314659995593,
+          "rss_samples": 183,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 238125.88695927555,
+          "peak_rss_tree_kib": 327340,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.23
+          },
+          "variant": "python",
+          "round": "2-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.860689705999903,
+          "total_cpu_seconds": 3.617306000000001,
+          "cpu_percent_one_core": 93.69584907013741,
+          "rss_samples": 183,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 233987.9680469421,
+          "peak_rss_tree_kib": 339080,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.6,
+            "video_read": 1.2900000000000005,
+            "log_analysis": 0.47,
+            "telemetry_build": 0.99,
+            "telemetry_compress": 0.08000000000000003,
+            "summary_save": 0.020000000000000018
+          },
+          "variant": "nolto",
+          "round": "2-nolto",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.810976742999628,
+          "total_cpu_seconds": 3.2132760000000022,
+          "cpu_percent_one_core": 84.31633716743247,
+          "rss_samples": 180,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 235317.8023974276,
+          "peak_rss_tree_kib": 338652,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.02,
+            "log_read": 0.48000000000000004,
+            "video_read": 1.0100000000000007,
+            "log_analysis": 0.45999999999999996,
+            "telemetry_build": 0.99,
+            "telemetry_compress": 0.10000000000000002,
+            "summary_save": 0.020000000000000018
+          },
+          "variant": "cgu1",
+          "round": "2-cgu1",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.704798235999988,
+          "total_cpu_seconds": 3.152344999999997,
+          "cpu_percent_one_core": 85.08816942764295,
+          "rss_samples": 176,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 234738.65967934823,
+          "peak_rss_tree_kib": 339396,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.53,
+            "video_read": 0.9300000000000004,
+            "log_analysis": 0.41000000000000003,
+            "telemetry_build": 0.99,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "baseline",
+          "round": "2-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.5136729079999895,
+          "total_cpu_seconds": 2.9936810000000005,
+          "cpu_percent_one_core": 85.20090168848492,
+          "rss_samples": 166,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 233804.177313569,
+          "peak_rss_tree_kib": 338676,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.51,
+            "video_read": 0.9400000000000004,
+            "log_analysis": 0.32000000000000006,
+            "telemetry_build": 0.96,
+            "telemetry_compress": 0.09000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "cgu1",
+          "round": "3-cgu1",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.7156295929999033,
+          "total_cpu_seconds": 3.4946529999999996,
+          "cpu_percent_one_core": 94.05278197223386,
+          "rss_samples": 176,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 234211.28562174118,
+          "peak_rss_tree_kib": 341404,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.58,
+            "video_read": 1.2200000000000004,
+            "log_analysis": 0.3800000000000001,
+            "telemetry_build": 1.0399999999999998,
+            "telemetry_compress": 0.09000000000000023,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "nolto",
+          "round": "3-nolto",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.826252280999597,
+          "total_cpu_seconds": 3.2869590000000013,
+          "cpu_percent_one_core": 85.9054437241993,
+          "rss_samples": 185,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239122.81752810956,
+          "peak_rss_tree_kib": 327432,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.26
+          },
+          "variant": "python",
+          "round": "3-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.541109857000265,
+          "total_cpu_seconds": 3.003414000000003,
+          "cpu_percent_one_core": 84.81561209016674,
+          "rss_samples": 168,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 235102.6560807783,
+          "peak_rss_tree_kib": 341144,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.51,
+            "video_read": 0.9200000000000005,
+            "log_analysis": 0.3599999999999999,
+            "telemetry_build": 0.94,
+            "telemetry_compress": 0.07000000000000023,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "baseline",
+          "round": "3-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.4706691490000594,
+          "total_cpu_seconds": 2.902685,
+          "cpu_percent_one_core": 83.63473657050537,
+          "rss_samples": 165,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 234360.03111787676,
+          "peak_rss_tree_kib": 345804,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.02,
+            "log_read": 0.49,
+            "video_read": 0.9000000000000004,
+            "log_analysis": 0.3400000000000001,
+            "telemetry_build": 0.9099999999999999,
+            "telemetry_compress": 0.05999999999999979,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "cgu1",
+          "round": "4-cgu1",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.448678425000253,
+          "total_cpu_seconds": 2.9098919999999975,
+          "cpu_percent_one_core": 84.37701755273933,
+          "rss_samples": 164,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 234967.29329075426,
+          "peak_rss_tree_kib": 339588,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.5,
+            "video_read": 0.8800000000000003,
+            "log_analysis": 0.33999999999999986,
+            "telemetry_build": 0.9099999999999999,
+            "telemetry_compress": 0.06,
+            "summary_save": 0.020000000000000018
+          },
+          "variant": "baseline",
+          "round": "4-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.7453430289997414,
+          "total_cpu_seconds": 3.2116970000000045,
+          "cpu_percent_one_core": 85.75174490379706,
+          "rss_samples": 182,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 238875.7203162989,
+          "peak_rss_tree_kib": 327392,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.19
+          },
+          "variant": "python",
+          "round": "4-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.5854994599999372,
+          "total_cpu_seconds": 3.371726000000006,
+          "cpu_percent_one_core": 94.037833155888,
+          "rss_samples": 170,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 233548.13424883722,
+          "peak_rss_tree_kib": 339684,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.55,
+            "video_read": 1.2000000000000002,
+            "log_analysis": 0.3900000000000001,
+            "telemetry_build": 0.9299999999999997,
+            "telemetry_compress": 0.09000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "nolto",
+          "round": "4-nolto",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.7925160650002,
+          "total_cpu_seconds": 3.250178,
+          "cpu_percent_one_core": 85.69978199946871,
+          "rss_samples": 183,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239534.26101621104,
+          "peak_rss_tree_kib": 327436,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 3.22
+          },
+          "variant": "python",
+          "round": "5-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.4841892340000413,
+          "total_cpu_seconds": 2.9511509999999994,
+          "cpu_percent_one_core": 84.70122607582698,
+          "rss_samples": 165,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 235447.65958148002,
+          "peak_rss_tree_kib": 345552,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.5,
+            "video_read": 0.9000000000000004,
+            "log_analysis": 0.32999999999999985,
+            "telemetry_build": 0.97,
+            "telemetry_compress": 0.049999999999999996,
+            "summary_save": 0.020000000000000018
+          },
+          "variant": "baseline",
+          "round": "5-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.406183503000193,
+          "total_cpu_seconds": 2.869816999999996,
+          "cpu_percent_one_core": 84.2531530515675,
+          "rss_samples": 161,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 234626.45127789912,
+          "peak_rss_tree_kib": 338696,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.48,
+            "video_read": 0.8700000000000003,
+            "log_analysis": 0.3500000000000001,
+            "telemetry_build": 0.9099999999999997,
+            "telemetry_compress": 0.08000000000000003,
+            "summary_save": 0.0
+          },
+          "variant": "cgu1",
+          "round": "5-cgu1",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.632071716000155,
+          "total_cpu_seconds": 3.417027000000001,
+          "cpu_percent_one_core": 94.07928221645983,
+          "rss_samples": 172,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 231731.99130906188,
+          "peak_rss_tree_kib": 339532,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.58,
+            "video_read": 1.2000000000000004,
+            "log_analysis": 0.3900000000000001,
+            "telemetry_build": 0.9499999999999997,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "nolto",
+          "round": "5-nolto",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        }
+      ],
+      "summary": {
+        "python": {
+          "elapsed_seconds": 3.7925160650002,
+          "total_cpu_seconds": 3.250178,
+          "mean_rss_tree_kib": 238875.7203162989,
+          "peak_rss_tree_kib": 327408,
+          "output_bytes": 2106799
+        },
+        "baseline": {
+          "elapsed_seconds": 3.494513439000002,
+          "total_cpu_seconds": 2.9544349999999993,
+          "mean_rss_tree_kib": 234971.8963678398,
+          "peak_rss_tree_kib": 341144,
+          "output_bytes": 2119165
+        },
+        "cgu1": {
+          "elapsed_seconds": 3.486021275999974,
+          "total_cpu_seconds": 2.9297519999999997,
+          "mean_rss_tree_kib": 234626.45127789912,
+          "peak_rss_tree_kib": 338676,
+          "output_bytes": 2119165
+        },
+        "nolto": {
+          "elapsed_seconds": 3.7034421560001647,
+          "total_cpu_seconds": 3.4906910000000027,
+          "mean_rss_tree_kib": 233987.9680469421,
+          "peak_rss_tree_kib": 339548,
+          "output_bytes": 2119165
+        }
+      },
+      "input_hashes_unchanged": true
+    },
+    "final-wide": {
+      "conditions": {
+        "kernel": "6.18.33.2-microsoft-standard-WSL2",
+        "python": "3.12.3",
+        "logical_cpus": 16,
+        "warmups_per_variant": 1,
+        "runs": 5,
+        "cache": "warm, no global drop_caches",
+        "input_filesystem": "caller path; same input for all variants",
+        "output_filesystem": "WSL ext4",
+        "compression_level": 9,
+        "diagnostics": false
+      },
+      "binary_sha256": {
+        "baseline": "4a9197e22300ce9b49d33f181601eabdd3cf1a76ee5ee59f1099ad3416b6d375",
+        "final": "d2c515dc0c771734aeeba3f9fbeda6af74e60b569e230483edd563fb92719d37"
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 3.7707462480002505,
+          "total_cpu_seconds": 3.2098349999999995,
+          "cpu_percent_one_core": 85.12466204010093,
+          "rss_samples": 181,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239869.41410206092,
+          "peak_rss_tree_kib": 327340,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.07,
+            "log_prepare": 0.01999999999999999,
+            "log_decompress": 0.07,
+            "log_read": 0.92,
+            "log_analysis": 0.25,
+            "video_read": 0.010000000000000009,
+            "video_verify": 0.2899999999999998,
+            "telemetry_build": 0.15000000000000013,
+            "telemetry_encode": 0.020000000000000018,
+            "telemetry_compress": 0.06000000000000005,
+            "replay_compact": 0.6199999999999999,
+            "replay_encode": 0.16000000000000014,
+            "replay_compress": 0.45999999999999996,
+            "summary_save": 0.08999999999999986
+          },
+          "variant": "python",
+          "round": "1-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 4.750616213000285,
+          "total_cpu_seconds": 4.1266739999999995,
+          "cpu_percent_one_core": 86.86607831437028,
+          "rss_samples": 224,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 280402.0085416436,
+          "peak_rss_tree_kib": 353332,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.89,
+            "video_read": 1.0200000000000002,
+            "telemetry_build": 1.9100000000000001,
+            "telemetry_compress": 0.07000000000000002,
+            "summary_save": 0.020000000000000018
+          },
+          "variant": "baseline",
+          "round": "1-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.494704949000152,
+          "total_cpu_seconds": 2.9162010000000005,
+          "cpu_percent_one_core": 83.4462720761115,
+          "rss_samples": 166,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 232700.13913661896,
+          "peak_rss_tree_kib": 339724,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.02,
+            "log_read": 0.49,
+            "video_read": 0.9100000000000004,
+            "log_analysis": 0.32999999999999985,
+            "telemetry_build": 0.9099999999999999,
+            "telemetry_compress": 0.060000000000000234,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "final",
+          "round": "1-final",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.898546801000066,
+          "total_cpu_seconds": 3.3331850000000003,
+          "cpu_percent_one_core": 85.49813995166001,
+          "rss_samples": 189,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 238842.84274812348,
+          "peak_rss_tree_kib": 327384,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.07,
+            "log_prepare": 0.03,
+            "log_decompress": 0.06,
+            "log_read": 0.9600000000000001,
+            "log_analysis": 0.24,
+            "video_read": 0.029999999999999805,
+            "video_verify": 0.31000000000000005,
+            "telemetry_build": 0.14000000000000012,
+            "telemetry_encode": 0.020000000000000018,
+            "telemetry_compress": 0.07999999999999985,
+            "replay_compact": 0.6400000000000001,
+            "replay_encode": 0.16999999999999993,
+            "replay_compress": 0.45999999999999996,
+            "summary_save": 0.10999999999999988
+          },
+          "variant": "python",
+          "round": "2-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 3.6355896149998443,
+          "total_cpu_seconds": 3.1092629999999977,
+          "cpu_percent_one_core": 85.52293655949754,
+          "rss_samples": 172,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 233820.81495938453,
+          "peak_rss_tree_kib": 345828,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.57,
+            "video_read": 0.9000000000000005,
+            "log_analysis": 0.33999999999999997,
+            "telemetry_build": 0.9900000000000002,
+            "telemetry_compress": 0.11000000000000001,
+            "summary_save": 0.020000000000000018
+          },
+          "variant": "final",
+          "round": "2-final",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 4.719734589999916,
+          "total_cpu_seconds": 4.153491999999998,
+          "cpu_percent_one_core": 88.00266033603538,
+          "rss_samples": 224,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 279363.09712508175,
+          "peak_rss_tree_kib": 348944,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.9,
+            "video_read": 1.0000000000000004,
+            "telemetry_build": 1.9,
+            "telemetry_compress": 0.07000000000000002,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "baseline",
+          "round": "2-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.4186845140002333,
+          "total_cpu_seconds": 2.910319000000001,
+          "cpu_percent_one_core": 85.12979153477403,
+          "rss_samples": 162,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 235960.8380966553,
+          "peak_rss_tree_kib": 341944,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.48,
+            "video_read": 0.8800000000000003,
+            "log_analysis": 0.34999999999999987,
+            "telemetry_build": 0.9300000000000002,
+            "telemetry_compress": 0.08,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "final",
+          "round": "3-final",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 4.0397797669998,
+          "total_cpu_seconds": 3.4708210000000017,
+          "cpu_percent_one_core": 85.91609444535777,
+          "rss_samples": 196,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 235554.84752495872,
+          "peak_rss_tree_kib": 327404,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.07,
+            "log_prepare": 0.01999999999999999,
+            "log_decompress": 0.08000000000000002,
+            "log_read": 1.0699999999999998,
+            "log_analysis": 0.26,
+            "video_read": 0.010000000000000009,
+            "video_verify": 0.29000000000000004,
+            "telemetry_build": 0.1499999999999999,
+            "telemetry_encode": 0.050000000000000044,
+            "telemetry_compress": 0.04999999999999982,
+            "replay_compact": 0.6700000000000004,
+            "replay_encode": 0.16999999999999993,
+            "replay_compress": 0.45999999999999996,
+            "summary_save": 0.10999999999999988
+          },
+          "variant": "python",
+          "round": "3-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 4.757105021999905,
+          "total_cpu_seconds": 4.167761000000001,
+          "cpu_percent_one_core": 87.61128839337373,
+          "rss_samples": 226,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 282594.2445946333,
+          "peak_rss_tree_kib": 348864,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.84,
+            "log_analysis": 0.030000000000000027,
+            "video_read": 1.0100000000000002,
+            "telemetry_build": 1.9600000000000002,
+            "telemetry_compress": 0.0799999999999998,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "baseline",
+          "round": "3-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.5452876089998426,
+          "total_cpu_seconds": 3.0116879999999977,
+          "cpu_percent_one_core": 84.94904594918384,
+          "rss_samples": 169,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 235807.5952707396,
+          "peak_rss_tree_kib": 346312,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.51,
+            "video_read": 0.9000000000000002,
+            "log_analysis": 0.38,
+            "telemetry_build": 0.9600000000000002,
+            "telemetry_compress": 0.06999999999999978,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "final",
+          "round": "4-final",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 4.757603539999764,
+          "total_cpu_seconds": 4.193891000000006,
+          "cpu_percent_one_core": 88.15133427448674,
+          "rss_samples": 226,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 281899.3686519394,
+          "peak_rss_tree_kib": 348788,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.85,
+            "log_analysis": 0.020000000000000018,
+            "video_read": 0.9700000000000003,
+            "telemetry_build": 2.0,
+            "telemetry_compress": 0.07000000000000002,
+            "summary_save": 0.020000000000000018
+          },
+          "variant": "baseline",
+          "round": "4-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.8208341119998295,
+          "total_cpu_seconds": 3.2908769999999983,
+          "cpu_percent_one_core": 86.12980578414981,
+          "rss_samples": 185,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 237279.22702267396,
+          "peak_rss_tree_kib": 327448,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.09,
+            "log_prepare": 0.010000000000000009,
+            "log_decompress": 0.06,
+            "log_read": 0.9799999999999999,
+            "log_analysis": 0.24,
+            "video_read": 0.030000000000000027,
+            "video_verify": 0.29000000000000004,
+            "telemetry_build": 0.14000000000000012,
+            "telemetry_encode": 0.020000000000000018,
+            "telemetry_compress": 0.05999999999999983,
+            "replay_compact": 0.6400000000000001,
+            "replay_encode": 0.16000000000000014,
+            "replay_compress": 0.45999999999999996,
+            "summary_save": 0.07999999999999963
+          },
+          "variant": "python",
+          "round": "4-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        },
+        {
+          "elapsed_seconds": 4.680398741999852,
+          "total_cpu_seconds": 4.115235000000002,
+          "cpu_percent_one_core": 87.92488048233331,
+          "rss_samples": 222,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 281377.97067903064,
+          "peak_rss_tree_kib": 348952,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.87,
+            "log_analysis": 0.020000000000000018,
+            "video_read": 0.9900000000000003,
+            "telemetry_build": 1.9100000000000001,
+            "telemetry_compress": 0.0799999999999998,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "baseline",
+          "round": "5-baseline",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.493703679999726,
+          "total_cpu_seconds": 2.986632999999996,
+          "cpu_percent_one_core": 85.48615662792072,
+          "rss_samples": 166,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 234554.81929437534,
+          "peak_rss_tree_kib": 339464,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.5,
+            "video_read": 0.9300000000000005,
+            "log_analysis": 0.34999999999999987,
+            "telemetry_build": 0.95,
+            "telemetry_compress": 0.07000000000000002,
+            "summary_save": 0.020000000000000018
+          },
+          "variant": "final",
+          "round": "5-final",
+          "output_bytes": 2119165,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912838,
+            "telemetry.json.gz": 196296,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 4.035632035000162,
+          "total_cpu_seconds": 3.4961500000000054,
+          "cpu_percent_one_core": 86.63203110884872,
+          "rss_samples": 195,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 232797.3946442467,
+          "peak_rss_tree_kib": 327492,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.09,
+            "log_prepare": 0.010000000000000009,
+            "log_decompress": 0.07999999999999999,
+            "log_read": 1.1400000000000001,
+            "log_analysis": 0.25,
+            "video_read": 0.020000000000000018,
+            "video_verify": 0.2999999999999998,
+            "telemetry_build": 0.17000000000000015,
+            "telemetry_encode": 0.009999999999999787,
+            "telemetry_compress": 0.06000000000000005,
+            "replay_compact": 0.6100000000000003,
+            "replay_encode": 0.1599999999999997,
+            "replay_compress": 0.4900000000000002,
+            "summary_save": 0.08000000000000007
+          },
+          "variant": "python",
+          "round": "5-python",
+          "output_bytes": 2106799,
+          "files": {
+            "thumbnail.json": 29,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903428,
+            "telemetry.json.gz": 192667,
+            "track.json.gz": 475,
+            "summary.json": 947
+          }
+        }
+      ],
+      "summary": {
+        "python": {
+          "elapsed_seconds": 3.898546801000066,
+          "total_cpu_seconds": 3.3331850000000003,
+          "mean_rss_tree_kib": 237279.22702267396,
+          "peak_rss_tree_kib": 327404,
+          "output_bytes": 2106799
+        },
+        "baseline": {
+          "elapsed_seconds": 4.750616213000285,
+          "total_cpu_seconds": 4.153491999999998,
+          "mean_rss_tree_kib": 281377.97067903064,
+          "peak_rss_tree_kib": 348944,
+          "output_bytes": 2119165
+        },
+        "final": {
+          "elapsed_seconds": 3.494704949000152,
+          "total_cpu_seconds": 2.986632999999996,
+          "mean_rss_tree_kib": 234554.81929437534,
+          "peak_rss_tree_kib": 341944,
+          "output_bytes": 2119165
+        }
+      },
+      "input_hashes_unchanged": true,
+      "all_cameras_without_fallback": true
+    },
+    "final-day": {
+      "conditions": {
+        "kernel": "6.18.33.2-microsoft-standard-WSL2",
+        "python": "3.12.3",
+        "logical_cpus": 16,
+        "warmups_per_variant": 1,
+        "runs": 5,
+        "cache": "warm, no global drop_caches",
+        "input_filesystem": "caller path; same input for all variants",
+        "output_filesystem": "WSL ext4",
+        "compression_level": 9,
+        "diagnostics": false
+      },
+      "binary_sha256": {
+        "baseline": "4a9197e22300ce9b49d33f181601eabdd3cf1a76ee5ee59f1099ad3416b6d375",
+        "final": "d2c515dc0c771734aeeba3f9fbeda6af74e60b569e230483edd563fb92719d37"
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 2.8743706699997347,
+          "total_cpu_seconds": 2.5609669999999998,
+          "cpu_percent_one_core": 89.09661606031614,
+          "rss_samples": 139,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 196216.7509316261,
+          "peak_rss_tree_kib": 274132,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.07,
+            "log_prepare": 0.01999999999999999,
+            "log_decompress": 0.06,
+            "log_read": 0.88,
+            "log_analysis": 0.17999999999999994,
+            "video_read": 0.030000000000000027,
+            "video_verify": 0.20999999999999996,
+            "telemetry_build": 0.13000000000000012,
+            "telemetry_encode": 0.020000000000000018,
+            "telemetry_compress": 0.05999999999999983,
+            "replay_compact": 0.40000000000000013,
+            "replay_encode": 0.10000000000000009,
+            "replay_compress": 0.2999999999999998,
+            "summary_save": 0.06999999999999984
+          },
+          "variant": "python",
+          "round": "1-python",
+          "output_bytes": 1398059,
+          "files": {
+            "thumbnail.json": 30,
+            "thumbnail.jpg": 6912,
+            "data.json.gz": 1195058,
+            "telemetry.json.gz": 194704,
+            "track.json.gz": 517,
+            "summary.json": 838
+          }
+        },
+        {
+          "elapsed_seconds": 3.3938650689997303,
+          "total_cpu_seconds": 3.0510219999999997,
+          "cpu_percent_one_core": 89.89815263631633,
+          "rss_samples": 162,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 238799.24381024193,
+          "peak_rss_tree_kib": 310076,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.72,
+            "log_analysis": 0.010000000000000009,
+            "video_read": 0.5900000000000002,
+            "telemetry_build": 1.45,
+            "telemetry_compress": 0.10000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "baseline",
+          "round": "1-baseline",
+          "output_bytes": 1405933,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 6400,
+            "data.json.gz": 1200013,
+            "telemetry.json.gz": 198226,
+            "track.json.gz": 509,
+            "summary.json": 759
+          },
+          "thumbnail_metadata": {
+            "score": 28.4,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 2.368805532999886,
+          "total_cpu_seconds": 2.077976000000001,
+          "cpu_percent_one_core": 87.72252390716199,
+          "rss_samples": 113,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 206423.34401512236,
+          "peak_rss_tree_kib": 300388,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.45,
+            "video_read": 0.5000000000000001,
+            "log_analysis": 0.24,
+            "telemetry_build": 0.64,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.010000000000000009
+          },
+          "variant": "final",
+          "round": "1-final",
+          "output_bytes": 1405933,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 6400,
+            "data.json.gz": 1200013,
+            "telemetry.json.gz": 198226,
+            "track.json.gz": 509,
+            "summary.json": 759
+          },
+          "thumbnail_metadata": {
+            "score": 28.4,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 2.9088670239998464,
+          "total_cpu_seconds": 2.5833509999999986,
+          "cpu_percent_one_core": 88.80952545048807,
+          "rss_samples": 141,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 195773.30774099895,
+          "peak_rss_tree_kib": 274228,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.07,
+            "log_prepare": 0.03,
+            "log_decompress": 0.04999999999999999,
+            "log_read": 0.9,
+            "log_analysis": 0.18999999999999995,
+            "video_read": 0.010000000000000009,
+            "video_verify": 0.15999999999999992,
+            "telemetry_build": 0.17000000000000015,
+            "telemetry_encode": 0.040000000000000036,
+            "telemetry_compress": 0.06999999999999984,
+            "replay_compact": 0.3700000000000001,
+            "replay_encode": 0.1299999999999999,
+            "replay_compress": 0.28000000000000025,
+            "summary_save": 0.09999999999999964
+          },
+          "variant": "python",
+          "round": "2-python",
+          "output_bytes": 1398059,
+          "files": {
+            "thumbnail.json": 30,
+            "thumbnail.jpg": 6912,
+            "data.json.gz": 1195058,
+            "telemetry.json.gz": 194704,
+            "track.json.gz": 517,
+            "summary.json": 838
+          }
+        },
+        {
+          "elapsed_seconds": 2.413979247000043,
+          "total_cpu_seconds": 2.117385000000001,
+          "cpu_percent_one_core": 87.71347154833114,
+          "rss_samples": 115,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 207082.5186383895,
+          "peak_rss_tree_kib": 301756,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.45,
+            "video_read": 0.5300000000000001,
+            "log_analysis": 0.22999999999999998,
+            "telemetry_build": 0.68,
+            "telemetry_compress": 0.09,
+            "summary_save": 0.010000000000000009
+          },
+          "variant": "final",
+          "round": "2-final",
+          "output_bytes": 1405933,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 6400,
+            "data.json.gz": 1200013,
+            "telemetry.json.gz": 198226,
+            "track.json.gz": 509,
+            "summary.json": 759
+          },
+          "thumbnail_metadata": {
+            "score": 28.4,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.4297240599998986,
+          "total_cpu_seconds": 3.0632819999999983,
+          "cpu_percent_one_core": 89.31569847634006,
+          "rss_samples": 164,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 240073.46213429896,
+          "peak_rss_tree_kib": 310216,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.72,
+            "video_read": 0.6200000000000002,
+            "telemetry_build": 1.4499999999999997,
+            "telemetry_compress": 0.07000000000000002,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "baseline",
+          "round": "2-baseline",
+          "output_bytes": 1405933,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 6400,
+            "data.json.gz": 1200013,
+            "telemetry.json.gz": 198226,
+            "track.json.gz": 509,
+            "summary.json": 759
+          },
+          "thumbnail_metadata": {
+            "score": 28.4,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 2.446684376000121,
+          "total_cpu_seconds": 2.1383859999999997,
+          "cpu_percent_one_core": 87.39934014275545,
+          "rss_samples": 116,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 206623.70587115112,
+          "peak_rss_tree_kib": 300144,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.47,
+            "video_read": 0.5000000000000001,
+            "log_analysis": 0.26,
+            "telemetry_build": 0.66,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.0
+          },
+          "variant": "final",
+          "round": "3-final",
+          "output_bytes": 1405933,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 6400,
+            "data.json.gz": 1200013,
+            "telemetry.json.gz": 198226,
+            "track.json.gz": 509,
+            "summary.json": 759
+          },
+          "thumbnail_metadata": {
+            "score": 28.4,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.076609945999735,
+          "total_cpu_seconds": 2.7556559999999983,
+          "cpu_percent_one_core": 89.5679351093223,
+          "rss_samples": 149,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 193902.67955620302,
+          "peak_rss_tree_kib": 274092,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.09,
+            "log_prepare": 0.010000000000000009,
+            "log_decompress": 0.07,
+            "log_read": 1.02,
+            "log_analysis": 0.21999999999999997,
+            "video_read": 0.020000000000000018,
+            "video_verify": 0.15000000000000013,
+            "telemetry_build": 0.20999999999999996,
+            "telemetry_encode": 0.020000000000000018,
+            "telemetry_compress": 0.06000000000000005,
+            "replay_compact": 0.3799999999999999,
+            "replay_encode": 0.1200000000000001,
+            "replay_compress": 0.29000000000000004,
+            "summary_save": 0.08000000000000007
+          },
+          "variant": "python",
+          "round": "3-python",
+          "output_bytes": 1398059,
+          "files": {
+            "thumbnail.json": 30,
+            "thumbnail.jpg": 6912,
+            "data.json.gz": 1195058,
+            "telemetry.json.gz": 194704,
+            "track.json.gz": 517,
+            "summary.json": 838
+          }
+        },
+        {
+          "elapsed_seconds": 3.532545472000038,
+          "total_cpu_seconds": 3.1940710000000037,
+          "cpu_percent_one_core": 90.41839730916757,
+          "rss_samples": 169,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239822.76448495008,
+          "peak_rss_tree_kib": 310412,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.73,
+            "log_analysis": 0.020000000000000018,
+            "video_read": 0.5700000000000002,
+            "telemetry_build": 1.5999999999999999,
+            "telemetry_compress": 0.09000000000000023,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "baseline",
+          "round": "3-baseline",
+          "output_bytes": 1405933,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 6400,
+            "data.json.gz": 1200013,
+            "telemetry.json.gz": 198226,
+            "track.json.gz": 509,
+            "summary.json": 759
+          },
+          "thumbnail_metadata": {
+            "score": 28.4,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 2.399300723000124,
+          "total_cpu_seconds": 2.1005939999999956,
+          "cpu_percent_one_core": 87.5502591177224,
+          "rss_samples": 114,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 205674.2434764935,
+          "peak_rss_tree_kib": 300320,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.45999999999999996,
+            "video_read": 0.5300000000000002,
+            "log_analysis": 0.27,
+            "telemetry_build": 0.62,
+            "telemetry_compress": 0.08000000000000003,
+            "summary_save": 0.0
+          },
+          "variant": "final",
+          "round": "4-final",
+          "output_bytes": 1405933,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 6400,
+            "data.json.gz": 1200013,
+            "telemetry.json.gz": 198226,
+            "track.json.gz": 509,
+            "summary.json": 759
+          },
+          "thumbnail_metadata": {
+            "score": 28.4,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.4288349870003003,
+          "total_cpu_seconds": 3.090948000000002,
+          "cpu_percent_one_core": 90.14572038953973,
+          "rss_samples": 163,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239429.287622712,
+          "peak_rss_tree_kib": 310280,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.72,
+            "video_read": 0.6300000000000002,
+            "telemetry_build": 1.4600000000000002,
+            "telemetry_compress": 0.09000000000000002,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "baseline",
+          "round": "4-baseline",
+          "output_bytes": 1405933,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 6400,
+            "data.json.gz": 1200013,
+            "telemetry.json.gz": 198226,
+            "track.json.gz": 509,
+            "summary.json": 759
+          },
+          "thumbnail_metadata": {
+            "score": 28.4,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 2.885422555000332,
+          "total_cpu_seconds": 2.5769599999999997,
+          "cpu_percent_one_core": 89.30962279802735,
+          "rss_samples": 140,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 196334.31626771681,
+          "peak_rss_tree_kib": 274112,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.06,
+            "log_prepare": 0.03,
+            "log_decompress": 0.06,
+            "log_read": 0.9,
+            "log_analysis": 0.18999999999999995,
+            "video_read": 0.010000000000000009,
+            "video_verify": 0.1499999999999999,
+            "telemetry_build": 0.20000000000000018,
+            "telemetry_encode": 0.029999999999999805,
+            "telemetry_compress": 0.06000000000000005,
+            "replay_compact": 0.41000000000000014,
+            "replay_encode": 0.10000000000000009,
+            "replay_compress": 0.2799999999999998,
+            "summary_save": 0.08000000000000007
+          },
+          "variant": "python",
+          "round": "4-python",
+          "output_bytes": 1398059,
+          "files": {
+            "thumbnail.json": 30,
+            "thumbnail.jpg": 6912,
+            "data.json.gz": 1195058,
+            "telemetry.json.gz": 194704,
+            "track.json.gz": 517,
+            "summary.json": 838
+          }
+        },
+        {
+          "elapsed_seconds": 3.5652210050002395,
+          "total_cpu_seconds": 3.2220940000000002,
+          "cpu_percent_one_core": 90.37571571246208,
+          "rss_samples": 169,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 238435.37082649555,
+          "peak_rss_tree_kib": 310112,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.76,
+            "video_read": 0.6200000000000001,
+            "telemetry_build": 1.56,
+            "telemetry_compress": 0.06999999999999978,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "baseline",
+          "round": "5-baseline",
+          "output_bytes": 1405933,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 6400,
+            "data.json.gz": 1200013,
+            "telemetry.json.gz": 198226,
+            "track.json.gz": 509,
+            "summary.json": 759
+          },
+          "thumbnail_metadata": {
+            "score": 28.4,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 2.4881013019999045,
+          "total_cpu_seconds": 2.177134000000004,
+          "cpu_percent_one_core": 87.50182310704356,
+          "rss_samples": 118,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 207193.43349351457,
+          "peak_rss_tree_kib": 300432,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.45999999999999996,
+            "video_read": 0.5300000000000002,
+            "log_analysis": 0.29000000000000004,
+            "telemetry_build": 0.66,
+            "telemetry_compress": 0.09,
+            "summary_save": 0.010000000000000009
+          },
+          "variant": "final",
+          "round": "5-final",
+          "output_bytes": 1405933,
+          "files": {
+            "thumbnail.json": 26,
+            "thumbnail.jpg": 6400,
+            "data.json.gz": 1200013,
+            "telemetry.json.gz": 198226,
+            "track.json.gz": 509,
+            "summary.json": 759
+          },
+          "thumbnail_metadata": {
+            "score": 28.4,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 2.9183865039999546,
+          "total_cpu_seconds": 2.5904709999999938,
+          "cpu_percent_one_core": 88.76380823614288,
+          "rss_samples": 141,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 194480.65064904513,
+          "peak_rss_tree_kib": 274152,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.07,
+            "log_prepare": 0.01999999999999999,
+            "log_decompress": 0.05000000000000002,
+            "log_read": 0.9400000000000001,
+            "log_analysis": 0.18999999999999995,
+            "video_read": 0.010000000000000009,
+            "video_verify": 0.19999999999999996,
+            "telemetry_build": 0.1499999999999999,
+            "telemetry_encode": 0.010000000000000009,
+            "telemetry_compress": 0.07000000000000006,
+            "replay_compact": 0.3799999999999999,
+            "replay_encode": 0.11000000000000032,
+            "replay_compress": 0.2799999999999998,
+            "summary_save": 0.08999999999999986
+          },
+          "variant": "python",
+          "round": "5-python",
+          "output_bytes": 1398059,
+          "files": {
+            "thumbnail.json": 30,
+            "thumbnail.jpg": 6912,
+            "data.json.gz": 1195058,
+            "telemetry.json.gz": 194704,
+            "track.json.gz": 517,
+            "summary.json": 838
+          }
+        }
+      ],
+      "summary": {
+        "python": {
+          "elapsed_seconds": 2.9088670239998464,
+          "total_cpu_seconds": 2.5833509999999986,
+          "mean_rss_tree_kib": 195773.30774099895,
+          "peak_rss_tree_kib": 274132,
+          "output_bytes": 1398059
+        },
+        "baseline": {
+          "elapsed_seconds": 3.4297240599998986,
+          "total_cpu_seconds": 3.090948000000002,
+          "mean_rss_tree_kib": 239429.287622712,
+          "peak_rss_tree_kib": 310216,
+          "output_bytes": 1405933
+        },
+        "final": {
+          "elapsed_seconds": 2.413979247000043,
+          "total_cpu_seconds": 2.117385000000001,
+          "mean_rss_tree_kib": 206623.70587115112,
+          "peak_rss_tree_kib": 300388,
+          "output_bytes": 1405933
+        }
+      },
+      "input_hashes_unchanged": true,
+      "all_cameras_without_fallback": true
+    },
+    "raw": {
+      "conditions": {
+        "kernel": "6.18.33.2-microsoft-standard-WSL2",
+        "python": "3.12.3",
+        "logical_cpus": 16,
+        "warmups_per_variant": 1,
+        "runs": 5,
+        "cache": "warm, no global drop_caches",
+        "input_filesystem": "caller path; same input for all variants",
+        "output_filesystem": "WSL ext4",
+        "compression_level": 9,
+        "diagnostics": false
+      },
+      "binary_sha256": {
+        "baseline": "4a9197e22300ce9b49d33f181601eabdd3cf1a76ee5ee59f1099ad3416b6d375",
+        "final": "d2c515dc0c771734aeeba3f9fbeda6af74e60b569e230483edd563fb92719d37"
+      },
+      "samples": [
+        {
+          "elapsed_seconds": 3.35750594000001,
+          "total_cpu_seconds": 3.316321,
+          "cpu_percent_one_core": 98.77334721856039,
+          "rss_samples": 161,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 242748.93904868473,
+          "peak_rss_tree_kib": 330140,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.07,
+            "log_decompress": 0.04999999999999999,
+            "log_read": 0.9600000000000001,
+            "log_analysis": 0.22999999999999998,
+            "video_read": 0.010000000000000009,
+            "video_verify": 0.17999999999999994,
+            "video_convert": 0.22999999999999998,
+            "telemetry_build": 0.1499999999999999,
+            "telemetry_encode": 0.020000000000000018,
+            "telemetry_compress": 0.06000000000000005,
+            "replay_compact": 0.6200000000000001,
+            "replay_encode": 0.16000000000000014,
+            "replay_compress": 0.45999999999999996,
+            "summary_save": 0.08999999999999986
+          },
+          "variant": "python",
+          "round": "1-python",
+          "output_bytes": 79506611,
+          "files": {
+            "thumbnail.json": 29,
+            "ecamera.mp4": 37570762,
+            "camera.mp4": 1944483,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903426,
+            "telemetry.json.gz": 192667,
+            "fcamera.mp4": 37884567,
+            "track.json.gz": 475,
+            "summary.json": 949
+          }
+        },
+        {
+          "elapsed_seconds": 4.764397637000002,
+          "total_cpu_seconds": 5.129619000000003,
+          "cpu_percent_one_core": 107.66563563384625,
+          "rss_samples": 225,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 286139.402954623,
+          "peak_rss_tree_kib": 372216,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.89,
+            "video_read": 1.7000000000000008,
+            "telemetry_build": 1.92,
+            "telemetry_compress": 0.07000000000000023,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "baseline",
+          "round": "1-baseline",
+          "output_bytes": 79532057,
+          "files": {
+            "thumbnail.json": 26,
+            "ecamera.mp4": 37577302,
+            "camera.mp4": 1944484,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912837,
+            "telemetry.json.gz": 196296,
+            "fcamera.mp4": 37891107,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.4241987410005095,
+          "total_cpu_seconds": 3.8246389999999977,
+          "cpu_percent_one_core": 111.6944222367912,
+          "rss_samples": 163,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 244955.31923649937,
+          "peak_rss_tree_kib": 367316,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.0,
+            "log_read": 0.47,
+            "video_read": 1.5800000000000007,
+            "log_analysis": 0.39,
+            "telemetry_build": 0.9199999999999999,
+            "telemetry_compress": 0.08000000000000002,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "final",
+          "round": "1-final",
+          "output_bytes": 79532057,
+          "files": {
+            "thumbnail.json": 26,
+            "ecamera.mp4": 37577302,
+            "camera.mp4": 1944484,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912837,
+            "telemetry.json.gz": 196296,
+            "fcamera.mp4": 37891107,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.379889264999292,
+          "total_cpu_seconds": 3.338794,
+          "cpu_percent_one_core": 98.78412392308655,
+          "rss_samples": 162,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 244010.11228454055,
+          "peak_rss_tree_kib": 330000,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.07,
+            "log_decompress": 0.06,
+            "log_read": 0.93,
+            "log_analysis": 0.22999999999999998,
+            "video_read": 0.010000000000000009,
+            "video_convert": 0.21999999999999997,
+            "video_verify": 0.20999999999999996,
+            "telemetry_build": 0.1499999999999999,
+            "telemetry_encode": 0.020000000000000018,
+            "telemetry_compress": 0.07000000000000006,
+            "replay_compact": 0.6300000000000001,
+            "replay_encode": 0.1599999999999997,
+            "replay_compress": 0.4600000000000004,
+            "summary_save": 0.09999999999999964
+          },
+          "variant": "python",
+          "round": "2-python",
+          "output_bytes": 79506611,
+          "files": {
+            "thumbnail.json": 29,
+            "ecamera.mp4": 37570762,
+            "camera.mp4": 1944483,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903426,
+            "telemetry.json.gz": 192667,
+            "fcamera.mp4": 37884567,
+            "track.json.gz": 475,
+            "summary.json": 949
+          }
+        },
+        {
+          "elapsed_seconds": 3.390107495999473,
+          "total_cpu_seconds": 3.821798000000001,
+          "cpu_percent_one_core": 112.73382937001108,
+          "rss_samples": 161,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239118.70605456166,
+          "peak_rss_tree_kib": 343756,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.47,
+            "video_read": 1.5100000000000007,
+            "log_analysis": 0.35,
+            "telemetry_build": 0.9299999999999999,
+            "telemetry_compress": 0.09000000000000002,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "final",
+          "round": "2-final",
+          "output_bytes": 79532057,
+          "files": {
+            "thumbnail.json": 26,
+            "ecamera.mp4": 37577302,
+            "camera.mp4": 1944484,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912837,
+            "telemetry.json.gz": 196296,
+            "fcamera.mp4": 37891107,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 4.959281229000226,
+          "total_cpu_seconds": 5.387291000000002,
+          "cpu_percent_one_core": 108.63047992714989,
+          "rss_samples": 236,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 287667.4998991612,
+          "peak_rss_tree_kib": 370092,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.0,
+            "log_read": 0.94,
+            "video_read": 1.8500000000000012,
+            "video_verify": 0.020000000000000018,
+            "telemetry_build": 1.9399999999999997,
+            "telemetry_compress": 0.09000000000000002,
+            "summary_save": 0.010000000000000231
+          },
+          "variant": "baseline",
+          "round": "2-baseline",
+          "output_bytes": 79532057,
+          "files": {
+            "thumbnail.json": 26,
+            "ecamera.mp4": 37577302,
+            "camera.mp4": 1944484,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912837,
+            "telemetry.json.gz": 196296,
+            "fcamera.mp4": 37891107,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.515261833000295,
+          "total_cpu_seconds": 3.9249639999999975,
+          "cpu_percent_one_core": 111.65495449452821,
+          "rss_samples": 166,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 244250.60079820227,
+          "peak_rss_tree_kib": 366888,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.0,
+            "log_read": 0.48,
+            "video_read": 1.6000000000000008,
+            "log_analysis": 0.39,
+            "telemetry_build": 0.9999999999999998,
+            "telemetry_compress": 0.06,
+            "summary_save": 0.0
+          },
+          "variant": "final",
+          "round": "3-final",
+          "output_bytes": 79532057,
+          "files": {
+            "thumbnail.json": 26,
+            "ecamera.mp4": 37577302,
+            "camera.mp4": 1944484,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912837,
+            "telemetry.json.gz": 196296,
+            "fcamera.mp4": 37891107,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.43089019800027,
+          "total_cpu_seconds": 3.382581,
+          "cpu_percent_one_core": 98.59193401093316,
+          "rss_samples": 164,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 241975.11822055042,
+          "peak_rss_tree_kib": 330020,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.07,
+            "log_decompress": 0.06,
+            "log_read": 0.9700000000000001,
+            "log_analysis": 0.24,
+            "video_read": 0.020000000000000018,
+            "video_verify": 0.21999999999999997,
+            "video_convert": 0.21999999999999997,
+            "telemetry_build": 0.1399999999999999,
+            "telemetry_encode": 0.020000000000000018,
+            "telemetry_compress": 0.06000000000000005,
+            "replay_compact": 0.6200000000000001,
+            "replay_encode": 0.1599999999999997,
+            "replay_compress": 0.48,
+            "summary_save": 0.07000000000000028
+          },
+          "variant": "python",
+          "round": "3-python",
+          "output_bytes": 79506611,
+          "files": {
+            "thumbnail.json": 29,
+            "ecamera.mp4": 37570762,
+            "camera.mp4": 1944483,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903426,
+            "telemetry.json.gz": 192667,
+            "fcamera.mp4": 37884567,
+            "track.json.gz": 475,
+            "summary.json": 949
+          }
+        },
+        {
+          "elapsed_seconds": 4.816308054999354,
+          "total_cpu_seconds": 5.145898999999998,
+          "cpu_percent_one_core": 106.8432280750507,
+          "rss_samples": 228,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 285912.98992117913,
+          "peak_rss_tree_kib": 372020,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.0,
+            "log_read": 0.88,
+            "video_read": 1.760000000000001,
+            "telemetry_build": 1.91,
+            "telemetry_compress": 0.08000000000000024,
+            "summary_save": 0.0
+          },
+          "variant": "baseline",
+          "round": "3-baseline",
+          "output_bytes": 79532057,
+          "files": {
+            "thumbnail.json": 26,
+            "ecamera.mp4": 37577302,
+            "camera.mp4": 1944484,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912837,
+            "telemetry.json.gz": 196296,
+            "fcamera.mp4": 37891107,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.5521755760000815,
+          "total_cpu_seconds": 3.9694680000000098,
+          "cpu_percent_one_core": 111.74751684064613,
+          "rss_samples": 167,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239623.43787642874,
+          "peak_rss_tree_kib": 343660,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.49,
+            "video_read": 1.6900000000000008,
+            "log_analysis": 0.36,
+            "telemetry_build": 0.9500000000000002,
+            "telemetry_compress": 0.09000000000000002,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "final",
+          "round": "4-final",
+          "output_bytes": 79532057,
+          "files": {
+            "thumbnail.json": 26,
+            "ecamera.mp4": 37577302,
+            "camera.mp4": 1944484,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912837,
+            "telemetry.json.gz": 196296,
+            "fcamera.mp4": 37891107,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 5.098253708999437,
+          "total_cpu_seconds": 5.395755999999995,
+          "cpu_percent_one_core": 105.83537634612824,
+          "rss_samples": 238,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 284758.5348556152,
+          "peak_rss_tree_kib": 370796,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 1.01,
+            "video_read": 1.770000000000001,
+            "telemetry_build": 1.99,
+            "telemetry_compress": 0.060000000000000234,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "baseline",
+          "round": "4-baseline",
+          "output_bytes": 79532057,
+          "files": {
+            "thumbnail.json": 26,
+            "ecamera.mp4": 37577302,
+            "camera.mp4": 1944484,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912837,
+            "telemetry.json.gz": 196296,
+            "fcamera.mp4": 37891107,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.565576314000282,
+          "total_cpu_seconds": 3.504184000000002,
+          "cpu_percent_one_core": 98.27819380111929,
+          "rss_samples": 171,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 240794.01266583853,
+          "peak_rss_tree_kib": 330040,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.08,
+            "log_decompress": 0.06999999999999999,
+            "log_read": 0.9999999999999999,
+            "log_analysis": 0.26,
+            "video_convert": 0.2500000000000002,
+            "video_verify": 0.20999999999999996,
+            "telemetry_build": 0.1299999999999999,
+            "telemetry_encode": 0.029999999999999805,
+            "telemetry_compress": 0.06000000000000005,
+            "replay_compact": 0.6500000000000004,
+            "replay_encode": 0.16999999999999993,
+            "replay_compress": 0.46999999999999975,
+            "summary_save": 0.11000000000000032
+          },
+          "variant": "python",
+          "round": "4-python",
+          "output_bytes": 79506611,
+          "files": {
+            "thumbnail.json": 29,
+            "ecamera.mp4": 37570762,
+            "camera.mp4": 1944483,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903426,
+            "telemetry.json.gz": 192667,
+            "fcamera.mp4": 37884567,
+            "track.json.gz": 475,
+            "summary.json": 949
+          }
+        },
+        {
+          "elapsed_seconds": 8.569367014999443,
+          "total_cpu_seconds": 8.91429200000001,
+          "cpu_percent_one_core": 104.02509291989509,
+          "rss_samples": 402,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 277920.28672268795,
+          "peak_rss_tree_kib": 371228,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.03,
+            "log_read": 1.55,
+            "video_read": 1.920000000000001,
+            "telemetry_build": 4.7,
+            "telemetry_compress": 0.08999999999999958,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "baseline",
+          "round": "5-baseline",
+          "output_bytes": 79532057,
+          "files": {
+            "thumbnail.json": 26,
+            "ecamera.mp4": 37577302,
+            "camera.mp4": 1944484,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912837,
+            "telemetry.json.gz": 196296,
+            "fcamera.mp4": 37891107,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 4.088435894000213,
+          "total_cpu_seconds": 4.614849999999997,
+          "cpu_percent_one_core": 112.87568448296565,
+          "rss_samples": 193,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 231995.1251643577,
+          "peak_rss_tree_kib": 343536,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.01,
+            "log_read": 0.77,
+            "video_read": 1.9300000000000008,
+            "log_analysis": 0.3899999999999999,
+            "telemetry_build": 1.02,
+            "telemetry_compress": 0.060000000000000234,
+            "summary_save": 0.009999999999999787
+          },
+          "variant": "final",
+          "round": "5-final",
+          "output_bytes": 79532057,
+          "files": {
+            "thumbnail.json": 26,
+            "ecamera.mp4": 37577302,
+            "camera.mp4": 1944484,
+            "thumbnail.jpg": 8684,
+            "data.json.gz": 1912837,
+            "telemetry.json.gz": 196296,
+            "fcamera.mp4": 37891107,
+            "track.json.gz": 463,
+            "summary.json": 858
+          },
+          "thumbnail_metadata": {
+            "score": 10.8,
+            "version": 2
+          }
+        },
+        {
+          "elapsed_seconds": 3.874308242000552,
+          "total_cpu_seconds": 3.8704060000000027,
+          "cpu_percent_one_core": 99.89927900010004,
+          "rss_samples": 188,
+          "rss_interval_seconds": 0.02,
+          "mean_rss_tree_kib": 239217.30282294124,
+          "peak_rss_tree_kib": 330000,
+          "sampled_stage_cpu_seconds_lower_bound": {
+            "startup": 0.09,
+            "log_decompress": 0.06,
+            "log_read": 1.1600000000000001,
+            "log_analysis": 0.30000000000000004,
+            "video_read": 0.039999999999999813,
+            "video_verify": 0.25,
+            "video_convert": 0.26000000000000023,
+            "telemetry_build": 0.16999999999999993,
+            "telemetry_encode": 0.020000000000000018,
+            "telemetry_compress": 0.06000000000000005,
+            "replay_compact": 0.7199999999999998,
+            "replay_encode": 0.16999999999999993,
+            "replay_compress": 0.45999999999999996,
+            "summary_save": 0.10000000000000009
+          },
+          "variant": "python",
+          "round": "5-python",
+          "output_bytes": 79506611,
+          "files": {
+            "thumbnail.json": 29,
+            "ecamera.mp4": 37570762,
+            "camera.mp4": 1944483,
+            "thumbnail.jpg": 9253,
+            "data.json.gz": 1903426,
+            "telemetry.json.gz": 192667,
+            "fcamera.mp4": 37884567,
+            "track.json.gz": 475,
+            "summary.json": 949
+          }
+        }
+      ],
+      "summary": {
+        "python": {
+          "elapsed_seconds": 3.43089019800027,
+          "total_cpu_seconds": 3.382581,
+          "mean_rss_tree_kib": 241975.11822055042,
+          "peak_rss_tree_kib": 330020,
+          "output_bytes": 79506611
+        },
+        "baseline": {
+          "elapsed_seconds": 4.959281229000226,
+          "total_cpu_seconds": 5.387291000000002,
+          "mean_rss_tree_kib": 285912.98992117913,
+          "peak_rss_tree_kib": 371228,
+          "output_bytes": 79532057
+        },
+        "final": {
+          "elapsed_seconds": 3.515261833000295,
+          "total_cpu_seconds": 3.9249639999999975,
+          "mean_rss_tree_kib": 239623.43787642874,
+          "peak_rss_tree_kib": 343756,
+          "output_bytes": 79532057
+        }
+      },
+      "input_hashes_unchanged": true,
+      "all_cameras_without_fallback": true
+    }
+  },
+  "build_observations": {
+    "default": {
+      "incremental_seconds": 16.93,
+      "binary_bytes": 12217840
+    },
+    "cgu1": {
+      "incremental_seconds": 42.49,
+      "binary_bytes": 9071096
+    },
+    "no_lto": {
+      "incremental_seconds": 31.08,
+      "binary_bytes": 12858576
+    },
+    "comparable_clean_build_times": false,
+    "selected": "existing thin LTO, default codegen units; no target-cpu=native or PGO"
+  },
+  "derived_raw_input": {
+    "sensor_original_raw": false,
+    "input_filesystem": "WSL ext4",
+    "model_frames": 1201,
+    "rlog_compressed_bytes": 11687303,
+    "rlog_decompressed_bytes": 58931392,
+    "media_bytes": 77740105,
+    "end_to_end_effective_media_mib_per_second": {
+      "python": 21.609185142805686,
+      "baseline": 14.949493297473516,
+      "final": 21.090531805406734
+    },
+    "rate_includes_log_analysis_thumbnail_and_output_sync": true
+  }
+}

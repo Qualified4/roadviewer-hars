@@ -1,0 +1,310 @@
+[
+  {
+    "segment": 0,
+    "rust_conversion_seconds": 2.407,
+    "differences": {},
+    "python_conversion_seconds": 2.978,
+    "frames": 751,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 28.39
+      },
+      "rust": {
+        "score": 28.4,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 1,
+    "rust_conversion_seconds": 3.125,
+    "differences": {},
+    "python_conversion_seconds": 3.957,
+    "frames": 1199,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 49.39
+      },
+      "rust": {
+        "score": 49.39,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 2,
+    "rust_conversion_seconds": 3.131,
+    "differences": {},
+    "python_conversion_seconds": 4.061,
+    "frames": 1201,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 44.8
+      },
+      "rust": {
+        "score": 44.8,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 3,
+    "rust_conversion_seconds": 3.156,
+    "differences": {},
+    "python_conversion_seconds": 4.023,
+    "frames": 1199,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 36.95
+      },
+      "rust": {
+        "score": 36.95,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 4,
+    "rust_conversion_seconds": 2.986,
+    "differences": {},
+    "python_conversion_seconds": 3.908,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 37.79
+      },
+      "rust": {
+        "score": 37.8,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 5,
+    "rust_conversion_seconds": 3.043,
+    "differences": {},
+    "python_conversion_seconds": 3.972,
+    "frames": 1201,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 42.07
+      },
+      "rust": {
+        "score": 42.06,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 6,
+    "rust_conversion_seconds": 2.965,
+    "differences": {},
+    "python_conversion_seconds": 3.967,
+    "frames": 1199,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 52.38
+      },
+      "rust": {
+        "score": 52.37,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 7,
+    "rust_conversion_seconds": 3.169,
+    "differences": {},
+    "python_conversion_seconds": 3.948,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 63.63
+      },
+      "rust": {
+        "score": 63.62,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 8,
+    "rust_conversion_seconds": 2.931,
+    "differences": {},
+    "python_conversion_seconds": 3.877,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 55.51
+      },
+      "rust": {
+        "score": 55.51,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 9,
+    "rust_conversion_seconds": 2.891,
+    "differences": {},
+    "python_conversion_seconds": 3.85,
+    "frames": 1201,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 41.36
+      },
+      "rust": {
+        "score": 41.36,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 10,
+    "rust_conversion_seconds": 3.05,
+    "differences": {},
+    "python_conversion_seconds": 3.948,
+    "frames": 1199,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 44.79
+      },
+      "rust": {
+        "score": 44.78,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 11,
+    "rust_conversion_seconds": 2.992,
+    "differences": {},
+    "python_conversion_seconds": 3.967,
+    "frames": 1201,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 72.11
+      },
+      "rust": {
+        "score": 72.11,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 12,
+    "rust_conversion_seconds": 3.089,
+    "differences": {},
+    "python_conversion_seconds": 4.032,
+    "frames": 1199,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 59.4
+      },
+      "rust": {
+        "score": 59.4,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 13,
+    "rust_conversion_seconds": 2.921,
+    "differences": {},
+    "python_conversion_seconds": 3.688,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 44.7
+      },
+      "rust": {
+        "score": 44.7,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  }
+]
