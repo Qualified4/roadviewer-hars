@@ -3,7 +3,7 @@ use crate::{
     error::{ApiError, Result, bad, missing},
     http_storage,
     store::{Store, atomic_json, id, read_json, sha},
-    upload::{KINDS, Uploads},
+    upload::Uploads,
 };
 use axum::{
     Json, Router,
@@ -26,7 +26,6 @@ use std::{
 };
 use tower::ServiceExt;
 use tower_http::services::ServeFile;
-use unicode_normalization::UnicodeNormalization;
 
 const BODY_LIMIT: usize = 8 * 1024 * 1024 + 1;
 
@@ -40,6 +39,7 @@ pub struct App {
     pub used: Arc<AtomicU64>,
     pub device_https_enabled: bool,
     pub jobs: Arc<crate::jobs::Jobs>,
+    pub network: Arc<crate::network::Network>,
     transfer_slots: Arc<tokio::sync::Semaphore>,
     pub slot_wait: std::time::Duration,
     pub body_idle: std::time::Duration,
@@ -54,6 +54,7 @@ impl App {
     ) -> anyhow::Result<Self> {
         let store = Store::open(root).await?;
         crate::storage::open(&store).await?;
+        crate::transfer::cleanup_staging(&store.root)?;
         let auth = Arc::new(Auth::open(&store.root).await?);
         let uploads =
             Uploads::open(store.clone(), auth.clone(), max_upload_mb * 1024 * 1024).await?;
@@ -72,6 +73,7 @@ impl App {
             used,
             device_https_enabled: false,
             jobs,
+            network: Arc::new(crate::network::Network::from_env()),
             transfer_slots: Arc::new(tokio::sync::Semaphore::new(8)),
             slot_wait: std::time::Duration::from_secs(30),
             body_idle: std::time::Duration::from_secs(30),
@@ -127,6 +129,27 @@ pub fn ingress(app: App) -> Router {
         .route("/view/{id}/", get(replay_page))
         .route("/assets/{*name}", get(asset))
         .route("/api/logs", get(list))
+        .route("/api/logs/download.zip", get(crate::transfer::download_zip))
+        .route("/api/logs/export.tar", get(crate::transfer::export))
+        .route("/api/logs/import", post(crate::transfer::begin))
+        .route(
+            "/api/logs/import/{id}/finish",
+            post(crate::transfer::finish),
+        )
+        .route(
+            "/api/upload",
+            post(crate::transfer::legacy_upload)
+                .layer(DefaultBodyLimit::max(app.uploads.max_log as usize)),
+        )
+        .route("/api/uploads/{id}/failure", post(crate::transfer::failure))
+        .route(
+            "/api/settings/device-network",
+            get(crate::network::settings).post(crate::network::settings),
+        )
+        .route(
+            "/api/settings/device-network/restart",
+            post(crate::network::restart),
+        )
         .route("/api/tracks", get(tracks))
         .route("/api/progress", get(progress))
         .route("/api/settings/processing", get(processing).post(processing))
@@ -146,12 +169,15 @@ pub fn ingress(app: App) -> Router {
         .route("/api/uploads/{id}/files/{index}", put(browser_chunk))
         .route("/api/uploads/{id}/finish", post(browser_finish))
         .route("/api/uploads/{id}", delete(browser_cancel))
-        .route("/api/logs/{id}/bookmarks", get(bookmarks).post(bookmarks))
+        .route(
+            "/api/logs/{id}/bookmarks",
+            get(crate::annotations::bookmarks).post(crate::annotations::bookmarks),
+        )
         .route(
             "/api/logs/{id}/bookmarks/{bookmark}",
-            put(bookmark_item).delete(bookmark_item),
+            put(crate::annotations::bookmark_item).delete(crate::annotations::bookmark_item),
         )
-        .route("/api/logs/{id}/tags", post(tags))
+        .route("/api/logs/{id}/tags", post(crate::annotations::tags))
         .route("/api/logs/{id}", delete(http_storage::delete_log))
         .route("/api/logs/{id}/pin", post(http_storage::pin))
         .route("/api/logs/{id}/data", get(data))
@@ -166,8 +192,12 @@ pub fn ingress(app: App) -> Router {
         .route("/api/logs/{id}/download/video", get(download_video))
         .route("/api/logs/{id}/download", get(download_camera))
         .route("/health", get(health))
-        .fallback(unsupported)
+        .fallback(crate::parity::fallback)
+        .method_not_allowed_fallback(crate::parity::method_not_allowed)
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
+        .layer(middleware::map_response(|r: Response| async move {
+            crate::parity::json_too_large(false, r)
+        }))
         .layer(middleware::from_fn_with_state(
             app.clone(),
             transfer_backpressure,
@@ -188,7 +218,11 @@ pub fn device(app: App) -> Router {
         .route("/api/device/uploads/{id}/files/{index}", put(device_chunk))
         .route("/api/device/uploads/{id}/finish", post(device_finish))
         .fallback(|| async { missing("not_found") })
+        .method_not_allowed_fallback(crate::parity::method_not_allowed)
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
+        .layer(middleware::map_response(|r: Response| async move {
+            crate::parity::json_too_large(true, r)
+        }))
         .layer(middleware::from_fn_with_state(
             app.clone(),
             transfer_backpressure,
@@ -311,9 +345,6 @@ async fn diagnostics(mut request: Request, next: Next) -> Response {
     }
     tracing::info!(request_id=%request_id,status=response.status().as_u16(),response_headers_us=time.elapsed().as_micros() as u64,"response_headers_ready");
     response
-}
-async fn unsupported() -> ApiError {
-    ApiError(StatusCode::NOT_IMPLEMENTED, "feature_not_ported")
 }
 async fn health() -> Json<Value> {
     Json(
@@ -440,15 +471,10 @@ async fn serve(path: PathBuf, request: Request) -> Result<Response> {
 }
 async fn list(State(app): State<App>, headers: HeaderMap) -> Result<Response> {
     let (_, uploads) = app.uploads.snapshot().await;
-    let pin_path = app.store.root.join(".storage-settings.json");
-    let pins: Value = if pin_path.exists() {
-        read_json(&pin_path).await?
-    } else {
-        json!({"pinned_logs":[]})
-    };
+    let pins = crate::storage::pins(&crate::storage::load_settings(&app.store.root).await?);
     let settings = app.store.processing.read().await.clone();
     let progress = app.jobs.progress.read().await.clone();
-    let mut logs = app
+    let metas = app
         .store
         .records
         .read()
@@ -456,14 +482,22 @@ async fn list(State(app): State<App>, headers: HeaderMap) -> Result<Response> {
         .values()
         .cloned()
         .collect::<Vec<_>>();
-    for m in &mut logs {
-        let o = m.as_object_mut().unwrap();
-        o.remove("content_hashes");
-        o.remove("storage");
-        o.remove("bookmarks");
-        let pinned = pins["pinned_logs"]
-            .as_array()
-            .is_some_and(|v| v.contains(&o["id"]));
+    let root = app.store.root.clone();
+    let mut logs = tokio::task::spawn_blocking(move || {
+        let ids = metas
+            .iter()
+            .filter_map(|m| m["id"].as_str().map(str::to_owned))
+            .collect::<Vec<_>>();
+        crate::listing::forget_missing(&root, &ids);
+        metas
+            .iter()
+            .map(|m| crate::listing::row(&root.join(m["id"].as_str().unwrap_or("")), m))
+            .collect::<Vec<_>>()
+    })
+    .await
+    .map_err(|_| bad("invalid_list"))?;
+    for o in &mut logs {
+        let pinned = o["id"].as_str().is_some_and(|id| pins.contains(id));
         o.insert("pinned".into(), json!(pinned));
         let current = progress
             .get(o["id"].as_str().unwrap_or(""))
@@ -471,14 +505,8 @@ async fn list(State(app): State<App>, headers: HeaderMap) -> Result<Response> {
             .unwrap_or(Value::Null);
         o.insert("progress".into(), current);
     }
-    logs.sort_by(|a, b| {
-        b["name"].as_str().cmp(&a["name"].as_str()).then_with(|| {
-            b["uploaded"]
-                .as_f64()
-                .partial_cmp(&a["uploaded"].as_f64())
-                .unwrap_or(std::cmp::Ordering::Equal)
-        })
-    });
+    crate::listing::route_starts(&mut logs, crate::store::now());
+    crate::listing::sort(&mut logs);
     let value = json!({"logs":logs,"uploads":uploads,"max_upload_mb":app.uploads.max_log/1024/1024,"storage_used_bytes":app.used.load(Ordering::Relaxed),"concurrency":settings["concurrency"],"auto_convert":settings["auto_convert"],"keep_original_video":settings["keep_original_video"]});
     let bytes = serde_json::to_vec(&value).unwrap();
     let etag = format!("\"{}\"", &sha(&bytes)[..32]);
@@ -500,6 +528,8 @@ async fn progress(State(app): State<App>) -> Json<Value> {
 async fn devices(State(app): State<App>) -> Json<Value> {
     let mut value = app.auth.manage().await;
     value["enabled"] = json!(app.device_https_enabled);
+    value["host_port"] = json!(app.network.active_port);
+    value["configuration_error"] = json!(app.network.port_error);
     Json(value)
 }
 async fn pairing(State(app): State<App>, method: Method) -> Json<Value> {
@@ -535,10 +565,11 @@ async fn begin_device(
         .await?;
     Ok((s, Json(v)))
 }
-async fn begin_browser(
-    State(app): State<App>,
-    Json(body): Json<Value>,
-) -> Result<(StatusCode, Json<Value>)> {
+async fn begin_browser(State(app): State<App>, body: Bytes) -> Result<(StatusCode, Json<Value>)> {
+    let body = serde_json::from_slice::<Value>(&body)
+        .ok()
+        .filter(Value::is_object)
+        .ok_or_else(|| bad("invalid_upload"))?;
     Ok((
         StatusCode::CREATED,
         Json(app.uploads.begin_browser(body).await?),
@@ -609,7 +640,14 @@ async fn browser_finish(
     State(app): State<App>,
     Path(id): Path<String>,
     headers: HeaderMap,
-) -> Result<(StatusCode, Json<Value>)> {
+) -> crate::parity::Answer<(StatusCode, Json<Value>)> {
+    if crate::transfer::is_import(&app, &id).await {
+        return Err(crate::parity::Fail::new(
+            StatusCode::CONFLICT,
+            "invalid_upload",
+            "불러오기 업로드는 불러오기로만 등록합니다.",
+        ));
+    }
     let (s, v) = app
         .uploads
         .finish(&id, false, &headers, Value::Null)
@@ -631,13 +669,29 @@ async fn browser_cancel(
     Ok(Json(app.uploads.cancel(&id, false, &headers).await?))
 }
 async fn device_test(State(app): State<App>, request: Request) -> Result<Response> {
-    serve(app.web.join("device-test.html"), request).await
+    let mut response = serve(app.web.join("device-test.html"), request).await?;
+    for (name, value) in [
+        (
+            "content-security-policy",
+            "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'",
+        ),
+        ("referrer-policy", "no-referrer"),
+        ("x-content-type-options", "nosniff"),
+    ] {
+        response.headers_mut().insert(name, value.parse().unwrap());
+    }
+    Ok(response)
 }
-async fn processing(State(app): State<App>, method: Method, body: Bytes) -> Result<Json<Value>> {
+async fn processing(
+    State(app): State<App>,
+    method: Method,
+    body: Bytes,
+) -> crate::parity::Answer<Json<Value>> {
     if method == Method::POST {
-        let body: Value = serde_json::from_slice(&body).map_err(|_| bad("invalid_settings"))?;
+        let invalid = |m: &str| crate::parity::Fail::bad("invalid_settings", m);
+        let body: Value = serde_json::from_slice(&body).unwrap_or(Value::Null);
         let Some(fields) = body.as_object() else {
-            return Err(bad("invalid_settings"));
+            return Err(invalid("처리 설정이 올바르지 않습니다."));
         };
         if fields.is_empty()
             || fields.keys().any(|k| {
@@ -647,7 +701,24 @@ async fn processing(State(app): State<App>, method: Method, body: Bytes) -> Resu
                 )
             })
         {
-            return Err(bad("invalid_settings"));
+            return Err(invalid("처리 설정이 올바르지 않습니다."));
+        }
+        if fields
+            .get("concurrency")
+            .is_some_and(|v| !v.as_u64().is_some_and(|v| (1..=4).contains(&v)))
+        {
+            return Err(invalid("동시 처리 개수는 1~4여야 합니다."));
+        }
+        if fields.get("auto_convert").is_some_and(|v| !v.is_boolean()) {
+            return Err(invalid("자동 변환 설정은 켜짐 또는 꺼짐이어야 합니다."));
+        }
+        if fields
+            .get("keep_original_video")
+            .is_some_and(|v| !v.is_boolean())
+        {
+            return Err(invalid(
+                "원본 영상 보관 설정은 켜짐 또는 꺼짐이어야 합니다.",
+            ));
         }
         let _guard = app.store.registration.lock().await;
         let mut settings = app.store.processing.read().await.clone();
@@ -660,7 +731,7 @@ async fn processing(State(app): State<App>, method: Method, body: Bytes) -> Resu
             || !settings["auto_convert"].is_boolean()
             || !settings["keep_original_video"].is_boolean()
         {
-            return Err(bad("invalid_settings"));
+            return Err(invalid("처리 설정이 올바르지 않습니다."));
         }
         atomic_json(&app.store.root.join(".processing-settings.json"), &settings).await?;
         *app.store.processing.write().await = settings;
@@ -698,16 +769,11 @@ async fn remove_prepared(
     let _guard = lock.lock().await;
     let folder = app.store.folder(&id).await?;
     let mut meta = app.store.meta(&id).await?;
-    if q.get("skip_pinned").is_some_and(|v| v == "1") {
-        let settings: Value = read_json(&app.store.root.join(".storage-settings.json"))
-            .await
-            .unwrap_or(json!({}));
-        if settings["pinned_logs"]
-            .as_array()
-            .is_some_and(|v| v.contains(&json!(id)))
-        {
-            return Ok(Json(json!({"skipped":"pinned"})));
-        }
+    if q.get("skip_pinned").is_some_and(|v| v == "1")
+        && crate::storage::pins(&crate::storage::load_settings(&app.store.root).await?)
+            .contains(&id)
+    {
+        return Ok(Json(json!({"skipped":"pinned"})));
     }
     if meta["status"] == "processing" || app.jobs.busy(&id).await {
         return Err(crate::error::conflict(
@@ -748,180 +814,6 @@ async fn cancel_conversion(State(app): State<App>, Path(id): Path<String>) -> Re
     }
     Ok(Json(json!({"status":app.store.meta(&id).await?["status"]})))
 }
-fn clean_text(s: &str, max: usize, multiline: bool) -> Result<String> {
-    let n = s.nfc().collect::<String>();
-    let text = n.trim();
-    if text.chars().count() > max
-        || text
-            .chars()
-            .any(|c| c.is_control() && !(multiline && (c == '\n' || c == '\t')))
-    {
-        return Err(bad("invalid_text"));
-    }
-    Ok(text.to_owned())
-}
-async fn bookmarks(
-    State(app): State<App>,
-    Path(id): Path<String>,
-    method: Method,
-    body: Bytes,
-) -> Result<(StatusCode, Json<Value>)> {
-    bookmark_update(&app, &id, None, method, &body).await
-}
-async fn bookmark_item(
-    State(app): State<App>,
-    Path((id, bookmark)): Path<(String, String)>,
-    method: Method,
-    body: Bytes,
-) -> Result<(StatusCode, Json<Value>)> {
-    bookmark_update(&app, &id, Some(&bookmark), method, &body).await
-}
-async fn bookmark_update(
-    app: &App,
-    name: &str,
-    bookmark: Option<&str>,
-    method: Method,
-    body: &[u8],
-) -> Result<(StatusCode, Json<Value>)> {
-    let lock = app.store.record_lock(name).await;
-    let _lock = lock.lock().await;
-    let mut meta = app.store.meta(name).await?;
-    let mut items = meta["bookmarks"].as_array().cloned().unwrap_or_default();
-    if bookmark.is_some_and(|id| !items.iter().any(|b| b["id"] == id)) {
-        return Err(missing("not_found"));
-    }
-    if method != Method::GET {
-        if method == Method::DELETE {
-            items.retain(|b| b["id"] != bookmark.unwrap());
-        } else {
-            if body.len() > 8192 {
-                return Err(bad("invalid_bookmark"));
-            }
-            let body: Value = serde_json::from_slice(body).map_err(|_| bad("invalid_bookmark"))?;
-            if body.as_object().is_none_or(|v| v.len() != 3) {
-                return Err(bad("invalid_bookmark"));
-            }
-            let time = body["time"]
-                .as_f64()
-                .filter(|v| {
-                    v.is_finite()
-                        && (0.0..=86400.).contains(v)
-                        && meta["duration"].as_f64().is_none_or(|d| *v <= d)
-                })
-                .ok_or_else(|| bad("invalid_bookmark"))?;
-            let title = clean_text(
-                body["title"]
-                    .as_str()
-                    .ok_or_else(|| bad("invalid_bookmark"))?,
-                80,
-                true,
-            )?
-            .split_whitespace()
-            .collect::<Vec<_>>()
-            .join(" ");
-            let note = clean_text(
-                body["note"]
-                    .as_str()
-                    .ok_or_else(|| bad("invalid_bookmark"))?,
-                1000,
-                true,
-            )?;
-            if title.is_empty() || (method == Method::POST && items.len() >= 100) {
-                return Err(bad("invalid_bookmark"));
-            }
-            items.retain(|b| bookmark.is_none_or(|id| b["id"] != id));
-            items.push(json!({"id":bookmark.map(String::from).unwrap_or_else(id),"time":time,"title":title,"note":note}));
-        }
-        items.sort_by(|a, b| {
-            a["time"]
-                .as_f64()
-                .partial_cmp(&b["time"].as_f64())
-                .unwrap()
-                .then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
-        });
-        meta["bookmarks"] = json!(items);
-        app.store.save_meta(meta).await?;
-    }
-    Ok((
-        if method == Method::POST {
-            StatusCode::CREATED
-        } else {
-            StatusCode::OK
-        },
-        Json(json!({"bookmarks":items})),
-    ))
-}
-async fn tags(
-    State(app): State<App>,
-    Path(id): Path<String>,
-    Json(body): Json<Value>,
-) -> Result<Json<Value>> {
-    if body
-        .as_object()
-        .is_none_or(|o| o.keys().any(|k| k != "action" && k != "tags"))
-    {
-        return Err(bad("invalid_tags"));
-    }
-    let action = body.get("action").and_then(Value::as_str).unwrap_or("set");
-    if !["set", "add", "remove"].contains(&action) {
-        return Err(bad("invalid_tags"));
-    }
-    let values = body["tags"]
-        .as_array()
-        .filter(|v| v.len() <= 100)
-        .ok_or_else(|| bad("invalid_tags"))?;
-    let mut tags = BTreeMap::new();
-    for tag in values {
-        if tag
-            .as_object()
-            .is_none_or(|o| o.keys().any(|k| k != "name" && k != "color"))
-        {
-            return Err(bad("invalid_tags"));
-        }
-        let name = clean_text(
-            tag["name"].as_str().ok_or_else(|| bad("invalid_tags"))?,
-            32,
-            false,
-        )?
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
-        let color = tag.get("color").and_then(Value::as_str).unwrap_or("mint");
-        if name.is_empty()
-            || ![
-                "mint", "blue", "violet", "amber", "rose", "slate", "red", "coral", "lime",
-                "yellow", "cyan", "indigo",
-            ]
-            .contains(&color)
-        {
-            return Err(bad("invalid_tags"));
-        }
-        tags.insert(name.to_lowercase(), json!({"name":name,"color":color}));
-    }
-    let lock = app.store.record_lock(&id).await;
-    let _lock = lock.lock().await;
-    let mut meta = app.store.meta(&id).await?;
-    let mut current = BTreeMap::new();
-    if action != "set" {
-        for tag in meta["tags"].as_array().cloned().unwrap_or_default() {
-            current.insert(tag["name"].as_str().unwrap().to_lowercase(), tag);
-        }
-    }
-    for (key, value) in tags {
-        if action == "remove" {
-            current.remove(&key);
-        } else {
-            current.entry(key).or_insert(value);
-        }
-    }
-    if current.len() > 100 {
-        return Err(bad("invalid_tags"));
-    }
-    meta["tags"] = json!(current.into_values().collect::<Vec<_>>());
-    let response = json!({"tags":meta["tags"]});
-    app.store.save_meta(meta).await?;
-    Ok(Json(response))
-}
 async fn prepared(
     app: &App,
     id: &str,
@@ -932,11 +824,20 @@ async fn prepared(
     let folder = app.store.folder(id).await?;
     let meta = app.store.meta(id).await?;
     if meta["status"] != "ready" {
-        return Ok((
-            StatusCode::CONFLICT,
-            Json(json!({"status":meta["status"],"error":meta["error"]})),
-        )
-            .into_response());
+        // Python `data`/`telemetry`: a sentence when the record holds no error of its own.
+        let body = if name == "telemetry" {
+            json!({"error":"로그를 준비 중입니다."})
+        } else {
+            let error = match &meta["error"] {
+                Value::String(e) if !e.is_empty() => json!(e),
+                _ if meta["status"] == "unconverted" => {
+                    json!("변환 데이터가 없습니다. 로그 목록에서 변환해 주세요.")
+                }
+                _ => json!("로그를 준비 중입니다."),
+            };
+            json!({"status":meta["status"],"error":error})
+        };
+        return Ok((StatusCode::CONFLICT, Json(body)).into_response());
     }
     let path = folder.join("prepared").join(format!("{name}.json.gz"));
     if path.exists() {
@@ -954,6 +855,13 @@ async fn prepared(
         return Ok(Json(result).into_response());
     }
     let path = folder.join("prepared").join(format!("{name}.json"));
+    if name == "telemetry" && !path.is_file() {
+        return Ok((
+            StatusCode::NOT_FOUND,
+            Json(json!({"error":"차량 정보가 없는 변환 데이터입니다. 로그 목록에서 제거 후 변환해 주세요."})),
+        )
+            .into_response());
+    }
     safe_file(&folder, &path).await?;
     serve(path, request).await
 }
@@ -973,22 +881,38 @@ async fn telemetry(
 ) -> Result<Response> {
     prepared(&app, &id, "telemetry", &q, request).await
 }
-async fn track(State(app): State<App>, Path(id): Path<String>) -> Result<Response> {
+async fn track(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    headers: HeaderMap,
+) -> Result<Response> {
     let target = app.store.meta(&id).await?;
     let key = route_order(&target).0;
     let rows = map_rows(&app).await?;
     let segments=rows.into_iter().filter(|r|r.0==key).map(|(_,segment,m,summary,track)|json!({"id":m["id"],"segment":segment,"duration":summary["duration"],"distance_m":summary["track_distance_m"],"points":track["points"]})).collect::<Vec<_>>();
-    Ok(Json(json!({"id":id,"segments":segments})).into_response())
+    Ok(tagged(&headers, json!({"id":id,"segments":segments})))
 }
 fn route_order(meta: &Value) -> (String, Option<u64>) {
-    if let Some((route, number)) = meta["name"].as_str().unwrap_or("").rsplit_once(" / 구간 ")
-        && let Ok(number) = number.parse()
-        && let Some((dongle, route)) = route.split_once("--")
-        && let Ok(dongle) = u64::from_str_radix(dongle, 16)
-    {
-        return (format!("{dongle:x}--{route}"), Some(number));
+    let order = crate::parity::RecordingOrder::of(meta);
+    match order.route_key() {
+        Some(key) => (key, order.segment()),
+        None => (meta["id"].as_str().unwrap_or("").into(), None),
     }
-    (meta["id"].as_str().unwrap_or("").into(), None)
+}
+fn tagged(request: &HeaderMap, value: Value) -> Response {
+    let bytes = serde_json::to_vec(&value).unwrap();
+    let etag = format!("\"{}\"", &sha(&bytes)[..32]);
+    if header(request, "if-none-match") == etag {
+        return ([(h::ETAG, etag)], StatusCode::NOT_MODIFIED).into_response();
+    }
+    (
+        [
+            (h::ETAG, etag),
+            (h::CONTENT_TYPE, "application/json".to_owned()),
+        ],
+        bytes,
+    )
+        .into_response()
 }
 type MapRow = (String, Option<u64>, Value, Value, Value);
 async fn map_rows(app: &App) -> Result<Vec<MapRow>> {
@@ -1038,7 +962,8 @@ async fn map_rows(app: &App) -> Result<Vec<MapRow>> {
 async fn tracks(
     State(app): State<App>,
     Query(q): Query<BTreeMap<String, String>>,
-) -> Result<Json<Value>> {
+    headers: HeaderMap,
+) -> Result<Response> {
     let rows = map_rows(&app).await?;
     let metas = app
         .store
@@ -1080,9 +1005,11 @@ async fn tracks(
                 + s["track_distance_m"].as_f64().unwrap_or(0.)
         );
     }
-    let wanted = q
-        .get("ids")
-        .map(|v| v.split(',').collect::<std::collections::BTreeSet<_>>());
+    let wanted = q.get("ids").filter(|v| !v.is_empty()).map(|v| {
+        v.split(',')
+            .filter(|i| crate::store::valid_id(i))
+            .collect::<std::collections::BTreeSet<_>>()
+    });
     let mut routes = vec![];
     for mut route in groups.into_values() {
         if route["segments"].as_array().unwrap().is_empty()
@@ -1105,7 +1032,7 @@ async fn tracks(
         route["points"] = json!(crate::track::simplify(&coords, 300));
         routes.push(route);
     }
-    Ok(Json(json!({"routes":routes})))
+    Ok(tagged(&headers, json!({"routes":routes})))
 }
 async fn video(
     State(app): State<App>,
@@ -1113,14 +1040,34 @@ async fn video(
     Query(q): Query<BTreeMap<String, String>>,
     request: Request,
 ) -> Result<Response> {
-    let source = q.get("source").map(String::as_str).unwrap_or("qcamera");
+    let folder = app.store.folder(&id).await?;
+    let meta = app.store.meta(&id).await?;
+    if meta["status"] != "ready" {
+        return Ok((
+            StatusCode::CONFLICT,
+            Json(json!({"error":"로그를 준비 중이거나 변환에 실패했습니다."})),
+        )
+            .into_response());
+    }
+    // Python `video`: the front camera by default when the conversion produced it.
+    let summary: Value = read_json(&folder.join("prepared/summary.json"))
+        .await
+        .unwrap_or(Value::Null);
+    let preferred = ["front", "qcamera", "wide"]
+        .into_iter()
+        .find(|k| {
+            summary["videos"][k]
+                .as_object()
+                .is_some_and(|v| !v.is_empty())
+        })
+        .unwrap_or("qcamera");
+    let source = q.get("source").map(String::as_str).unwrap_or(preferred);
     let name = match source {
         "qcamera" => "camera.mp4",
         "front" => "fcamera.mp4",
         "wide" => "ecamera.mp4",
-        _ => return Err(bad("invalid_video_source")),
+        _ => return Err(missing("not_found")),
     };
-    let folder = app.store.folder(&id).await?;
     let prepared = folder.join("prepared").join(name);
     let path = if prepared.exists() {
         prepared
@@ -1128,7 +1075,11 @@ async fn video(
         folder.join(name)
     };
     safe_file(&folder, &path).await?;
-    serve(path, request).await
+    let mut response = serve(path, request).await?;
+    response
+        .headers_mut()
+        .insert(h::CACHE_CONTROL, "no-cache".parse().unwrap());
+    Ok(response)
 }
 async fn thumbnail(
     State(app): State<App>,
@@ -1138,14 +1089,18 @@ async fn thumbnail(
     let folder = app.store.folder(&id).await?;
     let path = folder.join("prepared/thumbnail.jpg");
     safe_file(&folder, &path).await?;
-    serve(path, request).await
+    let mut response = serve(path, request).await?;
+    response
+        .headers_mut()
+        .insert(h::CACHE_CONTROL, "private, max-age=86400".parse().unwrap());
+    Ok(response)
 }
 async fn original(
     State(app): State<App>,
     Path((id, kind)): Path<(String, String)>,
     request: Request,
 ) -> Result<Response> {
-    if !KINDS.contains(&kind.as_str()) {
+    if !crate::parity::STORED_KINDS.contains(&kind.as_str()) {
         return Err(missing("not_found"));
     }
     let folder = app.store.folder(&id).await?;
@@ -1199,45 +1154,28 @@ async fn original(
     safe_file(&folder, &path).await?;
     Ok(attachment(serve(path, request).await?, &meta, &kind))
 }
+/// Python `original` answers through Werkzeug `send_file`: its filename form and `no-cache`.
 fn attachment(mut response: Response, meta: &Value, kind: &str) -> Response {
-    let raw = match kind {
-        "camera.mp4" => "qcamera.ts",
-        "fcamera.mp4" => "fcamera.hevc",
-        "ecamera.mp4" => "ecamera.hevc",
-        _ => kind,
-    };
-    let fallback = meta["files"]["rlog.zst"]
-        .as_str()
-        .and_then(|v| v.strip_suffix("rlog.zst"))
-        .map(|prefix| format!("{prefix}{raw}"))
-        .unwrap_or_else(|| kind.into());
-    let source = meta["files"][raw]
-        .as_str()
-        .or_else(|| meta["files"][kind].as_str())
-        .unwrap_or(&fallback)
-        .rsplit(['/', '\\'])
-        .next()
-        .unwrap_or(kind);
-    let name = if kind.ends_with(".mp4") {
-        format!(
-            "{}.mp4",
-            source.rsplit_once('.').map(|v| v.0).unwrap_or(source)
-        )
-    } else {
-        source.into()
-    };
-    let encoded = name
-        .bytes()
-        .map(|b| {
-            if b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-') {
-                (b as char).to_string()
-            } else {
-                format!("%{b:02X}")
-            }
-        })
-        .collect::<String>();
-    if let Ok(value) = format!("attachment; filename*=UTF-8''{encoded}").parse() {
+    let name = crate::parity::download_name(meta, kind);
+    if let Ok(value) = crate::parity::send_file_disposition(&name).parse() {
         response.headers_mut().insert(h::CONTENT_DISPOSITION, value);
+    }
+    if response.status().is_success() {
+        let mime = if kind.ends_with(".mp4") {
+            "video/mp4"
+        } else if kind.ends_with(".hevc") {
+            "video/hevc"
+        } else if kind == "qcamera.ts" {
+            "video/mp2t"
+        } else {
+            "application/zstd"
+        };
+        response
+            .headers_mut()
+            .insert(h::CONTENT_TYPE, mime.parse().unwrap());
+        response
+            .headers_mut()
+            .insert(h::CACHE_CONTROL, "no-cache".parse().unwrap());
     }
     response
 }
@@ -1265,8 +1203,10 @@ async fn download_camera(
     Query(q): Query<BTreeMap<String, String>>,
     request: Request,
 ) -> Result<Response> {
-    let source = q.get("source").map(String::as_str).unwrap_or("qcamera");
+    // Python `download_one`: the log by default, then the camera in the asked format.
+    let source = q.get("source").map(String::as_str).unwrap_or("rlog");
     let (mp4, raw) = match source {
+        "rlog" => ("rlog.zst", "rlog.zst"),
         "qcamera" => ("camera.mp4", "qcamera.ts"),
         "front" => ("fcamera.mp4", "fcamera.hevc"),
         "wide" => ("ecamera.mp4", "ecamera.hevc"),
@@ -1277,5 +1217,16 @@ async fn download_camera(
         "original" => raw,
         _ => return Err(bad("invalid_download_format")),
     };
-    original(State(app), Path((id, kind.into())), request).await
+    let meta = app.store.meta(&id).await?;
+    let mut response = original(State(app), Path((id, kind.into())), request).await?;
+    if response.status().is_success() {
+        let name = crate::parity::download_name(&meta, kind);
+        if let Ok(value) = crate::parity::message_disposition(&name).parse() {
+            response.headers_mut().insert(h::CONTENT_DISPOSITION, value);
+        }
+        response
+            .headers_mut()
+            .insert(h::CACHE_CONTROL, "no-store".parse().unwrap());
+    }
+    Ok(response)
 }

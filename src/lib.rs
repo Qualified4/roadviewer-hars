@@ -1,3 +1,4 @@
+pub mod annotations;
 pub mod archive;
 pub mod auth;
 pub mod body_limit;
@@ -8,10 +9,13 @@ pub mod ha;
 pub mod http;
 pub mod http_storage;
 pub mod jobs;
+pub mod listing;
 pub mod logs;
 pub mod media;
 pub mod migration;
 pub mod native_video;
+pub mod network;
+pub mod parity;
 pub mod profile;
 pub mod replay;
 pub mod storage;
@@ -19,6 +23,7 @@ pub mod store;
 pub mod telemetry;
 pub mod thumbnail;
 pub mod track;
+pub mod transfer;
 pub mod upload;
 
 // Generated schemas reference each other through crate-level modules.

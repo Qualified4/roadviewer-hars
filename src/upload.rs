@@ -165,7 +165,7 @@ pub fn flatten_batch(body: &Value, streaming: bool, max_log: u64) -> Result<Vec<
     }
     Ok(files)
 }
-fn split_name(name: &str) -> Result<(String, String, String)> {
+pub(crate) fn split_name(name: &str) -> Result<(String, String, String)> {
     let clean = name.replace('\\', "/");
     if clean.starts_with('/')
         || clean.contains(':')
@@ -327,7 +327,7 @@ impl Uploads {
             max_log,
         }))
     }
-    async fn get(&self, session: &str) -> Result<Arc<Session>> {
+    pub(crate) async fn get(&self, session: &str) -> Result<Arc<Session>> {
         self.sessions
             .read()
             .await
@@ -495,6 +495,15 @@ impl Uploads {
             .await?;
         Ok(json!({"id":s.path.file_name().unwrap().to_string_lossy(),"chunk_size":2*1024*1024}))
     }
+    /// A browser session for files whose names the caller has validated (imports, multipart).
+    pub(crate) async fn create_browser(&self, files: Vec<UploadFile>) -> Result<Arc<Session>> {
+        let _admission = self.admission.lock().await;
+        self.create(files, json!({"expires_at":now()+7200.}), self.max_log)
+            .await
+    }
+    pub(crate) async fn forget(&self, session: &str) {
+        self.sessions.write().await.remove(session);
+    }
     async fn create(&self, files: Vec<UploadFile>, meta: Value, max: u64) -> Result<Arc<Session>> {
         let total = files
             .iter()
@@ -545,7 +554,12 @@ impl Uploads {
         self.sessions.write().await.insert(name, session.clone());
         Ok(session)
     }
-    async fn check_session(&self, s: &Session, device: bool, headers: &HeaderMap) -> Result<()> {
+    pub(crate) async fn check_session(
+        &self,
+        s: &Session,
+        device: bool,
+        headers: &HeaderMap,
+    ) -> Result<()> {
         if device {
             self.authorize(s.path.file_name().unwrap().to_str().unwrap(), headers)
                 .await?;
@@ -1102,7 +1116,7 @@ async fn sync_dir(path: &Path) -> std::io::Result<()> {
 }
 /// One rename hides the whole session; the folder's contents are deleted afterwards and,
 /// after a crash, at the next startup.
-async fn remove_session(path: &Path) -> std::io::Result<()> {
+pub(crate) async fn remove_session(path: &Path) -> std::io::Result<()> {
     let grave = path.with_extension("removing");
     tokio::fs::rename(path, &grave).await?;
     sync_dir(path.parent().unwrap()).await?;
