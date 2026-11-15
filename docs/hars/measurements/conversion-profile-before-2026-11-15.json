@@ -1,0 +1,46 @@
+{
+  "real_input": true,
+  "runs_per_implementation": 1,
+  "python": {
+    "elapsed_seconds": 3.7808397139961016,
+    "total_cpu_seconds": 3.307377,
+    "cpu_percent_one_core": 87.47731324754619,
+    "rss_samples": 185,
+    "rss_interval_seconds": 0.02,
+    "mean_rss_tree_kib": 233443.3233697206,
+    "peak_rss_tree_kib": 326808,
+    "sampled_stage_cpu_seconds_lower_bound": {
+      "startup": 0.11,
+      "log_prepare": 0.009999999999999995,
+      "log_decompress": 0.1,
+      "log_read": 0.97,
+      "log_analysis": 0.28,
+      "video_read": 0.020000000000000018,
+      "video_verify": 0.25,
+      "telemetry_build": 0.17999999999999994,
+      "telemetry_encode": 0.020000000000000018,
+      "telemetry_compress": 0.06000000000000005,
+      "replay_compact": 0.6099999999999999,
+      "replay_encode": 0.14000000000000012,
+      "replay_compress": 0.45999999999999996,
+      "summary_save": 0.08000000000000007
+    }
+  },
+  "rust": {
+    "elapsed_seconds": 4.966373007999209,
+    "total_cpu_seconds": 4.458267,
+    "cpu_percent_one_core": 89.76907277844786,
+    "rss_samples": 237,
+    "rss_interval_seconds": 0.02,
+    "mean_rss_tree_kib": 319541.8123107959,
+    "peak_rss_tree_kib": 434112,
+    "sampled_stage_cpu_seconds_lower_bound": {
+      "startup": 0.01,
+      "log_read": 0.85,
+      "video_read": 1.0700000000000005,
+      "telemetry_build": 2.1599999999999997,
+      "telemetry_compress": 0.10000000000000003,
+      "summary_save": 0.0
+    }
+  }
+}

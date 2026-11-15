@@ -1,0 +1,1059 @@
+[
+  {
+    "segment": 6,
+    "rust_conversion_seconds": 4.695,
+    "differences": {},
+    "python_conversion_seconds": 3.742,
+    "frames": 1201,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 10.8
+      },
+      "rust": {
+        "score": 10.8,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 3,
+    "rust_conversion_seconds": 3.298,
+    "differences": {},
+    "python_conversion_seconds": 3.152,
+    "frames": 1201,
+    "cameras": [
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 10.76
+      },
+      "rust": {
+        "score": 10.77,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 4,
+    "rust_conversion_seconds": 3.386,
+    "differences": {},
+    "python_conversion_seconds": 3.194,
+    "frames": 1200,
+    "cameras": [
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 10.8
+      },
+      "rust": {
+        "score": 10.8,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 5,
+    "rust_conversion_seconds": 3.22,
+    "differences": {},
+    "python_conversion_seconds": 3.019,
+    "frames": 1199,
+    "cameras": [
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 10.75
+      },
+      "rust": {
+        "score": 10.75,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 7,
+    "rust_conversion_seconds": 4.927,
+    "differences": {},
+    "python_conversion_seconds": 3.722,
+    "frames": 1199,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 8.49
+      },
+      "rust": {
+        "score": 8.49,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 8,
+    "rust_conversion_seconds": 5.144,
+    "differences": {},
+    "python_conversion_seconds": 3.874,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 35.39
+      },
+      "rust": {
+        "score": 35.39,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 9,
+    "rust_conversion_seconds": 5.377,
+    "differences": {},
+    "python_conversion_seconds": 4.135,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 38.67
+      },
+      "rust": {
+        "score": 38.67,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 10,
+    "rust_conversion_seconds": 5.33,
+    "differences": {},
+    "python_conversion_seconds": 3.821,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 32.96
+      },
+      "rust": {
+        "score": 32.95,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 11,
+    "rust_conversion_seconds": 5.67,
+    "differences": {},
+    "python_conversion_seconds": 3.948,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 32.16
+      },
+      "rust": {
+        "score": 32.15,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 12,
+    "rust_conversion_seconds": 5.431,
+    "differences": {},
+    "python_conversion_seconds": 4.098,
+    "frames": 1199,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 31.05
+      },
+      "rust": {
+        "score": 31.05,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 13,
+    "rust_conversion_seconds": 5.028,
+    "differences": {},
+    "python_conversion_seconds": 3.771,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 33.78
+      },
+      "rust": {
+        "score": 33.77,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 14,
+    "rust_conversion_seconds": 4.871,
+    "differences": {},
+    "python_conversion_seconds": 3.792,
+    "frames": 1201,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 40.54
+      },
+      "rust": {
+        "score": 40.54,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 15,
+    "rust_conversion_seconds": 5.001,
+    "differences": {},
+    "python_conversion_seconds": 3.901,
+    "frames": 1199,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 36.17
+      },
+      "rust": {
+        "score": 36.17,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 16,
+    "rust_conversion_seconds": 4.924,
+    "differences": {},
+    "python_conversion_seconds": 3.77,
+    "frames": 1201,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 37.97
+      },
+      "rust": {
+        "score": 37.97,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 17,
+    "rust_conversion_seconds": 5.199,
+    "differences": {},
+    "python_conversion_seconds": 3.828,
+    "frames": 1199,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 32.85
+      },
+      "rust": {
+        "score": 32.86,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 18,
+    "rust_conversion_seconds": 5.009,
+    "differences": {},
+    "python_conversion_seconds": 3.898,
+    "frames": 1201,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 39.4
+      },
+      "rust": {
+        "score": 39.39,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 19,
+    "rust_conversion_seconds": 4.873,
+    "differences": {},
+    "python_conversion_seconds": 3.875,
+    "frames": 1199,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 35.36
+      },
+      "rust": {
+        "score": 35.36,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 20,
+    "rust_conversion_seconds": 4.083,
+    "differences": {},
+    "python_conversion_seconds": 3.37,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 35.55
+      },
+      "rust": {
+        "score": 35.55,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 21,
+    "rust_conversion_seconds": 4.447,
+    "differences": {},
+    "python_conversion_seconds": 3.547,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 33.16
+      },
+      "rust": {
+        "score": 33.16,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 22,
+    "rust_conversion_seconds": 4.539,
+    "differences": {},
+    "python_conversion_seconds": 3.653,
+    "frames": 1201,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 33.53
+      },
+      "rust": {
+        "score": 33.53,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 23,
+    "rust_conversion_seconds": 4.524,
+    "differences": {},
+    "python_conversion_seconds": 3.57,
+    "frames": 1199,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 25.79
+      },
+      "rust": {
+        "score": 25.79,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 24,
+    "rust_conversion_seconds": 4.533,
+    "differences": {},
+    "python_conversion_seconds": 3.576,
+    "frames": 1201,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 22.59
+      },
+      "rust": {
+        "score": 22.59,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 25,
+    "rust_conversion_seconds": 4.449,
+    "differences": {},
+    "python_conversion_seconds": 3.546,
+    "frames": 1199,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 27.95
+      },
+      "rust": {
+        "score": 27.94,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 26,
+    "rust_conversion_seconds": 4.12,
+    "differences": {},
+    "python_conversion_seconds": 3.494,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 31.0
+      },
+      "rust": {
+        "score": 31.0,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 27,
+    "rust_conversion_seconds": 4.223,
+    "differences": {},
+    "python_conversion_seconds": 3.421,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 29.54
+      },
+      "rust": {
+        "score": 29.54,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 28,
+    "rust_conversion_seconds": 4.393,
+    "differences": {},
+    "python_conversion_seconds": 3.533,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 28.96
+      },
+      "rust": {
+        "score": 28.96,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 29,
+    "rust_conversion_seconds": 4.355,
+    "differences": {},
+    "python_conversion_seconds": 3.454,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 28.72
+      },
+      "rust": {
+        "score": 28.72,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 30,
+    "rust_conversion_seconds": 4.473,
+    "differences": {},
+    "python_conversion_seconds": 3.632,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 32.89
+      },
+      "rust": {
+        "score": 32.88,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 31,
+    "rust_conversion_seconds": 4.833,
+    "differences": {},
+    "python_conversion_seconds": 3.621,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 28.72
+      },
+      "rust": {
+        "score": 28.71,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 32,
+    "rust_conversion_seconds": 4.758,
+    "differences": {},
+    "python_conversion_seconds": 3.746,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 33.32
+      },
+      "rust": {
+        "score": 33.31,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 33,
+    "rust_conversion_seconds": 4.636,
+    "differences": {},
+    "python_conversion_seconds": 3.647,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 18.54
+      },
+      "rust": {
+        "score": 18.54,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 34,
+    "rust_conversion_seconds": 4.372,
+    "differences": {},
+    "python_conversion_seconds": 3.521,
+    "frames": 1201,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 24.87
+      },
+      "rust": {
+        "score": 24.87,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 35,
+    "rust_conversion_seconds": 4.641,
+    "differences": {},
+    "python_conversion_seconds": 3.574,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 15.66
+      },
+      "rust": {
+        "score": 15.66,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 36,
+    "rust_conversion_seconds": 4.253,
+    "differences": {},
+    "python_conversion_seconds": 3.499,
+    "frames": 1199,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 29.57
+      },
+      "rust": {
+        "score": 29.57,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 37,
+    "rust_conversion_seconds": 4.12,
+    "differences": {},
+    "python_conversion_seconds": 3.598,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 39.3
+      },
+      "rust": {
+        "score": 39.3,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 38,
+    "rust_conversion_seconds": 4.93,
+    "differences": {},
+    "python_conversion_seconds": 3.872,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 26.36
+      },
+      "rust": {
+        "score": 26.36,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 39,
+    "rust_conversion_seconds": 5.0,
+    "differences": {},
+    "python_conversion_seconds": 3.788,
+    "frames": 1201,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 28.15
+      },
+      "rust": {
+        "score": 28.15,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 40,
+    "rust_conversion_seconds": 5.039,
+    "differences": {},
+    "python_conversion_seconds": 3.798,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 27.44
+      },
+      "rust": {
+        "score": 27.44,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 41,
+    "rust_conversion_seconds": 5.174,
+    "differences": {},
+    "python_conversion_seconds": 3.771,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 28.53
+      },
+      "rust": {
+        "score": 28.52,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 42,
+    "rust_conversion_seconds": 5.191,
+    "differences": {},
+    "python_conversion_seconds": 3.733,
+    "frames": 1199,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 32.32
+      },
+      "rust": {
+        "score": 32.31,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 43,
+    "rust_conversion_seconds": 5.459,
+    "differences": {},
+    "python_conversion_seconds": 4.148,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 41.8
+      },
+      "rust": {
+        "score": 41.79,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 44,
+    "rust_conversion_seconds": 4.723,
+    "differences": {},
+    "python_conversion_seconds": 3.724,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 41.43
+      },
+      "rust": {
+        "score": 41.43,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 45,
+    "rust_conversion_seconds": 5.597,
+    "differences": {},
+    "python_conversion_seconds": 4.124,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 41.01
+      },
+      "rust": {
+        "score": 41.01,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 46,
+    "rust_conversion_seconds": 5.254,
+    "differences": {},
+    "python_conversion_seconds": 4.609,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 34.45
+      },
+      "rust": {
+        "score": 34.45,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 47,
+    "rust_conversion_seconds": 4.923,
+    "differences": {},
+    "python_conversion_seconds": 3.787,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 33.31
+      },
+      "rust": {
+        "score": 33.31,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 48,
+    "rust_conversion_seconds": 4.782,
+    "differences": {},
+    "python_conversion_seconds": 3.67,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 9.93
+      },
+      "rust": {
+        "score": 9.93,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  },
+  {
+    "segment": 49,
+    "rust_conversion_seconds": 4.592,
+    "differences": {},
+    "python_conversion_seconds": 3.745,
+    "frames": 1200,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "thumbnail_metadata": {
+      "python": {
+        "version": 2,
+        "score": 10.38
+      },
+      "rust": {
+        "score": 10.38,
+        "version": 2
+      }
+    },
+    "thumbnail_pixel_equivalence_validated": false
+  }
+]

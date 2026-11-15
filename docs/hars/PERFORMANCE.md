@@ -24,3 +24,32 @@ RSS는 Gunicorn master/worker를 포함한 프로세스 트리 합계로, 공유
 Rust는 각 조각을 디스크에 동기화한 뒤 응답하며 Python 원본은 조각별 fsync를 하지 않는다. 네트워크/Ingress/장치가 없는 loopback 시험의 실패 0건은 실환경 연결 안정성의 증명이 아니다. 짧은 1회 시험이므로 tail latency의 재현성도 확정하지 않는다.
 
 원시 결과: [api-2026-11-15.json](measurements/api-2026-11-15.json). 재현 도구는 `integration/benchmark_api.py`다. 추가 비교는 전체 변환·아카이빙과 실제 데이터 동등성을 맞춘 뒤 진행해야 한다.
+
+## 실제47구간 변환 관측 (2026-11-15)
+
+동일 원본 로그·보존 MP4에 대해 각 구간 Python 전체 변환과 Rust 전체 변환을 순서대로1회 실행했다. 기존 Python 출력과 cache key를 제외한 replay/telemetry/GPS/summary 동등성이 확인된 작업이다. WSL Ubuntu24.04,release 빌드,로컬NTFS 입력/영문tmp 출력이며,Python은PyAV wheel,Rust는system FFmpeg6.1과 별도 native 검사 프로세스를 사용한다. 카메라 없는 구간도 코퍼스대로 처리했다.
+
+| 구간별 경과 시간(초) | Python | Rust |
+|---|---:|---:|
+| 최소 | 3.019 | 3.220 |
+| 중앙값 | 3.733 | 4.782 |
+| 최대 | 4.609 | 5.670 |
+
+이번 관측에서 Rust는 더 느렸다. 보존 MP4 재사용·로그 분석 작업이며 raw TS/HEVC 대용량 리먹싱 처리량으로 일반화하지 않는다. CPU단계/RSS 평균·Peak/원본 바이트 처리량은 아직 측정하지 않았다. 캐시·순차 실행·일부 별도 업로드 smoke 동시 실행·라이브러리 차이가 있어 통제된 성능 개선 수치가 아니다. 바이너리는 버전 변경 전 개발 snapshot이며 최종커밋의 성능 보증도 아니다. 원시값은 [실제47구간 결과](measurements/replay-real47-2026-11-15.json)에 있다.
+
+실제 업로드→변환 중 목록 API 단발 관측: 첫 구간22표본,max5.1275ms;와이드 구간23표본,max1.0114ms. 모두 독립loopback 테스트이며 p95/p99·실환경 안정성으로 확대 해석하지 않는다.
+
+### 대표 와이드 구간의 CPU·RSS와 복사 제거
+
+실제6번구간 한 번씩 프로파일링한 뒤, 전체frames JSON복사와 불필요한 raw model/radar·telemetry 보관을 제거하고 Rust만 다시 측정했다. Python 기준은 재사용했다. 출력은 cache key를 제외한 replay/telemetry/track/summary 모두 다시 동등성을 확인했다.
+
+| 지표 | Python 기준 | Rust 수정 전 | Rust 복사 제거 후 |
+|---|---:|---:|---:|
+| 경과(초) | 3.78084 | 4.96637 | 4.52606 |
+| CPU(초, 자식 포함) | 3.30738 | 4.45827 | 4.03108 |
+| 평균 RSS 합계(KiB) | 233443 | 319542 | 280496 |
+| 관측 최고 RSS 합계(KiB) | 326808 | 434112 | 348612 |
+
+Rust의 불필요 복사는 줄었으나 Python보다 빠르거나 메모리가 적다고 주장하지 않는다. 20ms 샘플의 프로세스트리 RSS 합계(공유 페이지 중복 가능), 구간별1회 관측이다. profiler 자체 CPU는 대상 CPU에서 제외한다. 총CPU는 대기 회수된 자식/후손 rusage, 단계CPU는 짧은 자식 누락이 가능한 관측 하한이며 Python/Rust 단계 분할도 다르다. 단계 수치는 JSON에 보존했지만 서로 같은 단계의 직접 비교로 사용하지 않는다. 독립자식검사·JSON동적표현/압축의 비용은 추가 최적화 대상이다.
+
+[수정 전](measurements/conversion-profile-before-2026-11-15.json), [수정 후·Python 기준 재사용](measurements/conversion-profile-after-2026-11-15.json). 재현 도구는 `integration/profile_conversion.py`다.

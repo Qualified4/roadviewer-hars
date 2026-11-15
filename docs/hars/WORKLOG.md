@@ -34,3 +34,43 @@ Windows 작업 폴더 안의 소스를 WSL Ubuntu 24.04에서 빌드했다. Rust
 6. 실제 영상/로그·브라우저 재생/시킹·실장치 안정성·HAOS·역방향 인증 복원·TLS 인증서 자동 갱신을 검증한다. 이후 같은 기능/데이터 조건으로 전체 성능을 측정한다.
 
 추가 CI는 변경 사항의 검증에 필요한 범위로 한정하고, 기존 실행·로그를 먼저 확인한다. `2.0.0` 정식 태그/Release를 만들지 않는다.
+
+
+## 2026-11-15 alpha.2 재개 — 실제 코퍼스 검증 진행 중
+
+목표는 전체 재생 변환, 업로드 후 자동 큐, Python 동등성, 기존 UI 재생이며 아직 alpha.2 완료/릴리스 아님. Drive/NAS 이식과 운영 전환은 이번 범위 제외. 작업 트리의 신규 src/replay.rs, track.rs, thumbnail.rs, convert.rs, jobs.rs 및 HTTP 연결은 현재 미커밋 개발 중이다.
+
+- 사용자 지정 실제 코퍼스: `F:/davin/다운로드/WhaleDownload/roadviewer-14-segments-mp4` (14 rlog + 전방/qcamera 각14, 736950554 bytes). 원본은 읽기 전용.
+- `integration/real_replay_compare.py`: 14구간 모델총수 등 `/tmp/hars-alpha2-real14/frame-comparison.json`, 전 프레임/CCNC/조향/오버레이/replayV2 차이 없음 (첫 모델 프레임 상대 시간축).
+- `integration/real_conversion_compare.py`: `/tmp/hars-alpha2-real14-full/conversion-comparison.json`. 캐시 key만 제외한 전체 재생JSON/텔레메트리/summary/GPS, 14구간 모두 1e-6 초과 차이 없음. 썸네일 score 일부 ±0.01, 픽셀 동등성은 아직 미확인. Python wheel과 네이티브 FFmpeg 버전 차이 가능성이며 아직 원인 확정 아님.
+- 실제 데이터로 방향지시등 선택필드 누락, ffprobe pts_time 6자리 반올림 사용, telemetry_origin 반올림 순서, Python decimal rounding 차이를 찾아 수정했다. Python 원본은 수정하지 않았다.
+- `integration/real_upload_smoke.py`: `/tmp/hars-alpha2-upload1/result.json`. 첫 실제구간3파일 업로드 → queued/processing/ready, 업로드 수신 중 자동변환 대기 통과,751모델/전방/qcamera,원본해시 불변. 목록API22회max5.1275ms(단일 소규모 측정).
+- 실브라우저 ego TaskSpace23: 0번구간 전방 HEVC→브라우저 blob 및 qcamera 모두 readyState4, 재생/일시정지/30→45초 탐색/카메라 전환/실제 그래프·오버레이 확인. GPS API는1segment58points이나 지도 스크린샷이 빈 영역이어서 지도 렌더링 성공으로 보고하지 말 것. 스페이스는 종료했다. private screenshot `C:/Users/dabin/ego/hars-alpha2-real14/map.png`.
+- 독립 브라우저용 서버 실행 중(exec session84350): root `/tmp/hars-alpha2-upload1/data`, UI127.0.0.1:18199, device127.0.0.1:18198. 원래 운영 HAOS 아님. 재시작/종료 전 진행 중 변환 없는지 확인할 것.
+- 최신 로컬 Clippy 통과 `/tmp/hars-alpha2-clippy8.log`. 직전 cargo test 전체통과 `/tmp/hars-alpha2-tests2.log` (HTTP map 변경 이전; 최종 재검증 필요). 현재 releasebinary `/tmp/hars-target/release/roadviewer-hars`는최신 map API까지 포함(빌드로그 release6).
+- 실제 HA MCP 도구는 세션에 노출되지 않았지만 `.codex/config.toml`의 등록 `roadviewer-mcp` stdio 경로로 MCP SDK 연결 성공. 인증env값 출력하지 않는다. MCP756 ready,1.3.17,Drive보관. 실제47번구간6파일92.2MB를 별도 `F:/davin/Documents/roadviewer-downloads/hars-alpha2-validation`에 다운로드했고manifest SHA256확인. 보조fixture이며 이제 사용자 로컬 코퍼스가 우선.
+
+### 최신 사용자 추가 코퍼스
+
+`F:/davin/다운로드/WhaleDownload/roadviewer-47-segments-mp4`: 별도주행00000468--c7459c0c5a,47구간(3..49), rlog47/qcamera47/front44/wide26,164파일3315376538bytes. 3/4/5는q만,20..37은wide없음; 누락카메라는코퍼스구성으로분류하고변환실패로추정하지 않는다. 첫 와이드 대표6번구간을 비교중(exec45175); 결과 `/tmp/hars-alpha2-full47-first.log`, outputs `/tmp/hars-alpha2-real47-full`, Pythonoracle `/tmp/hars-alpha2-real47-oracle`. 비교스크립트 `--prepare-python --offset --limit` 추가, wide media mapping 포함. 첫 결과 확인후 나머지46개로 확대(기존14개는 반복안함). 보고JSON 좌표없음; raw replay/GPS는 Git에 넣지 않음.
+
+### 남은 구현/검증 주의점
+
+큐는 nice10/ionice2:7 자식, 동시1..4,업로드대기,수동/취소/재시작큐복구,staging/journal publication까지 연결. 아직 작업 중이며 오류/취소/재시작/경합 주입테스트 필요. keep_original_video=false 저장은가능하나현재원본은항상보존하므로정책불일치 해결필요(임시비활성으로숨기지말것). auto_convert 기본값은아직false,새설정정책결정필요. 성능단계CPU/RSS 및동등조건전환성능미측정. 이미지native지원위해software-scaling feature와libswscale-dev를Docker/CI추가(WSLlocalapt설치됨). 기존CI job이름은변경안함. 아직신규CI/푸시/태그/Release없고버전은alpha.1유지. STATUS/VALIDATION/PERFORMANCE최종갱신전이며이WORKLOG와ALPHA2-PIPELINE을우선참고.
+
+
+## alpha.2 追加 검증·변경 (위 진행 메모 갱신)
+
+- 47구간 전체 완료: 모델56399,와이드26구간. 기존14구간과합계61구간72749모델. cache key를제외한 replay/telemetry/track/summary 차이0. `/tmp/hars-alpha2-real47-full/conversion-comparison.json`,안전한보고서는docs/hars/measurements에복사됨.
+- 와이드6번구간4파일 실제업로드자동변환PASS `/tmp/hars-alpha2-upload-wide/result.json`1201모델·3카메라,upload waitPASS,API23샘플max1.0114ms,원본SHA불변.
+- egoTaskSpace24에서와이드실재생15→16초,일시정지,45초시킹44.999989ready4오류없음. 지도타일/GPS경로/차량표식/오버레이스크린샷직접확인성공.초기0번구간빈지도는비동기로딩중찍은것으로추정(원인확정아님). 24종료. private screenshot wide-map.png.
+- 독립서버84350은진행작업없음을확인후종료. 현재browser용서버exec19369 root `/tmp/hars-alpha2-upload-wide/data`,18199/18198실행중,production아님.
+- 2.0.0-alpha.2로Cargo/config/Docker/README버전맞춤. 새설치자동변환기본true,저장된partialprocessing설정은default와merge/validation. keep_original_video=false일때검증완료후MP4를recordroot로이동하고raw만제거하는publication분기추가(실제데이터는MP4입력으로raw삭제분기미검증). cancel요청generation지속하여publish직전/재시작race보호. ENOSPC로활성meta저장실패시active entry정리.
+- syntheticCI fullpipelineoracle `integration/pipeline_contract.py`: 원본Python+Rust,120모델/TS+rawHEVC전방+와이드,전체JSON차이0,무손실remuxPASS(로컬~3.4초). CI Rustjob의기존venv재사용step으로추가.
+- 로컬alpha.2fmt/clippy/전체Rust32테스트/Python synthetic oracle/실제ccnc client+auth migration PASS. 원본보존검사는WSLgit core.autocrlf unset과Windows checkout CRLF때문에false mismatch발생. WindowsnativeGit으로기존verify_reference.py재실행286파일PASS,check_release.pyalpha.2PASS. source파일gitdiff없음. 검사약화/원본수정없음.
+- 성능47중앙Python3.733s/Rust4.782s;Rust더느림(보고서doc반영). 대표실제6번구간프로파일추가 `integration/profile_conversion.py`: `/tmp/hars-alpha2-profile-wide/profile.json` Python3.78084s/CPU3.30738s/meanRSS233443KiB/peak326808KiB;Rust4.96637s/CPU4.45827s/meanRSS319542KiB/peak434112KiB. RSS프로세스트리합계,20ms관측. per-stageCPU는짧은자식누락가능한하한이며단계분할이다름.
+- 원인발견: json!(frames)가전체Value배열복제+원시model/radarstream과telemetry트리를scope끝까지보관. `convert.rs` 수정해frames를Value::Array로이동,frames생성후남은단계에필요없는streams제거,telemetry쓰기후drop,track/starts/counts추출후decoded drop. 수치개선은아직미보고. exec22005현재fmt/clippy/releasebuild중;완료후같은구간Rust만profile재측정(--baseline /tmp/hars-alpha2-profile-wide/profile.json)하고대표전체JSON동등성을확인. Python기준반복하지않음.
+- git아직미커밋/main8c12894. GitHub최신기존CI43702875850green,진행CI없음,rulesets조회빈배열. 사용자원래커밋/푸시요청되어phasecommit가능. 아직푸시/태그/Release없음. STATUS/VALIDATION/PERFORMANCE/DEVELOPMENT갱신했으나최종CI/프로파일결과추가필요.
+
+- 복사제거후대표6번Rust만재측정완료(기존Python재사용):4.526059s/CPU4.031083s/meanRSS280495.8KiB/peak348612KiB. Python보다여전히느리고무거움. cache key제외전체4출력다시차이0. before/after메트릭안전JSON을docs/hars/measurements에보존.
+- 이제최종소스커밋과CI를진행한다. 원본소스검사WindowsGit286PASS이며WSLgit설정차이에따른CRLFfalse mismatch만발생했다.

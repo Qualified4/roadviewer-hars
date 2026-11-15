@@ -24,6 +24,21 @@ GitHub Actions는 최신 커밋의 `HARS CI` 실행을 확인해야 한다. 로�
 
 ## 남은 검증
 
-전체 API 오류 코드/메시지·응답 형식, 실제 rlog와 모든 분석 결과, 카메라/로그 동기화와 전체 재생 데이터, 실제 브라우저 MP4 재생/시킹, Drive/NAS 장애/복구/삭제 보호, 전체 UI 흐름, 저장 공간 자동 정리, 실제 장치 장시간/동시 업로드, HAOS 병행 설치·시작·재시작·Ingress·외부 도메인/TLS/포트 승계는 미완료다. 현재 접근 가능한 HAOS/실장치/실주행 코퍼스가 없으며 해당 검증을 했다고 보고하지 않는다.
+전체 API 오류 코드/메시지·응답 형식, 실제 rlog와 모든 분석 결과, 카메라/로그 동기화와 전체 재생 데이터, 실제 브라우저 MP4 재생/시킹, Drive/NAS 장애/복구/삭제 보호, 전체 UI 흐름, 저장 공간 자동 정리, 실제 장치 장시간/동시 업로드, HAOS 병행 설치·시작·재시작·Ingress·외부 도메인/TLS/포트 승계는 미완료다. 위 목록은 alpha.1 당시 상태다. 아래 alpha.2 실주행 코퍼스 검증을 추가했으며, HAOS 설치·실장치 운영 검증은 여전히 미완료다.
 
 정식 Release, GHCR 이미지 게시, HAOS 설치·운영 포트 변경·Python 설정 변경·openpilot 전환을 수행하지 않았다.
+
+## alpha.2 실제 재생 변환 (2026-11-15)
+
+- 사용자 로컬 코퍼스 14구간(전방/qcamera), 추가47구간(qcamera47/전방44/와이드26)을 읽기 전용으로 사용했다. 각각16350/56399 모델 프레임이다.
+- `integration/real_conversion_compare.py`가 보존된 Python decoder 전체를 영문 임시 사본에서 실행한다. 비교 대상은 전체 replayV2, 영상 메타·시각, 모델·조향·레이더·CCNC·overlay, telemetry, GPS track, wall clock·주행 summary다. 경로/mtime 기반 cache key만 제외하며, 배열 순서·키의 존재·bool/null·숫자를 재귀 비교한다. 저장 최소 정밀도인 1e-6을 절대오차 한도로 사용하며 큰 값에 상대 허용오차를 부여하지 않았다. 두 코퍼스 모두 차이0이다.
+- 대표 실제 구간을 독립 Rust 서버에 브라우저 업로드 API로 전송했다. 3파일/4파일 → 자동 queued/processing/ready, 활성 업로드 중 자동변환 대기, 원본 SHA256 불변을 확인했다. 751/1201 모델 프레임과 2/3카메라가 실제 생성됐다.
+- ego Chromium 실제 UI: 전방/qcamera/와이드 전환, 재생·일시정지,15/25/30/45초 탐색, 차량 그래프와 속도·조향·모델/레이더 overlay 표시, 지도와 GPS 경로를 확인했다. 브라우저 전체61구간을 재생한 것은 아니며 대표0번/6번 구간 검사다. 와이드45초 탐색은44.999989초,readyState4,오류없음이었다.
+- CI용 `integration/pipeline_contract.py`는 별도 합성120모델/3카메라 TS/HEVC 입력을 만들어 Python/Rust 전체 출력 동등성과 실제 무손실 native remux를 검사한다. 합성을 실데이터로 표현하지 않는다.
+- 신규 Rust 검사는 null overlay의 compact 멱등성, 최신 past/leading 시각 경계, GPS 우선 wall clock, 변환 publication 전/후 재시작 및 완료 직전 취소 복구를 포함한다. 최신 로컬 Clippy 통과, 기존30테스트 및 추가 복구2테스트가 통과했다. 최신 커밋의 CI 결과는 별도로 확인한다.
+
+썸네일은 후보/점수/Y레벨·감마/JPEG/메타/실패 표식 정책을 이식했다. 실제14구간에서 score 일부±0.01, 동일FFmpeg로 JPEG를 RGB 디코딩해 비교한 평균 절대 채널차는0.7854~1.0617/255,최대9~14/255였다. Python PyAV wheel과 native FFmpeg 버전이 달라 픽셀·JPEG 바이트 동일성은 주장하지 않는다. 원인과 후보 동일성 검증은 추가로 필요하다.
+
+관측된 수정: 방향지시등 선택필드 누락, PTS 표시문자열6자리 대신 정수PTS/time_base 사용, Python telemetry_origin 반올림 순서와 decimal round를 맞췄다. 원본 Python의 동작은 변경하지 않았다. raw HEVC/TS 경계·업로드 중 전원 장애·디스크 고갈·전체 UI·HAOS·장시간 실장치·다른 차량/지역 코퍼스는 추가 검증 대상이다.
+
+결과: [실제14구간](measurements/replay-real14-2026-11-15.json), [실제47구간](measurements/replay-real47-2026-11-15.json), [썸네일 픽셀](measurements/thumbnail-pixels-2026-11-15.json). 좌표,영상,원본rlog,인증정보는 포함하지 않는다.

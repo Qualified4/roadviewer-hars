@@ -1,6 +1,6 @@
 # 개발·검증
 
-Linux 또는 WSL에서 Rust stable, C/C++ 빌드 도구, Cap'n Proto compiler, FFmpeg/ffprobe, pkg-config, libclang-dev, libavformat-dev, libavcodec-dev, libavutil-dev가 필요하다. 배포 컨테이너에는 Python 런타임이 없다. 비교용 Python 코드는 개발/테스트에만 사용한다.
+Linux 또는 WSL에서 Rust stable, C/C++ 빌드 도구, Cap'n Proto compiler, FFmpeg/ffprobe, pkg-config, libclang-dev, libavformat-dev, libavcodec-dev, libavutil-dev, libswscale-dev가 필요하다. 배포 컨테이너에는 Python 런타임이 없다. 비교용 Python 코드는 개발/테스트에만 사용한다.
 
 ```sh
 cargo fmt --all --check
@@ -46,3 +46,16 @@ Rust 구조화 로그는 요청 ID, 경로, 서버 진입, 인증/파일 락 대
 프리릴리스 workflow는 HARS 저장소의 `2.0.0-alpha.N`, `beta.N`, `rc.N` 태그만 처리한다. Cargo/HA 버전이 태그와 일치해야 하며 HARS 전용 GHCR 이미지를 게시한다. `2.0.0` 정식 태그는 이 workflow로 게시할 수 없다. 현재 작업에서 태그·Release·배포는 수행하지 않는다.
 
 한글 경로에서 네이티브 Python 로더가 비정상 종료하는 문제를 피하도록 비교 서버는 영문 임시 경로에서 실행한다. Rust의 Cargo 산출물은 WSL 영문 임시 디렉터리에 두어 Windows 파일 시스템의 빌드 비용을 줄일 수 있다.
+
+## 재생 변환 비교
+
+`roadviewer-hars convert-log RLOG NEW_OUTPUT [LABEL]`은 원본을 수정하지 않고 새 출력 폴더에 replay/telemetry/track/summary/thumbnail을 생성한다. 서비스는 자식 프로세스를 낮은 CPU/I/O 우선순위로 실행하고 완료 staging을 저널로 게시한다. 자동 변환은 새 설치에서 기본 켜짐, 기존 저장 설정은 유지한다.
+
+```sh
+/tmp/hars-test-env/bin/python integration/pipeline_contract.py "$PWD/target/debug/roadviewer-hars"
+/tmp/hars-test-env/bin/python integration/real_conversion_compare.py \
+  /path/to/private-corpus "$PWD/target/release/roadviewer-hars" \
+  /tmp/hars-oracle /tmp/hars-results --prepare-python --limit 47
+```
+
+실제 코퍼스는 `<route>--<segment>--rlog.zst`와카메라MP4 파일명으로 전달한다. 결과폴더는 새 경로를 사용하며 이미 끝난 기준 실행은 재사용한다. 비교 출력/좌표 원문을 Git에 넣지 않는다. `/api/settings/processing`, `/api/progress`, `/api/logs/<id>/convert`, `/prepared` DELETE, `/cancel` POST가 큐를 제어한다. `/cancel`은 HARS의 추가 API이며 기존UI의 queued 제거 경로도 유지한다.

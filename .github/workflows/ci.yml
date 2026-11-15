@@ -18,7 +18,7 @@ jobs:
         with:
           fetch-depth: 0
       - name: Native test dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y capnproto ffmpeg pkg-config libclang-dev libavformat-dev libavcodec-dev libavutil-dev
+        run: sudo apt-get update -qq && sudo apt-get install -y capnproto ffmpeg pkg-config libclang-dev libavformat-dev libavcodec-dev libavutil-dev libswscale-dev
       - name: Rust stable
         run: rustup update stable --no-self-update && rustup component add rustfmt clippy
       - uses: actions/cache@v6
@@ -37,6 +37,8 @@ jobs:
           /tmp/hars-compat-env/bin/pip install -r reference/python/roadviewer/requirements.txt aiohttp
           cargo build --locked
           /tmp/hars-compat-env/bin/python integration/ccnc_compat.py --rust "$PWD/target/debug/roadviewer-hars"
+      - name: Python and Rust full replay conversion oracle
+        run: /tmp/hars-compat-env/bin/python integration/pipeline_contract.py "$PWD/target/debug/roadviewer-hars"
       - run: python3 scripts/verify_reference.py
       - run: python3 scripts/check_release.py
   container:
