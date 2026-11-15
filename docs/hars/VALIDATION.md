@@ -63,3 +63,20 @@ GitHub Actions는 최신 커밋의 `HARS CI` 실행을 확인해야 한다. 로�
 - 원본286파일 정규화 내용과 HARS 버전/slug/포트/정식 릴리스 차단 검사를 통과했다. Rust release 설정과 API·출력 스키마·프론트엔드를 유지했다.
 
 CI는 기존 `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS required` 이름과 모든 의존 결과 success 검사 규칙을 유지한다. 저장소 ruleset은 없고 main 보호 API는 `Branch not protected`였다. 로컬 결과를 CI 성공으로 대신하지 않으며 최종 PR/main 커밋과 연결된 실행 상태를 확인한다. HAOS 실기기·추가 차량·장시간 실장치·순수 단계별 비용의 완전한 분리는 미검증이다.
+
+## 원본 형식 13구간 (2026-11-15)
+
+기준 main `0dd87af`, 최적화 소스 `314ed18`이다. 사용자 코퍼스39파일을 읽기 전용으로 조사하고 모두 SHA-256 불변을 확인했다. 13 rlog, 13 H.264 TS(526×330), 13 HEVC(1344×760)이며 와이드/별도 메타데이터는 없다. 카메라별1200패킷/디코딩1200프레임, 원본26영상 디코딩 오류0·중복 파일 내용 없음이다. 로그의 모델은 총15600프레임이다. 이 파일들은 Road Viewer 원본 형식 내보내기이므로 센서 최초 파일·컨테이너·시각 동일성을 가정하지 않는다. [파일별 크기/코덱/시각/누락 조사](measurements/original13-inventory-2026-11-15.json).
+
+- 최종 검증 포함 영상 전용 측정은26개 영상 각각 Python/기존Rust/최적화Rust warmup1+교차3회다. 모든 산출물에 원본의 압축 그림 SHA·decoder header set·패킷 수·PTS/DTS `1e-6`·키프레임 인덱스·avcC/hvcC/hvc1·faststart 검사를 수행했다. 입력·출력 파일 전체 SHA가 다르다는 이유로 손실로 판정하지 않았다.
+- 별도 전체 NAL 종류별 감사와 최종26 MP4 전체 디코딩도 수행했다. 정규화(start code 길이/Annex B trailing zeros 제외) 전체 NAL SHA가 입력과 모두 같고, 디코딩1200프레임/오류0이다. HEVC는2 slices/frame으로 VCL2400개와 frame1200개를 구분한다. `integration/nal_inventory.py`로 사진·payload를 출력하지 않고 재현할 수 있다.
+- 기존 HEVC의 in-band VPS/SPS/PPS 중복을 확인해 신규 hvc1 mux에서는 입력 해시 후 parameter set32/33/34만 sample에서 제거한다. hvcC의 동일 decoder config를 보존하며 입력/출력 VCL/헤더를 독립 재검증한다. Native FFmpeg BSF는 RAII로 소유권을 관리하고 worker timeout/출력 상한·형식/프로토콜 whitelist·corrupt packet/단일 video/크기/clock/B-frame/32MiB NAL 한도를 유지한다.
+- 로컬 rustfmt/Clippy/전체36테스트 통과. 추가 검사는 native 검사·통합 mux 입력 해시를 FFmpeg CLI 독립 추출과 대조하고, timestamp/stream metadata 일치·hvc1 sample 내 PS 부재·잘못된 codec/playlist 거부를 확인한다. 합성120모델/3cam raw 전체 oracle도 통과했다. 합성을 실제 와이드 원본 검증으로 표현하지 않는다.
+- 최종13구간 Rust 전체 출력은 기존Rust와 cache key 제외 `1e-6` 기준13/13 동일하다. **Python과 전체 JSON은11/13 동일**하다. 3/9번의 qcamera 마지막 sample duration 차이(각+0.211/-0.200ms)가 duration 필드에 전달된다. baseline에도 같은 차이가 있었으며 허용오차를 확대하거나 결과를 성공으로 숨기지 않았다. 입력 탐색의 FPS 추정 차이로 인한 미해결 메타데이터 호환 차이이고, VCL·프레임·PTS/DTS 손실은 아니다. 원인과 영향은 PERFORMANCE.md를 따른다.
+- 기존14+47구간 **72749모델 프레임**은 캐시된 불변 Python oracle을 재사용해 최종 Rust로 전부 재검증했다. replayV2/telemetry/GPS/summary·모델/레이더/조향/CCNC/overlay·단위/기본값/정렬에서1e-6 초과 차이0이다. [13구간·NAL·기존61 회귀 결과](measurements/original13-validation-2026-11-15.json).
+- 보존된 원본 `ccnc-hda1` client 함수로 실제3번구간3파일을 전용 Rust loopback에 전송했다. 새 테스트용 페어링/HMAC, streaming SHA·조각 재전송·재연결·완료 영수증 재사용, 업로드 완료 후 자동 변환·ready·replay/telemetry 생성을 확인했다. 별도 기존 인증/receipt 이전 회귀도 통과했다. 실제 차량 장치나 운영 인증을 사용하지 않았다.
+- 원본 보존 모드의 rlog/TS/HEVC 다운로드 파일 SHA는 입력과 같았다. 별도 테스트 서버의 원본 비보존 정책으로 **업로드된 사본만** 제거한 뒤 TS/HEVC 역변환·MP4 다운로드·Range206 바이트 검사를 통과했다. 재생성 파일 SHA는 달랐지만 정규화 전체 NAL과 decoder header는 같고 TS PTS 차이0이다. 사용자 원본 폴더는 변경하지 않았다.
+- 업로드/finish와 자동 변환 단계의 API 지연·server process-tree RSS를 독립 관측 thread로 측정했다. 업로더 asyncio loop의 동기 파일 읽기/해시가 관측 타이머를 지연시키지 않게 분리했다. 표본 수·최대값·percentile을 공개하고 운영 TLS/Ingress·장시간 tail latency로 확대하지 않는다.
+- ego Chromium 실제 UI에서 원본 HEVC 재생/일시정지·30초 탐색, qcamera 전환/59.9초 말미 탐색(readyState4/오류0), 지도·GPS 경로·실제 차량 그래프·overlay를 확인했다. 기존47코퍼스는 별도3cam 업로드 후 와이드44.999989초 탐색도 통과했다. 새13코퍼스에 실제 ecamera 원본이 있는 것처럼 보고하지 않는다. [업로드·다운로드·관측·브라우저 결과](measurements/original13-upload-browser-2026-11-15.json).
+
+전용 브라우저 Space와 테스트 서버는 모든 레코드 ready를 확인하고 종료했다. 사진/원본 로그·영상/GPS 좌표/인증정보/원시 perf 메모리/strace payload를 Git에 넣지 않았다. Python/openpilot 원본·HAOS·Ingress·운영 포트/도메인/업로드 설정·GHCR 운영 이미지·릴리스는 변경하지 않았다. 실제 raw ecamera, HAOS/실장치/TLS 장시간 운영, ISO 전용 conformance suite, 서로 다른 FFmpeg/PyAV 탐색 설정의 완전한 분리는 미검증이다.

@@ -152,3 +152,78 @@ Rust 전후 경과29.1%/CPU27.1%/평균RSS16.2%/Peak7.4% 감소했지만 Python�
 ### 업로드와 UI 응답
 
 전용 루프백 서버에서 실제 구간 재변환과16MiB 합성 업로드(256KiB×64)를 겹쳤다. processing 중 업로드와 겹친 목록 표본43개, 전체 목록165개 p50/p95/p99=0.612/0.820/0.988ms, 최대1.145ms였다. 조각64개 p50/p95/p99=4.962/6.988/7.197ms, 실패0건이다. 자동 변환은 활성 업로드 중 대기하는 기존 정책을 그대로 유지하고, 이 시험은 명시적 수동 재변환으로 동시 부하를 만들었다. 1회 loopback 표본이며 Python과 동등 부하의 반복 tail-latency 비교, TLS/Ingress/HAOS 또는 실장치 연결 실패율을 입증하지 않는다. [원시 수치](measurements/conversion-upload-load-2026-11-15.json).
+
+## 원본 형식 13구간: 영상 전용 측정 (2026-11-15)
+
+이번 기준은 최신 main `0dd87af`, 최적화 소스는 `314ed18`이다. 사용자 제공 원본 형식 내보내기39파일(13 rlog/13 TS/13 HEVC)을 읽기 전용으로 사용했다. 와이드·별도 메타데이터는 없다. 최초 카메라가 생성한 파일과의 동일성은 입증하지 않는다. 이전 절의 MP4에서 추출한 raw 실험과 다른 코퍼스다. 입력691.662MB 규모의 구체적 크기·코덱·1200프레임/파일·누락·SHA 보존 결과는 [파일 조사](measurements/original13-inventory-2026-11-15.json)에 있다.
+
+WSL2 Ubuntu24.04/x86_64/16 logical CPU, Rust1.100 release(opt3/thin LTO/generic CPU), Python3.12/PyAV16.1 wheel(FFmpeg8), Rust system FFmpeg6.1.1이다. 동일 NTFS 입력/WSL ext4 출력, 매 구간·카메라·구현 warmup1회+순서 교차3회, 전역 캐시 삭제 없음이다. 정상 측정에 perf/strace/단계 계측을 켜지 않았다. Python 어댑터도 원본 decoder CLI처럼 cyclic GC를 끈다. 어댑터의 GC 설정 및 hvc1 보정 후 최종 시리즈를 새로 측정했으며, 이전 후보의 유리한 절대시간을 최종 결과로 대체하지 않았다. 호스트 주파수·전체 부하는 통제하지 못했고 표본별 편차는 JSON에 보존한다.
+
+**검증 포함 영상 전용**은 입력/출력 영상 검사·무손실 muxing·프로세스 시작/IPC·작은 clock JSON 읽기를 포함한다. 로그 압축 해제·Cap'n Proto·replay/telemetry/GPS 계산·replay JSON/Gzip·썸네일은 포함하지 않는다. HEVC Python은 보존된 `prepare_video`를 직접 호출하고, TS는 decoder의 inline 영상 블록을 분리한 어댑터를 쓴다. Rust는 실제 `remux` CLI 경로다. 시간 밖에서 모든 출력의 정규화 압축 그림 SHA·decoder header·패킷 수·PTS/DTS·키프레임·configuration·faststart를 공통 감사했다. Rust의 단일 stream/크기/B-frame/박스/단조 DTS 검사는 더 엄격한 부분도 있어 두 구현이 내부 검사 순서까지 동일하다는 뜻은 아니다.
+
+아래 시간/CPU는 **13개 구간별 중앙값의 합**, 처리량은 **카메라별 전체 입력 bytes / 합산 시간**(decimal MB/s)이다. 파일 크기가 다른 처리량의 단순 평균이 아니다. 전체 실험의 워밍업·독립 감사 시간을 합친 경과와도 다르다.
+
+| 영상 전용 | Python | 기존 Rust | 최적화 Rust |
+|---|---:|---:|---:|
+| HEVC 입력488.896MB: 경과 합계(초) | 7.895 | 15.805 | 8.677 |
+| HEVC 처리량(MB/s) | 61.93 | 30.93 | 56.35 |
+| HEVC CPU 합계(초, 후손 포함) | 4.344 | 13.105 | 5.658 |
+| HEVC 평균 RSS의 표본 중앙값(KiB) | 41688 | 84545 | 80377 |
+| HEVC 전체 표본 중 관측 최고 RSS(KiB) | 50884 | 107020 | 95380 |
+| TS 입력30.132MB: 경과 합계(초) | 2.926 | 5.837 | 2.981 |
+| TS 처리량(MB/s) | 10.30 | 5.16 | 10.11 |
+| TS CPU 합계(초, 후손 포함) | 1.736 | 6.445 | 2.618 |
+| TS 평균 RSS의 표본 중앙값(KiB) | 28386 | 59680 | 53210 |
+| TS 전체 표본 중 관측 최고 RSS(KiB) | 50328 | 86304 | 83996 |
+
+Rust 경과는 HEVC45.1%/TS48.9%, CPU는56.8%/59.4% 줄었다. 그러나 Python보다 경과는 HEVC9.9%/TS1.9%, CPU는30.3%/50.7% 높다. 프로세스 트리 RSS도 여전히 높다. RSS는20ms 표본 합계라 짧은 Peak 누락·공유 페이지 중복이 가능하다. Python의 한 프로세스 경로와 Rust의 부모+격리 worker 구조, 서로 다른 FFmpeg 라이브러리 구성도 포함한다. 이 숫자를 실제 물리 메모리/PSS나 언어 자체의 차이로 해석하지 않는다. 원시 반복 표본·파일별 크기·바이너리 SHA는 [영상·전체 변환 측정](measurements/original13-remux-2026-11-15.json)에 보존했다.
+
+### 순수 mux 경로와 전체 변환의 구분
+
+추가 baseline 진단은1/3/9번에서 입력/출력 해시 검사를 타이머 밖으로 옮겨 **초기화+demux+패킷 복사+mux+faststart만** 측정했다(출력 감사는 생략하지 않음). 각3회 중앙값 합계는 HEVC Python1.474/기존Rust1.234초, TS0.480/0.301초였다. 기존 Rust의 mux 코어 자체가 Python보다 느리다는 근거는 없었고 검증/프로세스/중복 읽기가 큰 차이를 만들었다. 이 별도 시리즈와 최종 검증 포함 시리즈를 감산해 정확한 검사 비용으로 사용하지 않는다. 최종 HEVC 코어는 입력 SHA도 같은 순회에서 계산하므로 무검증 baseline 코어와 작업량이 다르다.
+
+실제1번 **전체 재생 변환**은 별도 warmup1/교차3회로 다음과 같다. 이 시간에 영상 처리량을 붙이지 않는다.
+
+| 전체 변환, 1200모델/2카메라 | Python | 기존 Rust | 최적화 Rust |
+|---|---:|---:|---:|
+| 경과 중앙값(초) | 4.193 | 4.166 | 3.244 |
+| CPU 중앙값(초, 후손 포함) | 3.767 | 3.829 | 2.776 |
+| 시간 가중 평균 RSS 중앙값(KiB) | 244853 | 256341 | 249189 |
+| 관측 Peak RSS 중앙값(KiB) | 342780 | 368340 | 364028 |
+
+전체 경과22.1%/CPU27.5% 감소지만 Peak는약1.2% 감소에 그쳤다. 로그/replay 트리의 상주 비용은 이번 영상 최적화로 없어지지 않는다. 최종 hvc1 헤더 보정 전 combined 후보도 같은 실험에서3.206초/CPU2.791초였다. 보정 후3.244초/CPU2.776초로, 보정을 성능 개선이라고 주장하지 않는다. 나머지13구간 전체 변환은 기능 검증용 각1회이며 반복 성능 비교와 구분한다.
+
+### 확인한 병목과 변경 효과
+
+대표 HEVC baseline perf499Hz/442표본/손실0에서 NAL feed7.47%, SHA3.39%, ffmpeg/ffprobe의 loader lookup각2.04% 및 파이프/스케줄링 커널 비용을 확인했다. 별도 payload 없는 strace 논리 I/O는 다음과 같다. 캐시를 거친 read/write 반환 bytes이며 물리 디스크 읽기량이 아니다. faststart의 출력 재읽기/이동도 포함한다.
+
+| 대표 HEVC 논리 I/O | Python | 기존 Rust | 최적화 Rust |
+|---|---:|---:|---:|
+| 입력 읽기(bytes) | 37527338 | 77282900 | 37527338 |
+| 출력 읽기(bytes) | 75060020 | 112633578 | 75075982 |
+| 파이프 전달(bytes, 한 방향) | 해당 스트림 파이프 없음 | 75518054 | 124729 |
+
+첫 변경은 FFmpeg의 검증된 Annex B BSF와 기존 NAL SHA 정책을 사용해 **한 demux 순회에서 packet clock과 압축 그림/헤더를 검사**한다. 다음 변경은 HEVC 입력 SHA를 muxing 패킷 순회에 합쳐 입력 재읽기를 없앤다. HEVC child는5→2, TS는5→3으로 줄었고 출력 독립 검사·프레임/PTS/DTS·header/SHA·faststart·protocol/format whitelist·180초/64MiB IPC 및 bounded NAL 정책은 유지했다. library embedding도 blocking worker permit을 유지한다.
+
+중간 대표1/3/9 교차3회에서 검사 통합은 HEVC3.255→2.743초, TS1.193→0.624초였다. 별도 같은 조건의 다음 실험에서 HEVC mux+입력 해시 통합은2.821→1.639초(Python1.668)였다. 다른 실험의 절대시간을 누적 개선율로 합산하지 않는다. 이후 발견한 hvc1 품질 보정까지 포함한 수치는 위 최종13구간 표를 따른다.
+
+최종 perf는215표본/손실0, sampled CPU 약0.431초(baseline0.886초)였다. NAL feed13.02%, SHA11.16%, memcmp/memmove각5.12%, loader lookup2.33%로 검증/복사와 native 초기화 비용이 남았다. 전체 CPU가 달라 상대 비중 상승을 회귀로 해석하지 않는다. 별도 warmup1+5회 무미디어 control 중앙값은 Python import av123.9ms, ffprobe version41.5ms, ffmpeg version47.9ms, Rust inspector의 존재하지 않는 입력 경로28.5ms였다. 성공한 remux 내부의 순수 초기화 비용이 아니므로 프로세스 수를 곱해 정확한 기여도로 단정하지 않는다. [프로파일·I/O·startup 원시 수치](measurements/original13-profile-2026-11-15.json).
+
+### 품질 차이·남은 비용
+
+HEVC에서 기존 FFmpeg6 출력은 샘플 안의 VPS/SPS/PPS와 hvcC를 함께 남겨 정규화 Annex B 확장 시 각60→120개로 중복했다. VCL2400개(2 slices/frame)는 변하지 않았다. Python/FFmpeg8은 샘플에서 이를 제거한다. [FFmpeg6 muxer](https://github.com/FFmpeg/FFmpeg/blob/n6.1/libavformat/movenc.c)와 [FFmpeg8 muxer](https://github.com/FFmpeg/FFmpeg/blob/n8.0/libavformat/movenc.c)의 parameter-set filtering 차이도 확인했다. 원본 해시 계산 후 `filter_units`로32/33/34만 제거하고 hvcC에 보존해 새 hvc1 출력을 맞췄다. 재인코딩·VCL/SEI 변경은 하지 않는다. 최종26영상 모두 정규화 **전체 NAL** SHA가 입력과 일치하고 디코딩1200프레임/오류0이다. 기존 MP4를 강제로 다시 쓰지는 않는다.
+
+13구간 중3/9번의 TS 마지막 sample duration은 Python4481/4518ticks, Rust4500ticks(90kHz)로 다르다. 입력 탐색 경로의 inferred rate는 Python241/12·239/12, Rust20이었다. 약+0.211/-0.200ms의 파생 길이 차이가 replay/telemetry/summary duration에 전달된다. 부동소수 오차로 숨기지 않았고 `1e-6`을 넓히지 않았다. 이는 baseline부터 있던 **미해결 메타데이터 호환 차이**이며 새 최적화 회귀가 아니다. FFmpeg/PyAV 버전과 탐색 설정 각각의 기여는 분리하지 못했다. 해당2구간도 압축 NAL·PTS/DTS·프레임·시킹 검사는 통과했지만 전체 JSON의 Python 동등성은 **11/13**이다. 최적화 전후 Rust는13/13 동일하며 기존61구간은 최종 코드로 차이0이다.
+
+### 실제 원본 업로드와 응답성
+
+고정 RV1 client의 실제3번구간3파일 업로드를 원본 보존/역변환용 비보존 모드에서 각각1회 실행했다. 페어링/HMAC·streaming SHA·조각 재전송·재연결·완료 영수증·자동 변환·다운로드/역변환을 검증했다. API 관측은 업로더 asyncio loop와 분리한 thread의 HTTP 요청이며, 소스 읽기/해시가 관측 타이머를 직접 지연시키지 않는다. 연결 설정·OS 스케줄링도 포함한 end-to-end 시간이며 순수 Rust handler 시간이 아니다.
+
+| 단계 | API 표본 | p50/p95/p99(ms) | 평균/관측Peak tree RSS(KiB) |
+|---|---:|---:|---:|
+| 보존 모드 upload+finish | 36 | 0.556 / 0.969 / 16.161 | 49888 / 121096 |
+| 보존 모드 자동 변환 | 134 | 0.567 / 0.721 / 0.882 | 278961 / 409944 |
+| 역변환 모드 upload+finish | 39 | 0.570 / 0.794 / 19.118 | 47659 / 112048 |
+| 역변환 모드 자동 변환 | 132 | 0.550 / 0.768 / 0.889 | 289531 / 420204 |
+
+각27개 조각 응답은 보존 모드 p50/p95/p99=10.753/12.896/18.127ms, 역변환 모드13.308/16.069/17.342ms였다. 실패 없이 완료했지만 소수 표본에서 p99는 최대값과 같아 안정적인 tail latency/장시간 연결 실패율을 뜻하지 않는다. upload 단계에는 finish 미디어 검사와 게시가 포함된다. 서로 다른 보존 정책의1회 실행을 성능 전후 비교로 사용하지 않는다. HAOS/TLS/Ingress/실제 차량 장치를 포함하지 않는다. [업로드·브라우저 원시 수치](measurements/original13-upload-browser-2026-11-15.json).
