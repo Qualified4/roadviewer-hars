@@ -40,6 +40,8 @@ declarations = [n for n in decoder_tree.body if
 exec(compile(ast.Module(body=declarations,type_ignores=[]),"decoder-fields","exec"),env)
 specs = env["SPECS"]
 specs["carState"]["vehicleGps"] = None
+for field in ("leftBlinker", "rightBlinker", "leftBlindspot", "rightBlindspot"):
+    specs["carState"][field] = None
 specs["carControl"]["hudControl"] = {"leadDistanceBars":None}
 for topic in ("roadEncodeIdx","wideRoadEncodeIdx"):
     specs[topic] = specs["qRoadEncodeIdx"]

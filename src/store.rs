@@ -149,11 +149,23 @@ impl Store {
             }
         }
         let processing_path = root.join(".processing-settings.json");
-        let processing = if processing_path.exists() {
-            read_json(&processing_path).await?
-        } else {
-            json!({"concurrency":1,"auto_convert":false,"keep_original_video":true})
-        };
+        let mut processing =
+            json!({"concurrency":1,"auto_convert":true,"keep_original_video":true});
+        if processing_path.exists() {
+            let saved: Value = read_json(&processing_path).await?;
+            let saved = saved
+                .as_object()
+                .ok_or_else(|| std::io::Error::other("invalid processing settings"))?;
+            processing.as_object_mut().unwrap().extend(saved.clone());
+        }
+        anyhow::ensure!(
+            processing["concurrency"]
+                .as_u64()
+                .is_some_and(|v| (1..=4).contains(&v))
+                && processing["auto_convert"].is_boolean()
+                && processing["keep_original_video"].is_boolean(),
+            "invalid processing settings"
+        );
         Ok(Arc::new(Self {
             root,
             records: RwLock::new(records),

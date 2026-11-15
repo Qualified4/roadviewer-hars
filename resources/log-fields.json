@@ -22,7 +22,11 @@
     "standstill": null,
     "parkingBrake": null,
     "brakeHoldActive": null,
-    "vehicleGps": null
+    "vehicleGps": null,
+    "leftBlinker": null,
+    "rightBlinker": null,
+    "leftBlindspot": null,
+    "rightBlindspot": null
   },
   "carControl": {
     "actuators": {

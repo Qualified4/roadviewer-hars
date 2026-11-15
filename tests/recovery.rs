@@ -104,3 +104,72 @@ async fn concurrent_registration_deduplicates_without_blocking_list() {
     );
     assert_eq!(a.store.records.read().await.len(), 1);
 }
+
+#[tokio::test]
+async fn conversion_publication_recovers_before_and_after_directory_rename() {
+    for already_installed in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let record = id();
+        let generation = id();
+        let folder = temp.path().join(&record);
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::write(folder.join("rlog.zst"), b"original").unwrap();
+        atomic_json(&folder.join("meta.json"),&json!({"id":record,"name":"recovery","status":"processing","conversion_id":generation})).await.unwrap();
+        let staging = folder.join(format!(".convert-{generation}"));
+        std::fs::create_dir(&staging).unwrap();
+        let summary =
+            json!({"duration":1.,"model_frames":2,"video":null,"videos":{},"has_track":false});
+        atomic_json(&staging.join("summary.json"), &summary)
+            .await
+            .unwrap();
+        atomic_json(&staging.join(".generation"), &generation)
+            .await
+            .unwrap();
+        if already_installed {
+            std::fs::rename(&staging, folder.join("prepared")).unwrap();
+        }
+        atomic_json(
+            &folder.join(".conversion.json"),
+            &json!({"generation":generation}),
+        )
+        .await
+        .unwrap();
+        let a = app(temp.path()).await;
+        assert_eq!(a.store.meta(&record).await.unwrap()["status"], "ready");
+        assert_eq!(a.store.meta(&record).await.unwrap()["model_frames"], 2);
+        assert_eq!(std::fs::read(folder.join("rlog.zst")).unwrap(), b"original");
+        assert!(!folder.join(".conversion.json").exists());
+        drop(a);
+        let a = app(temp.path()).await;
+        assert_eq!(a.store.meta(&record).await.unwrap()["status"], "ready");
+    }
+}
+
+#[tokio::test]
+async fn cancelled_completed_conversion_is_not_published_on_restart() {
+    let temp = tempfile::tempdir().unwrap();
+    let record = id();
+    let generation = id();
+    let folder = temp.path().join(&record);
+    std::fs::create_dir(&folder).unwrap();
+    std::fs::write(folder.join("rlog.zst"), b"original").unwrap();
+    atomic_json(&folder.join("meta.json"),&json!({"id":record,"name":"cancelled","status":"processing","conversion_id":generation,"cancel_requested":generation})).await.unwrap();
+    let staging = folder.join(format!(".convert-{generation}"));
+    std::fs::create_dir(&staging).unwrap();
+    atomic_json(&staging.join("summary.json"), &json!({"duration":1.}))
+        .await
+        .unwrap();
+    atomic_json(
+        &folder.join(".conversion.json"),
+        &json!({"generation":generation}),
+    )
+    .await
+    .unwrap();
+    let a = app(temp.path()).await;
+    let meta = a.store.meta(&record).await.unwrap();
+    assert_eq!(meta["status"], "unconverted");
+    assert_eq!(meta["auto_excluded"], true);
+    assert!(!folder.join("prepared").exists());
+    assert!(staging.join("summary.json").is_file());
+    assert_eq!(std::fs::read(folder.join("rlog.zst")).unwrap(), b"original");
+}

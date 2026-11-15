@@ -36,6 +36,7 @@ pub struct App {
     pub ingress_only: bool,
     pub used: Arc<AtomicU64>,
     pub device_https_enabled: bool,
+    pub jobs: Arc<crate::jobs::Jobs>,
     transfer_slots: Arc<tokio::sync::Semaphore>,
 }
 impl App {
@@ -54,6 +55,7 @@ impl App {
             .await
             .map_err(|_| anyhow::anyhow!("upload commit recovery failed; data preserved"))?;
         let used = Arc::new(AtomicU64::new(store.used().await?));
+        let jobs = crate::jobs::Jobs::open(store.clone(), uploads.clone()).await?;
         Ok(Self {
             store,
             auth,
@@ -62,15 +64,24 @@ impl App {
             ingress_only,
             used,
             device_https_enabled: false,
+            jobs,
             transfer_slots: Arc::new(tokio::sync::Semaphore::new(8)),
         })
     }
     pub fn background(&self) -> tokio::task::JoinHandle<()> {
         let app = self.clone();
         tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(10));
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
+            let mut tick = 0u64;
             loop {
                 interval.tick().await;
+                if app.jobs.tick().await.is_err() {
+                    tracing::warn!("conversion_scheduler_failed");
+                }
+                tick += 1;
+                if tick % 10 != 1 {
+                    continue;
+                }
                 if let Ok(n) = app.store.used().await {
                     app.used.store(n, Ordering::Relaxed);
                 }
@@ -91,6 +102,7 @@ pub fn ingress(app: App) -> Router {
         .route("/view/{id}/", get(replay_page))
         .route("/assets/{*name}", get(asset))
         .route("/api/logs", get(list))
+        .route("/api/tracks", get(tracks))
         .route("/api/progress", get(progress))
         .route("/api/settings/processing", get(processing).post(processing))
         .route("/api/settings/storage", get(storage).post(storage))
@@ -113,6 +125,9 @@ pub fn ingress(app: App) -> Router {
         .route("/api/logs/{id}/tags", post(tags))
         .route("/api/logs/{id}/pin", post(pin))
         .route("/api/logs/{id}/data", get(data))
+        .route("/api/logs/{id}/convert", post(convert))
+        .route("/api/logs/{id}/prepared", delete(remove_prepared))
+        .route("/api/logs/{id}/cancel", post(cancel_conversion))
         .route("/api/logs/{id}/telemetry", get(telemetry))
         .route("/api/logs/{id}/track", get(track))
         .route("/api/logs/{id}/video", get(video))
@@ -375,6 +390,7 @@ async fn list(State(app): State<App>, headers: HeaderMap) -> Result<Response> {
         json!({"pinned_logs":[]})
     };
     let settings = app.store.processing.read().await.clone();
+    let progress = app.jobs.progress.read().await.clone();
     let mut logs = app
         .store
         .records
@@ -392,7 +408,11 @@ async fn list(State(app): State<App>, headers: HeaderMap) -> Result<Response> {
             .as_array()
             .is_some_and(|v| v.contains(&o["id"]));
         o.insert("pinned".into(), json!(pinned));
-        o.entry("progress").or_insert(Value::Null);
+        let current = progress
+            .get(o["id"].as_str().unwrap_or(""))
+            .cloned()
+            .unwrap_or(Value::Null);
+        o.insert("progress".into(), current);
     }
     logs.sort_by(|a, b| {
         b["name"].as_str().cmp(&a["name"].as_str()).then_with(|| {
@@ -417,8 +437,8 @@ async fn list(State(app): State<App>, headers: HeaderMap) -> Result<Response> {
     )
         .into_response())
 }
-async fn progress() -> Json<Value> {
-    Json(json!({"progress":{}}))
+async fn progress(State(app): State<App>) -> Json<Value> {
+    Json(json!({"progress":app.jobs.progress.read().await.clone()}))
 }
 async fn devices(State(app): State<App>) -> Json<Value> {
     let mut value = app.auth.manage().await;
@@ -553,13 +573,118 @@ async fn device_test(State(app): State<App>, request: Request) -> Result<Respons
 }
 async fn processing(State(app): State<App>, method: Method, body: Bytes) -> Result<Json<Value>> {
     if method == Method::POST {
-        let _: Value = serde_json::from_slice(&body).map_err(|_| bad("invalid_settings"))?;
-        return Err(ApiError(
-            StatusCode::NOT_IMPLEMENTED,
-            "conversion_not_ported",
-        ));
+        let body: Value = serde_json::from_slice(&body).map_err(|_| bad("invalid_settings"))?;
+        let Some(fields) = body.as_object() else {
+            return Err(bad("invalid_settings"));
+        };
+        if fields.is_empty()
+            || fields.keys().any(|k| {
+                !matches!(
+                    k.as_str(),
+                    "concurrency" | "auto_convert" | "keep_original_video"
+                )
+            })
+        {
+            return Err(bad("invalid_settings"));
+        }
+        let _guard = app.store.registration.lock().await;
+        let mut settings = app.store.processing.read().await.clone();
+        for (key, value) in fields {
+            settings[key] = value.clone();
+        }
+        if !settings["concurrency"]
+            .as_u64()
+            .is_some_and(|v| (1..=4).contains(&v))
+            || !settings["auto_convert"].is_boolean()
+            || !settings["keep_original_video"].is_boolean()
+        {
+            return Err(bad("invalid_settings"));
+        }
+        atomic_json(&app.store.root.join(".processing-settings.json"), &settings).await?;
+        *app.store.processing.write().await = settings;
     }
     Ok(Json(app.store.processing.read().await.clone()))
+}
+async fn convert(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Value>> {
+    let lock = app.store.record_lock(&id).await;
+    let _guard = lock.lock().await;
+    let folder = app.store.folder(&id).await?;
+    let mut meta = app.store.meta(&id).await?;
+    if matches!(
+        meta["status"].as_str(),
+        Some("ready" | "queued" | "processing")
+    ) {
+        return Ok(Json(json!({"status":meta["status"]})));
+    }
+    if !folder.join("rlog.zst").is_file() {
+        return Err(crate::error::conflict("원본 로그가 없습니다."));
+    }
+    meta["status"] = json!("queued");
+    meta["manual_conversion"] = json!(true);
+    meta["auto_excluded"] = json!(false);
+    meta["queued_at"] = json!(crate::store::now());
+    meta["error"] = Value::Null;
+    app.store.save_meta(meta).await?;
+    Ok(Json(json!({"status":"queued"})))
+}
+async fn remove_prepared(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Query(q): Query<BTreeMap<String, String>>,
+) -> Result<Json<Value>> {
+    let lock = app.store.record_lock(&id).await;
+    let _guard = lock.lock().await;
+    let folder = app.store.folder(&id).await?;
+    let mut meta = app.store.meta(&id).await?;
+    if q.get("skip_pinned").is_some_and(|v| v == "1") {
+        let settings: Value = read_json(&app.store.root.join(".storage-settings.json"))
+            .await
+            .unwrap_or(json!({}));
+        if settings["pinned_logs"]
+            .as_array()
+            .is_some_and(|v| v.contains(&json!(id)))
+        {
+            return Ok(Json(json!({"skipped":"pinned"})));
+        }
+    }
+    if meta["status"] == "processing" || app.jobs.busy(&id).await {
+        return Err(crate::error::conflict(
+            "처리 중에는 변환 데이터를 제거할 수 없습니다.",
+        ));
+    }
+    let prepared = folder.join("prepared");
+    if prepared.exists() {
+        let real = tokio::fs::canonicalize(&prepared).await?;
+        let root = tokio::fs::canonicalize(&folder).await?;
+        if !real.starts_with(&root) || real == root {
+            return Err(bad("invalid_prepared_path"));
+        }
+        tokio::fs::remove_dir_all(prepared).await?;
+    }
+    meta["status"] = json!("unconverted");
+    meta["manual_conversion"] = json!(false);
+    meta["auto_excluded"] = json!(true);
+    app.store.save_meta(meta).await?;
+    app.jobs.progress.write().await.remove(&id);
+    Ok(Json(json!({"status":"unconverted"})))
+}
+async fn cancel_conversion(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Value>> {
+    let lock = app.store.record_lock(&id).await;
+    let _guard = lock.lock().await;
+    let mut meta = app.store.meta(&id).await?;
+    if meta["status"] == "processing" && app.jobs.busy(&id).await {
+        meta["cancel_requested"] = meta["conversion_id"].clone();
+        app.store.save_meta(meta.clone()).await?;
+        app.jobs.cancel(&id).await;
+        return Ok(Json(json!({"status":"cancelling"})));
+    }
+    if meta["status"] == "queued" {
+        meta["status"] = json!("unconverted");
+        meta["manual_conversion"] = json!(false);
+        meta["auto_excluded"] = json!(true);
+        app.store.save_meta(meta).await?;
+    }
+    Ok(Json(json!({"status":app.store.meta(&id).await?["status"]})))
 }
 async fn storage(State(app): State<App>, method: Method, body: Bytes) -> Result<Json<Value>> {
     let _registration = app.store.registration.lock().await;
@@ -841,13 +966,139 @@ async fn telemetry(
 ) -> Result<Response> {
     prepared(&app, &id, "telemetry", &q, request).await
 }
-async fn track(
+async fn track(State(app): State<App>, Path(id): Path<String>) -> Result<Response> {
+    let target = app.store.meta(&id).await?;
+    let key = route_order(&target).0;
+    let rows = map_rows(&app).await?;
+    let segments=rows.into_iter().filter(|r|r.0==key).map(|(_,segment,m,summary,track)|json!({"id":m["id"],"segment":segment,"duration":summary["duration"],"distance_m":summary["track_distance_m"],"points":track["points"]})).collect::<Vec<_>>();
+    Ok(Json(json!({"id":id,"segments":segments})).into_response())
+}
+fn route_order(meta: &Value) -> (String, Option<u64>) {
+    if let Some((route, number)) = meta["name"].as_str().unwrap_or("").rsplit_once(" / 구간 ")
+        && let Ok(number) = number.parse()
+        && let Some((dongle, route)) = route.split_once("--")
+        && let Ok(dongle) = u64::from_str_radix(dongle, 16)
+    {
+        return (format!("{dongle:x}--{route}"), Some(number));
+    }
+    (meta["id"].as_str().unwrap_or("").into(), None)
+}
+type MapRow = (String, Option<u64>, Value, Value, Value);
+async fn map_rows(app: &App) -> Result<Vec<MapRow>> {
+    let metas = app
+        .store
+        .records
+        .read()
+        .await
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    let root = app.store.root.clone();
+    tokio::task::spawn_blocking(move || {
+        let mut rows = vec![];
+        for m in metas {
+            if m["status"] != "ready" {
+                continue;
+            }
+            let folder = root.join(m["id"].as_str().unwrap()).join("prepared");
+            let Ok(summary) = std::fs::read(folder.join("summary.json"))
+                .and_then(|v| serde_json::from_slice::<Value>(&v).map_err(std::io::Error::other))
+            else {
+                continue;
+            };
+            if summary["has_track"] != true {
+                continue;
+            }
+            let Ok(track) = crate::logs::read_gzip(&folder.join("track.json.gz")) else {
+                continue;
+            };
+            if track["points"].as_array().is_none_or(|p| p.is_empty()) {
+                continue;
+            }
+            let (key, segment) = route_order(&m);
+            rows.push((key, segment, m, summary, track));
+        }
+        rows.sort_by(|a, b| {
+            a.0.cmp(&b.0)
+                .then(a.1.cmp(&b.1))
+                .then(a.2["id"].as_str().cmp(&b.2["id"].as_str()))
+        });
+        rows
+    })
+    .await
+    .map_err(|_| bad("invalid_track_data"))
+}
+async fn tracks(
     State(app): State<App>,
-    Path(id): Path<String>,
     Query(q): Query<BTreeMap<String, String>>,
-    request: Request,
-) -> Result<Response> {
-    prepared(&app, &id, "track", &q, request).await
+) -> Result<Json<Value>> {
+    let rows = map_rows(&app).await?;
+    let metas = app
+        .store
+        .records
+        .read()
+        .await
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    let mut groups: BTreeMap<String, Value> = BTreeMap::new();
+    for m in metas {
+        let key = route_order(&m).0;
+        groups.entry(key.clone()).or_insert_with(
+            || json!({"key":key,"ids":[],"segments":[],"points":[],"distance_m":0.}),
+        )["ids"]
+            .as_array_mut()
+            .unwrap()
+            .push(m["id"].clone());
+    }
+    for (key, _, m, s, t) in rows {
+        let group = groups.get_mut(&key).unwrap();
+        group["segments"]
+            .as_array_mut()
+            .unwrap()
+            .push(m["id"].clone());
+        let coords = t["points"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|p| Some([p[1].as_f64()?, p[2].as_f64()?]))
+            .collect::<Vec<_>>();
+        group["points"].as_array_mut().unwrap().extend(
+            crate::track::simplify(&coords, 150)
+                .into_iter()
+                .map(|p| json!(p)),
+        );
+        group["distance_m"] = json!(
+            group["distance_m"].as_f64().unwrap_or(0.)
+                + s["track_distance_m"].as_f64().unwrap_or(0.)
+        );
+    }
+    let wanted = q
+        .get("ids")
+        .map(|v| v.split(',').collect::<std::collections::BTreeSet<_>>());
+    let mut routes = vec![];
+    for mut route in groups.into_values() {
+        if route["segments"].as_array().unwrap().is_empty()
+            || wanted.as_ref().is_some_and(|wanted| {
+                !route["ids"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|id| wanted.contains(id.as_str().unwrap_or("")))
+            })
+        {
+            continue;
+        }
+        let coords = route["points"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| [p[0].as_f64().unwrap(), p[1].as_f64().unwrap()])
+            .collect::<Vec<_>>();
+        route["points"] = json!(crate::track::simplify(&coords, 300));
+        routes.push(route);
+    }
+    Ok(Json(json!({"routes":routes})))
 }
 async fn video(
     State(app): State<App>,

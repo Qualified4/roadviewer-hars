@@ -27,6 +27,8 @@ pub struct Decoded {
     pub counts: BTreeMap<String, u64>,
     pub streams: BTreeMap<String, Vec<Sample>>,
     pub bytes: u64,
+    #[serde(default)]
+    pub starts: crate::track::Starts,
 }
 
 struct Limited<R> {
@@ -81,6 +83,7 @@ pub fn decode(path: &Path) -> anyhow::Result<Decoded> {
         };
         let kind = field.get_proto().get_name()?.to_str()?.to_owned();
         *result.counts.entry(kind.clone()).or_default() += 1;
+        result.starts.note(&kind, event.get_log_mono_time());
         if matches!(
             kind.as_str(),
             "modelV2"
@@ -110,6 +113,9 @@ pub fn decode(path: &Path) -> anyhow::Result<Decoded> {
         ) {
             let mut value =
                 to_json(reader.get(field)?, SPECS.get(&kind), 0).context("decode event fields")?;
+            result
+                .starts
+                .add(&kind, event.get_log_mono_time(), event.get_valid(), &value);
             if kind == "sendcan" {
                 if let Some(messages) = value.as_array_mut() {
                     messages.retain(|m| {

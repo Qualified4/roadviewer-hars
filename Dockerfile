@@ -1,5 +1,5 @@
 FROM rust:1.100-bookworm AS builder
-RUN apt-get update && apt-get install -y --no-install-recommends capnproto pkg-config libclang-dev libavformat-dev libavcodec-dev libavutil-dev && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends capnproto pkg-config libclang-dev libavformat-dev libavcodec-dev libavutil-dev libswscale-dev && rm -rf /var/lib/apt/lists/*
 WORKDIR /build
 COPY Cargo.toml Cargo.lock build.rs ./
 COPY reference/python/roadviewer/schema ./reference/python/roadviewer/schema
@@ -8,7 +8,7 @@ COPY resources ./resources
 RUN cargo build --locked --release
 
 FROM debian:bookworm-slim
-ARG BUILD_VERSION=2.0.0-alpha.1
+ARG BUILD_VERSION=2.0.0-alpha.2
 ARG BUILD_ARCH=amd64
 LABEL io.hass.version="${BUILD_VERSION}" \
       io.hass.type="app" \

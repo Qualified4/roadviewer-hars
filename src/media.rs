@@ -451,31 +451,20 @@ async fn verify_mp4_boxes(path: &Path, hevc: bool) -> anyhow::Result<()> {
 }
 pub async fn thumbnail(source: &Path, kind: &str, output: &Path) -> anyhow::Result<()> {
     validate_upload(source, kind).await?;
-    let mut cmd = Command::new("ffmpeg");
-    cmd.args([
-        "-v",
-        "error",
-        "-nostdin",
-        "-n",
-        "-protocol_whitelist",
-        "file,pipe",
-        "-f",
-        input_format(kind),
-        "-i",
-    ])
-    .arg(source)
-    .args([
-        "-frames:v",
-        "1",
-        "-vf",
-        "scale=480:-2,eq=contrast=1.04:brightness=0.015",
-        "-q:v",
-        "3",
-        "-f",
-        "image2",
-    ])
-    .arg(output);
-    run(&mut cmd).await?;
+    if let Some(worker) = WORKER_EXECUTABLE.get() {
+        let mut command = Command::new(worker);
+        command.arg("__thumbnail").arg(source).arg(output);
+        run(&mut command).await?;
+    } else {
+        let permit = WORKERS.clone().acquire_owned().await?;
+        let source = source.to_path_buf();
+        let output = output.to_path_buf();
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            crate::thumbnail::make(&source, &output)
+        })
+        .await??;
+    }
     Ok(())
 }
 

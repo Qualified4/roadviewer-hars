@@ -14,6 +14,15 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
     let args = std::env::args().collect::<Vec<_>>();
+    if args.get(1).is_some_and(|v| v == "__thumbnail") {
+        anyhow::ensure!(args.len() == 4, "invalid internal thumbnail job");
+        let result = roadviewer_hars::thumbnail::make(
+            std::path::Path::new(&args[2]),
+            std::path::Path::new(&args[3]),
+        )?;
+        println!("{result}");
+        return Ok(());
+    }
     if args.get(1).is_some_and(|v| v == "__native-hevc") {
         anyhow::ensure!(args.len() == 5, "invalid internal media job");
         let clock: Vec<f64> =
@@ -26,6 +35,40 @@ async fn main() -> anyhow::Result<()> {
         return Ok(());
     }
     roadviewer_hars::media::set_worker_executable(std::env::current_exe()?)?;
+    if args.get(1).is_some_and(|v| v == "convert-log") {
+        anyhow::ensure!(
+            (4..=5).contains(&args.len()),
+            "usage: roadviewer-hars convert-log RLOG NEW_OUTPUT [LABEL]"
+        );
+        roadviewer_hars::convert::prepare(
+            PathBuf::from(&args[2]),
+            PathBuf::from(&args[3]),
+            args.get(4).cloned().unwrap_or_else(|| "recording".into()),
+            |stage, percent| println!("{}", serde_json::json!({"stage":stage,"percent":percent})),
+        )
+        .await?;
+        return Ok(());
+    }
+    if args.get(1).is_some_and(|v| v == "analyze-log") {
+        anyhow::ensure!(
+            args.len() == 4,
+            "usage: roadviewer-hars analyze-log RLOG OUTPUT_JSON_GZ"
+        );
+        let source = PathBuf::from(&args[2]);
+        let output = PathBuf::from(&args[3]);
+        tokio::task::spawn_blocking(move || -> anyhow::Result<()> {
+            let decoded = logs::decode(&source)?;
+            let (frames, origin) = roadviewer_hars::replay::frames(&decoded, |_, _| {})?;
+            let mut data = serde_json::json!({"frames":frames,"counts":decoded.counts,"origin":origin});
+            data["track"]=roadviewer_hars::track::collect(&decoded,origin);
+            data["start"]=decoded.starts.summary();
+            roadviewer_hars::replay::compact(&mut data);
+            logs::write_gzip(&output, &data)?;
+            println!("{}", serde_json::json!({"model_frames":data["frames"].as_array().map(Vec::len),"replay_v":data["replayV"]}));
+            Ok(())
+        }).await??;
+        return Ok(());
+    }
     let ha_mode = args.get(1).is_some_and(|v| v == "ha-start");
     let options = if ha_mode {
         roadviewer_hars::ha::load().await?

@@ -10,8 +10,7 @@ pub fn nested<'a>(record: &'a Value, path: &str) -> Option<&'a Value> {
     path.split('.').try_fold(record, |r, k| r.get(k))
 }
 pub fn round(value: f64, digits: i32) -> f64 {
-    let f = 10f64.powi(digits);
-    (value * f).round_ties_even() / f
+    crate::replay::r(value, digits.max(0) as usize)
 }
 fn number(value: Option<&Value>, factor: f64) -> Value {
     value
