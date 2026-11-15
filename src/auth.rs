@@ -288,6 +288,14 @@ impl Auth {
     }
     pub async fn save_receipt(&self, session: &str, receipt: Value) -> Result<()> {
         let mut inner = self.inner.lock().await;
+        if !inner
+            .state
+            .devices
+            .contains_key(receipt["device_id"].as_str().unwrap_or(""))
+        {
+            // Journal recovery may finish after the device was removed; nobody can read this receipt.
+            return Ok(());
+        }
         let mut next = inner.state.clone();
         next.receipts.insert(session.to_owned(), receipt);
         atomic_json(&self.path, &next).await?;
@@ -306,6 +314,8 @@ impl Auth {
                 return Err(conflict("device_not_revoked"));
             }
             next.devices.remove(device);
+            // A receipt naming a removed device fails `validate_state` and would block startup.
+            next.receipts.retain(|_, r| r["device_id"] != device);
         } else {
             entry["revoked"] = json!(true);
         }
