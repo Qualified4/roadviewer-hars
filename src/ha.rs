@@ -1,3 +1,4 @@
+use anyhow::Context;
 use serde::Deserialize;
 use std::path::Path;
 use tokio::process::{Child, Command};
@@ -105,10 +106,32 @@ pub async fn start_nginx(options: &Options) -> anyhow::Result<Option<Child>> {
             .success(),
         "nginx configuration check failed"
     );
-    Ok(Some(
-        Command::new("nginx")
-            .args(["-c", path, "-g", "daemon off;"])
-            .kill_on_drop(true)
-            .spawn()?,
-    ))
+    let mut child = Command::new("nginx")
+        .args(["-c", path, "-g", "daemon off;"])
+        .kill_on_drop(true)
+        .spawn()?;
+    let start = std::time::Instant::now();
+    let ready = async {
+        loop {
+            anyhow::ensure!(
+                child.try_wait()?.is_none(),
+                "nginx exited before TLS became ready"
+            );
+            if tokio::net::TcpStream::connect("127.0.0.1:8443")
+                .await
+                .is_ok()
+            {
+                return Ok::<_, anyhow::Error>(());
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+    };
+    tokio::time::timeout(std::time::Duration::from_secs(5), ready)
+        .await
+        .context("nginx TLS startup deadline exceeded")??;
+    tracing::info!(
+        startup_us = start.elapsed().as_micros() as u64,
+        "nginx_tls_ready"
+    );
+    Ok(Some(child))
 }

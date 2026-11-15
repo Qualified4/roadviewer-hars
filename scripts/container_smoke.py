@@ -24,10 +24,18 @@ with tempfile.TemporaryDirectory(prefix="hars-tls-") as temp:
     os.chmod(root / "privkey.pem", 0o600)
     (root / "options.json").write_text(json.dumps({"max_upload_mb":512,"device_https_enabled":True}))
     (root / "clock.json").write_text(json.dumps([0,.1,.2,.31,.4,.5,.6,.7,.8,.9]))
+    # Deterministic readiness regression: config checks remain immediate, while
+    # the actual TLS daemon starts after a short scheduling delay.
+    wrapper=root/"bin"
+    wrapper.mkdir()
+    launcher=wrapper/"nginx"
+    launcher.write_text('#!/bin/sh\ncase "$*" in *"daemon off;"*) sleep 0.3;; esac\nexec /usr/sbin/nginx "$@"\n')
+    os.chmod(launcher,0o755)
     context = ssl.create_default_context(cafile=str(root / "fullchain.pem"))
     started = False
     try:
         command("docker", "run", "-d", "--name", name,
+                "-e", "PATH=/ssl/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
                 "-e", "HARS_INGRESS_ONLY=0", "-p", "127.0.0.1::8099", "-p", "127.0.0.1::8443",
                 "-v", temp + ":/ssl:ro", "-v", str(root / "options.json") + ":/data/options.json:ro", image)
         started = True
@@ -58,6 +66,24 @@ with tempfile.TemporaryDirectory(prefix="hars-tls-") as temp:
         result=command("docker","exec",name,"roadviewer-hars","remux","/tmp/fcamera.hevc","fcamera.hevc","/ssl/clock.json","/tmp/fcamera.mp4")
         assert json.loads(result)["validated"] is True
         print("Container boot, trusted TLS, API isolation, Python-free runtime, and native VFR HEVC: PASS")
+    except Exception:
+        if started:
+            try:
+                raw=command("docker","logs",name,stderr=subprocess.STDOUT)
+                events=[]
+                for line in raw.splitlines():
+                    try:
+                        event=json.loads(line)
+                        message=event.get("fields",{}).get("message")
+                        if message:
+                            events.append(message)
+                    except (ValueError,TypeError):
+                        pass
+                state=json.loads(command("docker","inspect","--format","{{json .State}}",name))
+                print(json.dumps({"container_running":state["Running"],"exit_code":state["ExitCode"],"events":events[-12:]}),flush=True)
+            except Exception:
+                pass
+        raise
     finally:
         if started:
             subprocess.run(["docker", "rm", "-f", name], check=True, stdout=subprocess.DEVNULL)

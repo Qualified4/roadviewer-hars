@@ -14,6 +14,7 @@
 - `8b30ab7`: Rust 서버·인증/업로드·로그 읽기/텔레메트리·무손실 영상 엔진. API 예비 측정은 이 커밋의 release 빌드를 사용.
 - `f67ae62`: Nginx→Rust request ID 전파 및 원본 progress JSON 형식.
 - `45a53a8`: 스냅샷/대상/기존 Python 경로의 별칭·중첩을 실제 파일 쓰기 전에 검사.
+- `5265050`: 독립 HA 앱/두 아키텍처 CI/검증 도구 게시. 첫 CI의 Rust 검사와 이미지 빌드는 성공했으나 TLS 기동 검사는 실패했다. `FAILURES.md`의 준비 상태 수정과 이후 최신 실행 결과를 함께 확인한다.
 
 최종 배포 구성/검증 도구 커밋과 원격 최신 상태는 `git log`, `git status`, 해당 HEAD의 GitHub Actions에서 확인한다. 기존 성공을 새 HEAD의 성공으로 간주하지 않는다.
 
