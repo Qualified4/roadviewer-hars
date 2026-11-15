@@ -10,16 +10,23 @@ pub struct ApiError(pub StatusCode, pub &'static str);
 pub type Result<T> = std::result::Result<T, ApiError>;
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (self.0, Json(json!({"error":self.1}))).into_response()
+        let body = match crate::storage::message(self.1) {
+            Some(message) if self.0 == StatusCode::INSUFFICIENT_STORAGE => {
+                json!({"error":self.1,"message":message})
+            }
+            _ => json!({"error":self.1}),
+        };
+        (self.0, Json(body)).into_response()
     }
 }
 impl From<std::io::Error> for ApiError {
     fn from(e: std::io::Error) -> Self {
         // Never log arbitrary OS messages containing source paths or credentials.
-        match e.raw_os_error() {
-            Some(28) => Self(StatusCode::INSUFFICIENT_STORAGE, "insufficient_disk_space"),
-            _ => Self(StatusCode::INTERNAL_SERVER_ERROR, "storage_error"),
+        // Errors surfaced through tokio's file buffer keep only their kind, not the errno.
+        if e.raw_os_error() == Some(28) || e.kind() == std::io::ErrorKind::StorageFull {
+            return Self(StatusCode::INSUFFICIENT_STORAGE, "insufficient_disk_space");
         }
+        Self(StatusCode::INTERNAL_SERVER_ERROR, "storage_error")
     }
 }
 pub fn bad(code: &'static str) -> ApiError {

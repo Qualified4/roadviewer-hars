@@ -63,6 +63,16 @@ async fn main() -> anyhow::Result<()> {
         println!("{}", serde_json::to_string(&report)?);
         return Ok(());
     }
+    if args.get(1).is_some_and(|v| v == "__native-ts") {
+        anyhow::ensure!(args.len() == 5, "invalid internal media job");
+        roadviewer_hars::native_video::remux_ts(
+            std::path::Path::new(&args[2]),
+            std::path::Path::new(&args[3]),
+            args[4].parse()?,
+        )?;
+        roadviewer_hars::profile::finish();
+        return Ok(());
+    }
     roadviewer_hars::media::set_worker_executable(std::env::current_exe()?)?;
     if args.get(1).is_some_and(|v| v == "convert-log") {
         anyhow::ensure!(
@@ -175,6 +185,11 @@ async fn main() -> anyhow::Result<()> {
     );
     let mut app = App::open(root, web, ingress_only, max_upload_mb).await?;
     app.device_https_enabled = ha_mode && options.device_https_enabled;
+    if ha_mode {
+        app.network = std::sync::Arc::new(
+            roadviewer_hars::network::Network::boot(options.device_https_enabled).await,
+        );
+    }
     let bind: SocketAddr = std::env::var("HARS_BIND")
         .unwrap_or_else(|_| {
             if ha_mode {
