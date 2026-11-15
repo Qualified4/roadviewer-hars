@@ -1,0 +1,364 @@
+{
+  "io": {
+    "scope": "one separate strace diagnostic per camera/implementation; logical syscall bytes including rereads; not normal benchmark time; no payloads logged",
+    "cameras": {
+      "qcamera.ts": {
+        "python": {
+          "other_read": {
+            "bytes": 2054083,
+            "calls": 271
+          },
+          "source_read": {
+            "bytes": 5254744,
+            "calls": 176
+          },
+          "output_write": {
+            "bytes": 3872719,
+            "calls": 19
+          },
+          "output_read": {
+            "bytes": 3872747,
+            "calls": 121
+          }
+        },
+        "baseline": {
+          "other_read": {
+            "bytes": 1160721,
+            "calls": 1411
+          },
+          "other_write": {
+            "bytes": 67,
+            "calls": 3
+          },
+          "source_read": {
+            "bytes": 6061800,
+            "calls": 204
+          },
+          "pipe_write": {
+            "bytes": 4305962,
+            "calls": 3606
+          },
+          "pipe_read": {
+            "bytes": 4305962,
+            "calls": 2316
+          },
+          "output_write": {
+            "bytes": 3872720,
+            "calls": 19
+          },
+          "output_read": {
+            "bytes": 5831820,
+            "calls": 186
+          }
+        },
+        "final": {
+          "other_read": {
+            "bytes": 822764,
+            "calls": 960
+          },
+          "other_write": {
+            "bytes": 83,
+            "calls": 5
+          },
+          "source_read": {
+            "bytes": 5418584,
+            "calls": 181
+          },
+          "pipe_read": {
+            "bytes": 273628,
+            "calls": 32
+          },
+          "pipe_write": {
+            "bytes": 273628,
+            "calls": 4
+          },
+          "output_write": {
+            "bytes": 3872720,
+            "calls": 19
+          },
+          "output_read": {
+            "bytes": 3887888,
+            "calls": 126
+          }
+        },
+        "combined_before_header_fix": {
+          "other_read": {
+            "bytes": 822818,
+            "calls": 960
+          },
+          "other_write": {
+            "bytes": 83,
+            "calls": 5
+          },
+          "source_read": {
+            "bytes": 5418584,
+            "calls": 181
+          },
+          "pipe_read": {
+            "bytes": 273628,
+            "calls": 32
+          },
+          "pipe_write": {
+            "bytes": 273628,
+            "calls": 4
+          },
+          "output_write": {
+            "bytes": 3872720,
+            "calls": 19
+          },
+          "output_read": {
+            "bytes": 3887888,
+            "calls": 126
+          }
+        }
+      },
+      "fcamera.hevc": {
+        "python": {
+          "other_read": {
+            "bytes": 2046716,
+            "calls": 270
+          },
+          "source_read": {
+            "bytes": 37527338,
+            "calls": 1149
+          },
+          "output_write": {
+            "bytes": 75059996,
+            "calls": 291
+          },
+          "output_read": {
+            "bytes": 75060020,
+            "calls": 2149
+          }
+        },
+        "baseline": {
+          "other_read": {
+            "bytes": 1184867,
+            "calls": 1418
+          },
+          "other_write": {
+            "bytes": 15352,
+            "calls": 5
+          },
+          "source_read": {
+            "bytes": 77282900,
+            "calls": 2366
+          },
+          "pipe_write": {
+            "bytes": 75518054,
+            "calls": 4829
+          },
+          "pipe_read": {
+            "bytes": 75518054,
+            "calls": 2522
+          },
+          "output_write": {
+            "bytes": 75073075,
+            "calls": 291
+          },
+          "output_read": {
+            "bytes": 112633578,
+            "calls": 3155
+          }
+        },
+        "final": {
+          "other_read": {
+            "bytes": 643523,
+            "calls": 727
+          },
+          "other_write": {
+            "bytes": 15360,
+            "calls": 6
+          },
+          "source_read": {
+            "bytes": 37527338,
+            "calls": 1149
+          },
+          "output_write": {
+            "bytes": 75059997,
+            "calls": 291
+          },
+          "output_read": {
+            "bytes": 75075982,
+            "calls": 2154
+          },
+          "pipe_write": {
+            "bytes": 124729,
+            "calls": 3
+          },
+          "pipe_read": {
+            "bytes": 124729,
+            "calls": 20
+          }
+        },
+        "combined_before_header_fix": {
+          "other_read": {
+            "bytes": 643332,
+            "calls": 727
+          },
+          "other_write": {
+            "bytes": 15360,
+            "calls": 6
+          },
+          "source_read": {
+            "bytes": 37527338,
+            "calls": 1149
+          },
+          "output_write": {
+            "bytes": 75073075,
+            "calls": 291
+          },
+          "output_read": {
+            "bytes": 75089060,
+            "calls": 2154
+          },
+          "pipe_write": {
+            "bytes": 124729,
+            "calls": 3
+          },
+          "pipe_read": {
+            "bytes": 124729,
+            "calls": 20
+          }
+        }
+      }
+    }
+  },
+  "startup": {
+    "scope": "warm no-media controls, not a pure initialization cost inside a successful remux; cannot subtract directly from whole jobs",
+    "controls": {
+      "python_import_av": {
+        "samples": [
+          {
+            "seconds": 0.20079953700042097,
+            "cpu_seconds": 0.168918000000005
+          },
+          {
+            "seconds": 0.1573287610008265,
+            "cpu_seconds": 0.12917600000000107
+          },
+          {
+            "seconds": 0.12390991699976439,
+            "cpu_seconds": 0.0995869999999961
+          },
+          {
+            "seconds": 0.09482244299942977,
+            "cpu_seconds": 0.0784819999999975
+          },
+          {
+            "seconds": 0.09170131700011552,
+            "cpu_seconds": 0.07707900000000123
+          }
+        ],
+        "median_seconds": 0.12390991699976439,
+        "median_cpu_seconds": 0.0995869999999961
+      },
+      "ffprobe_version": {
+        "samples": [
+          {
+            "seconds": 0.04307981199963251,
+            "cpu_seconds": 0.039659999999988926
+          },
+          {
+            "seconds": 0.043884782999157324,
+            "cpu_seconds": 0.04052800000001788
+          },
+          {
+            "seconds": 0.040895432999604964,
+            "cpu_seconds": 0.03677599999998371
+          },
+          {
+            "seconds": 0.03779054799997539,
+            "cpu_seconds": 0.03601299999998986
+          },
+          {
+            "seconds": 0.041533523000907735,
+            "cpu_seconds": 0.0380770000000048
+          }
+        ],
+        "median_seconds": 0.041533523000907735,
+        "median_cpu_seconds": 0.0380770000000048
+      },
+      "ffmpeg_version": {
+        "samples": [
+          {
+            "seconds": 0.03847525799938012,
+            "cpu_seconds": 0.03528000000000553
+          },
+          {
+            "seconds": 0.03899007799918763,
+            "cpu_seconds": 0.036680999999983754
+          },
+          {
+            "seconds": 0.0479155670000182,
+            "cpu_seconds": 0.045056000000004204
+          },
+          {
+            "seconds": 0.04893936299959023,
+            "cpu_seconds": 0.045432000000015904
+          },
+          {
+            "seconds": 0.04810356899906765,
+            "cpu_seconds": 0.04455700000000995
+          }
+        ],
+        "median_seconds": 0.0479155670000182,
+        "median_cpu_seconds": 0.04455700000000995
+      },
+      "rust_inspector_no_media": {
+        "samples": [
+          {
+            "seconds": 0.03274046600017755,
+            "cpu_seconds": 0.03308700000000542
+          },
+          {
+            "seconds": 0.028468365000662743,
+            "cpu_seconds": 0.027834999999992505
+          },
+          {
+            "seconds": 0.028328189999228925,
+            "cpu_seconds": 0.028439999999982035
+          },
+          {
+            "seconds": 0.02923674300109269,
+            "cpu_seconds": 0.028801000000003185
+          },
+          {
+            "seconds": 0.02814136300003156,
+            "cpu_seconds": 0.027768000000010673
+          }
+        ],
+        "median_seconds": 0.028468365000662743,
+        "median_cpu_seconds": 0.028439999999982035
+      }
+    }
+  },
+  "cpu_sampling": {
+    "event": "cpu-clock",
+    "frequency_hz": 499,
+    "baseline": {
+      "samples": 442,
+      "lost": 0,
+      "event_seconds_approx": 0.885771536,
+      "self_percent": {
+        "NalHasher_feed": 7.47,
+        "sha256": 3.39,
+        "ffmpeg_loader_lookup": 2.04,
+        "ffprobe_loader_lookup": 2.04
+      }
+    },
+    "final": {
+      "samples": 215,
+      "lost": 0,
+      "event_seconds_approx": 0.43086172,
+      "self_percent": {
+        "NalHasher_feed": 13.02,
+        "sha256": 11.16,
+        "memcmp": 5.12,
+        "memmove": 5.12,
+        "loader_lookup": 2.33
+      }
+    },
+    "scope": "one representative HEVC job per binary, separate diagnostic; relative percentages and software sample CPU are not normal benchmark CPU/elapsed"
+  }
+}

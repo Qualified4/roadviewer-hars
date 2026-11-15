@@ -47,7 +47,8 @@ def main():
             expected.parent.mkdir(parents=True,exist_ok=True)
             env=dict(os.environ,RV_PREPARED_DIR=str(expected),RV_MEDIA_PATHS=json.dumps({
                 kind:str(log.with_name(log.name.replace("rlog.zst",filename))) for kind,filename in (
-                    ("camera.mp4","qcamera.mp4"),("fcamera.mp4","fcamera.mp4"),("ecamera.mp4","ecamera.mp4"))}))
+                    ("camera.mp4","qcamera.mp4"),("fcamera.mp4","fcamera.mp4"),("ecamera.mp4","ecamera.mp4"),
+                    ("qcamera.ts","qcamera.ts"),("fcamera.hevc","fcamera.hevc"),("ecamera.hevc","ecamera.hevc"))}))
             started=time.monotonic()
             with (expected.parent/"python.log").open("wb") as out:
                 subprocess.run([sys.executable,str(oracle/"app/decoder.py"),str(log),f"segment-{segment}"],env=env,stdout=out,stderr=out,check=True,timeout=600)

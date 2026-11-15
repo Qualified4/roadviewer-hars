@@ -100,3 +100,35 @@ Windows 작업 폴더 안의 소스를 WSL Ubuntu 24.04에서 빌드했다. Rust
 - 전용 loopback 재변환+16MiB 업로드: API165표본 p95 0.820ms/p99 0.988ms, 조각64개 실패0, processing/upload 겹침43표본. ego Space13에서 실제 전방/와이드/qcamera·재생/일시정지/15·45초 시킹/지도/overlay/그래프를 확인하고 Space를 닫았다. 모든 로그 ready를 확인해 소유한 테스트 서버만 종료했다.
 - PRIVATE raw/perf/DHAT/영상/좌표는 `/home/dabin/hars-performance` 및 사용자 ego 임시 폴더에만 있다. 공개할 숫자 집계/비교 결과는 docs/hars/measurements에 저장했다. STATUS/VALIDATION/PERFORMANCE/DEVELOPMENT를 갱신했다.
 - 다음: 도구·문서 커밋→PR1개 생성→amd64/aarch64/필수 CI 확인→병합 후 최신 main CI 확인. 실행 링크·최종 커밋·완료 여부는 PR 및 최종 사용자 보고에 기록한다. 운영 전환/릴리스/배포는 하지 않는다.
+
+## 2026-11-15 원본 형식 13구간 검증 (perf/original13-remux)
+
+- 최신 main/origin main `0dd87af` 동기화·clean 확인 후 분기. 원본 폴더 읽기 전용, 결과 `/home/dabin/hars-original13`, 기존 venv/target/perf/strace 재사용. 원본검증 요구라 별도 기준 PR/CI 없이 기존0dd코드 release `/home/dabin/hars-performance/final`을 실행권한 보존해 baseline 복사. CORE는 같은 컨텍스트에서 이미 읽어 적용 중, Ponytail 사용. 위임 없음. 예상2–4h 알림.
+- 파일39개:13rlog+13qcamera.ts+13fcamera.hevc. ecamera/메타 없음. 모두 SHA256 private inventory로 보존.26영상 디코딩 오류0, 각각1200프레임. fcam HEVC1344×760/1200packet/60keys/B0/원시PTS없음. q H264526×330/1200packet/80keys/90kHz, 원래 TS offset/jitter 존재. sensor 최초원본/컨테이너 동일성은 가정하지 않는다.
+- baseline-full13 Python비교 완료:3·9번 qcamera terminal sample duration에서 약0.2ms 차이로 duration파생필드가1e-6초과. 나머지11구간 차이0. 처음 진행로그7·8만 보고8구간차이0으로 말한 오류를 사용자에게 정정했다. PyAV FFmpeg8의 소스 q3 inferred rate241/12→last4481 ticks, q9 239/12→last4518ticks; Rust FFmpeg6 CLI 마지막4500 ticks. 실제 PTS/DTS와 NAL 무손실은 별도검증 중. 허용오차 확대/기존Python수정 금지, 차이는 조용히 숨기지 않는다.
+- 새 integration/python_video_job.py: 원본HEVC prepare_video 사용, inline qTS블록만 로그와 분리한adapter. core mux-only는 복사루프(encoder 없음), 출력은 시간밖에서공통감사. benchmark_remux.py는warmup1/교차3회persegment/camera/variant, samplerCPU/RSS와정규화SHA/headers/PTS-DTS/keyframe/config/faststart 검증. initial audit에서PyAV BSF가packet을consume하므로해시전에timestamp보관하도록수정. 원본14/47 및3cam 도구를 raw파일명도 인식하도록 확장했다.
+- pilot segment1 validated-video:PythonHEVC0.593s/CPU0.316,기존Rust1.154s/CPU0.939; q0.211/0.127 vs0.405/0.450. purevideo이고로그/JSON/thumbnail제외. baselineperf442samples/499Hz/lost0: NALfeed7.47%,SHA3.39%,ffmpeg/ffprobe dynamiclookup각2.04%,pipe/kernel wakeups다수. private -s0 strace IO payload미출력으로 read/write 추적보존. source read 재검사는필요.
+- 후보 native inspector 구현(src/native_video.rs): 기존FFmpeg BSF를작은RAII wrapper로사용해한demuxpass에서packet시각과기존NAL SHA/header정책동시검사. 별도worker/180초/64MiB IPC/프로토콜·포맷화이트리스트/코덱·단일video·크기·패킷corrupt·boundedNAL유지. 입력/출력 각각동일검증. ffprobe+ffmpeg stream-pipe중복을줄이며 qcamera사전검사도같은job 내Inspection재사용. uploadheader검사/역변환/thumbnail기존경로는아직유지. 새내부CLI __inspect. publicrestschema변경없음.
+- fmt/Clippy통과,releaseartifact inspected 생성. 현재 pilot-inspected3구간1/3/9 Python+baseline+후보 교차3회실행중. 아직성능효과/전체회귀/새CI/커밋/PR미확인. 효과없으면후보원복(다른작업자변경건드리지않음).
+- 다음:pilot효과/무결성→13구간cam별반복/순수mux/fullconvert분리→nativeFFBSF경계test+35전체+합성3cam→기존61구간oracle재사용Rust회귀→실제원본업로더/2cam원본업로드/download역변환/브라우저→측정안전JSON·3문서갱신→커밋/PR/amd64+aarch64CI. 13코퍼스에는와이드없어실제3cam으로보고하지않는다. HAOS/기존repo/운영설정/릴리스이미지변경금지.
+### 원본13 최적화·검증 추가 현황
+
+- 후보 inspected 대표1/3/9 비교: q0.398→0.208s 수준, HEVC합계3.255→2.743s. HEVC 입력해시를mux순회와합친combined는다음실험에서2.821→1.639s(Python1.668). 빈루프가아닌동일검증:PacketClock/SHA/header/count/keyframes 유지. baseline binary immutable.
+- `video-all13`교차3회/warmup1/percamera/persegment:HEVC Python7.432s/baseline14.493/combined7.334(총488896405bytes),q2.680/5.189/2.694(30132264bytes). rootCPU/평균/관측Peak RSS 저장. 원본PythonCLI와동일하게gc.disable설정한최종어댑터로새quality후보재측정중이며이전숫자를최종으로승격하지않는다.
+- combined기준13전체JSON before/after1e-6차이0,thumbnail JSON/JPEG바이트일치. Python대비3/9 qterminalduration차이는기존과동일. 기존14+47/72749프레임모두차이0. 로컬36테스트(fmt/clippy)+합성3cam full oracle 통과.
+- 별도 -s0 strace논리I/O(대표HEVC):source_read기준77282900→37527338bytes, output_read112633578→75089060, pipe75.5MB→124729bytes. 파이프/파일logicalread와디스크physicalIO혼동금지. baseline CPUperf442samples/499Hz/lost0보존.
+- sourceNAL全종류별추가검사:HEVC VCL2slices/frame(2400NAL/1200packets),VCL SHA모두동일. 그러나기준/combined HEVC 샘플에VPS/SPS/PPS각60개가남아hvcC분60개와합쳐AnnexB확장시120개로중복. PythonFF8은샘플에없고확장60개. FFmpeg n6.1 movenc filter_ps=0, n8.0 hvc1에서filter_ps적용을공식소스로확인함. 이는기준부터있던품질문제이며새최적화회귀는아님.
+- 최종314ed18 corecommit:네이티브FFmpeg filter_units로mux전에32/33/34만제거(그전입력hash, hvcC헤더보존),VCL/SEI/시간/키프레임검증유지. 신규test는FFmpeg독립추출SHA/메타비교및hvc1샘플내PS부재를assert. 전체36+합성3cam다시통과. sourceartifact `/home/dabin/hars-original13/final`.
+- 최종순차세션6277:video-final13(all26video×Py/baseline/final×warmup+3repeat)→full-final-1(quality효과분리 combined포함)→quality-full13 기존차이정확히3/9인지→final-regression14/47. 성능벤치와다른CPU작업겹치지않게실행중.
+- 실제원본client도구추가(real_device_media.py):RV1 페어링/HMAC/조각재전송/재연결/완료receipt·실제원본3파일53MB업로드·자동변환·입력보존및원본삭제정책으로강제역변환·MP4/원본다운로드SHA/Range206/TSPTS복원. 첫실험도구가finish.logs항목을문자열로잘못가정해실패,원래API는메타객체라id를선택하도록수정(서버스키마변경없음). monitor정리보완. combined로retained/reverse모두성공,원본qPTSdelta0;원본업로드중API p99약1.31ms/RSSpeak116344KiB(transfer+finish포함),변환시관측peak413212KiB. 전용루프백1회표본이고최종후보다시검증예정.
+- 기존47코퍼스3cam4파일업로드regression(combined)성공,원본13에와이드없음을구분. 새로운원본13실제3cam검증으로표현하지않음. 최신hvc1후보로원본26영상NAL/decodedframe재감사·signed업로드두모드·브라우저·최종61·CI필요. 아직푸시/PR없음;source314ed18만로컬커밋. 운영설정/원본파일/기존repo변경없음.
+### 최종 검증 완료·공개 준비 (2026-11-16)
+
+- Source314ed18최종video-final13: Python/기존/최종 각각warmup1+교차3회/26영상. HEVC 합계7.894787/15.804578/8.676774초,CPU4.343683/13.105135/5.658285; TS2.925770/5.836634/2.981046초,CPU1.736495/6.445157/2.617669. 카메라별 전체입력/합계시간 weighted MB/s사용. 최종은Py보다H9.9%/TS1.9%느리고RSS도높다고명시했다.
+- 전체1번구간교차3회 baseline4.165559→final3.243523초(Py4.192819),CPU3.828534→2.776158. hvc1전combined3.205762와같은실험에서품질보정효과분리. 다른시리즈절대시간합산안함.
+- 최종13모델15600프레임. 기존Rust대비13/13JSON동일. Python대비11/13,3/9 qduration+0.211/-0.200ms잔여호환차이를그대로공개(1e-6확대없음). 최종61/72749 차이0재확인.
+- 최종26MP4전체decoded1200/오류0,정규화전체NAL SHA원본동일(allNAL types/count/order보존한독립PyAV감사). HEVC각60PS중복문제해결,2slices/frame구분. 최종명시적원본삭제서버역변환도원본과정규화전체NAL동일,TS PTSdelta0. 파일SHA는다를수있고실제로재생성파일은달랐다.
+- Pinned RV1 client 실제3파일upload/재전송/재연결/완료receipt/자동변환/다운로드보존sha/강제reverse+Range206두모드최종통과. 독립thread관측최종upload API p95 0.969/0.794ms,p99 16.161/19.118ms(표본36/39),conversionp99<0.9ms. transfer+finish포함RSSpeak121096/112048KiB,converter포함420204KiB. 관측기자체async업로더와loop공유한초기시리즈는backend최종성능으로쓰지않음. 최신관측은새HTTP연결/OS스케줄링포함end2end이며순수handler시간아님.
+- 최종perf215samples/499Hz/lost0,관측CPU.431초(기준.886). strace sourceRead77.283→37.527MB,pipe75.518MB→124729bytes,outputRead112.634→75.076MB. 논리IO(재읽기포함),디스크물리bytes아님. 무미디어startup5회control/median보존,성공한mux순수init와직접감산안함.
+- ego Space15:새13/segment3 HEVC1344×760 play/pause/30s; q59.9s/duration59.989089/ready4/error0/Frame4800; 실제지도/overlay/차량그래프확인. 별도기존47 3cam/segment6 wide44.999989s/ready4/error0. 사진private유지. Spacefinish및두ownedloopback서버모든ready확인후종료.
+- 원본39파일 총691661569bytes SHA불변. 공개숫자5JSON원본파일/GPS/인증/perf메모리/payload없음확인. STATUS/PERFORMANCE/VALIDATION/DEVELOPMENT갱신. source314ed18외도구·문서아직미커밋. 다음doc/tool커밋→PR1개→Rust36+amd64/aarch64필수CI→요청된기존개발절차대로결과확인/병합. 실제HAOS/포트/설정/원본Python/openpilot/운영GHCR/릴리스는변경안함.

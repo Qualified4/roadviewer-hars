@@ -74,7 +74,7 @@ def main():
             data=request(f"/api/logs/{record}/data")
             telemetry=request(f"/api/logs/{record}/telemetry")
             jpg=request(f"/api/logs/{record}/thumbnail",raw=True)
-            expected_cameras={camera for camera,kind in (("front","fcamera.mp4"),("qcamera","qcamera.mp4"),("wide","ecamera.mp4")) if any(f.name.endswith("--"+kind) for f in files)}
+            expected_cameras={camera for camera,kinds in (("front",("fcamera.mp4","fcamera.hevc")),("qcamera",("qcamera.mp4","qcamera.ts")),("wide",("ecamera.mp4","ecamera.hevc"))) if any(f.name.endswith("--"+kind) for f in files for kind in kinds)}
             assert data["replayV"]==2 and len(data["frames"])>0 and set(data["videos"])==expected_cameras
             assert telemetry["streams"]["carState"]["times"] and jpg.startswith(b"\xff\xd8")
             assert all(digest(f)==hashes[f.name] for f in files)

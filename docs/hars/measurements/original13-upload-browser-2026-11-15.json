@@ -1,0 +1,190 @@
+{
+  "retained": {
+    "real_corpus": true,
+    "segment": 3,
+    "files": 3,
+    "reverse_export": false,
+    "rv1_hmac_client": true,
+    "reconnect_retry_receipt": true,
+    "auto_conversion": true,
+    "states": [
+      "unconverted",
+      "queued",
+      "processing",
+      "ready"
+    ],
+    "download_checks": [
+      {
+        "camera": "qcamera",
+        "compressed_bitstream_and_headers": true,
+        "original_file_byte_identity": true,
+        "file_identity_required": true,
+        "ts_pts_delta_seconds": 0.0,
+        "range206": true
+      },
+      {
+        "camera": "front",
+        "compressed_bitstream_and_headers": true,
+        "original_file_byte_identity": true,
+        "file_identity_required": true,
+        "ts_pts_delta_seconds": null,
+        "range206": true
+      }
+    ],
+    "chunk_latency": {
+      "samples": 27,
+      "p50_ms": 10.753493999800412,
+      "p95_ms": 12.89592900138814,
+      "p99_ms": 18.126553000911372,
+      "max_ms": 18.126553000911372
+    },
+    "phases": {
+      "upload": {
+        "api": {
+          "samples": 36,
+          "p50_ms": 0.556238999706693,
+          "p95_ms": 0.9689729995443486,
+          "p99_ms": 16.161272000317695,
+          "max_ms": 16.161272000317695
+        },
+        "rss_samples": 36,
+        "mean_sampled_tree_rss_kib": 49887.555555555555,
+        "peak_sampled_tree_rss_kib": 121096
+      },
+      "conversion": {
+        "api": {
+          "samples": 134,
+          "p50_ms": 0.5667710011039162,
+          "p95_ms": 0.72116699993785,
+          "p99_ms": 0.8816910012683365,
+          "max_ms": 0.9783410005184123
+        },
+        "rss_samples": 134,
+        "mean_sampled_tree_rss_kib": 278960.62686567166,
+        "peak_sampled_tree_rss_kib": 409944
+      }
+    },
+    "scope": "one real upload, independent API observer thread, sampled process tree RSS; upload includes finish validation; loopback without TLS/Ingress; no physical openpilot device"
+  },
+  "reverse": {
+    "real_corpus": true,
+    "segment": 3,
+    "files": 3,
+    "reverse_export": true,
+    "rv1_hmac_client": true,
+    "reconnect_retry_receipt": true,
+    "auto_conversion": true,
+    "states": [
+      "unconverted",
+      "processing",
+      "ready"
+    ],
+    "download_checks": [
+      {
+        "camera": "qcamera",
+        "compressed_bitstream_and_headers": true,
+        "original_file_byte_identity": false,
+        "file_identity_required": false,
+        "ts_pts_delta_seconds": 0.0,
+        "range206": true
+      },
+      {
+        "camera": "front",
+        "compressed_bitstream_and_headers": true,
+        "original_file_byte_identity": false,
+        "file_identity_required": false,
+        "ts_pts_delta_seconds": null,
+        "range206": true
+      }
+    ],
+    "chunk_latency": {
+      "samples": 27,
+      "p50_ms": 13.30833099927986,
+      "p95_ms": 16.068999999333755,
+      "p99_ms": 17.342453998935525,
+      "max_ms": 17.342453998935525
+    },
+    "phases": {
+      "upload": {
+        "api": {
+          "samples": 39,
+          "p50_ms": 0.5701770005543949,
+          "p95_ms": 0.7944819990370888,
+          "p99_ms": 19.117852998533635,
+          "max_ms": 19.117852998533635
+        },
+        "rss_samples": 39,
+        "mean_sampled_tree_rss_kib": 47659.179487179485,
+        "peak_sampled_tree_rss_kib": 112048
+      },
+      "conversion": {
+        "api": {
+          "samples": 132,
+          "p50_ms": 0.5503560005308827,
+          "p95_ms": 0.7676850000279956,
+          "p99_ms": 0.8888390002539381,
+          "max_ms": 0.9820339982979931
+        },
+        "rss_samples": 132,
+        "mean_sampled_tree_rss_kib": 289531.0909090909,
+        "peak_sampled_tree_rss_kib": 420204
+      }
+    },
+    "scope": "one real upload, independent API observer thread, sampled process tree RSS; upload includes finish validation; loopback without TLS/Ingress; no physical openpilot device"
+  },
+  "reverse_normalized_all_nal_equal": true,
+  "existing47_upload": {
+    "record_id": "992e6b016e4747978b20777115b7b31a",
+    "files": 4,
+    "model_frames": 1201,
+    "cameras": [
+      "front",
+      "qcamera",
+      "wide"
+    ],
+    "upload_wait_policy": true,
+    "states": [
+      "queued",
+      "processing",
+      "ready"
+    ],
+    "api_samples": 17,
+    "api_max_ms": 1.7023270011122804,
+    "source_hashes_unchanged": true,
+    "browser_playback_validated": false
+  },
+  "browser": {
+    "source_commit": "314ed18",
+    "original13": {
+      "segment": 3,
+      "cameras": 2,
+      "front_hevc_play_pause": true,
+      "front_seek_seconds": 30,
+      "qcamera_seek_seconds": 59.9,
+      "qcamera_duration_seconds": 59.989089,
+      "ready_state": 4,
+      "video_errors": 0,
+      "model_frame_at_59_9": 4800,
+      "telemetry_graphs": true,
+      "map_and_gps_route": true,
+      "video_overlay": true
+    },
+    "existing47_regression": {
+      "segment": 6,
+      "cameras": 3,
+      "wide_seek_seconds": 44.999989,
+      "ready_state": 4,
+      "video_errors": 0
+    },
+    "scope": "ego Chromium Windows, isolated loopback servers; original13 contains no wide video; not HAOS or physical device; screenshots remain private"
+  },
+  "client_authentication_regression": {
+    "client_commit": "5c2a8c7f6e14dac82678a390e408ef7a9c73eefa",
+    "python_commit": "71add1a04ed505fc2cb6982052db4a9945d0808f",
+    "scope": "pinned real client functions on synthetic payloads; not an openpilot device or valid driving-log parity test",
+    "python_client_lifecycle": "passed",
+    "rust_client_lifecycle": "passed",
+    "existing_python_device_without_repairing": "passed",
+    "python_receipt_migration": "passed"
+  }
+}

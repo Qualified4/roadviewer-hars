@@ -74,3 +74,7 @@ python integration/benchmark_conversion.py /private/corpus/route--6--rlog.zst /p
 `HARS_PROFILE_FILE=/private/stages.jsonl roadviewer-hars convert-log ...`은 진단용 단계 wall/CPU/자식 CPU·호출 수·누적 RSS high water를 숫자로 기록한다. 기본은 꺼져 있다. 출력 실패는 변환을 실패시키지 않는다. 범위는 중첩되므로 합산하지 않으며, 단계 종료의 누적 RSS를 그 단계만의 Peak로 해석하지 않는다. 작은 zstd read마다 계측하므로 진단 실행의 시간은 정상 성능 표본으로 사용하지 않는다. CPU 함수 비용은 Linux `perf record -e cpu-clock -F 199 --call-graph dwarf`, 할당은 Valgrind DHAT로 별도 확인할 수 있다. 원시 perf/DHAT에는 메모리·개인 경로가 포함될 수 있어 저장소 밖에서 보관한다.
 
 `integration/conversion_load_smoke.py`는 준비된 실주행 레코드가 있는 **전용 loopback 테스트 서버**에서만 사용한다. 해당 레코드의 파생 출력 제거·수동 재변환과 16MiB 합성 조각 업로드를 겹쳐 목록 API/조각 응답 표본을 기록한다. 자동 변환의 업로드 대기 정책을 바꾸지 않는다. 운영 서버에 실행하지 않는다.
+
+`integration/benchmark_remux.py JOBS REFERENCE NEW_OUTPUT --binary baseline=/private/baseline --binary final=/private/final --runs 3`는 로그에서 미리 추출한 private camera clocks(`segment`, `kind`, `source`, `indices`, `times`와 별도 times JSON)를 사용해 영상만 측정한다. `--mode core`는 검사 밖 mux 경로용이며, 최종 HEVC처럼 입력 SHA를 mux에 합친 구현은 baseline 무해시 코어와 작업량이 다름을 기록해야 한다. `python_video_job.py`는 원본 HEVC 함수/TS inline adapter이며 제품에서 사용하지 않는다. `nal_inventory.py A B`는 모든 NAL 종류의 순서·횟수를 유지한 정규화 SHA를 내며 VCL+header set 검사와 구분한다.
+
+`integration/real_device_media.py CORPUS BINARY JOBS REFERENCE NEW_OUTPUT --segment 3 [--reverse]`는 새 전용 loopback 서버에 고정 RV1 client로 실제 원본 파일을 보낸다. `--reverse`는 이 테스트 서버에 업로드한 사본만 비보존하도록 설정해 역변환 경로를 강제한다. 원본 폴더를 수정하지 않는다. 인증은 테스트 서버에서 새로 생성하며 결과에 비밀값을 넣지 않는다. 원본61/13 및 새 driver의 출력·사진·clock jobs는 private 경로에 두고, 커밋할 것은 숫자·스키마 비교·SHA 집계뿐이다.
