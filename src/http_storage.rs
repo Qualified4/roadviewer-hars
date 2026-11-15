@@ -66,24 +66,22 @@ pub async fn delete_log(
     Path(id): Path<String>,
     Query(q): Query<BTreeMap<String, String>>,
 ) -> Result<Json<Value>> {
-    app.store.folder(&id).await?;
-    let registration = app.store.registration.lock().await;
-    app.store.folder(&id).await?;
-    if q.get("skip_pinned").is_some_and(|v| v == "1")
-        && storage::pins(&storage::load_settings(&app.store.root).await?).contains(&id)
-    {
-        return Ok(Json(json!({"skipped":"pinned"})));
+    let skip_pinned = q.get("skip_pinned").is_some_and(|v| v == "1");
+    if let Some(skipped) = refusal(&app, &id, skip_pinned).await? {
+        return Ok(skipped);
     }
-    let guards = storage::guards(&app.store.root, &[], &std::collections::BTreeSet::new()).await?;
-    if storage::manual_protection(&id, &guards).is_some() {
-        // Its registration journal still moves files into this folder.
-        return Err(conflict("upload_busy"));
-    }
+    // Every upload finish waits on the registration lock, so the conversion is stopped outside it
+    // and the recording is judged again once it is held.
     stop_conversion(&app, &id).await?;
+    let registration = app.store.registration.lock().await;
+    if let Some(skipped) = refusal(&app, &id, skip_pinned).await? {
+        return Ok(skipped);
+    }
     let deleted = storage::delete_records(
         &app.store,
         &registration,
         std::slice::from_ref(&id),
+        &[],
         "manual",
         |m| m["status"] == "processing",
     )
@@ -98,6 +96,19 @@ pub async fn delete_log(
         app.used.store(used, Ordering::Relaxed);
     }
     Ok(Json(json!({"deleted":id})))
+}
+
+async fn refusal(app: &App, id: &str, skip_pinned: bool) -> Result<Option<Json<Value>>> {
+    app.store.folder(id).await?;
+    if skip_pinned && storage::pins(&storage::load_settings(&app.store.root).await?).contains(id) {
+        return Ok(Some(Json(json!({"skipped":"pinned"}))));
+    }
+    let guards = storage::guards(&app.store.root, &[], &std::collections::BTreeSet::new()).await?;
+    if storage::manual_protection(id, &guards).is_some() {
+        // Its registration journal still moves files into this folder.
+        return Err(conflict("upload_busy"));
+    }
+    Ok(None)
 }
 
 async fn stop_conversion(app: &App, id: &str) -> Result<()> {

@@ -486,6 +486,10 @@ impl Uploads {
                 "session_limit_reached",
             ));
         }
+        // Until its manifest is on disk, an admitted session's route is invisible to a finish's
+        // eviction guards (Python admits and creates under `registration_lock`). Callers hold
+        // `admission` first; a finish takes only `registration`, so the order never inverts.
+        let _registration = self.store.registration.lock().await;
         // Chunks are moved into place when finished, so no second copy needs room.
         let names = files.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
         let amount =

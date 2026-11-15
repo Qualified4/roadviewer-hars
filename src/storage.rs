@@ -2,7 +2,9 @@
 //!
 //! Every deletion is decided first (`Protection`, `Plan`), then journaled, then executed:
 //! the recording folder is renamed to a hidden name before anything inside it is removed, so a
-//! crash can never leave a half-deleted recording in the list. Journal and hidden folders are only
+//! crash can never leave a half-deleted recording in the list. That rename is the commit point:
+//! recovery finishes hidden folders only and never deletes a recording that is still whole, since
+//! its protection may have changed since the decision. Journal and hidden folders are only
 //! touched while `Store::registration` is held.
 use crate::{
     error::{ApiError, Result},
@@ -617,8 +619,17 @@ pub async fn admit(
             .iter()
             .map(|(id, _)| id.clone())
             .collect::<Vec<_>>();
-        // A segment may have been queued for conversion since the plan was made.
-        delete_records(store, registration, &ids, "storage_limit", |m| {
+        let members = store
+            .records
+            .read()
+            .await
+            .values()
+            .filter(|m| route_key(m) == route.route)
+            .filter_map(|m| m["id"].as_str().map(str::to_owned))
+            .collect::<Vec<_>>();
+        // `convert` and the scheduler queue a segment under its record lock alone, so any segment
+        // of the route may have been queued since the plan was made: the route is then kept whole.
+        delete_records(store, registration, &ids, &members, "storage_limit", |m| {
             matches!(m["status"].as_str(), Some("queued" | "processing"))
         })
         .await?;
@@ -662,14 +673,20 @@ pub async fn journal_entries(root: &Path) -> std::io::Result<Vec<JournalEntry>> 
         Err(e) => return Err(e),
     };
     match serde_json::from_slice::<Journal>(&bytes) {
-        Ok(j) if j.deletes.iter().all(|e| valid_id(&e.id)) => Ok(j.deletes),
+        Ok(j) if j.version == 1 && j.deletes.iter().all(|e| valid_id(&e.id)) => Ok(j.deletes),
         _ => {
             // Kept for inspection; hidden folders still finish without it.
-            let aside = root.join(format!(
-                ".hars-delete-journal.corrupt-{}.json",
-                now() as u64
-            ));
-            tokio::fs::rename(&path, aside).await?;
+            let stamp = now() as u64;
+            for n in 0u32.. {
+                let aside = root.join(match n {
+                    0 => format!(".hars-delete-journal.corrupt-{stamp}.json"),
+                    n => format!(".hars-delete-journal.corrupt-{stamp}-{n}.json"),
+                });
+                if !tokio::fs::try_exists(&aside).await? {
+                    tokio::fs::rename(&path, aside).await?;
+                    break;
+                }
+            }
             tracing::warn!("delete_journal_corrupt_kept_aside");
             Ok(vec![])
         }
@@ -723,16 +740,19 @@ async fn journal_remove(root: &Path, ids: &[String]) -> std::io::Result<()> {
 pub fn hidden_path(root: &Path, id: &str) -> std::path::PathBuf {
     root.join(format!("{HIDDEN_PREFIX}{id}"))
 }
-/// Step 2: one rename takes the recording out of the list on disk and in memory together.
+/// Step 2, the commit point: one rename takes the recording out of the list on disk, and the
+/// memory list follows before the sync, which may fail after the rename already happened.
 pub async fn hide(store: &Store, id: &str) -> std::io::Result<()> {
-    let mut records = store.records.write().await;
-    match tokio::fs::rename(store.root.join(id), hidden_path(&store.root, id)).await {
-        Ok(()) => sync_dir(&store.root).await?,
-        Err(e) if e.kind() == ErrorKind::NotFound => {}
-        Err(e) => return Err(e),
+    {
+        let mut records = store.records.write().await;
+        match tokio::fs::rename(store.root.join(id), hidden_path(&store.root, id)).await {
+            Ok(()) => {}
+            Err(e) if e.kind() == ErrorKind::NotFound => {}
+            Err(e) => return Err(e),
+        }
+        records.remove(id);
     }
-    records.remove(id);
-    Ok(())
+    sync_dir(&store.root).await
 }
 /// Step 3: remove the hidden folder. Safe to repeat after a partial removal.
 pub async fn purge(root: &Path, id: &str) -> std::io::Result<()> {
@@ -747,28 +767,34 @@ async fn gone(root: &Path, id: &str) -> std::io::Result<bool> {
         && !tokio::fs::try_exists(hidden_path(root, id)).await?)
 }
 
-/// Delete recordings in journal order. `keep` is checked again under each record lock; such a
-/// recording is left untouched. Returns the deleted ids. A failure before a recording is hidden
-/// leaves it whole and unjournaled; a failure after leaves the journal for `recover`.
+/// Delete `ids` while holding the record locks of them and of `group`. `keep` is checked again
+/// under those locks; if it holds for any of them, nothing is deleted, so a protection decided
+/// for a whole route stays whole. Returns the deleted ids. A failure before a recording is hidden
+/// leaves it whole and listed; a hidden one is finished now or by the periodic `recover`.
 pub async fn delete_records(
     store: &Store,
-    _registration: &MutexGuard<'_, ()>,
+    registration: &MutexGuard<'_, ()>,
     ids: &[String],
+    group: &[String],
     reason: &str,
     keep: impl Fn(&Value) -> bool,
 ) -> Result<Vec<String>> {
-    let mut ids = ids.to_vec();
-    ids.sort();
-    ids.dedup();
+    let mut locked = ids.iter().chain(group).cloned().collect::<Vec<_>>();
+    locked.sort();
+    locked.dedup();
     let mut held = Vec::new();
-    for id in &ids {
+    for id in &locked {
         held.push(store.record_lock(id).await.lock_owned().await);
     }
     let mut targets = Vec::new();
-    for id in ids {
-        if let Ok(meta) = store.meta(&id).await
-            && !keep(&meta)
-        {
+    for id in locked {
+        let Ok(meta) = store.meta(&id).await else {
+            continue;
+        };
+        if keep(&meta) {
+            return Ok(vec![]);
+        }
+        if ids.contains(&id) {
             targets.push(id);
         }
     }
@@ -776,15 +802,11 @@ pub async fn delete_records(
         return Ok(targets);
     }
     journal_add(&store.root, &targets, reason).await?;
-    for (i, id) in targets.iter().enumerate() {
+    for id in &targets {
         if let Err(e) = hide(store, id).await {
-            // Not hidden: these recordings are still whole and stay listed.
-            let _ = journal_remove(&store.root, &targets[i..]).await;
-            for done in &targets[..i] {
-                purge(&store.root, done).await?;
-            }
-            if i > 0 {
-                journal_remove(&store.root, &targets[..i]).await?;
+            drop(held);
+            if recover(store, registration).await.is_err() {
+                tracing::warn!("delete_recovery_incomplete");
             }
             return Err(e.into());
         }
@@ -802,41 +824,40 @@ pub async fn delete_records(
     Ok(targets)
 }
 
-/// Finish every journaled or hidden deletion (startup and periodic retry). Returns how many
-/// recordings were completed; a recording that cannot be removed yet stays journaled.
+/// Finish every hidden deletion (startup and periodic retry). A journal entry whose recording was
+/// never hidden is discarded: that recording is still whole and listed, and its deletion is not
+/// decided again here. Returns how many recordings were completed; a hidden folder that cannot
+/// be removed yet stays journaled.
 pub async fn recover(store: &Store, _registration: &MutexGuard<'_, ()>) -> std::io::Result<usize> {
-    let mut ids: BTreeSet<String> = journal_entries(&store.root)
-        .await?
-        .into_iter()
-        .map(|e| e.id)
-        .collect();
+    let journal = journal_entries(&store.root).await?;
+    let mut hidden = BTreeSet::new();
     let mut dirs = tokio::fs::read_dir(&store.root).await?;
     while let Some(entry) = dirs.next_entry().await? {
         let name = entry.file_name().to_string_lossy().into_owned();
         if let Some(id) = name.strip_prefix(HIDDEN_PREFIX)
             && valid_id(id)
         {
-            ids.insert(id.to_owned());
+            hidden.insert(id.to_owned());
         }
     }
     let mut done = Vec::new();
     let mut failure = None;
-    for id in ids {
-        let lock = store.record_lock(&id).await;
+    for id in &hidden {
+        let lock = store.record_lock(id).await;
         let _guard = lock.lock().await;
-        let outcome = async {
-            hide(store, &id).await?;
-            purge(&store.root, &id).await?;
-            gone(&store.root, &id).await
-        }
-        .await;
-        match outcome {
-            Ok(true) => done.push(id),
-            Ok(false) => {}
+        match purge(&store.root, id).await {
+            Ok(()) => done.push(id.clone()),
             Err(e) => failure = Some(e),
         }
     }
-    journal_remove(&store.root, &done).await?;
+    let mut settled = done.clone();
+    for entry in &journal {
+        if !hidden.contains(&entry.id) {
+            tracing::warn!(reason = %entry.reason, "delete_journal_entry_discarded");
+            settled.push(entry.id.clone());
+        }
+    }
+    journal_remove(&store.root, &settled).await?;
     match failure {
         Some(e) => Err(e),
         None => Ok(done.len()),

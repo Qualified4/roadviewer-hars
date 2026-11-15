@@ -901,11 +901,14 @@ async fn assert_converged(root: &Path, gone: &[char], kept: &[&PathBuf]) {
     assert!(hidden_dirs(root).is_empty());
     assert_eq!(listed(&a).await.len(), kept.len());
 }
+/// The rename is the commit point: a crash after the journal write but before the rename leaves
+/// the recording whole, and nothing re-decides its deletion after the restart (as in Python,
+/// where nothing is removed at this point).
 #[tokio::test]
-async fn restart_after_journal_write_finishes_the_deletion() {
+async fn restart_after_journal_write_keeps_the_recording() {
     let temp = tempfile::tempdir().unwrap();
     let a = app(temp.path()).await;
-    let (_, pb, pc) = three_logs(&a).await;
+    let (pa, pb, pc) = three_logs(&a).await;
     storage::journal_add(temp.path(), &[rid('a')], "manual")
         .await
         .unwrap();
@@ -916,10 +919,28 @@ async fn restart_after_journal_write_finishes_the_deletion() {
     assert_eq!(journal["deletes"][0]["id"], rid('a'));
     assert_eq!(journal["deletes"][0]["reason"], "manual");
     drop(a);
-    assert_converged(temp.path(), &['a'], &[&pb, &pc]).await;
+    assert_converged(temp.path(), &[], &[&pa, &pb, &pc]).await;
 }
 #[tokio::test]
-async fn restart_after_partial_removal_finishes_the_deletion() {
+async fn periodic_retry_discards_a_stale_journal_entry_and_keeps_the_recording() {
+    let temp = tempfile::tempdir().unwrap();
+    let a = app(temp.path()).await;
+    let (pa, pb, pc) = three_logs(&a).await;
+    // As left by a failed hide whose journal cleanup failed too.
+    storage::journal_add(temp.path(), &[rid('a')], "storage_limit")
+        .await
+        .unwrap();
+    {
+        let registration = a.store.registration.lock().await;
+        assert_eq!(storage::recover(&a.store, &registration).await.unwrap(), 0);
+    }
+    assert_eq!(listed(&a).await.len(), 3);
+    assert!(!storage::pending(temp.path()).await.unwrap());
+    drop(a);
+    assert_converged(temp.path(), &[], &[&pa, &pb, &pc]).await;
+}
+#[tokio::test]
+async fn restart_after_partial_removal_finishes_only_hidden_deletions() {
     let temp = tempfile::tempdir().unwrap();
     let a = app(temp.path()).await;
     let (_, _, pc) = three_logs(&a).await;
@@ -934,8 +955,9 @@ async fn restart_after_partial_removal_finishes_the_deletion() {
     std::fs::remove_file(hidden.join("rlog.zst")).unwrap();
     std::fs::remove_dir_all(hidden.join("prepared")).unwrap();
     std::fs::remove_file(temp.path().join(&ids[1]).join("qcamera.ts")).unwrap();
+    let pb = temp.path().join(&ids[1]);
     drop(a);
-    assert_converged(temp.path(), &['a', 'b'], &[&pc]).await;
+    assert_converged(temp.path(), &['a'], &[&pb, &pc]).await;
 }
 #[tokio::test]
 async fn restart_before_journal_removal_clears_it() {
@@ -971,6 +993,42 @@ async fn corrupt_journal_is_kept_aside_without_deleting() {
             .to_string_lossy()
             .starts_with(".hars-delete-journal.corrupt-")
     }));
+}
+#[tokio::test]
+async fn corrupt_journals_are_never_overwritten_and_unknown_versions_are_kept_aside() {
+    let temp = tempfile::tempdir().unwrap();
+    let journal = temp.path().join(storage::JOURNAL);
+    let bodies: [&[u8]; 3] = [
+        b"not json",
+        br#"{"version":1,"deletes":[{"id":"../x","reason":"manual","at":0}]}"#,
+        br#"{"version":2,"deletes":[]}"#,
+    ];
+    // Within the same second.
+    for body in bodies {
+        std::fs::write(&journal, body).unwrap();
+        assert!(
+            storage::journal_entries(temp.path())
+                .await
+                .unwrap()
+                .is_empty()
+        );
+        assert!(!journal.exists());
+    }
+    let mut aside = std::fs::read_dir(temp.path())
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .filter(|p| {
+            p.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .starts_with(".hars-delete-journal.corrupt-")
+        })
+        .map(|p| std::fs::read(p).unwrap())
+        .collect::<Vec<_>>();
+    aside.sort();
+    let mut expected = bodies.map(|b| b.to_vec()).to_vec();
+    expected.sort();
+    assert_eq!(aside, expected);
 }
 
 // ------------------------------------------------------------ filesystem failures
@@ -1057,8 +1115,104 @@ async fn eviction_failure_reports_and_preserves_other_recordings() {
     drop(a);
     assert_converged(temp.path(), &['a'], &[&pb, &pc]).await;
 }
+#[cfg(unix)]
+#[tokio::test]
+async fn hide_that_fails_after_the_rename_still_unlists_the_recording() {
+    let temp = tempfile::tempdir().unwrap();
+    let a = app(temp.path()).await;
+    let (_, pb, pc) = three_logs(&a).await;
+    // Write and search only: the rename succeeds, the directory sync cannot open the root.
+    chmod(temp.path(), 0o333);
+    let outcome = storage::hide(&a.store, &rid('a')).await;
+    chmod(temp.path(), 0o755);
+    assert!(outcome.is_err());
+    assert!(storage::hidden_path(temp.path(), &rid('a')).is_dir());
+    assert_eq!(listed(&a).await, [rid('b'), rid('c')].into());
+    assert!(a.store.meta(&rid('a')).await.is_err());
+    {
+        let registration = a.store.registration.lock().await;
+        assert_eq!(storage::recover(&a.store, &registration).await.unwrap(), 1);
+    }
+    drop(a);
+    assert_converged(temp.path(), &['a'], &[&pb, &pc]).await;
+}
 
 // ------------------------------------------------------------ races
+
+/// Polls `done` until it holds; ordering is decided by observed state, never by a sleep length.
+async fn wait_until(mut done: impl FnMut() -> bool) {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(10);
+    while !done() {
+        assert!(
+            tokio::time::Instant::now() < deadline,
+            "state never reached"
+        );
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn session_creation_never_straddles_a_commit_eviction() {
+    let temp = tempfile::tempdir().unwrap();
+    let a = app(temp.path()).await;
+    let route = "00000001--aaaaaaaaaa";
+    let segments = [
+        make_log(&a, 'a', route, 0, 1., 100000).await,
+        make_log(&a, 'b', route, 1, 2., 100000).await,
+        make_log(&a, 'c', route, 2, 3., 100000).await,
+    ];
+    let other = make_log(&a, 'd', "00000002--bbbbbbbbbb", 0, 4., 300000).await;
+    configure(&a, used(&a).await + 20000, "delete_oldest").await;
+    // A finish holds the registration lock through its guard read and eviction.
+    let registration = a.store.registration.lock().await;
+    let begin = {
+        let a = a.clone();
+        let body = json!({"files":[{"name":format!("{route}--3--rlog.zst"),"size":10}]});
+        tokio::spawn(async move { a.uploads.begin_browser(body).await.map_err(|e| e.1) })
+    };
+    // An admitted session must not exist without its manifest while the eviction can read guards.
+    let uploads = temp.path().join(".uploads");
+    let deadline = tokio::time::Instant::now() + Duration::from_millis(500);
+    while tokio::time::Instant::now() < deadline {
+        assert_eq!(
+            std::fs::read_dir(&uploads).unwrap().count(),
+            0,
+            "a session was created while a commit held the registration lock"
+        );
+        assert!(!begin.is_finished());
+        tokio::time::sleep(Duration::from_millis(1)).await;
+    }
+    drop(registration);
+    begin.await.unwrap().unwrap();
+    let (status, body) = upload(&a, "00000009--ffffffffff--0--rlog.zst", b"fresh").await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+    assert!(segments.iter().all(|p| p.join("rlog.zst").is_file()));
+    assert!(!other.exists());
+}
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn eviction_skips_a_whole_route_queued_after_planning() {
+    let temp = tempfile::tempdir().unwrap();
+    let a = app(temp.path()).await;
+    let route = "00000001--aaaaaaaaaa";
+    let pa = make_log(&a, 'a', route, 0, 1., 100000).await;
+    let pb = make_log(&a, 'b', route, 1, 2., 100000).await;
+    let pc = make_log(&a, 'c', "00000002--bbbbbbbbbb", 0, 3., 100000).await;
+    configure(&a, used(&a).await + 65536 - 1000, "delete_oldest").await;
+    // Hold segment a's record lock the way `convert` does; the eviction plans without it.
+    let lock = a.store.record_lock(&rid('a')).await;
+    let guard = lock.lock().await;
+    let eviction = {
+        let a = a.clone();
+        tokio::spawn(async move { commit(&a, 0, &[]).await.map_err(|e| e.1) })
+    };
+    // The planned eviction now waits for this lock: queue the segment as `convert` would.
+    wait_until(|| std::sync::Arc::strong_count(&lock) > 2).await;
+    set_status(&a, 'a', "queued").await;
+    drop(guard);
+    eviction.await.unwrap().unwrap();
+    assert!(pa.join("rlog.zst").is_file() && pb.join("rlog.zst").is_file());
+    assert!(!pc.exists());
+    assert_eq!(listed(&a).await, [rid('a'), rid('b')].into());
+}
 
 #[tokio::test]
 async fn concurrent_finish_eviction_and_manual_delete_converge() {
