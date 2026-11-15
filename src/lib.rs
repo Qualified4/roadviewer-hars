@@ -4,6 +4,8 @@ pub mod auth;
 pub mod body_limit;
 pub mod convert;
 pub mod error;
+#[cfg(feature = "pure-remux")]
+pub mod experimental;
 pub mod fault;
 pub mod ha;
 pub mod http;

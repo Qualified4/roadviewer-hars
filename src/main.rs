@@ -45,6 +45,24 @@ async fn main() -> anyhow::Result<()> {
         roadviewer_hars::profile::finish();
         return Ok(());
     }
+    #[cfg(feature = "pure-remux")]
+    if args.get(1).is_some_and(|v| v == "__pure-remux") {
+        anyhow::ensure!(
+            args.len() == 6 || (args.len() == 7 && args[6] == "--no-verify"),
+            "usage: roadviewer-hars __pure-remux SOURCE KIND TIMES_JSON OUTPUT [--no-verify]"
+        );
+        let clock: Vec<f64> =
+            roadviewer_hars::store::read_json(std::path::Path::new(&args[4])).await?;
+        let report = roadviewer_hars::experimental::pure_remux::remux(
+            std::path::Path::new(&args[2]),
+            &args[3],
+            std::path::Path::new(&args[5]),
+            &clock,
+            args.len() == 6,
+        )?;
+        println!("{}", serde_json::to_string(&report)?);
+        return Ok(());
+    }
     if args.get(1).is_some_and(|v| v == "__native-ts") {
         anyhow::ensure!(args.len() == 5, "invalid internal media job");
         roadviewer_hars::native_video::remux_ts(
