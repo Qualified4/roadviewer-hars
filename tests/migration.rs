@@ -61,3 +61,29 @@ async fn active_sessions_invalid_state_and_live_targets_are_refused() {
     assert!(import_snapshot(source.path(), target.path()).await.is_err());
     assert!(!target.path().join(".devices.json").exists());
 }
+
+#[tokio::test]
+async fn nested_or_aliased_target_is_rejected_before_any_snapshot_mutation() {
+    let source = tempfile::tempdir().unwrap();
+    let _auth = Auth::open(source.path()).await.unwrap();
+    let before = std::fs::read(source.path().join(".devices.json")).unwrap();
+    let nested = source.path().join("new-hars");
+    assert!(import_snapshot(source.path(), &nested).await.is_err());
+    assert!(!nested.exists());
+    assert!(std::fs::read(source.path().join(".devices.json")).unwrap() == before);
+    #[cfg(unix)]
+    {
+        let outside = tempfile::tempdir().unwrap();
+        let alias = outside.path().join("snapshot-alias");
+        std::os::unix::fs::symlink(source.path(), &alias).unwrap();
+        let nested = alias.join("new-hars");
+        assert!(import_snapshot(source.path(), &nested).await.is_err());
+        assert!(!nested.exists());
+    }
+    assert_eq!(
+        roadviewer_hars::store::prospective_path(&source.path().join("."))
+            .await
+            .unwrap(),
+        std::fs::canonicalize(source.path()).unwrap()
+    );
+}

@@ -60,6 +60,52 @@ pub async fn read_json<T: DeserializeOwned>(path: &Path) -> std::io::Result<T> {
     serde_json::from_slice(&tokio::fs::read(path).await?).map_err(std::io::Error::other)
 }
 
+/// Resolve aliases through the nearest existing ancestor without creating anything.
+pub async fn prospective_path(path: &Path) -> std::io::Result<PathBuf> {
+    if path
+        .components()
+        .any(|p| matches!(p, std::path::Component::ParentDir))
+    {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            "parent components are not allowed in data paths",
+        ));
+    }
+    let mut probe = if path.is_absolute() {
+        path.to_owned()
+    } else {
+        std::env::current_dir()?.join(path)
+    };
+    let mut suffix = Vec::new();
+    loop {
+        match tokio::fs::canonicalize(&probe).await {
+            Ok(mut real) => {
+                for component in suffix.iter().rev() {
+                    real.push(component);
+                }
+                return Ok(real);
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                suffix.push(
+                    probe
+                        .file_name()
+                        .ok_or_else(|| {
+                            std::io::Error::new(
+                                std::io::ErrorKind::InvalidInput,
+                                "invalid data path",
+                            )
+                        })?
+                        .to_os_string(),
+                );
+                if !probe.pop() {
+                    return Err(e);
+                }
+            }
+            Err(e) => return Err(e),
+        }
+    }
+}
+
 pub struct Store {
     pub root: PathBuf,
     pub records: RwLock<BTreeMap<String, Value>>,
@@ -71,8 +117,10 @@ pub struct Store {
 
 impl Store {
     pub async fn open(root: PathBuf) -> anyhow::Result<Arc<Self>> {
+        let root = prospective_path(&root).await?;
+        let python = prospective_path(Path::new("/data/roadviewer")).await?;
         anyhow::ensure!(
-            root != Path::new("/data/roadviewer"),
+            !root.starts_with(&python) && !python.starts_with(&root),
             "HARS requires a separate data directory"
         );
         tokio::fs::create_dir_all(&root).await?;

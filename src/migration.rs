@@ -1,7 +1,7 @@
 //! Offline copy import only. Never edits a running Python installation.
 use crate::{
     auth::{DeviceState, validate_state},
-    store::{Store, atomic_json, read_json, sha},
+    store::{Store, atomic_json, prospective_path, read_json, sha},
 };
 use std::path::Path;
 
@@ -11,15 +11,15 @@ pub async fn import_snapshot(snapshot: &Path, target: &Path) -> anyhow::Result<u
         "use an offline snapshot, not the Python live directory"
     );
     let snapshot = tokio::fs::canonicalize(snapshot).await?;
-    let store = Store::open(target.to_owned()).await?;
-    let target = tokio::fs::canonicalize(&store.root).await?;
+    let python = prospective_path(Path::new("/data/roadviewer")).await?;
+    anyhow::ensure!(
+        snapshot != python,
+        "use an offline snapshot, not the Python live directory"
+    );
+    let target = prospective_path(target).await?;
     anyhow::ensure!(
         !target.starts_with(&snapshot) && !snapshot.starts_with(&target),
         "snapshot and target must be isolated"
-    );
-    anyhow::ensure!(
-        store.records.read().await.is_empty(),
-        "import requires a fresh HARS data directory"
     );
     let destination = target.join(".devices.json");
     anyhow::ensure!(
@@ -52,6 +52,15 @@ pub async fn import_snapshot(snapshot: &Path, target: &Path) -> anyhow::Result<u
         "snapshot changed during import"
     );
     let count = state.devices.len();
+    let store = Store::open(target).await?;
+    anyhow::ensure!(
+        store.records.read().await.is_empty(),
+        "import requires a fresh HARS data directory"
+    );
+    anyhow::ensure!(
+        !destination.exists(),
+        "authentication state already exists; refusing overwrite"
+    );
     atomic_json(&destination, &state).await?;
     // Do not return hashes, nonces, credential identifiers, or receipt content.
     Ok(count)
