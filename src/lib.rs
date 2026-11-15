@@ -1,6 +1,8 @@
 pub mod auth;
 pub mod convert;
 pub mod error;
+#[cfg(feature = "pure-remux")]
+pub mod experimental;
 pub mod ha;
 pub mod http;
 pub mod jobs;
