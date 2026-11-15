@@ -9,6 +9,7 @@ Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)는 별도 
 - [설계와 이식 기준](docs/hars/ARCHITECTURE.md)
 - [HAOS 병행 설치와 전환·롤백](docs/hars/CUTOVER.md)
 - [실행 및 테스트](docs/hars/DEVELOPMENT.md)
+- [검증 증거](docs/hars/VALIDATION.md) · [API 예비 측정](docs/hars/PERFORMANCE.md)
 
 개발 실행(Linux/WSL, Rust stable 및 `capnproto`, `ffmpeg` 필요):
 

@@ -1,0 +1,69 @@
+name: HARS CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: hars-ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: false
+jobs:
+  rust:
+    name: Rust checks
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - name: Native test dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y capnproto ffmpeg pkg-config libclang-dev libavformat-dev libavcodec-dev libavutil-dev
+      - name: Rust stable
+        run: rustup update stable --no-self-update && rustup component add rustfmt clippy
+      - uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: hars-rust-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+      - run: cargo fmt --all --check
+      - run: cargo clippy --locked --all-targets -- -D warnings
+      - run: cargo test --locked --all-targets
+      - name: Original ccnc client and offline authentication migration
+        run: |
+          python3 -m venv /tmp/hars-compat-env
+          /tmp/hars-compat-env/bin/pip install -r reference/python/roadviewer/requirements.txt aiohttp
+          cargo build --locked
+          /tmp/hars-compat-env/bin/python integration/ccnc_compat.py --rust "$PWD/target/debug/roadviewer-hars"
+      - run: python3 scripts/verify_reference.py
+      - run: python3 scripts/check_release.py
+  container:
+    name: Container (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Build native architecture image
+        run: docker build --build-arg BUILD_ARCH=${{ matrix.arch }} --tag hars-ci .
+      - name: Boot container, verify HTTP and isolated TLS device listener
+        run: python3 scripts/container_smoke.py hars-ci
+  required:
+    name: HARS required
+    if: ${{ always() }}
+    needs: [rust, container]
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require every check and architecture
+        env:
+          RUST_RESULT: ${{ needs.rust.result }}
+          CONTAINER_RESULT: ${{ needs.container.result }}
+        run: test "$RUST_RESULT" = success && test "$CONTAINER_RESULT" = success
