@@ -1,0 +1,192 @@
+{
+  "carState": {
+    "vEgo": null,
+    "vEgoCluster": null,
+    "cruiseState": {
+      "speed": null,
+      "enabled": null,
+      "available": null
+    },
+    "aEgo": null,
+    "gas": null,
+    "brake": null,
+    "steeringAngleDeg": null,
+    "steeringRateDeg": null,
+    "steeringTorque": null,
+    "steeringTorqueEps": null,
+    "engineRpm": null,
+    "gasPressed": null,
+    "brakePressed": null,
+    "regenBraking": null,
+    "steeringPressed": null,
+    "standstill": null,
+    "parkingBrake": null,
+    "brakeHoldActive": null,
+    "vehicleGps": null
+  },
+  "carControl": {
+    "actuators": {
+      "accel": null,
+      "aTarget": null,
+      "jerk": null,
+      "steeringAngleDeg": null,
+      "torque": null,
+      "curvature": null,
+      "longControlState": null
+    },
+    "enabled": null,
+    "latActive": null,
+    "longActive": null,
+    "actuatorsOutputDEPRECATED": {
+      "torque": null,
+      "steeringAngleDeg": null,
+      "curvature": null,
+      "accel": null,
+      "gas": null,
+      "brake": null
+    },
+    "hudControl": {
+      "leadDistanceBars": null
+    }
+  },
+  "carOutput": {
+    "actuatorsOutput": {
+      "torque": null,
+      "steeringAngleDeg": null,
+      "curvature": null,
+      "accel": null,
+      "gas": null,
+      "brake": null
+    }
+  },
+  "controlsState": {
+    "curvature": null,
+    "desiredCurvature": null,
+    "longControlState": null,
+    "lateralControlState": {
+      "torqueState": {
+        "actualLateralAccel": null,
+        "desiredLateralAccel": null,
+        "active": null
+      },
+      "angleState": {
+        "active": null,
+        "steeringAngleDesiredDeg": null
+      },
+      "pidState": {
+        "active": null,
+        "steeringAngleDesiredDeg": null
+      }
+    },
+    "activeLaneLine": null
+  },
+  "selfdriveState": {
+    "alertHudVisual": null,
+    "alertSize": null
+  },
+  "liveParameters": {
+    "roll": null
+  },
+  "carParams": {
+    "maxLateralAccel": null,
+    "brand": null
+  },
+  "liveCalibration": {
+    "calStatus": null,
+    "rpyCalib": null,
+    "height": null,
+    "wideFromDeviceEuler": null
+  },
+  "modelV2": {
+    "frameId": null,
+    "timestampEof": null,
+    "position": {
+      "x": null,
+      "y": null,
+      "z": null
+    },
+    "laneLines": {
+      "x": null,
+      "y": null,
+      "z": null
+    },
+    "roadEdges": {
+      "x": null,
+      "y": null,
+      "z": null
+    },
+    "laneLineProbs": null,
+    "roadEdgeStds": null,
+    "leadsV3": {
+      "x": null,
+      "y": null,
+      "v": null,
+      "prob": null
+    }
+  },
+  "radarState": {
+    "mdMonoTime": null,
+    "leadOne": {
+      "status": null,
+      "dRel": null,
+      "yRel": null,
+      "vRel": null,
+      "radar": null,
+      "radarTrackId": null,
+      "modelProb": null
+    },
+    "leadsCenter": {
+      "status": null,
+      "dRel": null,
+      "yRel": null,
+      "vRel": null,
+      "radar": null,
+      "radarTrackId": null,
+      "modelProb": null
+    },
+    "leadsLeft": {
+      "status": null,
+      "dRel": null,
+      "yRel": null,
+      "vRel": null,
+      "radar": null,
+      "radarTrackId": null,
+      "modelProb": null
+    },
+    "leadsRight": {
+      "status": null,
+      "dRel": null,
+      "yRel": null,
+      "vRel": null,
+      "radar": null,
+      "radarTrackId": null,
+      "modelProb": null
+    }
+  },
+  "liveTracks": {
+    "points": {
+      "dRel": null,
+      "yRel": null,
+      "vRel": null,
+      "trackId": null,
+      "measured": null,
+      "radarSource": null,
+      "trackState": null
+    }
+  },
+  "qRoadEncodeIdx": {
+    "frameId": null,
+    "timestampEof": null,
+    "segmentId": null
+  },
+  "roadEncodeIdx": {
+    "frameId": null,
+    "timestampEof": null,
+    "segmentId": null
+  },
+  "wideRoadEncodeIdx": {
+    "frameId": null,
+    "timestampEof": null,
+    "segmentId": null
+  }
+}

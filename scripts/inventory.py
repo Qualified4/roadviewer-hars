@@ -27,3 +27,23 @@ out = {"python_commit": "71add1a04ed505fc2cb6982052db4a9945d0808f", "python_vers
        "note": "정적 추출. 동적 라우트와 조건부 응답 의미는 원본 구현/테스트를 함께 확인한다."}
 (ROOT / "docs/hars/inventory.json").write_text(json.dumps(out, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 print(f"Inventory: {len(modules)} modules, {len(routes)} route entries, {len(out['tests'])} test files")
+
+# Compile only original pure field declarations; never import/run the application.
+env = {}
+telemetry_tree = ast.parse((BASE / "telemetry.py").read_text(encoding="utf-8"))
+fields = next(n for n in telemetry_tree.body if isinstance(n, ast.Assign) and any(isinstance(t,ast.Name) and t.id == "FIELDS" for t in n.targets))
+exec(compile(ast.Module(body=[fields],type_ignores=[]),"telemetry-fields","exec"),env)
+decoder_tree = ast.parse((BASE / "decoder.py").read_text(encoding="utf-8"))
+declarations = [n for n in decoder_tree.body if
+                isinstance(n, ast.FunctionDef) and n.name in ("spec","telemetry_paths") or
+                isinstance(n, ast.Assign) and any(isinstance(t,ast.Name) and t.id in ("OUTPUT","SPECS") for t in n.targets)]
+exec(compile(ast.Module(body=declarations,type_ignores=[]),"decoder-fields","exec"),env)
+specs = env["SPECS"]
+specs["carState"]["vehicleGps"] = None
+specs["carControl"]["hudControl"] = {"leadDistanceBars":None}
+for topic in ("roadEncodeIdx","wideRoadEncodeIdx"):
+    specs[topic] = specs["qRoadEncodeIdx"]
+resources = ROOT / "resources"
+resources.mkdir(exist_ok=True)
+(resources / "log-fields.json").write_text(json.dumps(specs,ensure_ascii=False,indent=2) + "\n",encoding="utf-8")
+(resources / "telemetry-fields.json").write_text(json.dumps(env["FIELDS"],ensure_ascii=False,indent=2) + "\n",encoding="utf-8")

@@ -1,0 +1,169 @@
+use crate::error::{Result, bad, missing};
+use serde::{Serialize, de::DeserializeOwned};
+use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use std::{
+    collections::BTreeMap,
+    path::{Path, PathBuf},
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
+use tokio::sync::{Mutex, RwLock};
+
+pub fn now() -> f64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs_f64()
+}
+pub fn id() -> String {
+    uuid::Uuid::new_v4().simple().to_string()
+}
+pub fn valid_id(s: &str) -> bool {
+    s.len() == 32
+        && s.bytes()
+            .all(|c| c.is_ascii_digit() || (b'a'..=b'f').contains(&c))
+}
+pub fn sha(bytes: impl AsRef<[u8]>) -> String {
+    hex::encode(Sha256::digest(bytes.as_ref()))
+}
+
+pub async fn atomic_json(path: &Path, value: &impl Serialize) -> std::io::Result<()> {
+    use tokio::io::AsyncWriteExt;
+    let bytes = serde_json::to_vec(value)?;
+    let temp = path.with_extension(format!("{}.tmp", id()));
+    let mut options = tokio::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options.open(&temp).await?;
+    let outcome = async {
+        file.write_all(&bytes).await?;
+        file.sync_all().await?;
+        drop(file);
+        tokio::fs::rename(&temp, path).await?;
+        #[cfg(unix)]
+        {
+            let parent = path.parent().unwrap().to_path_buf();
+            tokio::task::spawn_blocking(move || std::fs::File::open(parent)?.sync_all()).await??;
+        }
+        Ok(())
+    }
+    .await;
+    if outcome.is_err() {
+        let _ = tokio::fs::remove_file(&temp).await;
+    }
+    outcome
+}
+
+pub async fn read_json<T: DeserializeOwned>(path: &Path) -> std::io::Result<T> {
+    serde_json::from_slice(&tokio::fs::read(path).await?).map_err(std::io::Error::other)
+}
+
+pub struct Store {
+    pub root: PathBuf,
+    pub records: RwLock<BTreeMap<String, Value>>,
+    record_locks: Mutex<BTreeMap<String, Arc<Mutex<()>>>>,
+    pub registration: Mutex<()>,
+    pub processing: RwLock<Value>,
+    _instance: std::fs::File,
+}
+
+impl Store {
+    pub async fn open(root: PathBuf) -> anyhow::Result<Arc<Self>> {
+        anyhow::ensure!(
+            root != Path::new("/data/roadviewer"),
+            "HARS requires a separate data directory"
+        );
+        tokio::fs::create_dir_all(&root).await?;
+        let mut opts = std::fs::OpenOptions::new();
+        opts.read(true).write(true).create(true).truncate(false);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            opts.mode(0o600);
+        }
+        let instance = opts.open(root.join(".hars-instance.lock"))?;
+        fs2::FileExt::try_lock_exclusive(&instance)?;
+        tokio::fs::create_dir_all(root.join(".uploads")).await?;
+        let mut records = BTreeMap::new();
+        let mut dirs = tokio::fs::read_dir(&root).await?;
+        while let Some(entry) = dirs.next_entry().await? {
+            let name = entry.file_name().to_string_lossy().into_owned();
+            if valid_id(&name) && entry.file_type().await?.is_dir() {
+                if !entry.path().join("meta.json").exists() {
+                    // A durable upload journal may own this directory after a crash.
+                    continue;
+                }
+                let meta: Value = read_json(&entry.path().join("meta.json")).await?;
+                anyhow::ensure!(meta["id"] == name, "invalid recording metadata identifier");
+                records.insert(name, meta);
+            }
+        }
+        let processing_path = root.join(".processing-settings.json");
+        let processing = if processing_path.exists() {
+            read_json(&processing_path).await?
+        } else {
+            json!({"concurrency":1,"auto_convert":false,"keep_original_video":true})
+        };
+        Ok(Arc::new(Self {
+            root,
+            records: RwLock::new(records),
+            record_locks: Mutex::new(BTreeMap::new()),
+            registration: Mutex::new(()),
+            processing: RwLock::new(processing),
+            _instance: instance,
+        }))
+    }
+
+    pub async fn record_lock(&self, id: &str) -> Arc<Mutex<()>> {
+        self.record_locks
+            .lock()
+            .await
+            .entry(id.to_owned())
+            .or_default()
+            .clone()
+    }
+    pub async fn folder(&self, name: &str) -> Result<PathBuf> {
+        if !valid_id(name) || !self.records.read().await.contains_key(name) {
+            return Err(missing("not_found"));
+        }
+        Ok(self.root.join(name))
+    }
+    pub async fn meta(&self, name: &str) -> Result<Value> {
+        self.records
+            .read()
+            .await
+            .get(name)
+            .cloned()
+            .ok_or_else(|| missing("not_found"))
+    }
+    pub async fn save_meta(&self, meta: Value) -> Result<()> {
+        let name = meta["id"]
+            .as_str()
+            .filter(|v| valid_id(v))
+            .ok_or_else(|| bad("invalid_recording"))?
+            .to_owned();
+        atomic_json(&self.root.join(&name).join("meta.json"), &meta).await?;
+        self.records.write().await.insert(name, meta);
+        Ok(())
+    }
+    pub async fn used(&self) -> std::io::Result<u64> {
+        let root = self.root.clone();
+        tokio::task::spawn_blocking(move || directory_size(&root)).await?
+    }
+}
+
+pub fn directory_size(root: &Path) -> std::io::Result<u64> {
+    let mut total = 0;
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        let kind = entry.file_type()?;
+        if kind.is_file() {
+            total += entry.metadata()?.len();
+        } else if kind.is_dir() {
+            total += directory_size(&entry.path())?;
+        }
+    }
+    Ok(total)
+}

@@ -1,0 +1,174 @@
+{
+  "carState": {
+    "speed": [
+      "vEgo",
+      3.6
+    ],
+    "clusterSpeed": [
+      "vEgoCluster",
+      3.6
+    ],
+    "cruiseSpeed": [
+      "cruiseState.speed",
+      3.6
+    ],
+    "acceleration": [
+      "aEgo",
+      1
+    ],
+    "gas": [
+      "gas",
+      100
+    ],
+    "brake": [
+      "brake",
+      100
+    ],
+    "steeringAngle": [
+      "steeringAngleDeg",
+      1
+    ],
+    "steeringRate": [
+      "steeringRateDeg",
+      1
+    ],
+    "driverTorque": [
+      "steeringTorque",
+      1
+    ],
+    "epsTorque": [
+      "steeringTorqueEps",
+      1
+    ],
+    "rpm": [
+      "engineRpm",
+      1
+    ],
+    "cruiseEnabled": [
+      "cruiseState.enabled",
+      null
+    ],
+    "cruiseAvailable": [
+      "cruiseState.available",
+      null
+    ],
+    "gasPressed": [
+      "gasPressed",
+      null
+    ],
+    "brakePressed": [
+      "brakePressed",
+      null
+    ],
+    "regenBraking": [
+      "regenBraking",
+      null
+    ],
+    "steeringPressed": [
+      "steeringPressed",
+      null
+    ],
+    "standstill": [
+      "standstill",
+      null
+    ],
+    "parkingBrake": [
+      "parkingBrake",
+      null
+    ],
+    "brakeHoldActive": [
+      "brakeHoldActive",
+      null
+    ]
+  },
+  "carControl": {
+    "targetAcceleration": [
+      "actuators.accel",
+      1
+    ],
+    "plannedAcceleration": [
+      "actuators.aTarget",
+      1
+    ],
+    "jerk": [
+      "actuators.jerk",
+      1
+    ],
+    "targetAngle": [
+      "actuators.steeringAngleDeg",
+      1
+    ],
+    "commandTorque": [
+      "actuators.torque",
+      1
+    ],
+    "commandCurvature": [
+      "actuators.curvature",
+      1
+    ],
+    "longState": [
+      "actuators.longControlState",
+      "state"
+    ],
+    "enabled": [
+      "enabled",
+      null
+    ],
+    "latActive": [
+      "latActive",
+      null
+    ],
+    "longActive": [
+      "longActive",
+      null
+    ]
+  },
+  "carOutput": {
+    "outputTorque": [
+      "actuatorsOutput.torque",
+      1
+    ],
+    "outputAngle": [
+      "actuatorsOutput.steeringAngleDeg",
+      1
+    ],
+    "outputCurvature": [
+      "actuatorsOutput.curvature",
+      1
+    ],
+    "outputAcceleration": [
+      "actuatorsOutput.accel",
+      1
+    ],
+    "outputGas": [
+      "actuatorsOutput.gas",
+      100
+    ],
+    "outputBrake": [
+      "actuatorsOutput.brake",
+      100
+    ]
+  },
+  "controlsState": {
+    "actualCurvature": [
+      "curvature",
+      1
+    ],
+    "desiredCurvature": [
+      "desiredCurvature",
+      1
+    ],
+    "longState": [
+      "longControlState",
+      "state"
+    ],
+    "actualLateralAccel": [
+      "lateralControlState.torqueState.actualLateralAccel",
+      1
+    ],
+    "desiredLateralAccel": [
+      "lateralControlState.torqueState.desiredLateralAccel",
+      1
+    ]
+  }
+}
