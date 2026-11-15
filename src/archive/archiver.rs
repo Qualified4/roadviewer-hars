@@ -189,7 +189,7 @@ pub struct Archive {
     pub(crate) index_cache: Mutex<Option<(Instant, [u64; 5])>>,
     started: AtomicBool,
     /// Device-flow polling unit (tests shorten Google's interval).
-    pub connection_interval: Mutex<Duration>,
+    connection_interval: Mutex<Duration>,
     me: Weak<Archive>,
 }
 
@@ -276,7 +276,12 @@ impl Archive {
             me: me.clone(),
         });
         *lock(&archive.job) = archive.load_job();
-        let _ = archive.host.store.archive.set(Arc::downgrade(&archive));
+        *archive
+            .host
+            .store
+            .archive
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Arc::downgrade(&archive);
         archive
     }
 
@@ -408,6 +413,13 @@ impl Archive {
         a.connection.clone()
     }
 
+    pub fn set_connection_interval(&self, unit: Duration) {
+        *lock(&self.connection_interval) = unit;
+        self.active
+            .write()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .connection = None;
+    }
     pub fn running(&self) -> bool {
         lock(&self.st).running
     }

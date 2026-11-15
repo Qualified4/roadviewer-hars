@@ -113,7 +113,7 @@ pub struct Store {
     pub registration: Mutex<()>,
     pub processing: RwLock<Value>,
     /// The archiver bound to this store (upload admission and deletion consult it).
-    pub archive: std::sync::OnceLock<std::sync::Weak<crate::archive::Archive>>,
+    pub archive: std::sync::RwLock<std::sync::Weak<crate::archive::Archive>>,
     _instance: std::fs::File,
 }
 
@@ -174,7 +174,7 @@ impl Store {
             record_locks: Mutex::new(BTreeMap::new()),
             registration: Mutex::new(()),
             processing: RwLock::new(processing),
-            archive: std::sync::OnceLock::new(),
+            archive: std::sync::RwLock::new(std::sync::Weak::new()),
             _instance: instance,
         }))
     }
@@ -212,7 +212,10 @@ impl Store {
         Ok(())
     }
     pub fn archive(&self) -> Option<Arc<crate::archive::Archive>> {
-        self.archive.get().and_then(std::sync::Weak::upgrade)
+        self.archive
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .upgrade()
     }
     pub async fn used(&self) -> std::io::Result<u64> {
         let root = self.root.clone();

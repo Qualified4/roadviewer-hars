@@ -114,6 +114,8 @@ pub struct St {
     pub partial_accept: Option<usize>,
     pub completion_override: Option<Value>,
     pub list_lag: u32,
+    /// The line dies for a session once it holds this many bytes: its PUTs answer 503.
+    pub cut_after: Option<usize>,
     pub no_auth: bool,
     pub file_count: u32,
     pub session_count: u32,
@@ -536,6 +538,9 @@ pub async fn handle(
             };
             if let Some(fid) = s.file_id.clone() {
                 return ok(file_json(&fid, &st.files[&fid]));
+            }
+            if st.cut_after.is_some_and(|n| s.received.len() >= n) {
+                return reply(503, Some(error_body(&path, 503, Some("backendError"))), &[]);
             }
             let status = regex::Regex::new(r"^bytes \*/(\d+|\*)$")
                 .unwrap()
