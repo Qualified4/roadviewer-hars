@@ -103,4 +103,92 @@ async fn camera_codec_mismatch_and_malformed_media_are_rejected() {
             .await
             .is_err()
     );
+    assert!(media::inspect(&playlist, "camera.mp4").await.is_err());
+    assert!(media::inspect(&ts, "fcamera.hevc").await.is_err());
+}
+
+#[tokio::test]
+async fn native_inspection_and_mux_hash_match_independent_ffmpeg_extraction() {
+    for hevc in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let (kind, format, filter) = if hevc {
+            ("fcamera.hevc", "hevc", "hevc_mp4toannexb")
+        } else {
+            ("qcamera.ts", "h264", "h264_mp4toannexb")
+        };
+        let source = temp.path().join(kind);
+        fixture(&source, hevc);
+        let raw = media::inspect(&source, kind).await.unwrap();
+        let extracted = Command::new("ffmpeg")
+            .args(["-v", "error", "-nostdin", "-i"])
+            .arg(&source)
+            .args([
+                "-map", "0:v:0", "-c:v", "copy", "-bsf:v", filter, "-f", format, "pipe:1",
+            ])
+            .output()
+            .unwrap();
+        assert!(extracted.status.success());
+        assert_eq!(
+            raw.signature,
+            media::annex_b_signature(&extracted.stdout, hevc).unwrap()
+        );
+        let times = (0..10).map(|i| i as f64 / 10.).collect::<Vec<_>>();
+        let output = temp.path().join("checked.mp4");
+        let info = media::remux(&source, kind, &output, &times).await.unwrap();
+        let checked = media::inspect(&output, if hevc { "fcamera.mp4" } else { "camera.mp4" })
+            .await
+            .unwrap();
+        assert_eq!(raw.signature, checked.signature);
+        let probe = media::probe(
+            &output,
+            if hevc { "fcamera.mp4" } else { "camera.mp4" },
+            true,
+        )
+        .await
+        .unwrap();
+        for field in [
+            "codec_name",
+            "codec_tag_string",
+            "width",
+            "height",
+            "has_b_frames",
+            "time_base",
+            "duration_ts",
+        ] {
+            assert_eq!(
+                info["streams"][0][field], probe["streams"][0][field],
+                "{field}"
+            );
+        }
+        let a = info["packets"].as_array().unwrap();
+        let b = probe["packets"].as_array().unwrap();
+        assert_eq!(a.len(), b.len());
+        for (a, b) in a.iter().zip(b) {
+            assert_eq!(a["pts"], b["pts"]);
+            assert_eq!(a["dts"], b["dts"]);
+        }
+        if hevc {
+            let mut container = ffmpeg_next::format::input(&output).unwrap();
+            for (_, packet) in container.packets() {
+                let bytes = packet.data().unwrap();
+                let mut offset = 0;
+                while offset < bytes.len() {
+                    let size =
+                        u32::from_be_bytes(bytes[offset..offset + 4].try_into().unwrap()) as usize;
+                    offset += 4;
+                    assert!(size >= 2 && offset + size <= bytes.len());
+                    assert!(
+                        !matches!((bytes[offset] >> 1) & 63, 32..=34),
+                        "hvc1 parameter sets must be out of band"
+                    );
+                    offset += size;
+                }
+            }
+            let direct = temp.path().join("direct.mp4");
+            assert_eq!(
+                roadviewer_hars::native_video::remux_hevc(&source, &direct, &times).unwrap(),
+                raw.signature
+            );
+        }
+    }
 }

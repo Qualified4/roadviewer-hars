@@ -107,10 +107,34 @@ fn validate_info(info: &Value, kind: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Signature {
     pub pictures: String,
     pub headers: BTreeSet<(u8, String)>,
+}
+
+#[derive(serde::Serialize, serde::Deserialize)]
+pub struct Inspection {
+    pub info: Value,
+    pub signature: Signature,
+}
+
+pub async fn inspect(path: &Path, kind: &str) -> anyhow::Result<Inspection> {
+    let _profile = crate::profile::Scope::new("video_inspect");
+    if let Some(worker) = WORKER_EXECUTABLE.get() {
+        let mut command = Command::new(worker);
+        command.arg("__inspect").arg(path).arg(kind);
+        Ok(serde_json::from_slice(&run(&mut command).await?)?)
+    } else {
+        let permit = WORKERS.clone().acquire_owned().await?;
+        let source = path.to_path_buf();
+        let kind = kind.to_owned();
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            crate::native_video::inspect(&source, &kind)
+        })
+        .await?
+    }
 }
 pub fn annex_b_signature(bytes: &[u8], hevc: bool) -> anyhow::Result<Signature> {
     let mut hash = NalHasher::new(hevc);
@@ -336,14 +360,8 @@ pub(crate) async fn remux_probed(
     kind: &str,
     output: &Path,
     times: &[f64],
-    provided: Option<Value>,
+    provided: Option<Inspection>,
 ) -> anyhow::Result<Value> {
-    let input_info = if let Some(info) = provided {
-        info
-    } else {
-        probe(source, kind, kind.ends_with(".mp4")).await?
-    };
-    validate_info(&input_info, kind)?;
     anyhow::ensure!(source != output, "source and output must differ");
     anyhow::ensure!(
         !times.is_empty()
@@ -351,19 +369,27 @@ pub(crate) async fn remux_probed(
             && times.windows(2).all(|v| v[1] > v[0]),
         "invalid camera clock"
     );
+    // Raw HEVC hashes its input during the mux pass. Other formats also need
+    // packet clocks before muxing, so share their inspection within this job.
+    let inspection = if kind.ends_with(".hevc") {
+        None
+    } else {
+        let value = if let Some(value) = provided {
+            value
+        } else {
+            inspect(source, kind).await?
+        };
+        validate_info(&value.info, kind)?;
+        Some(value)
+    };
     if kind.ends_with(".mp4") {
-        validate_times(&input_info, times)?;
-        signature(source, kind).await?;
-        return Ok(input_info);
+        let input = inspection.context("missing MP4 inspection")?;
+        validate_times(&input.info, times)?;
+        return Ok(input.info);
     }
-    let before = signature(source, kind).await?;
     let temp = output.with_extension(format!("{}.tmp.mp4", crate::store::id()));
     let result = async {
-        if kind.ends_with(".hevc") {
-            anyhow::ensure!(
-                input_info["streams"][0]["has_b_frames"] == 0,
-                "unsupported HEVC B frames"
-            );
+        let before = if kind.ends_with(".hevc") {
             if let Some(worker) = WORKER_EXECUTABLE.get() {
                 let clock_path = temp.with_extension("clock.json");
                 crate::store::atomic_json(&clock_path, &times).await?;
@@ -375,7 +401,7 @@ pub(crate) async fn remux_probed(
                     .arg(&temp);
                 let result = run(&mut command).await;
                 let _ = tokio::fs::remove_file(&clock_path).await;
-                result?;
+                serde_json::from_slice::<Signature>(&result?)?
             } else {
                 // Library embedding/tests: keep the permit in the blocking job even if its caller cancels.
                 let permit = WORKERS.clone().acquire_owned().await?;
@@ -386,7 +412,7 @@ pub(crate) async fn remux_probed(
                     let _permit = permit;
                     crate::native_video::remux_hevc(&input, &output, &clock)
                 })
-                .await??;
+                .await??
             }
         } else {
             let mut cmd = Command::new("ffmpeg");
@@ -413,17 +439,19 @@ pub(crate) async fn remux_probed(
             ]);
             cmd.args(["-f", "mp4"]).arg(&temp);
             run(&mut cmd).await?;
-        }
+            inspection.context("missing source inspection")?.signature
+        };
         let target_kind = if kind == "qcamera.ts" {
             "camera.mp4"
         } else {
             "fcamera.mp4"
         };
-        let info = probe(&temp, target_kind, true).await?;
+        let checked = inspect(&temp, target_kind).await?;
+        let info = checked.info;
         validate_info(&info, target_kind)?;
         validate_times(&info, times)?;
         anyhow::ensure!(
-            before == signature(&temp, target_kind).await?,
+            before == checked.signature,
             "compressed pictures changed during remux"
         );
         verify_mp4_boxes(&temp, kind != "qcamera.ts").await?;

@@ -82,7 +82,8 @@ async fn camera(
     let mut pts0 = 0.;
     let mut scanned = None;
     if qcamera {
-        let info = media::probe(source, kind, true).await?;
+        let inspection = media::inspect(source, kind).await?;
+        let info = &inspection.info;
         let mut pts = info["packets"]
             .as_array()
             .context("missing packets")?
@@ -114,7 +115,7 @@ async fn camera(
         } else {
             pts
         };
-        scanned = Some(info);
+        scanned = Some(inspection);
     }
     let info = media::remux_probed(source, kind, out, &times, scanned).await?;
     let stream = &info["streams"][0];

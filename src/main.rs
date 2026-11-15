@@ -14,6 +14,14 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
     let args = std::env::args().collect::<Vec<_>>();
+    if args.get(1).is_some_and(|v| v == "__inspect") {
+        anyhow::ensure!(args.len() == 4, "invalid internal inspection job");
+        let result =
+            roadviewer_hars::native_video::inspect(std::path::Path::new(&args[2]), &args[3])?;
+        println!("{}", serde_json::to_string(&result)?);
+        roadviewer_hars::profile::finish();
+        return Ok(());
+    }
     if args.get(1).is_some_and(|v| v == "__thumbnail") {
         anyhow::ensure!(args.len() == 4, "invalid internal thumbnail job");
         let result = roadviewer_hars::thumbnail::make(
@@ -28,11 +36,13 @@ async fn main() -> anyhow::Result<()> {
         anyhow::ensure!(args.len() == 5, "invalid internal media job");
         let clock: Vec<f64> =
             roadviewer_hars::store::read_json(std::path::Path::new(&args[3])).await?;
-        roadviewer_hars::native_video::remux_hevc(
+        let signature = roadviewer_hars::native_video::remux_hevc(
             std::path::Path::new(&args[2]),
             std::path::Path::new(&args[4]),
             &clock,
         )?;
+        println!("{}", serde_json::to_string(&signature)?);
+        roadviewer_hars::profile::finish();
         return Ok(());
     }
     roadviewer_hars::media::set_worker_executable(std::env::current_exe()?)?;
