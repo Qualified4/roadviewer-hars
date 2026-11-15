@@ -28,6 +28,8 @@ use tower::ServiceExt;
 use tower_http::services::ServeFile;
 use unicode_normalization::UnicodeNormalization;
 
+const BODY_LIMIT: usize = 8 * 1024 * 1024 + 1;
+
 #[derive(Clone)]
 pub struct App {
     pub store: Arc<Store>,
@@ -39,6 +41,9 @@ pub struct App {
     pub device_https_enabled: bool,
     pub jobs: Arc<crate::jobs::Jobs>,
     transfer_slots: Arc<tokio::sync::Semaphore>,
+    pub slot_wait: std::time::Duration,
+    pub body_idle: std::time::Duration,
+    pub body_total: std::time::Duration,
 }
 impl App {
     pub async fn open(
@@ -68,7 +73,13 @@ impl App {
             device_https_enabled: false,
             jobs,
             transfer_slots: Arc::new(tokio::sync::Semaphore::new(8)),
+            slot_wait: std::time::Duration::from_secs(30),
+            body_idle: std::time::Duration::from_secs(30),
+            body_total: std::time::Duration::from_secs(120),
         })
+    }
+    pub fn transfer_slots_available(&self) -> usize {
+        self.transfer_slots.available_permits()
     }
     pub fn background(&self) -> tokio::task::JoinHandle<()> {
         let app = self.clone();
@@ -156,7 +167,7 @@ pub fn ingress(app: App) -> Router {
         .route("/api/logs/{id}/download", get(download_camera))
         .route("/health", get(health))
         .fallback(unsupported)
-        .layer(DefaultBodyLimit::max(8 * 1024 * 1024 + 1))
+        .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .layer(middleware::from_fn_with_state(
             app.clone(),
             transfer_backpressure,
@@ -177,7 +188,7 @@ pub fn device(app: App) -> Router {
         .route("/api/device/uploads/{id}/files/{index}", put(device_chunk))
         .route("/api/device/uploads/{id}/finish", post(device_finish))
         .fallback(|| async { missing("not_found") })
-        .layer(DefaultBodyLimit::max(8 * 1024 * 1024 + 1))
+        .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .layer(middleware::from_fn_with_state(
             app.clone(),
             transfer_backpressure,
@@ -199,10 +210,30 @@ async fn transfer_backpressure(State(app): State<App>, request: Request, next: N
                 _ => {}
             }
         }
-        let Ok(_permit) = app.transfer_slots.acquire().await else {
+        let Ok(Ok(_permit)) =
+            tokio::time::timeout(app.slot_wait, app.transfer_slots.acquire()).await
+        else {
             return ApiError(StatusCode::SERVICE_UNAVAILABLE, "upload_busy").into_response();
         };
-        return next.run(request).await;
+        let (parts, body) = request.into_parts();
+        let limits = crate::body_limit::Limits {
+            idle: app.body_idle,
+            total: app.body_total,
+            max: BODY_LIMIT,
+        };
+        return match crate::body_limit::receive(body, &limits).await {
+            Ok(bytes) => {
+                next.run(Request::from_parts(parts, Body::from(bytes)))
+                    .await
+            }
+            Err(e) => {
+                let mut response = e.into_response();
+                response
+                    .headers_mut()
+                    .insert(h::CONNECTION, "close".parse().unwrap());
+                response
+            }
+        };
     }
     next.run(request).await
 }
@@ -482,7 +513,12 @@ async fn pair(State(app): State<App>, body: Bytes) -> Result<(StatusCode, Json<V
     Ok((StatusCode::CREATED, Json(app.auth.pair(body).await?)))
 }
 async fn revoke(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Value>> {
-    Ok(Json(app.auth.device_action(&id, false).await?))
+    let result = app.auth.device_action(&id, false).await?;
+    // Python drops the device's idle sessions at revocation, releasing their reservations.
+    if app.uploads.cleanup().await.is_err() {
+        tracing::warn!("upload_cleanup_failed");
+    }
+    Ok(Json(result))
 }
 async fn remove_device(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Value>> {
     Ok(Json(app.auth.device_action(&id, true).await?))
