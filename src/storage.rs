@@ -587,7 +587,11 @@ pub async fn eviction_plan(
     incoming: &[String],
     protected_ids: &BTreeSet<String>,
 ) -> std::io::Result<Plan> {
-    let guards = guards(&store.root, incoming, protected_ids).await?;
+    let mut guards = guards(&store.root, incoming, protected_ids).await?;
+    // Only a recent "connected" result (never a probe under the registration lock) makes archived recordings evictable.
+    guards.archive_reachable = store
+        .archive()
+        .is_some_and(|a| a.last_state() == Some(crate::archive::State::Connected));
     Ok(plan_eviction(&facts(store).await?, &guards))
 }
 
@@ -604,6 +608,20 @@ pub async fn admit(
     let settings = load_settings(&store.root).await?;
     let limits = limits(&settings);
     let needed = needed(total, staging);
+    if let Some(archive) = store.archive()
+        && let Some(threshold) = archive.drive_move()
+    {
+        return drive_move_admit(
+            store,
+            &archive,
+            limits,
+            threshold,
+            needed,
+            incoming,
+            protected_ids,
+        )
+        .await;
+    }
     let mut current = space(store, commit.is_some()).await?;
     if check(limits, current, needed)? == Verdict::Fits {
         return Ok(needed);
@@ -639,6 +657,59 @@ pub async fn admit(
         }
     }
     Err(StorageError::NoDeletable.into())
+}
+
+/// Python `admit`'s `drive_move` branch: with Drive in move mode the quota and the local threshold are a MOVE
+/// trigger, never a reason to discard data or refuse an otherwise safe upload. Only a physical shortage refuses.
+async fn drive_move_admit(
+    store: &Store,
+    archive: &crate::archive::Archive,
+    limits: Limits,
+    threshold: u64,
+    needed: u64,
+    incoming: &[String],
+    protected_ids: &BTreeSet<String>,
+) -> Result<u64> {
+    let used = store.used().await? as u128;
+    let reserved = reserved(&store.root).await? as u128;
+    let free = fs2::available_space(&store.root)? as u128;
+    let need = needed as u128;
+    let disk_full = free < reserved + need + MARGIN as u128;
+    let limit = limits.max_bytes as u128;
+    if disk_full
+        || limit > 0 && used + reserved + need >= limit
+        || threshold > 0 && used + reserved + need >= threshold as u128
+    {
+        archive.request_reclaim(if disk_full { needed } else { 0 }, incoming, protected_ids);
+    }
+    if disk_full {
+        return Err(StorageError::InsufficientDisk.into());
+    }
+    Ok(needed)
+}
+
+/// Archived files of a recording about to be deleted (Python `delete_recording`): NAS files by kind, and for an
+/// explicit deletion also the Drive files it refers to. Recorded before the local commit point, so a crash
+/// leaves the recording whole (its row is skipped while its meta.json exists) or the row ready to finish.
+async fn queue_archived(root: &Path, meta: &Value, explicit: bool) -> std::io::Result<()> {
+    use crate::archive::index;
+    let id = meta["id"].as_str().unwrap_or_default();
+    let kinds: Vec<String> = MEDIA_KINDS
+        .iter()
+        .filter(|k| index::location(meta, k) == "nas")
+        .map(|k| (*k).to_owned())
+        .collect();
+    let refs = if explicit {
+        index::remote_refs(meta, true)
+    } else {
+        Vec::new()
+    };
+    if kinds.is_empty() && refs.is_empty() {
+        return Ok(());
+    }
+    crate::archive::pending::PendingDeletes::new(root)
+        .add(id, &kinds, &refs, explicit)
+        .await
 }
 
 // ---------------------------------------------------------------- deletion journal
@@ -791,7 +862,8 @@ pub async fn delete_records(
         let Ok(meta) = store.meta(&id).await else {
             continue;
         };
-        if keep(&meta) {
+        // Drive is extension storage: only an explicit complete deletion may remove its files.
+        if keep(&meta) || reason != "manual" && has_remote_refs(&meta) {
             return Ok(vec![]);
         }
         if ids.contains(&id) {
@@ -800,6 +872,11 @@ pub async fn delete_records(
     }
     if targets.is_empty() {
         return Ok(targets);
+    }
+    for id in &targets {
+        if let Ok(meta) = store.meta(id).await {
+            queue_archived(&store.root, &meta, reason == "manual").await?;
+        }
     }
     journal_add(&store.root, &targets, reason).await?;
     for id in &targets {

@@ -17,9 +17,13 @@ use std::{collections::BTreeMap, sync::atomic::Ordering, time::Duration};
 const CONVERSION_STOP: Duration = Duration::from_secs(30);
 
 pub async fn settings(State(app): State<App>, method: Method, body: Bytes) -> Result<Json<Value>> {
-    let _registration = app.store.registration.lock().await;
+    let registration = app.store.registration.lock().await;
     let mut settings = storage::load_settings(&app.store.root).await?;
     if method == Method::POST {
+        // A manual archive run decided what to move with these settings: they stay until it ends.
+        if app.archive.manual_active() {
+            return Err(conflict("archive_running"));
+        }
         let (max, policy) =
             storage::parse_settings_update(&body).ok_or_else(|| bad("invalid_storage_settings"))?;
         settings["max_bytes"] = json!(max);
@@ -28,14 +32,17 @@ pub async fn settings(State(app): State<App>, method: Method, body: Bytes) -> Re
     }
     let used = app.store.used().await?;
     app.used.store(used, Ordering::Relaxed);
-    Ok(Json(json!({
+    let mut snapshot = json!({
         "max_bytes": settings["max_bytes"],
         "policy": settings["policy"],
         "used_bytes": used,
         "free_bytes": fs2::available_space(&app.store.root)?,
         "reserved_bytes": storage::reserved(&app.store.root).await?,
-        "archive": {"enabled": false, "state": "disabled", "reason": "not_ported"},
-    })))
+    });
+    drop(registration);
+    // The archive is probed and measured after the lock is released: a slow mount must not stall the server.
+    snapshot["archive"] = crate::http_archive::archive_block(&app.archive).await;
+    Ok(Json(snapshot))
 }
 
 pub async fn pin(
@@ -92,6 +99,7 @@ pub async fn delete_log(
         return Err(conflict("conversion_busy"));
     }
     app.jobs.progress.write().await.remove(&id);
+    crate::http_archive::process_pending(&app.archive).await;
     if let Ok(used) = app.store.used().await {
         app.used.store(used, Ordering::Relaxed);
     }

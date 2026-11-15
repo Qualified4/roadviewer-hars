@@ -1,7 +1,7 @@
 use crate::{
     auth::{Auth, header},
     error::{ApiError, Result, bad, missing},
-    http_storage,
+    http_archive, http_storage,
     store::{Store, atomic_json, id, read_json, sha},
     upload::{KINDS, Uploads},
 };
@@ -38,6 +38,7 @@ pub struct App {
     pub used: Arc<AtomicU64>,
     pub device_https_enabled: bool,
     pub jobs: Arc<crate::jobs::Jobs>,
+    pub archive: Arc<crate::archive::Archive>,
     transfer_slots: Arc<tokio::sync::Semaphore>,
 }
 impl App {
@@ -58,6 +59,16 @@ impl App {
             .map_err(|_| anyhow::anyhow!("upload commit recovery failed; data preserved"))?;
         let used = Arc::new(AtomicU64::new(store.used().await?));
         let jobs = crate::jobs::Jobs::open(store.clone(), uploads.clone()).await?;
+        let archive = crate::archive::Archive::open(
+            crate::archive::Host {
+                store: store.clone(),
+                uploads: uploads.clone(),
+                jobs: jobs.clone(),
+            },
+            crate::archive::settings::options(),
+            crate::archive::settings::allow_any_path(),
+            None,
+        );
         Ok(Self {
             store,
             auth,
@@ -67,11 +78,13 @@ impl App {
             used,
             device_https_enabled: false,
             jobs,
+            archive,
             transfer_slots: Arc::new(tokio::sync::Semaphore::new(8)),
         })
     }
     pub fn background(&self) -> tokio::task::JoinHandle<()> {
         let app = self.clone();
+        app.archive.start();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
             let mut tick = 0u64;
@@ -124,6 +137,23 @@ pub fn ingress(app: App) -> Router {
             get(http_storage::settings).post(http_storage::settings),
         )
         .route("/api/storage/cleanup", post(http_storage::cleanup))
+        .route(
+            "/api/settings/archive",
+            get(http_archive::preferences_api).post(http_archive::preferences_api),
+        )
+        .route(
+            "/api/settings/archive/run",
+            get(http_archive::run).post(http_archive::run),
+        )
+        .route(
+            "/api/settings/archive/gdrive/connect",
+            post(http_archive::gdrive_connect),
+        )
+        .route(
+            "/api/settings/archive/gdrive/disconnect",
+            post(http_archive::gdrive_disconnect),
+        )
+        .route("/api/logs/{id}/archive/retry", post(http_archive::retry))
         .route("/api/settings/devices", get(devices))
         .route(
             "/api/settings/devices/pairing",
@@ -425,8 +455,16 @@ async fn list(State(app): State<App>, headers: HeaderMap) -> Result<Response> {
         .values()
         .cloned()
         .collect::<Vec<_>>();
+    let share = if logs.iter().any(http_archive::touched) {
+        Some(http_archive::list_state(&app.archive).await)
+    } else {
+        None
+    };
     for m in &mut logs {
+        let fields =
+            http_archive::list_fields(&app.archive, m, share.filter(|_| http_archive::touched(m)));
         let o = m.as_object_mut().unwrap();
+        o.extend(fields);
         o.remove("content_hashes");
         o.remove("storage");
         o.remove("bookmarks");

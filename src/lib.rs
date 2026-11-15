@@ -4,6 +4,7 @@ pub mod convert;
 pub mod error;
 pub mod ha;
 pub mod http;
+pub mod http_archive;
 pub mod http_storage;
 pub mod jobs;
 pub mod logs;
