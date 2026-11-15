@@ -6,3 +6,13 @@ __pycache__/
 *.zst
 *.ts
 *.mp4
+/target/
+/.hars-data/
+/.env
+/.env.*
+/artifacts/
+*.tmp
+*.pem
+*.key
+/.devices.json
+/.uploads/

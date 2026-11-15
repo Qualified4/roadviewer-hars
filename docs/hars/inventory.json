@@ -1,0 +1,1080 @@
+{
+  "python_commit": "71add1a04ed505fc2cb6982052db4a9945d0808f",
+  "python_version": "1.3.16",
+  "uploader_commit": "5c2a8c7f6e14dac82678a390e408ef7a9c73eefa",
+  "modules": [
+    {
+      "module": "archive_backends.py",
+      "lines": 1048,
+      "symbols": [
+        "api_base_url",
+        "upload_base_url",
+        "oauth_base_url",
+        "redact",
+        "BackendError",
+        "HttpResponse",
+        "error_reason",
+        "_Stream",
+        "Http",
+        "DriveAuth",
+        "Capabilities",
+        "RemoteRef",
+        "RemoteStat",
+        "Usage",
+        "_int_or",
+        "_q",
+        "_fail",
+        "completion_matches",
+        "_received_end",
+        "_stage",
+        "_SessionExpired",
+        "DriveClient",
+        "_Availability",
+        "DriveBackend",
+        "DriveConnection",
+        "SmbBackend",
+        "make_backend"
+      ]
+    },
+    {
+      "module": "archive_settings.py",
+      "lines": 84,
+      "symbols": [
+        "values",
+        "validate",
+        "document",
+        "load",
+        "parse"
+      ]
+    },
+    {
+      "module": "backfill.py",
+      "lines": 297,
+      "symbols": [
+        "drive_key",
+        "Transient",
+        "archived",
+        "archived_thumbnail_source",
+        "mp4_atoms",
+        "moov_location",
+        "Backfill"
+      ]
+    },
+    {
+      "module": "compact.py",
+      "lines": 201,
+      "symbols": [
+        "r4",
+        "round_points",
+        "round_coordinates",
+        "compact_target",
+        "flat_line",
+        "same_line",
+        "drop_flat",
+        "drop_grid",
+        "lane_grid",
+        "compact_data",
+        "expand_frames",
+        "write_gzip_json",
+        "migrate"
+      ]
+    },
+    {
+      "module": "decoder.py",
+      "lines": 410,
+      "symbols": [
+        "media",
+        "prepared_dir",
+        "recording_dir",
+        "_layout",
+        "_enum",
+        "pick",
+        "spec",
+        "telemetry_paths",
+        "speed_at",
+        "ccnc_targets",
+        "ccnc_rear_targets",
+        "ccnc_road",
+        "ccnc_at",
+        "Gaps",
+        "frame_clock",
+        "read_gaps",
+        "first_y",
+        "prepare"
+      ]
+    },
+    {
+      "module": "device_api.py",
+      "lines": 258,
+      "symbols": [
+        "DeviceAPI"
+      ]
+    },
+    {
+      "module": "device_network.py",
+      "lines": 97,
+      "symbols": [
+        "supervisor",
+        "mapped_port",
+        "validate_tls",
+        "DeviceNetwork"
+      ]
+    },
+    {
+      "module": "gap_backfill.py",
+      "lines": 184,
+      "symbols": [
+        "has_gaps",
+        "fill",
+        "GapBackfill",
+        "Changed"
+      ]
+    },
+    {
+      "module": "gps_track.py",
+      "lines": 417,
+      "symbols": [
+        "Collector",
+        "distance_m",
+        "downsample",
+        "path_length",
+        "summary_fields",
+        "write",
+        "read",
+        "simplify",
+        "frame_origin",
+        "extract",
+        "Blocked",
+        "Later",
+        "drive_only",
+        "track_read",
+        "TrackBackfill"
+      ]
+    },
+    {
+      "module": "hevc_video.py",
+      "lines": 71,
+      "symbols": [
+        "VideoProgress",
+        "prepare_video"
+      ]
+    },
+    {
+      "module": "log_transfer.py",
+      "lines": 404,
+      "symbols": [
+        "Invalid",
+        "padding",
+        "header",
+        "member_bytes",
+        "dumps",
+        "_number",
+        "_text",
+        "_entry",
+        "_remote",
+        "parse_record",
+        "log_digest",
+        "LogTransfer"
+      ]
+    },
+    {
+      "module": "media_export.py",
+      "lines": 27,
+      "symbols": [
+        "export"
+      ]
+    },
+    {
+      "module": "media_store.py",
+      "lines": 2107,
+      "symbols": [
+        "_any_path",
+        "valid_path",
+        "_int",
+        "_bool",
+        "_text",
+        "_kind",
+        "_bytes",
+        "_same",
+        "_kept",
+        "ArchiveSettings",
+        "ArchiveStore",
+        "_raise",
+        "entry",
+        "location",
+        "set_location",
+        "is_archived_location",
+        "_block",
+        "remote",
+        "remote_pending",
+        "_editable",
+        "_fields",
+        "set_remote",
+        "set_remote_pending",
+        "clear_remote_pending",
+        "remote_refs",
+        "drop_remote",
+        "promote_remote",
+        "public_storage",
+        "archived_bytes",
+        "remote_copy_totals",
+        "RemoteFile",
+        "_resolve_remote",
+        "_local_file",
+        "resolve",
+        "indexed_state",
+        "media_size",
+        "delete_archived",
+        "_valid_ref",
+        "_valid_row",
+        "PendingDeletes",
+        "_Transfer",
+        "_Listing",
+        "_Changed",
+        "_digests",
+        "_sha256",
+        "_record_hash",
+        "_Hashing",
+        "Archiver"
+      ]
+    },
+    {
+      "module": "overlay.py",
+      "lines": 105,
+      "symbols": [
+        "points3",
+        "sample_line",
+        "restore_ccnc_targets",
+        "edge_confidence",
+        "camera_config",
+        "rotation",
+        "projection_coordinates",
+        "project_point",
+        "OverlayProjector"
+      ]
+    },
+    {
+      "module": "playback_cache.py",
+      "lines": 107,
+      "symbols": [
+        "_Entry",
+        "PlaybackCache"
+      ]
+    },
+    {
+      "module": "progress.py",
+      "lines": 61,
+      "symbols": [
+        "Reporter",
+        "ProgressChannel"
+      ]
+    },
+    {
+      "module": "server.py",
+      "lines": 1893,
+      "symbols": [
+        "folder",
+        "read_meta",
+        "save_meta",
+        "stored",
+        "original_bytes",
+        "has_video",
+        "public_meta",
+        "archived",
+        "video_download_kind",
+        "video_downloads",
+        "remote_backend",
+        "remote_result",
+        "archive_state",
+        "shown_archive_result",
+        "list_archive_state",
+        "archive_last_state",
+        "media_file",
+        "remote_entry",
+        "media_path",
+        "registered",
+        "video_states",
+        "storage_locations",
+        "remote_copies",
+        "archive_errors",
+        "StagingSpace",
+        "InsufficientStorage",
+        "abort_remote",
+        "stage_remote",
+        "local_content",
+        "unstage",
+        "staged_source",
+        "RemoteBody",
+        "remote_chunks",
+        "attachment",
+        "remote_response",
+        "upload_receiving",
+        "run_job",
+        "read_processing_settings",
+        "read_processing_limit",
+        "read_auto_convert",
+        "read_keep_original_video",
+        "submit",
+        "recording_paths",
+        "archived_states",
+        "reconvertible",
+        "clear_prepared",
+        "queue_unconverted",
+        "processing_settings",
+        "access",
+        "fresh_replay_state",
+        "http_error",
+        "too_large",
+        "not_found",
+        "page_response",
+        "index",
+        "view",
+        "assets",
+        "storage_used_bytes",
+        "processing_progress",
+        "recording_order",
+        "recording_summary",
+        "list_stats",
+        "list_signature",
+        "log_folder_bytes",
+        "storage_used_outside",
+        "build_list_row",
+        "list_row",
+        "list_snapshot",
+        "route_starts",
+        "warm_list",
+        "upload_progress",
+        "logs",
+        "upload",
+        "file_digest",
+        "upload_fingerprint",
+        "received_digest",
+        "stored_digests",
+        "retained_original",
+        "additional_videos",
+        "archived_matches",
+        "register_files",
+        "cleanup_uploads",
+        "cleanup_loop",
+        "cleanup_storage",
+        "upload_failure",
+        "upload_error",
+        "upload_session",
+        "begin_upload",
+        "create_upload",
+        "upload_chunk",
+        "ReceivedFile",
+        "finish_upload",
+        "cancel_upload",
+        "delete",
+        "process_pending",
+        "delete_recording",
+        "recording_bookmarks",
+        "recording_tags",
+        "convert",
+        "remove_prepared",
+        "download_video",
+        "download_name",
+        "_ZipSink",
+        "zip_stream",
+        "download_options",
+        "planned_video",
+        "export_chunks",
+        "plan_downloads",
+        "close_source",
+        "open_downloads",
+        "remote_stream",
+        "download_selected",
+        "download_one",
+        "download_many",
+        "original",
+        "data",
+        "prepared_file",
+        "send_prepared",
+        "telemetry",
+        "track_signature",
+        "track_summary",
+        "route_segments",
+        "track_response",
+        "log_track",
+        "simplified_track",
+        "tracks_signature",
+        "tracks",
+        "all_routes",
+        "thumbnail_sources",
+        "commit_prepared",
+        "thumbnail_pending",
+        "lazy_thumbnail",
+        "log_thumbnail",
+        "video",
+        "stale_recording",
+        "invalidate_recording",
+        "requeue_startup",
+        "replay_outdated",
+        "migrate_prepared",
+        "archive_preferences",
+        "archive_preferences_api",
+        "run_archive",
+        "run_track_fill",
+        "stop_track_fill",
+        "drive_connection",
+        "drive_changed",
+        "gdrive_auth_error",
+        "gdrive_status",
+        "gdrive_connect",
+        "gdrive_disconnect",
+        "retry_archive"
+      ]
+    },
+    {
+      "module": "start.py",
+      "lines": 100,
+      "symbols": [
+        "device_host_port",
+        "nginx_config",
+        "main"
+      ]
+    },
+    {
+      "module": "steering.py",
+      "lines": 53,
+      "symbols": [
+        "finite",
+        "sample",
+        "SteeringReplay"
+      ]
+    },
+    {
+      "module": "storage_policy.py",
+      "lines": 255,
+      "symbols": [
+        "atomic_json",
+        "StorageError",
+        "StoragePolicy"
+      ]
+    },
+    {
+      "module": "telemetry.py",
+      "lines": 129,
+      "symbols": [
+        "nested",
+        "number",
+        "extract_telemetry",
+        "drive_summary"
+      ]
+    },
+    {
+      "module": "thumbnail.py",
+      "lines": 107,
+      "symbols": [
+        "small",
+        "candidates",
+        "stats",
+        "score",
+        "level",
+        "encode_jpeg",
+        "make_thumbnail",
+        "write_thumbnail",
+        "save_thumbnail"
+      ]
+    },
+    {
+      "module": "thumbnail_meta.py",
+      "lines": 20,
+      "symbols": [
+        "read",
+        "current"
+      ]
+    },
+    {
+      "module": "timeline.py",
+      "lines": 9,
+      "symbols": [
+        "align_timeline"
+      ]
+    },
+    {
+      "module": "video_packets.py",
+      "lines": 64,
+      "symbols": [
+        "Pictures",
+        "inspect_mp4"
+      ]
+    },
+    {
+      "module": "video_sources.py",
+      "lines": 45,
+      "symbols": [
+        "validate_hevc",
+        "validate_mp4"
+      ]
+    },
+    {
+      "module": "wall_clock.py",
+      "lines": 121,
+      "symbols": [
+        "plausible",
+        "pick",
+        "pick_start",
+        "Starts",
+        "schema",
+        "complete",
+        "decompress_prefix",
+        "scan_bytes",
+        "scan"
+      ]
+    },
+    {
+      "module": "work_queue.py",
+      "lines": 38,
+      "symbols": [
+        "ProcessingQueue"
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "source": "server.py",
+      "line": 501
+    },
+    {
+      "path": "/api/device/pair",
+      "methods": [
+        "POST"
+      ],
+      "source": "device_api.py",
+      "line": 28
+    },
+    {
+      "path": "/api/device/test",
+      "methods": [
+        "GET"
+      ],
+      "source": "device_api.py",
+      "line": 23
+    },
+    {
+      "path": "/api/device/uploads",
+      "methods": [
+        "POST"
+      ],
+      "source": "device_api.py",
+      "line": 29
+    },
+    {
+      "path": "/api/device/uploads/<id>",
+      "methods": [
+        "GET",
+        "DELETE"
+      ],
+      "source": "device_api.py",
+      "line": 30
+    },
+    {
+      "path": "/api/device/uploads/<id>/files/<int:index>",
+      "methods": [
+        "PUT"
+      ],
+      "source": "device_api.py",
+      "line": 31
+    },
+    {
+      "path": "/api/device/uploads/<id>/finish",
+      "methods": [
+        "POST"
+      ],
+      "source": "device_api.py",
+      "line": 32
+    },
+    {
+      "path": "/api/logs",
+      "methods": [
+        "GET"
+      ],
+      "source": "server.py",
+      "line": 708
+    },
+    {
+      "path": "/api/logs/<id>",
+      "methods": [
+        "DELETE"
+      ],
+      "source": "server.py",
+      "line": 1111
+    },
+    {
+      "path": "/api/logs/<id>/archive/retry",
+      "methods": [
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 1861
+    },
+    {
+      "path": "/api/logs/<id>/bookmarks",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 1153
+    },
+    {
+      "path": "/api/logs/<id>/bookmarks/<bookmark_id>",
+      "methods": [
+        "PUT",
+        "DELETE"
+      ],
+      "source": "server.py",
+      "line": 1154
+    },
+    {
+      "path": "/api/logs/<id>/convert",
+      "methods": [
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 1212
+    },
+    {
+      "path": "/api/logs/<id>/data",
+      "methods": [
+        "GET"
+      ],
+      "source": "server.py",
+      "line": 1472
+    },
+    {
+      "path": "/api/logs/<id>/download",
+      "methods": [
+        "GET"
+      ],
+      "source": "server.py",
+      "line": 1430
+    },
+    {
+      "path": "/api/logs/<id>/download/video",
+      "methods": [
+        "GET"
+      ],
+      "source": "server.py",
+      "line": 1248
+    },
+    {
+      "path": "/api/logs/<id>/original/<kind>",
+      "methods": [
+        "GET"
+      ],
+      "source": "server.py",
+      "line": 1463
+    },
+    {
+      "path": "/api/logs/<id>/pin",
+      "methods": [
+        "POST"
+      ],
+      "source": "storage_policy.py",
+      "line": 27
+    },
+    {
+      "path": "/api/logs/<id>/prepared",
+      "methods": [
+        "DELETE"
+      ],
+      "source": "server.py",
+      "line": 1233
+    },
+    {
+      "path": "/api/logs/<id>/tags",
+      "methods": [
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 1184
+    },
+    {
+      "path": "/api/logs/<id>/telemetry",
+      "methods": [
+        "GET"
+      ],
+      "source": "server.py",
+      "line": 1495
+    },
+    {
+      "path": "/api/logs/<id>/thumbnail",
+      "methods": [
+        "GET"
+      ],
+      "source": "server.py",
+      "line": 1634
+    },
+    {
+      "path": "/api/logs/<id>/track",
+      "methods": [
+        "GET"
+      ],
+      "source": "server.py",
+      "line": 1532
+    },
+    {
+      "path": "/api/logs/<id>/video",
+      "methods": [
+        "GET"
+      ],
+      "source": "server.py",
+      "line": 1645
+    },
+    {
+      "path": "/api/logs/download.zip",
+      "methods": [
+        "GET"
+      ],
+      "source": "server.py",
+      "line": 1436
+    },
+    {
+      "path": "/api/logs/export.tar",
+      "methods": [
+        "GET"
+      ],
+      "source": "log_transfer.py",
+      "line": 171
+    },
+    {
+      "path": "/api/logs/import",
+      "methods": [
+        "POST"
+      ],
+      "source": "log_transfer.py",
+      "line": 172
+    },
+    {
+      "path": "/api/logs/import/<id>/finish",
+      "methods": [
+        "POST"
+      ],
+      "source": "log_transfer.py",
+      "line": 173
+    },
+    {
+      "path": "/api/progress",
+      "methods": [
+        "GET"
+      ],
+      "source": "server.py",
+      "line": 537
+    },
+    {
+      "path": "/api/settings/archive",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 1744
+    },
+    {
+      "path": "/api/settings/archive/gdrive/connect",
+      "methods": [
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 1838
+    },
+    {
+      "path": "/api/settings/archive/gdrive/disconnect",
+      "methods": [
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 1853
+    },
+    {
+      "path": "/api/settings/archive/run",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 1788
+    },
+    {
+      "path": "/api/settings/archive/tracks/run",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 1801
+    },
+    {
+      "path": "/api/settings/archive/tracks/stop",
+      "methods": [
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 1810
+    },
+    {
+      "path": "/api/settings/device-network",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "source": "device_network.py",
+      "line": 43
+    },
+    {
+      "path": "/api/settings/device-network/restart",
+      "methods": [
+        "POST"
+      ],
+      "source": "device_network.py",
+      "line": 44
+    },
+    {
+      "path": "/api/settings/devices",
+      "methods": [
+        "GET"
+      ],
+      "source": "device_api.py",
+      "line": 24
+    },
+    {
+      "path": "/api/settings/devices/<id>",
+      "methods": [
+        "DELETE"
+      ],
+      "source": "device_api.py",
+      "line": 27
+    },
+    {
+      "path": "/api/settings/devices/<id>/revoke",
+      "methods": [
+        "POST"
+      ],
+      "source": "device_api.py",
+      "line": 26
+    },
+    {
+      "path": "/api/settings/devices/pairing",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "source": "device_api.py",
+      "line": 25
+    },
+    {
+      "path": "/api/settings/processing",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 417
+    },
+    {
+      "path": "/api/settings/storage",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "source": "storage_policy.py",
+      "line": 26
+    },
+    {
+      "path": "/api/storage/cleanup",
+      "methods": [
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 958
+    },
+    {
+      "path": "/api/tracks",
+      "methods": [
+        "GET"
+      ],
+      "source": "server.py",
+      "line": 1559
+    },
+    {
+      "path": "/api/upload",
+      "methods": [
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 718
+    },
+    {
+      "path": "/api/uploads",
+      "methods": [
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 989
+    },
+    {
+      "path": "/api/uploads/<id>",
+      "methods": [
+        "DELETE"
+      ],
+      "source": "server.py",
+      "line": 1102
+    },
+    {
+      "path": "/api/uploads/<id>/failure",
+      "methods": [
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 963
+    },
+    {
+      "path": "/api/uploads/<id>/files/<int:index>",
+      "methods": [
+        "PUT"
+      ],
+      "source": "server.py",
+      "line": 1015
+    },
+    {
+      "path": "/api/uploads/<id>/finish",
+      "methods": [
+        "POST"
+      ],
+      "source": "server.py",
+      "line": 1077
+    },
+    {
+      "path": "/assets/<path:name>",
+      "methods": [
+        "GET"
+      ],
+      "source": "server.py",
+      "line": 505
+    },
+    {
+      "path": "/view/<id>/",
+      "methods": [
+        "GET"
+      ],
+      "source": "server.py",
+      "line": 503
+    }
+  ],
+  "tests": [
+    "tests\\apparmor_probe.py",
+    "tests\\archive_settings.cjs",
+    "tests\\archive_status.cjs",
+    "tests\\bookmarks.cjs",
+    "tests\\browser-groups.json",
+    "tests\\browser-helpers.cjs",
+    "tests\\bulk_actions.cjs",
+    "tests\\camera_info.cjs",
+    "tests\\choices.cjs",
+    "tests\\concurrency.cjs",
+    "tests\\conversion_controls.cjs",
+    "tests\\device_test_page.cjs",
+    "tests\\disclosure_animation.cjs",
+    "tests\\display_preferences.cjs",
+    "tests\\download_dialog.cjs",
+    "tests\\fake_drive.py",
+    "tests\\fullscreen_landscape.cjs",
+    "tests\\gdrive_panel.cjs",
+    "tests\\info_panels.cjs",
+    "tests\\lane_marking.cjs",
+    "tests\\lazy_rows.cjs",
+    "tests\\library_tabs.cjs",
+    "tests\\log_export.cjs",
+    "tests\\long_drive.cjs",
+    "tests\\maps.cjs",
+    "tests\\motion.cjs",
+    "tests\\navigation.cjs",
+    "tests\\overlay_geometry_fixture.py",
+    "tests\\overlay_reference.py",
+    "tests\\pairing_refresh.cjs",
+    "tests\\recording_names.cjs",
+    "tests\\replay_coverage.cjs",
+    "tests\\replay_downloads.cjs",
+    "tests\\replay_end_seek.cjs",
+    "tests\\replay_format2.cjs",
+    "tests\\replay_glass_capture.cjs",
+    "tests\\replay_gzip.cjs",
+    "tests\\replay_layout.cjs",
+    "tests\\replay_play_request.cjs",
+    "tests\\replay_ready.cjs",
+    "tests\\replay_rendering.cjs",
+    "tests\\ripple.cjs",
+    "tests\\run_group.cjs",
+    "tests\\segment_peek.cjs",
+    "tests\\smoke.py",
+    "tests\\storage_devices.cjs",
+    "tests\\tag_filter_fold.cjs",
+    "tests\\tags.cjs",
+    "tests\\telemetry.cjs",
+    "tests\\test_apparmor.py",
+    "tests\\test_archive_backends.py",
+    "tests\\test_archive_e2e.py",
+    "tests\\test_archive_settings.py",
+    "tests\\test_archiver.py",
+    "tests\\test_archiver_crash.py",
+    "tests\\test_backfill.py",
+    "tests\\test_bookmarks.py",
+    "tests\\test_conversion_controls.py",
+    "tests\\test_decoder_progress.py",
+    "tests\\test_device_api.py",
+    "tests\\test_device_network.py",
+    "tests\\test_device_port.py",
+    "tests\\test_device_tls.py",
+    "tests\\test_download_filenames.py",
+    "tests\\test_drive_capacity.py",
+    "tests\\test_duplicates.py",
+    "tests\\test_gap_backfill.py",
+    "tests\\test_gdrive_archiver.py",
+    "tests\\test_gdrive_crash.py",
+    "tests\\test_gdrive_e2e.py",
+    "tests\\test_gdrive_server.py",
+    "tests\\test_gdrive_settings.py",
+    "tests\\test_gps_track.py",
+    "tests\\test_job_progress.py",
+    "tests\\test_log_export.py",
+    "tests\\test_manual_archive.py",
+    "tests\\test_media_downloads.py",
+    "tests\\test_media_integration.py",
+    "tests\\test_media_store.py",
+    "tests\\test_mp4_uploads.py",
+    "tests\\test_overlay.py",
+    "tests\\test_playback_cache.py",
+    "tests\\test_prepared_migration.py",
+    "tests\\test_processing_queue.py",
+    "tests\\test_progress.py",
+    "tests\\test_release.py",
+    "tests\\test_requeue.py",
+    "tests\\test_speed.py",
+    "tests\\test_steering.py",
+    "tests\\test_storage.py",
+    "tests\\test_tags.py",
+    "tests\\test_telemetry.py",
+    "tests\\test_thumbnails.py",
+    "tests\\test_timeline.py",
+    "tests\\test_upload_recovery.py",
+    "tests\\test_video_sources.py",
+    "tests\\test_wall_clock.py",
+    "tests\\upload_drop.cjs",
+    "tests\\upload_mobile.cjs",
+    "tests\\upload_parallel.cjs",
+    "tests\\upload_stall.cjs",
+    "tests\\upload_timeout.cjs",
+    "tests\\video_overlay.cjs",
+    "tests\\video_sources.cjs",
+    "tests\\whole_video.cjs"
+  ],
+  "note": "정적 추출. 동적 라우트와 조건부 응답 의미는 원본 구현/테스트를 함께 확인한다."
+}
