@@ -414,10 +414,30 @@ async fn unknown_methods_paths_and_limits_answer_json() {
         (StatusCode::NOT_FOUND, Some("not_found"))
     );
     assert_eq!(v["message"], "로그 또는 파일을 찾을 수 없습니다.");
+    // Ported with the storage policy: answered by their handlers, not the unported fallback.
+    let (status, _, v) = send(
+        ingress(a.clone()),
+        "POST",
+        "/api/storage/cleanup",
+        vec![],
+        &[("x-roadviewer-request", "1")],
+    )
+    .await;
+    assert_eq!((status, &v), (StatusCode::OK, &json!({"removed_bytes":0})));
+    let (status, _, v) = send(
+        ingress(a.clone()),
+        "DELETE",
+        "/api/logs/0123456789abcdef0123456789abcdef",
+        vec![],
+        &[("x-roadviewer-request", "1")],
+    )
+    .await;
+    assert_eq!(
+        (status, v["error"].as_str()),
+        (StatusCode::NOT_FOUND, Some("not_found"))
+    );
     for (method, path) in [
-        ("POST", "/api/storage/cleanup"),
         ("GET", "/api/settings/archive"),
-        ("DELETE", "/api/logs/0123456789abcdef0123456789abcdef"),
         (
             "POST",
             "/api/logs/0123456789abcdef0123456789abcdef/archive/retry",
@@ -771,4 +791,177 @@ async fn device_network_uses_supervisor_contract() {
             .iter()
             .any(|c| c.0 == "restart" && c.1 == json!({}))
     );
+}
+
+async fn import_session(a: &App, begin: &Value) -> String {
+    let (status, v) = call(a, "POST", "/api/logs/import", begin.clone()).await;
+    assert_eq!(status, StatusCode::CREATED, "{v}");
+    let session = v["session"].as_str().unwrap().to_owned();
+    let (status, _, _) = send(
+        ingress(a.clone()),
+        "PUT",
+        &format!("/api/uploads/{session}/files/0?offset=0"),
+        b"data".to_vec(),
+        &[("x-roadviewer-request", "1")],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    session
+}
+async fn storage_limit(a: &App, max: u64, policy: &str) {
+    let (status, v) = call(
+        a,
+        "POST",
+        "/api/settings/storage",
+        json!({"max_bytes":max,"policy":policy}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK, "{v}");
+}
+
+#[tokio::test]
+async fn import_and_legacy_upload_use_storage_admission_and_settings() {
+    let root = tempfile::tempdir().unwrap();
+    let a = app(root.path()).await;
+    let leftovers = |prefix: &str| {
+        std::fs::read_dir(root.path())
+            .unwrap()
+            .flatten()
+            .filter(|e| e.file_name().to_string_lossy().starts_with(prefix))
+            .count()
+    };
+    let record = id();
+    let begin = json!({"format":"roadviewer-export","version":1,"record":{"id":record,"name":"n","pinned":true,
+        "originals":{"rlog.zst":{"bytes":4,"sha256":sha(b"data")}}}});
+
+    // Admitted when it began; the commit that publishes the recording is admitted again.
+    let session = import_session(&a, &begin).await;
+    storage_limit(&a, 1, "reject_new").await;
+    let finish = format!("/api/logs/import/{session}/finish");
+    let (status, v) = call(&a, "POST", &finish, Value::Null).await;
+    assert_eq!(
+        (status, v["error"].as_str()),
+        (
+            StatusCode::INSUFFICIENT_STORAGE,
+            Some("storage_limit_exceeded")
+        )
+    );
+    assert!(!root.path().join(&record).exists());
+    assert_eq!(leftovers(".import-"), 0);
+    assert!(
+        std::fs::read_dir(root.path().join(".uploads"))
+            .unwrap()
+            .next()
+            .is_none()
+    );
+
+    // The legacy upload is refused before its body lands in the data root.
+    let body = b"--XBOUNDARY\r\nContent-Disposition: form-data; name=\"files\"; filename=\"1a2b3c4d--0123456789--5--rlog.zst\"\r\nContent-Type: application/octet-stream\r\n\r\nlegacy-log\r\n--XBOUNDARY--\r\n".to_vec();
+    let length = body.len().to_string();
+    let (status, _, v) = send(
+        ingress(a.clone()),
+        "POST",
+        "/api/upload",
+        body,
+        &[
+            ("x-roadviewer-request", "1"),
+            ("content-type", "multipart/form-data; boundary=XBOUNDARY"),
+            ("content-length", &length),
+        ],
+    )
+    .await;
+    assert_eq!(
+        (status, v["error"].as_str()),
+        (
+            StatusCode::INSUFFICIENT_STORAGE,
+            Some("storage_limit_exceeded")
+        )
+    );
+    assert_eq!(leftovers(".legacy-"), 0);
+    assert!(a.store.records.read().await.is_empty());
+
+    // Without a limit the import registers, and its pin joins the saved settings.
+    storage_limit(&a, 0, "delete_oldest").await;
+    let session = import_session(&a, &begin).await;
+    let (status, v) = call(
+        &a,
+        "POST",
+        &format!("/api/logs/import/{session}/finish"),
+        Value::Null,
+    )
+    .await;
+    assert_eq!(
+        (status, v["imported"].as_str()),
+        (StatusCode::CREATED, Some(record.as_str()))
+    );
+    let saved: Value =
+        serde_json::from_slice(&std::fs::read(root.path().join(".storage-settings.json")).unwrap())
+            .unwrap();
+    assert_eq!(
+        (&saved["pinned_logs"], &saved["policy"], &saved["max_bytes"]),
+        (&json!([record]), &json!("delete_oldest"), &json!(0))
+    );
+    let (_, list) = call(&a, "GET", "/api/logs", Value::Null).await;
+    assert_eq!(list["logs"][0]["pinned"], true);
+
+    // Bodies that are not JSON get Python's error codes, not a framework rejection.
+    let (status, _, v) = send(
+        ingress(a.clone()),
+        "POST",
+        &format!("/api/logs/{record}/pin"),
+        b"pinned".to_vec(),
+        &[
+            ("x-roadviewer-request", "1"),
+            ("content-type", "text/plain"),
+        ],
+    )
+    .await;
+    assert_eq!(
+        (status, v["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_pin"))
+    );
+    let (status, _, v) = send(
+        ingress(a.clone()),
+        "POST",
+        "/api/settings/storage",
+        b"max_bytes=0".to_vec(),
+        &[
+            ("x-roadviewer-request", "1"),
+            ("content-type", "text/plain"),
+        ],
+    )
+    .await;
+    assert_eq!(
+        (status, v["error"].as_str()),
+        (StatusCode::BAD_REQUEST, Some("invalid_storage_settings"))
+    );
+    // Flask's `get_json(silent=True)` ignores even valid JSON sent with another type.
+    let pin = format!("/api/logs/{record}/pin");
+    for (path, body, code) in [
+        (
+            "/api/settings/storage",
+            br#"{"max_bytes":0,"policy":"reject_new"}"#.to_vec(),
+            "invalid_storage_settings",
+        ),
+        (pin.as_str(), br#"{"pinned":false}"#.to_vec(), "invalid_pin"),
+    ] {
+        let (status, _, v) = send(
+            ingress(a.clone()),
+            "POST",
+            path,
+            body,
+            &[
+                ("x-roadviewer-request", "1"),
+                ("content-type", "text/plain"),
+            ],
+        )
+        .await;
+        assert_eq!(
+            (status, v["error"].as_str()),
+            (StatusCode::BAD_REQUEST, Some(code)),
+            "{path}"
+        );
+    }
+    let (_, list) = call(&a, "GET", "/api/logs", Value::Null).await;
+    assert_eq!(list["logs"][0]["pinned"], true);
 }

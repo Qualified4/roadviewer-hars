@@ -415,31 +415,34 @@ pub(crate) async fn remux_probed(
                 .await??
             }
         } else {
-            let mut cmd = Command::new("ffmpeg");
-            cmd.args([
-                "-v",
-                "error",
-                "-nostdin",
-                "-n",
-                "-protocol_whitelist",
-                "file,pipe",
-                "-f",
-                input_format(kind),
-            ]);
-            cmd.arg("-i").arg(source).args([
-                "-map",
-                "0:v:0",
-                "-an",
-                "-c:v",
-                "copy",
-                "-map_metadata",
-                "-1",
-                "-movflags",
-                "+faststart",
-            ]);
-            cmd.args(["-f", "mp4"]).arg(&temp);
-            run(&mut cmd).await?;
-            inspection.context("missing source inspection")?.signature
+            let input = inspection.context("missing source inspection")?;
+            // Python subtracts the smallest source PTS from both clocks.
+            let offset = input.info["packets"]
+                .as_array()
+                .context("missing packet timestamps")?
+                .iter()
+                .filter_map(|p| p["pts"].as_i64())
+                .min()
+                .context("missing PTS")?;
+            if let Some(worker) = WORKER_EXECUTABLE.get() {
+                let mut command = Command::new(worker);
+                command
+                    .arg("__native-ts")
+                    .arg(source)
+                    .arg(&temp)
+                    .arg(offset.to_string());
+                run(&mut command).await?;
+            } else {
+                let permit = WORKERS.clone().acquire_owned().await?;
+                let input = source.to_path_buf();
+                let output = temp.clone();
+                tokio::task::spawn_blocking(move || {
+                    let _permit = permit;
+                    crate::native_video::remux_ts(&input, &output, offset)
+                })
+                .await??;
+            }
+            input.signature
         };
         let target_kind = if kind == "qcamera.ts" {
             "camera.mp4"

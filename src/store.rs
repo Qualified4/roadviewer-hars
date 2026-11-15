@@ -39,6 +39,8 @@ pub async fn atomic_json(path: &Path, value: &impl Serialize) -> std::io::Result
     let mut file = options.open(&temp).await?;
     let outcome = async {
         file.write_all(&bytes).await?;
+        // tokio's sync_all records a failed background write instead of returning it; flush reports it.
+        file.flush().await?;
         file.sync_all().await?;
         drop(file);
         tokio::fs::rename(&temp, path).await?;
@@ -133,6 +135,8 @@ impl Store {
         }
         let instance = opts.open(root.join(".hars-instance.lock"))?;
         fs2::FileExt::try_lock_exclusive(&instance)?;
+        let sweep = root.clone();
+        tokio::task::spawn_blocking(move || sweep_temps(&sweep, 2)).await??;
         tokio::fs::create_dir_all(root.join(".uploads")).await?;
         let mut records = BTreeMap::new();
         let mut dirs = tokio::fs::read_dir(&root).await?;
@@ -214,13 +218,48 @@ impl Store {
     }
 }
 
-pub fn directory_size(root: &Path) -> std::io::Result<u64> {
-    let mut total = 0;
-    for entry in std::fs::read_dir(root)? {
+/// Deletes `atomic_json` temporaries left by a killed writer. The instance lock excludes live writers.
+fn sweep_temps(dir: &Path, depth: u8) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(dir)? {
         let entry = entry?;
         let kind = entry.file_type()?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if kind.is_dir() && depth > 0 {
+            sweep_temps(&entry.path(), depth - 1)?;
+        } else if kind.is_file()
+            && name
+                .strip_suffix(".tmp")
+                .and_then(|stem| stem.rsplit_once('.'))
+                .is_some_and(|(_, token)| valid_id(token))
+        {
+            std::fs::remove_file(entry.path())?;
+        }
+    }
+    Ok(())
+}
+
+pub fn directory_size(root: &Path) -> std::io::Result<u64> {
+    let gone = |e: &std::io::Error| e.kind() == std::io::ErrorKind::NotFound;
+    let mut total = 0;
+    let entries = match std::fs::read_dir(root) {
+        Ok(v) => v,
+        // Upload cleanup or a deletion during the scan (as Python storage_used_bytes).
+        Err(e) if gone(&e) => return Ok(0),
+        Err(e) => return Err(e),
+    };
+    for entry in entries {
+        let entry = entry?;
+        let kind = match entry.file_type() {
+            Ok(v) => v,
+            Err(e) if gone(&e) => continue,
+            Err(e) => return Err(e),
+        };
         if kind.is_file() {
-            total += entry.metadata()?.len();
+            match entry.metadata() {
+                Ok(m) => total += m.len(),
+                Err(e) if gone(&e) => {}
+                Err(e) => return Err(e),
+            }
         } else if kind.is_dir() {
             total += directory_size(&entry.path())?;
         }

@@ -11,8 +11,9 @@ use crate::{
         Answer, Fail, RecordingOrder, SOURCES, STORED_KINDS, TAG_COLORS, download_name, local_time,
         message_disposition, nfc, number, other, py_strip, py_words,
     },
+    storage,
     store::{atomic_json, now, read_json, valid_id},
-    upload::{UploadFile, file_hash},
+    upload::{UploadFile, file_hash, remove_session},
 };
 use axum::{
     Json,
@@ -28,7 +29,10 @@ use std::{
     path::{Path as FsPath, PathBuf},
     sync::LazyLock,
 };
-use tokio::{io::AsyncReadExt, sync::mpsc};
+use tokio::{
+    io::AsyncReadExt,
+    sync::{MutexGuard, mpsc},
+};
 
 pub const FORMAT: &str = "roadviewer-export";
 pub const VERSION: u64 = 1;
@@ -151,14 +155,10 @@ async fn send(tx: &Tx, bytes: impl Into<Bytes>) -> Result<(), Closed> {
 }
 
 async fn pinned_logs(app: &App) -> BTreeSet<String> {
-    read_json::<Value>(&app.store.root.join(".storage-settings.json"))
+    storage::load_settings(&app.store.root)
         .await
-        .ok()
-        .and_then(|v| v["pinned_logs"].as_array().cloned())
-        .into_iter()
-        .flatten()
-        .filter_map(|v| v.as_str().map(str::to_owned))
-        .collect()
+        .map(|s| storage::pins(&s))
+        .unwrap_or_default()
 }
 
 /// The index entry as exported (whitelisted fields), or None for a plain local file.
@@ -763,18 +763,19 @@ pub async fn begin(State(app): State<App>, body: Bytes) -> Answer<Response> {
         })
         .collect::<Vec<_>>();
     if files.is_empty() {
-        let _registration = app.store.registration.lock().await;
-        return register(&app, &record, vec![]).await;
+        let registration = app.store.registration.lock().await;
+        return register(&app, &record, vec![], &registration).await;
     }
-    let _registration = app.store.registration.lock().await;
     let id = record["id"].as_str().unwrap();
     if app.store.root.join(id).exists() {
         return Ok(skipped_answer("exists", &record));
     }
     let names = files.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
+    // Session creation takes the admission and registration locks itself (storage::admit). The
+    // id is checked again under the registration lock when the recording is published.
     let session = app.uploads.create_browser(files).await?;
     if let Err(e) = atomic_json(&session.path.join(IMPORT), &record).await {
-        let _ = tokio::fs::remove_dir_all(&session.path).await;
+        let _ = remove_session(&session.path).await;
         app.uploads
             .forget(&session.path.file_name().unwrap().to_string_lossy())
             .await;
@@ -830,7 +831,7 @@ pub async fn finish(
     }
     let result = finish_registered(&app, &session).await;
     // The session goes in every outcome, as Python's `finally`: a failed import is chosen again.
-    let _ = tokio::fs::remove_dir_all(&session.path).await;
+    let _ = remove_session(&session.path).await;
     app.uploads.forget(&name).await;
     result
 }
@@ -869,19 +870,24 @@ async fn finish_registered(app: &App, session: &crate::upload::Session) -> Answe
     if let Some(reason) = skipped(app, &record).await {
         return Ok(skipped_answer(reason, &record));
     }
-    let _registration = app.store.registration.lock().await;
-    register(app, &record, received).await
+    let registration = app.store.registration.lock().await;
+    register(app, &record, received, &registration).await
 }
 
 /// Builds the recording in a staging folder under the data root and publishes it with one rename,
 /// so an interrupted import leaves nothing in the list (staging is removed at startup).
-async fn register(app: &App, record: &Value, received: Vec<(PathBuf, String)>) -> Answer<Response> {
+async fn register(
+    app: &App,
+    record: &Value,
+    received: Vec<(PathBuf, String)>,
+    registration: &MutexGuard<'_, ()>,
+) -> Answer<Response> {
     let id = record["id"].as_str().unwrap().to_owned();
     let temp = app
         .store
         .root
         .join(format!(".import-{}", crate::store::id()));
-    let result = register_in(app, record, &received, &temp, &id).await;
+    let result = register_in(app, record, &received, &temp, &id, registration).await;
     let _ = tokio::fs::remove_dir_all(&temp).await;
     result
 }
@@ -891,6 +897,7 @@ async fn register_in(
     received: &[(PathBuf, String)],
     temp: &FsPath,
     id: &str,
+    registration: &MutexGuard<'_, ()>,
 ) -> Answer<Response> {
     let stage = temp.join(id);
     tokio::fs::create_dir_all(&stage).await?;
@@ -939,6 +946,18 @@ async fn register_in(
     if root.exists() || app.store.records.read().await.contains_key(id) {
         return Ok(skipped_answer("exists", record));
     }
+    // Python `register`: the received files are already counted as used, so only the metadata
+    // reserve is admitted, and this commit may evict old recordings under the policy.
+    let kinds = received.iter().map(|(_, k)| k.clone()).collect::<Vec<_>>();
+    storage::admit(
+        &app.store,
+        0,
+        &kinds,
+        true,
+        &BTreeSet::new(),
+        Some(registration),
+    )
+    .await?;
     atomic_json(&stage.join("meta.json"), &meta).await?;
     tokio::fs::rename(&stage, &root).await?;
     #[cfg(unix)]
@@ -952,22 +971,11 @@ async fn register_in(
     }
     app.store.records.write().await.insert(id.to_owned(), meta);
     if record["pinned"] == true {
-        let path = app.store.root.join(".storage-settings.json");
-        let mut settings: Value = if path.exists() {
-            read_json(&path).await?
-        } else {
-            json!({"max_bytes":0,"policy":"reject_new","pinned_logs":[]})
-        };
-        let mut pins = settings["pinned_logs"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default()
-            .into_iter()
-            .filter_map(|v| v.as_str().map(str::to_owned))
-            .collect::<BTreeSet<_>>();
+        let mut settings = storage::load_settings(&app.store.root).await?;
+        let mut pins = storage::pins(&settings);
         pins.insert(id.to_owned());
         settings["pinned_logs"] = json!(pins);
-        atomic_json(&path, &settings).await?;
+        storage::save_settings(&app.store.root, &settings).await?;
     }
     Ok((
         StatusCode::CREATED,
@@ -1350,19 +1358,27 @@ pub async fn legacy_upload(
     headers: HeaderMap,
     multipart: Result<Multipart, axum::extract::multipart::MultipartRejection>,
 ) -> Answer<Response> {
-    if headers
+    let Some(length) = headers
         .get(h::CONTENT_LENGTH)
         .and_then(|v| v.to_str().ok())
         .and_then(|v| v.parse::<u64>().ok())
-        .is_none_or(|v| v == 0)
-    {
+        .filter(|v| *v > 0)
+    else {
         return Err(Fail {
             status: StatusCode::LENGTH_REQUIRED,
             code: "content_length_required",
             message: None,
         });
-    }
+    };
     let mut multipart = multipart.map_err(|_| request())?;
+    // Python admits the whole request with a staging copy before registering. Its body waits in a
+    // temporary folder outside the data root; here it is received into the data root, so the same
+    // verdict is reached before the first byte is written. The session admission after receiving
+    // then counts the received copy as used.
+    {
+        let _registration = app.store.registration.lock().await;
+        storage::admit(&app.store, length, &[], true, &BTreeSet::new(), None).await?;
+    }
     let stage = app
         .store
         .root
@@ -1452,7 +1468,7 @@ async fn legacy_in(
             if let Ok(s) = app.uploads.get(&name).await
                 && !s.path.join("commit.json").exists()
             {
-                let _ = tokio::fs::remove_dir_all(&s.path).await;
+                let _ = remove_session(&s.path).await;
                 app.uploads.forget(&name).await;
             }
             Err(e.into())

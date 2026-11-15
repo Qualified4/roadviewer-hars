@@ -156,6 +156,20 @@ def main():
         both('tags set', 'POST', lambda s: f'/api/logs/{rid(s)}/tags', {'tags': [{'name': 'Zeta'}, {'name': 'alpha', 'color': 'red'}]})
         both('tags bad color', 'POST', lambda s: f'/api/logs/{rid(s)}/tags', {'tags': [{'name': 'x', 'color': 'black'}]})
         both('pin', 'POST', lambda s: f'/api/logs/{rid(s)}/pin', {'pinned': True})
+        both('pin not JSON', 'POST', lambda s: f'/api/logs/{rid(s)}/pin', b'pinned', {'Content-Type': 'text/plain'})
+        both('pin JSON text without JSON type', 'POST', lambda s: f'/api/logs/{rid(s)}/pin', b'{"pinned": true}', {'Content-Type': 'text/plain'})
+        both('pin wrong type', 'POST', lambda s: f'/api/logs/{rid(s)}/pin', {'pinned': 'yes'})
+        both('pin missing log', 'POST', f'/api/logs/{uuid.uuid4().hex}/pin', {'pinned': True})
+        pinned = {s.name: [r['pinned'] for r in s.request('GET', '/api/logs')[1]['logs'] if r['id'] == rid(s)] for s in (py, rs)}
+        rows.append({'case': 'list pinned field after pin', 'python': pinned['python'], 'hars': pinned['hars'], 'same_status': True, 'same_keys': pinned['python'] == pinned['hars'] == [True]})
+        both('delete pinned with skip_pinned', 'DELETE', lambda s: f'/api/logs/{rid(s)}?skip_pinned=1')
+        both('storage settings', 'GET', '/api/settings/storage')
+        both('storage settings save', 'POST', '/api/settings/storage', {'max_bytes': 0, 'policy': 'reject_new'})
+        both('storage settings not JSON', 'POST', '/api/settings/storage', b'max_bytes=0', {'Content-Type': 'text/plain'})
+        both('storage settings JSON text without JSON type', 'POST', '/api/settings/storage', b'{"max_bytes": 0, "policy": "reject_new"}', {'Content-Type': 'text/plain'})
+        both('storage settings bad policy', 'POST', '/api/settings/storage', {'max_bytes': 0, 'policy': 'keep'})
+        both('storage settings extra key', 'POST', '/api/settings/storage', {'max_bytes': 0, 'policy': 'reject_new', 'pinned_logs': []})
+        both('storage cleanup', 'POST', '/api/storage/cleanup')
         both('tracks', 'GET', '/api/tracks')
         both('track', 'GET', lambda s: f'/api/logs/{rid(s)}/track')
         both('progress', 'GET', '/api/progress')
@@ -204,6 +218,14 @@ def main():
         rows.append({'case': 'tags/bookmarks after cross import', 'python': sorted(json.dumps(r.get('tags')) for r in imported['python']),
                      'hars': sorted(json.dumps(r.get('tags')) for r in imported['hars']), 'same_status': True,
                      'same_keys': sorted(json.dumps(r.get('tags')) for r in imported['python']) == sorted(json.dumps(r.get('tags')) for r in imported['hars'])})
+        imported_pins = {s.name: sorted(r['name'] for r in imported[s.name] if r['pinned']) for s in (py, rs)}
+        rows.append({'case': 'pins after cross import', 'python': imported_pins['python'], 'hars': imported_pins['hars'], 'same_status': True,
+                     'same_keys': imported_pins['python'] == imported_pins['hars']})
+        both('delete log', 'DELETE', lambda s: f'/api/logs/{rid(s)}')
+        both('delete missing log', 'DELETE', lambda s: f'/api/logs/{rid(s)}')
+        remaining = {s.name: sorted(r['name'] for r in s.request('GET', '/api/logs')[1]['logs']) for s in (py, rs)}
+        rows.append({'case': 'list after delete', 'python': remaining['python'], 'hars': remaining['hars'], 'same_status': True,
+                     'same_keys': remaining['python'] == remaining['hars']})
         report = {'python_port': args.python_port, 'rust_port': args.rust_port, 'cases': rows,
                   'summary': {'cases': len(rows), 'same_status': sum(r['same_status'] for r in rows), 'same_keys': sum(bool(r['same_keys']) for r in rows)}}
         Path(args.report).write_text(json.dumps(report, ensure_ascii=False, indent=1))

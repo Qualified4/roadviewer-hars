@@ -17,6 +17,69 @@ import zstandard
 from real_replay_compare import differences
 
 
+def strip_vui_timing(nal):
+    """openpilot qcamera SPS has VUI without timing_info; libx264 always writes it.
+
+    Without SPS timing, FFmpeg derives packet durations from the probed
+    r_frame_rate, which is what the jittered clock below must exercise.
+    """
+    rbsp=bytearray()
+    for b in nal[1:]:
+        if b==3 and rbsp[-2:]==b"\0\0":continue
+        rbsp.append(b)
+    bits="".join(f"{b:08b}" for b in rbsp);at=0
+    def u(n):
+        nonlocal at
+        at+=n;return int(bits[at-n:at],2) if n else 0
+    def ue():
+        nonlocal at
+        zeros=bits.index("1",at)-at;at+=zeros+1;return (1<<zeros)-1+u(zeros)
+    profile=u(8);u(16);ue()
+    if profile in (100,110,122,244,44,83,86,118,128):
+        if ue()==3:u(1)
+        ue();ue();u(1);assert u(1)==0
+    ue();poc=ue()
+    if poc==0:ue()
+    assert poc!=1
+    ue();u(1);ue();ue()
+    if u(1)==0:u(1)
+    u(1)
+    if u(1):[ue() for _ in range(4)]
+    assert u(1)==1
+    if u(1) and u(8)==255:u(32)
+    if u(1):u(1)
+    if u(1):
+        u(4)
+        if u(1):u(24)
+    if u(1):ue();ue()
+    assert bits[at]=="1"
+    stop=bits.rindex("1")
+    out=bits[:at]+"0"+bits[at+66:stop]+"1";out+="0"*(-len(out)%8)
+    result=bytearray(nal[:1])
+    for i in range(0,len(out),8):
+        b=int(out[i:i+8],2)
+        if b<=3 and len(result)>2 and result[-2:]==b"\0\0":result.append(3)
+        result.append(b)
+    return bytes(result)
+
+
+def jittered_qcamera(common,path):
+    """20 fps H.264 TS whose clock drifts +2.4 ms over the first 20 intervals.
+
+    Library stream probing (PyAV, HARS) stops after 20 intervals and estimates
+    a non-20 fps rate there; the ffmpeg CLI scans ~5 s and settles on 20 fps.
+    """
+    raw=path.with_suffix(".h264")
+    subprocess.run(common+["-c:v","libx264","-profile:v","baseline","-bf","0","-g","20","-pix_fmt","yuv420p","-f","h264",str(raw)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
+    data=raw.read_bytes();units=[];i=data.find(b"\0\0\1")
+    while i>=0:
+        j=data.find(b"\0\0\1",i+3);units.append(data[i+3:j if j>=0 else len(data)].rstrip(b"\0"));i=j
+    raw.write_bytes(b"".join(b"\0\0\0\1"+(strip_vui_timing(u) if u[0]&31==7 else u) for u in units))
+    clock=r"(N*0.05+0.00012*if(lte(N\,20)\,N\,max(40-N\,0)))/TB"
+    subprocess.run(["ffmpeg","-v","error","-nostdin","-f","h264","-i",str(raw),"-map","0:v:0","-c:v","copy","-bsf:v",f"setts=pts={clock}:dts={clock}","-f","mpegts",str(path)],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
+    raw.unlink()
+
+
 def main():
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument("binary",type=Path)
@@ -28,7 +91,10 @@ def main():
         from decoder import log
         source=work/"inputs";source.mkdir()
         common=["ffmpeg","-v","error","-nostdin","-f","lavfi","-i","testsrc2=size=320x240:rate=20","-t","6","-threads","2","-an"]
-        subprocess.run(common+["-c:v","libx264","-preset","ultrafast","-bf","0","-g","20","-f","mpegts",str(source/"qcamera.ts")],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
+        jittered_qcamera(common,source/"qcamera.ts")
+        import av
+        with av.open(str(source/"qcamera.ts")) as probe:
+            assert probe.streams.video[0].base_rate!=20,"fixture must move the library rate probe off 20 fps"
         subprocess.run(common+["-c:v","libx265","-preset","ultrafast","-x265-params","pools=1:frame-threads=1:bframes=0:keyint=20","-f","hevc",str(source/"fcamera.hevc")],check=True,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,timeout=30)
         shutil.copyfile(source/"fcamera.hevc",source/"ecamera.hevc")
         events=[]

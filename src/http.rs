@@ -1,6 +1,7 @@
 use crate::{
     auth::{Auth, header},
     error::{ApiError, Result, bad, missing},
+    http_storage,
     store::{Store, atomic_json, id, read_json, sha},
     upload::Uploads,
 };
@@ -26,6 +27,8 @@ use std::{
 use tower::ServiceExt;
 use tower_http::services::ServeFile;
 
+const BODY_LIMIT: usize = 8 * 1024 * 1024 + 1;
+
 #[derive(Clone)]
 pub struct App {
     pub store: Arc<Store>,
@@ -38,6 +41,9 @@ pub struct App {
     pub jobs: Arc<crate::jobs::Jobs>,
     pub network: Arc<crate::network::Network>,
     transfer_slots: Arc<tokio::sync::Semaphore>,
+    pub slot_wait: std::time::Duration,
+    pub body_idle: std::time::Duration,
+    pub body_total: std::time::Duration,
 }
 impl App {
     pub async fn open(
@@ -47,6 +53,7 @@ impl App {
         max_upload_mb: u64,
     ) -> anyhow::Result<Self> {
         let store = Store::open(root).await?;
+        crate::storage::open(&store).await?;
         crate::transfer::cleanup_staging(&store.root)?;
         let auth = Arc::new(Auth::open(&store.root).await?);
         let uploads =
@@ -68,7 +75,13 @@ impl App {
             jobs,
             network: Arc::new(crate::network::Network::from_env()),
             transfer_slots: Arc::new(tokio::sync::Semaphore::new(8)),
+            slot_wait: std::time::Duration::from_secs(30),
+            body_idle: std::time::Duration::from_secs(30),
+            body_total: std::time::Duration::from_secs(120),
         })
+    }
+    pub fn transfer_slots_available(&self) -> usize {
+        self.transfer_slots.available_permits()
     }
     pub fn background(&self) -> tokio::task::JoinHandle<()> {
         let app = self.clone();
@@ -92,6 +105,18 @@ impl App {
                 }
                 if app.uploads.recover_commits().await.is_err() {
                     tracing::warn!("upload_commit_recovery_failed");
+                }
+                if crate::storage::pending(&app.store.root)
+                    .await
+                    .unwrap_or(true)
+                {
+                    let registration = app.store.registration.lock().await;
+                    if crate::storage::recover(&app.store, &registration)
+                        .await
+                        .is_err()
+                    {
+                        tracing::warn!("delete_recovery_failed");
+                    }
                 }
             }
         })
@@ -128,7 +153,11 @@ pub fn ingress(app: App) -> Router {
         .route("/api/tracks", get(tracks))
         .route("/api/progress", get(progress))
         .route("/api/settings/processing", get(processing).post(processing))
-        .route("/api/settings/storage", get(storage).post(storage))
+        .route(
+            "/api/settings/storage",
+            get(http_storage::settings).post(http_storage::settings),
+        )
+        .route("/api/storage/cleanup", post(http_storage::cleanup))
         .route("/api/settings/devices", get(devices))
         .route(
             "/api/settings/devices/pairing",
@@ -149,7 +178,8 @@ pub fn ingress(app: App) -> Router {
             put(crate::annotations::bookmark_item).delete(crate::annotations::bookmark_item),
         )
         .route("/api/logs/{id}/tags", post(crate::annotations::tags))
-        .route("/api/logs/{id}/pin", post(pin))
+        .route("/api/logs/{id}", delete(http_storage::delete_log))
+        .route("/api/logs/{id}/pin", post(http_storage::pin))
         .route("/api/logs/{id}/data", get(data))
         .route("/api/logs/{id}/convert", post(convert))
         .route("/api/logs/{id}/prepared", delete(remove_prepared))
@@ -164,7 +194,7 @@ pub fn ingress(app: App) -> Router {
         .route("/health", get(health))
         .fallback(crate::parity::fallback)
         .method_not_allowed_fallback(crate::parity::method_not_allowed)
-        .layer(DefaultBodyLimit::max(8 * 1024 * 1024 + 1))
+        .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .layer(middleware::map_response(|r: Response| async move {
             crate::parity::json_too_large(false, r)
         }))
@@ -189,7 +219,7 @@ pub fn device(app: App) -> Router {
         .route("/api/device/uploads/{id}/finish", post(device_finish))
         .fallback(|| async { missing("not_found") })
         .method_not_allowed_fallback(crate::parity::method_not_allowed)
-        .layer(DefaultBodyLimit::max(8 * 1024 * 1024 + 1))
+        .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .layer(middleware::map_response(|r: Response| async move {
             crate::parity::json_too_large(true, r)
         }))
@@ -214,10 +244,30 @@ async fn transfer_backpressure(State(app): State<App>, request: Request, next: N
                 _ => {}
             }
         }
-        let Ok(_permit) = app.transfer_slots.acquire().await else {
+        let Ok(Ok(_permit)) =
+            tokio::time::timeout(app.slot_wait, app.transfer_slots.acquire()).await
+        else {
             return ApiError(StatusCode::SERVICE_UNAVAILABLE, "upload_busy").into_response();
         };
-        return next.run(request).await;
+        let (parts, body) = request.into_parts();
+        let limits = crate::body_limit::Limits {
+            idle: app.body_idle,
+            total: app.body_total,
+            max: BODY_LIMIT,
+        };
+        return match crate::body_limit::receive(body, &limits).await {
+            Ok(bytes) => {
+                next.run(Request::from_parts(parts, Body::from(bytes)))
+                    .await
+            }
+            Err(e) => {
+                let mut response = e.into_response();
+                response
+                    .headers_mut()
+                    .insert(h::CONNECTION, "close".parse().unwrap());
+                response
+            }
+        };
     }
     next.run(request).await
 }
@@ -421,12 +471,7 @@ async fn serve(path: PathBuf, request: Request) -> Result<Response> {
 }
 async fn list(State(app): State<App>, headers: HeaderMap) -> Result<Response> {
     let (_, uploads) = app.uploads.snapshot().await;
-    let pin_path = app.store.root.join(".storage-settings.json");
-    let pins: Value = if pin_path.exists() {
-        read_json(&pin_path).await?
-    } else {
-        json!({"pinned_logs":[]})
-    };
+    let pins = crate::storage::pins(&crate::storage::load_settings(&app.store.root).await?);
     let settings = app.store.processing.read().await.clone();
     let progress = app.jobs.progress.read().await.clone();
     let metas = app
@@ -452,9 +497,7 @@ async fn list(State(app): State<App>, headers: HeaderMap) -> Result<Response> {
     .await
     .map_err(|_| bad("invalid_list"))?;
     for o in &mut logs {
-        let pinned = pins["pinned_logs"]
-            .as_array()
-            .is_some_and(|v| v.contains(&o["id"]));
+        let pinned = o["id"].as_str().is_some_and(|id| pins.contains(id));
         o.insert("pinned".into(), json!(pinned));
         let current = progress
             .get(o["id"].as_str().unwrap_or(""))
@@ -500,7 +543,12 @@ async fn pair(State(app): State<App>, body: Bytes) -> Result<(StatusCode, Json<V
     Ok((StatusCode::CREATED, Json(app.auth.pair(body).await?)))
 }
 async fn revoke(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Value>> {
-    Ok(Json(app.auth.device_action(&id, false).await?))
+    let result = app.auth.device_action(&id, false).await?;
+    // Python drops the device's idle sessions at revocation, releasing their reservations.
+    if app.uploads.cleanup().await.is_err() {
+        tracing::warn!("upload_cleanup_failed");
+    }
+    Ok(Json(result))
 }
 async fn remove_device(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Value>> {
     Ok(Json(app.auth.device_action(&id, true).await?))
@@ -721,16 +769,11 @@ async fn remove_prepared(
     let _guard = lock.lock().await;
     let folder = app.store.folder(&id).await?;
     let mut meta = app.store.meta(&id).await?;
-    if q.get("skip_pinned").is_some_and(|v| v == "1") {
-        let settings: Value = read_json(&app.store.root.join(".storage-settings.json"))
-            .await
-            .unwrap_or(json!({}));
-        if settings["pinned_logs"]
-            .as_array()
-            .is_some_and(|v| v.contains(&json!(id)))
-        {
-            return Ok(Json(json!({"skipped":"pinned"})));
-        }
+    if q.get("skip_pinned").is_some_and(|v| v == "1")
+        && crate::storage::pins(&crate::storage::load_settings(&app.store.root).await?)
+            .contains(&id)
+    {
+        return Ok(Json(json!({"skipped":"pinned"})));
     }
     if meta["status"] == "processing" || app.jobs.busy(&id).await {
         return Err(crate::error::conflict(
@@ -770,61 +813,6 @@ async fn cancel_conversion(State(app): State<App>, Path(id): Path<String>) -> Re
         app.store.save_meta(meta).await?;
     }
     Ok(Json(json!({"status":app.store.meta(&id).await?["status"]})))
-}
-async fn storage(State(app): State<App>, method: Method, body: Bytes) -> Result<Json<Value>> {
-    let _registration = app.store.registration.lock().await;
-    let path = app.store.root.join(".storage-settings.json");
-    let mut settings: Value = if path.exists() {
-        read_json(&path).await?
-    } else {
-        json!({"max_bytes":0,"policy":"reject_new","pinned_logs":[]})
-    };
-    if method == Method::POST {
-        let body: Value =
-            serde_json::from_slice(&body).map_err(|_| bad("invalid_storage_settings"))?;
-        if body.as_object().is_none_or(|o| o.len() != 2)
-            || !body["max_bytes"].as_u64().is_some_and(|v| v < (1u64 << 53))
-            || body["policy"] != "reject_new"
-        {
-            return Err(bad("invalid_storage_settings"));
-        }
-        settings["max_bytes"] = body["max_bytes"].clone();
-        settings["policy"] = body["policy"].clone();
-        atomic_json(&path, &settings).await?;
-    }
-    let (reserved, _) = app.uploads.snapshot().await;
-    let used = app.used.load(Ordering::Relaxed);
-    let free = fs2::available_space(&app.store.root)?;
-    Ok(Json(
-        json!({"max_bytes":settings["max_bytes"],"policy":settings["policy"],"used_bytes":used,"free_bytes":free,"reserved_bytes":reserved,"margin_bytes":100*1024*1024,"pinned_logs":settings["pinned_logs"],"archive":{"enabled":false,"state":"disabled","reason":"not_ported"}}),
-    ))
-}
-async fn pin(
-    State(app): State<App>,
-    Path(id): Path<String>,
-    Json(body): Json<Value>,
-) -> Result<Json<Value>> {
-    let pinned = body["pinned"].as_bool().ok_or_else(|| bad("invalid_pin"))?;
-    app.store.folder(&id).await?;
-    let _registration = app.store.registration.lock().await;
-    let path = app.store.root.join(".storage-settings.json");
-    let mut settings: Value = if path.exists() {
-        read_json(&path).await?
-    } else {
-        json!({"max_bytes":0,"policy":"reject_new","pinned_logs":[]})
-    };
-    let mut pins = settings["pinned_logs"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
-    pins.retain(|v| *v != id);
-    if pinned {
-        pins.push(json!(id));
-    }
-    pins.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
-    settings["pinned_logs"] = json!(pins);
-    atomic_json(&path, &settings).await?;
-    Ok(Json(json!({"pinned":pinned})))
 }
 async fn prepared(
     app: &App,

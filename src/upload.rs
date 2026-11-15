@@ -287,7 +287,24 @@ impl Uploads {
         let mut dirs = tokio::fs::read_dir(store.root.join(".uploads")).await?;
         while let Some(entry) = dirs.next_entry().await? {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if !valid_id(&name) || !entry.file_type().await?.is_dir() {
+            if !entry.file_type().await?.is_dir() {
+                continue;
+            }
+            let interrupted = name
+                .strip_suffix(".creating")
+                .or_else(|| name.strip_suffix(".removing"))
+                .is_some_and(valid_id);
+            // Before staged creation/removal existed, a crash could leave a session folder without
+            // its manifest. Such a folder has no journal, so nothing in it can be registered.
+            let incomplete = valid_id(&name)
+                && !entry.path().join("commit.json").exists()
+                && !(entry.path().join("manifest.json").exists()
+                    && entry.path().join("reservation.json").exists());
+            if interrupted || incomplete {
+                tokio::fs::remove_dir_all(entry.path()).await?;
+                continue;
+            }
+            if !valid_id(&name) {
                 continue;
             }
             let files: Vec<UploadFile> = read_json(&entry.path().join("manifest.json")).await?;
@@ -388,10 +405,10 @@ impl Uploads {
             .sessions
             .read()
             .await
-            .values()
-            .cloned()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
             .collect::<Vec<_>>();
-        for s in sessions {
+        for (name, s) in sessions {
             let _life = s.lifecycle.write().await;
             let meta = s.meta.read().await.clone();
             if meta["device_id"] == device && meta["batch_id"] == batch {
@@ -401,7 +418,13 @@ impl Uploads {
                 if meta["expires_at"].as_f64().unwrap_or(0.) <= now()
                     || now() - s.last_progress().await? > IDLE
                 {
-                    return Err(ApiError(StatusCode::GONE, "session_expired"));
+                    if s.path.join("commit.json").exists() {
+                        return Err(conflict("upload_busy"));
+                    }
+                    // Python's begin runs expiry cleanup first, so a retried batch starts a new session.
+                    remove_session(&s.path).await?;
+                    self.sessions.write().await.remove(&name);
+                    break;
                 }
                 if let Some(result) = meta.get("result") {
                     return Ok((StatusCode::OK, json!({"state":"completed","result":result})));
@@ -495,64 +518,36 @@ impl Uploads {
                 "session_limit_reached",
             ));
         }
-        let sessions = self
-            .sessions
-            .read()
-            .await
-            .values()
-            .cloned()
-            .collect::<Vec<_>>();
-        let mut reserved = 0u64;
-        for s in sessions {
-            let offsets = s.offsets().await?;
-            reserved += offsets
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|f| {
-                    f["size"]
-                        .as_u64()
-                        .unwrap()
-                        .saturating_sub(f["received"].as_u64().unwrap())
-                })
-                .sum::<u64>();
-        }
-        let free = fs2::available_space(&self.store.root)?;
-        if free < total + reserved + MARGIN {
-            return Err(ApiError(
-                StatusCode::INSUFFICIENT_STORAGE,
-                "insufficient_disk_space",
-            ));
-        }
-        let settings = self.store.root.join(".storage-settings.json");
-        if settings.exists() {
-            let settings: Value = read_json(&settings).await?;
-            let max = settings["max_bytes"].as_u64().unwrap_or(0);
-            if max > 0 && self.store.used().await? + total + reserved + 65536 > max {
-                return Err(ApiError(
-                    StatusCode::INSUFFICIENT_STORAGE,
-                    "storage_limit_exceeded",
-                ));
-            }
-        }
+        // Until its manifest is on disk, an admitted session's route is invisible to a finish's
+        // eviction guards (Python admits and creates under `registration_lock`). Callers hold
+        // `admission` first; a finish takes only `registration`, so the order never inverts.
+        let _registration = self.store.registration.lock().await;
+        // Chunks are moved into place when finished, so no second copy needs room.
+        let names = files.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
+        let amount =
+            crate::storage::admit(&self.store, total, &names, false, &BTreeSet::new(), None)
+                .await?;
         let name = id();
         let path = self.store.root.join(".uploads").join(&name);
-        tokio::fs::create_dir(&path).await?;
+        // A session folder becomes visible complete or not at all, so startup never meets half of one.
+        let staging = path.with_extension("creating");
+        tokio::fs::create_dir(&staging).await?;
         let result = async {
-            atomic_json(&path.join("manifest.json"), &files).await?;
+            atomic_json(&staging.join("manifest.json"), &files).await?;
             atomic_json(
-                &path.join("reservation.json"),
-                &json!({"bytes":total+65536,"expires_at":meta["expires_at"]}),
+                &staging.join("reservation.json"),
+                &json!({"bytes":amount,"expires_at":meta["expires_at"]}),
             )
             .await?;
             if meta.get("device_id").is_some() {
-                atomic_json(&path.join("device.json"), &meta).await?;
+                atomic_json(&staging.join("device.json"), &meta).await?;
             }
-            Ok::<_, std::io::Error>(())
+            tokio::fs::rename(&staging, &path).await?;
+            sync_dir(path.parent().unwrap()).await
         }
         .await;
         if let Err(e) = result {
-            let _ = tokio::fs::remove_dir_all(&path).await;
+            let _ = tokio::fs::remove_dir_all(&staging).await;
             return Err(e.into());
         }
         let session = Arc::new(Session::load(path, files, meta).await?);
@@ -591,6 +586,42 @@ impl Uploads {
         )
     }
     pub async fn chunk(
+        &self,
+        name: &str,
+        index: usize,
+        offset: Option<u64>,
+        body: &[u8],
+        device: bool,
+        headers: &HeaderMap,
+    ) -> Result<Value> {
+        let result = self
+            .write_chunk(name, index, offset, body, device, headers)
+            .await;
+        if let Err(ApiError(status, _)) = &result
+            && matches!(
+                *status,
+                StatusCode::INSUFFICIENT_STORAGE | StatusCode::INTERNAL_SERVER_ERROR
+            )
+        {
+            self.release(name).await;
+        }
+        result
+    }
+    /// Python drops a session whose chunk failed on storage once no other request still uses it,
+    /// releasing its reservation; the uploader then starts the batch again.
+    async fn release(&self, name: &str) {
+        let Ok(s) = self.get(name).await else {
+            return;
+        };
+        let Ok(_life) = s.lifecycle.try_write() else {
+            return;
+        };
+        if s.path.join("commit.json").exists() || remove_session(&s.path).await.is_err() {
+            return;
+        }
+        self.sessions.write().await.remove(name);
+    }
+    async fn write_chunk(
         &self,
         name: &str,
         index: usize,
@@ -666,13 +697,21 @@ impl Uploads {
         let mut f = opts.open(path).await?;
         let outcome = async {
             f.write_all(body).await?;
+            // tokio's sync_data records a failed background write instead of returning it; flush reports it.
+            f.flush().await?;
+            crate::fault::point("chunk_before_sync");
             f.sync_data().await
         }
         .await;
+        if outcome.is_err() {
+            // Bytes of a failed, unacknowledged write must not be offered as a resume offset.
+            let _ = f.set_len(current).await;
+        }
         s.received[index].store(f.metadata().await?.len(), Ordering::Release);
         outcome?;
         s.progressed_ms
             .fetch_max((now() * 1000.) as u64, Ordering::AcqRel);
+        crate::fault::point("chunk_after_sync");
         tracing::info!(
             file_lock_wait_us = lock_wait.as_micros() as u64,
             file_write_us = write.elapsed().as_micros() as u64,
@@ -697,7 +736,7 @@ impl Uploads {
         if s.path.join("commit.json").exists() {
             return Err(conflict("upload_busy"));
         }
-        tokio::fs::remove_dir_all(&s.path).await?;
+        remove_session(&s.path).await?;
         self.sessions.write().await.remove(name);
         Ok(json!({"deleted":name}))
     }
@@ -778,7 +817,27 @@ impl Uploads {
             registration = self.store.registration.lock().await;
             self.check_session(&s, device, headers).await?;
             let plan = self.plan(&s, &digests).await?;
+            if plan["records"].as_array().is_some_and(|v| !v.is_empty()) {
+                // Everything is received and verified: only now may old recordings make room.
+                let names = s.files.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
+                let duplicates = plan["result"]["duplicates"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|d| d["id"].as_str().map(str::to_owned))
+                    .collect();
+                crate::storage::admit(
+                    &self.store,
+                    0,
+                    &names,
+                    true,
+                    &duplicates,
+                    Some(&registration),
+                )
+                .await?;
+            }
             atomic_json(&plan_path, &plan).await?;
+            crate::fault::point("finish_after_journal");
             plan
         };
         let result = self.apply_plan(name, &s, &plan, device).await?;
@@ -802,6 +861,7 @@ impl Uploads {
             tokio::fs::create_dir_all(target.parent().unwrap()).await?;
             if source.exists() {
                 tokio::fs::rename(&source, &target).await?;
+                crate::fault::point("finish_after_move");
             } else if file_hash(&target).await? != entry["sha256"].as_str().unwrap() {
                 return Err(conflict("checksum_mismatch"));
             }
@@ -809,6 +869,7 @@ impl Uploads {
         for meta in plan["records"].as_array().unwrap() {
             self.store.save_meta(meta.clone()).await?;
         }
+        crate::fault::point("finish_before_receipt");
         let result = plan["result"].clone();
         if device {
             let mut receipt = s.meta.read().await.clone();
@@ -816,8 +877,9 @@ impl Uploads {
             self.auth.save_receipt(name, receipt.clone()).await?;
             *s.meta.write().await = receipt;
         }
+        crate::fault::point("finish_after_receipt");
         // Receipt is durable before removing the resumable session and reservation.
-        tokio::fs::remove_dir_all(&s.path).await?;
+        remove_session(&s.path).await?;
         self.sessions.write().await.remove(name);
         Ok(result)
     }
@@ -957,13 +1019,53 @@ impl Uploads {
             if s.path.join("commit.json").exists() {
                 continue;
             } // A registration journal is never expired/deleted.
-            if s.meta.read().await["expires_at"].as_f64().unwrap_or(0.) <= now()
+            let meta = s.meta.read().await.clone();
+            let revoked = match meta["device_id"].as_str() {
+                Some(device) => self.auth.check_device(device).await.is_err(),
+                None => false,
+            };
+            if revoked
+                || meta["expires_at"].as_f64().unwrap_or(0.) <= now()
                 || now() - s.last_progress().await? > IDLE
             {
-                tokio::fs::remove_dir_all(&s.path).await?;
+                remove_session(&s.path).await?;
                 self.sessions.write().await.remove(&name);
                 removed += 1;
             }
+        }
+        Ok(removed)
+    }
+    /// Python `cleanup_uploads(force=True)`: every incomplete browser session goes now; device
+    /// sessions only once expired. Sessions being registered or receiving a chunk are spared.
+    pub async fn discard_incomplete(&self) -> Result<u64> {
+        let _admission = self.admission.lock().await;
+        let peers = self
+            .sessions
+            .read()
+            .await
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect::<Vec<_>>();
+        let mut removed = 0;
+        for (name, s) in peers {
+            let Ok(_life) = s.lifecycle.try_write() else {
+                continue;
+            };
+            if s.path.join("commit.json").exists() {
+                continue;
+            }
+            let meta = s.meta.read().await.clone();
+            let expired = meta["expires_at"].as_f64().unwrap_or(0.) <= now()
+                || now() - s.last_progress().await? > IDLE;
+            if meta.get("device_id").is_some() && !expired {
+                continue;
+            }
+            let path = s.path.clone();
+            removed += tokio::task::spawn_blocking(move || crate::store::directory_size(&path))
+                .await
+                .map_err(std::io::Error::other)??;
+            remove_session(&s.path).await?;
+            self.sessions.write().await.remove(&name);
         }
         Ok(removed)
     }
@@ -1001,6 +1103,26 @@ impl Uploads {
             },
         )
     }
+}
+async fn sync_dir(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let path = path.to_path_buf();
+        tokio::task::spawn_blocking(move || std::fs::File::open(path)?.sync_all()).await??;
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+/// One rename hides the whole session; the folder's contents are deleted afterwards and,
+/// after a crash, at the next startup.
+pub(crate) async fn remove_session(path: &Path) -> std::io::Result<()> {
+    let grave = path.with_extension("removing");
+    tokio::fs::rename(path, &grave).await?;
+    sync_dir(path.parent().unwrap()).await?;
+    crate::fault::point("session_removing");
+    let _ = tokio::fs::remove_dir_all(&grave).await;
+    Ok(())
 }
 pub async fn file_hash(path: &Path) -> std::io::Result<String> {
     let mut file = tokio::fs::File::open(path).await?;

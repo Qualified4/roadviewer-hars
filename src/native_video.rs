@@ -215,6 +215,80 @@ pub fn inspect(source: &Path, kind: &str) -> anyhow::Result<crate::media::Inspec
     })
 }
 
+/// Copy H.264 TS packets into MP4 exactly as the Python PyAV loop does.
+/// The input is opened with library defaults: the ffmpeg/ffprobe CLIs force
+/// `scan_all_pmts=1`, which makes stream probing read about five seconds
+/// instead of stopping after 20 frame intervals. The probed r_frame_rate sets
+/// every demuxed packet duration, and MP4 stores the last one as the final
+/// sample duration, so the CLI and the Python reference disagree on jittery
+/// camera clocks.
+pub fn remux_ts(source: &Path, output: &Path, offset: i64) -> anyhow::Result<()> {
+    let _profile = crate::profile::Scope::new("native_ts_mux");
+    ffmpeg::init()?;
+    ffmpeg::log::set_level(ffmpeg::log::Level::Quiet);
+    let mut input_options = ffmpeg::Dictionary::new();
+    input_options.set("protocol_whitelist", "file,pipe");
+    input_options.set("format_whitelist", "mpegts");
+    let mut input = ffmpeg::format::input_with_dictionary(source, input_options)?;
+    let videos = input
+        .streams()
+        .filter(|s| s.parameters().medium() == ffmpeg::media::Type::Video)
+        .collect::<Vec<_>>();
+    anyhow::ensure!(videos.len() == 1, "expected one video stream");
+    let stream = &videos[0];
+    anyhow::ensure!(
+        stream.parameters().id() == ffmpeg::codec::Id::H264,
+        "not H.264"
+    );
+    let stream_index = stream.index();
+    let input_time_base = stream.time_base();
+    let mut out = ffmpeg::format::output_as(output, "mp4")?;
+    {
+        let mut target = out.add_stream(ffmpeg::encoder::find(ffmpeg::codec::Id::None))?;
+        target.set_parameters(stream.parameters());
+        target.set_time_base(input_time_base);
+        // SAFETY: target owns the AVCodecParameters for the lifetime of this block.
+        // The MPEG-TS stream type is not an MP4 tag; zero lets the muxer pick avc1.
+        unsafe {
+            (*target.parameters().as_mut_ptr()).codec_tag = 0;
+        }
+    }
+    drop(videos);
+    let mut options = ffmpeg::Dictionary::new();
+    options.set("movflags", "+faststart");
+    drop(out.write_header_with(options)?);
+    let time_base = out.stream(0).context("missing output stream")?.time_base();
+    let mut count = 0usize;
+    loop {
+        let mut packet = ffmpeg::Packet::empty();
+        match packet.read(&mut input) {
+            Ok(()) => {}
+            Err(ffmpeg::Error::Eof) => break,
+            Err(_) => bail!("video packet read failed"),
+        }
+        if packet.stream() != stream_index || packet.size() == 0 {
+            continue;
+        }
+        let (Some(pts), Some(dts)) = (packet.pts(), packet.dts()) else {
+            bail!("video packet without timestamps");
+        };
+        anyhow::ensure!(
+            !packet.is_corrupt() && count < 262144 && packet.size() <= 32 * 1024 * 1024,
+            "invalid video packet or mux limit"
+        );
+        packet.set_pts(Some(pts - offset));
+        packet.set_dts(Some(dts - offset));
+        packet.rescale_ts(input_time_base, time_base);
+        packet.set_position(-1);
+        packet.set_stream(0);
+        packet.write_interleaved(&mut out)?;
+        count += 1;
+    }
+    anyhow::ensure!(count > 0, "no video packets");
+    out.write_trailer()?;
+    Ok(())
+}
+
 pub fn remux_hevc(
     source: &Path,
     output: &Path,
