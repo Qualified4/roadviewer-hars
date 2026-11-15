@@ -157,6 +157,11 @@ async fn main() -> anyhow::Result<()> {
     );
     let mut app = App::open(root, web, ingress_only, max_upload_mb).await?;
     app.device_https_enabled = ha_mode && options.device_https_enabled;
+    if ha_mode {
+        app.network = std::sync::Arc::new(
+            roadviewer_hars::network::Network::boot(options.device_https_enabled).await,
+        );
+    }
     let bind: SocketAddr = std::env::var("HARS_BIND")
         .unwrap_or_else(|_| {
             if ha_mode {
