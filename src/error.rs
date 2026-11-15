@@ -10,7 +10,13 @@ pub struct ApiError(pub StatusCode, pub &'static str);
 pub type Result<T> = std::result::Result<T, ApiError>;
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
-        (self.0, Json(json!({"error":self.1}))).into_response()
+        let body = match crate::storage::message(self.1) {
+            Some(message) if self.0 == StatusCode::INSUFFICIENT_STORAGE => {
+                json!({"error":self.1,"message":message})
+            }
+            _ => json!({"error":self.1}),
+        };
+        (self.0, Json(body)).into_response()
     }
 }
 impl From<std::io::Error> for ApiError {

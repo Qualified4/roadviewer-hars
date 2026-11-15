@@ -120,11 +120,10 @@ impl Jobs {
             }
             let lock = self.store.record_lock(record).await;
             let _guard = lock.lock().await;
-            let mut meta = self
-                .store
-                .meta(record)
-                .await
-                .map_err(|_| anyhow::anyhow!("conversion record unavailable"))?;
+            // Deleted while this tick waited for its lock.
+            let Ok(mut meta) = self.store.meta(record).await else {
+                continue;
+            };
             if !matches!(meta["status"].as_str(), Some("queued" | "unconverted")) {
                 continue;
             }

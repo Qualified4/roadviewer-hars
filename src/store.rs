@@ -239,12 +239,27 @@ fn sweep_temps(dir: &Path, depth: u8) -> std::io::Result<()> {
 }
 
 pub fn directory_size(root: &Path) -> std::io::Result<u64> {
+    let gone = |e: &std::io::Error| e.kind() == std::io::ErrorKind::NotFound;
     let mut total = 0;
-    for entry in std::fs::read_dir(root)? {
+    let entries = match std::fs::read_dir(root) {
+        Ok(v) => v,
+        // Upload cleanup or a deletion during the scan (as Python storage_used_bytes).
+        Err(e) if gone(&e) => return Ok(0),
+        Err(e) => return Err(e),
+    };
+    for entry in entries {
         let entry = entry?;
-        let kind = entry.file_type()?;
+        let kind = match entry.file_type() {
+            Ok(v) => v,
+            Err(e) if gone(&e) => continue,
+            Err(e) => return Err(e),
+        };
         if kind.is_file() {
-            total += entry.metadata()?.len();
+            match entry.metadata() {
+                Ok(m) => total += m.len(),
+                Err(e) if gone(&e) => {}
+                Err(e) => return Err(e),
+            }
         } else if kind.is_dir() {
             total += directory_size(&entry.path())?;
         }

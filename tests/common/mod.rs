@@ -4,7 +4,8 @@ use hmac::{Hmac, Mac};
 use roadviewer_hars::{
     auth::random_token,
     http::{App, device, ingress},
-    store::{now, sha, valid_id},
+    storage,
+    store::{directory_size, now, sha, valid_id},
 };
 use serde_json::{Value, json};
 use sha2::Sha256;
@@ -280,6 +281,19 @@ pub async fn invariants(
     let mut temps = Vec::new();
     walk(root, &mut temps);
     assert!(temps.is_empty(), "temporary files left behind: {temps:?}");
+    assert!(
+        !root.join(storage::JOURNAL).exists(),
+        "a deletion journal was left behind"
+    );
+    let hidden = std::fs::read_dir(root)
+        .unwrap()
+        .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+        .filter(|n| n.starts_with(storage::HIDDEN_PREFIX))
+        .collect::<Vec<_>>();
+    assert!(
+        hidden.is_empty(),
+        "hidden deletions left behind: {hidden:?}"
+    );
 
     let uploads = root.join(".uploads");
     let mut sessions = 0;
@@ -311,6 +325,7 @@ pub async fn invariants(
                 "unexpected session file {name}/{child}"
             );
         }
+        let mut total = 0;
         for (i, file) in manifest.as_array().unwrap().iter().enumerate() {
             let size = file["size"].as_u64().unwrap();
             let received = std::fs::metadata(path.join(i.to_string()))
@@ -320,9 +335,19 @@ pub async fn invariants(
                 received <= size,
                 "session {name} file {i} exceeds its manifest"
             );
-            reserved += size - received;
+            total += size;
         }
-        reserved += 65536;
+        let reservation: Value =
+            serde_json::from_slice(&std::fs::read(path.join("reservation.json")).unwrap()).unwrap();
+        let bytes = reservation["bytes"].as_u64().unwrap();
+        assert_eq!(
+            bytes,
+            total + 65536,
+            "session {name} reserves its files plus metadata"
+        );
+        // Python `reserved`: whatever the session folder already holds (chunks and its own JSON)
+        // is counted as used, not reserved.
+        reserved += bytes.saturating_sub(directory_size(&path).unwrap());
         if path.join("commit.json").is_file() {
             let plan: Value =
                 serde_json::from_slice(&std::fs::read(path.join("commit.json")).unwrap()).unwrap();

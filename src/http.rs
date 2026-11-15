@@ -1,6 +1,7 @@
 use crate::{
     auth::{Auth, header},
     error::{ApiError, Result, bad, missing},
+    http_storage,
     store::{Store, atomic_json, id, read_json, sha},
     upload::{KINDS, Uploads},
 };
@@ -52,6 +53,7 @@ impl App {
         max_upload_mb: u64,
     ) -> anyhow::Result<Self> {
         let store = Store::open(root).await?;
+        crate::storage::open(&store).await?;
         let auth = Arc::new(Auth::open(&store.root).await?);
         let uploads =
             Uploads::open(store.clone(), auth.clone(), max_upload_mb * 1024 * 1024).await?;
@@ -102,6 +104,18 @@ impl App {
                 if app.uploads.recover_commits().await.is_err() {
                     tracing::warn!("upload_commit_recovery_failed");
                 }
+                if crate::storage::pending(&app.store.root)
+                    .await
+                    .unwrap_or(true)
+                {
+                    let registration = app.store.registration.lock().await;
+                    if crate::storage::recover(&app.store, &registration)
+                        .await
+                        .is_err()
+                    {
+                        tracing::warn!("delete_recovery_failed");
+                    }
+                }
             }
         })
     }
@@ -116,7 +130,11 @@ pub fn ingress(app: App) -> Router {
         .route("/api/tracks", get(tracks))
         .route("/api/progress", get(progress))
         .route("/api/settings/processing", get(processing).post(processing))
-        .route("/api/settings/storage", get(storage).post(storage))
+        .route(
+            "/api/settings/storage",
+            get(http_storage::settings).post(http_storage::settings),
+        )
+        .route("/api/storage/cleanup", post(http_storage::cleanup))
         .route("/api/settings/devices", get(devices))
         .route(
             "/api/settings/devices/pairing",
@@ -134,7 +152,8 @@ pub fn ingress(app: App) -> Router {
             put(bookmark_item).delete(bookmark_item),
         )
         .route("/api/logs/{id}/tags", post(tags))
-        .route("/api/logs/{id}/pin", post(pin))
+        .route("/api/logs/{id}", delete(http_storage::delete_log))
+        .route("/api/logs/{id}/pin", post(http_storage::pin))
         .route("/api/logs/{id}/data", get(data))
         .route("/api/logs/{id}/convert", post(convert))
         .route("/api/logs/{id}/prepared", delete(remove_prepared))
@@ -197,12 +216,12 @@ async fn transfer_backpressure(State(app): State<App>, request: Request, next: N
             return ApiError(StatusCode::SERVICE_UNAVAILABLE, "upload_busy").into_response();
         };
         let (parts, body) = request.into_parts();
-        let limits = crate::transfer::Limits {
+        let limits = crate::body_limit::Limits {
             idle: app.body_idle,
             total: app.body_total,
             max: BODY_LIMIT,
         };
-        return match crate::transfer::receive(body, &limits).await {
+        return match crate::body_limit::receive(body, &limits).await {
             Ok(bytes) => {
                 next.run(Request::from_parts(parts, Body::from(bytes)))
                     .await
@@ -729,34 +748,6 @@ async fn cancel_conversion(State(app): State<App>, Path(id): Path<String>) -> Re
     }
     Ok(Json(json!({"status":app.store.meta(&id).await?["status"]})))
 }
-async fn storage(State(app): State<App>, method: Method, body: Bytes) -> Result<Json<Value>> {
-    let _registration = app.store.registration.lock().await;
-    let path = app.store.root.join(".storage-settings.json");
-    let mut settings: Value = if path.exists() {
-        read_json(&path).await?
-    } else {
-        json!({"max_bytes":0,"policy":"reject_new","pinned_logs":[]})
-    };
-    if method == Method::POST {
-        let body: Value =
-            serde_json::from_slice(&body).map_err(|_| bad("invalid_storage_settings"))?;
-        if body.as_object().is_none_or(|o| o.len() != 2)
-            || !body["max_bytes"].as_u64().is_some_and(|v| v < (1u64 << 53))
-            || body["policy"] != "reject_new"
-        {
-            return Err(bad("invalid_storage_settings"));
-        }
-        settings["max_bytes"] = body["max_bytes"].clone();
-        settings["policy"] = body["policy"].clone();
-        atomic_json(&path, &settings).await?;
-    }
-    let (reserved, _) = app.uploads.snapshot().await;
-    let used = app.used.load(Ordering::Relaxed);
-    let free = fs2::available_space(&app.store.root)?;
-    Ok(Json(
-        json!({"max_bytes":settings["max_bytes"],"policy":settings["policy"],"used_bytes":used,"free_bytes":free,"reserved_bytes":reserved,"margin_bytes":100*1024*1024,"pinned_logs":settings["pinned_logs"],"archive":{"enabled":false,"state":"disabled","reason":"not_ported"}}),
-    ))
-}
 fn clean_text(s: &str, max: usize, multiline: bool) -> Result<String> {
     let n = s.nfc().collect::<String>();
     let text = n.trim();
@@ -930,33 +921,6 @@ async fn tags(
     let response = json!({"tags":meta["tags"]});
     app.store.save_meta(meta).await?;
     Ok(Json(response))
-}
-async fn pin(
-    State(app): State<App>,
-    Path(id): Path<String>,
-    Json(body): Json<Value>,
-) -> Result<Json<Value>> {
-    let pinned = body["pinned"].as_bool().ok_or_else(|| bad("invalid_pin"))?;
-    app.store.folder(&id).await?;
-    let _registration = app.store.registration.lock().await;
-    let path = app.store.root.join(".storage-settings.json");
-    let mut settings: Value = if path.exists() {
-        read_json(&path).await?
-    } else {
-        json!({"max_bytes":0,"policy":"reject_new","pinned_logs":[]})
-    };
-    let mut pins = settings["pinned_logs"]
-        .as_array()
-        .cloned()
-        .unwrap_or_default();
-    pins.retain(|v| *v != id);
-    if pinned {
-        pins.push(json!(id));
-    }
-    pins.sort_by(|a, b| a.as_str().cmp(&b.as_str()));
-    settings["pinned_logs"] = json!(pins);
-    atomic_json(&path, &settings).await?;
-    Ok(Json(json!({"pinned":pinned})))
 }
 async fn prepared(
     app: &App,
