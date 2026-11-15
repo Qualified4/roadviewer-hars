@@ -124,6 +124,7 @@ fn sample_line(line: &Value, x: f64) -> Option<[f64; 3]> {
     None
 }
 pub fn restore(targets: &Value, m: &Value, valid: bool) -> Value {
+    let _profile = crate::profile::Scope::new("ccnc_geometry");
     if targets.is_null() {
         return Value::Null;
     }
@@ -265,6 +266,7 @@ pub fn camera_info(view: &View<'_>, t: f64) -> Value {
     json!({"device":get("deviceState","deviceType"),"deviceId":device_id,"sensor":get("roadCameraState","sensor"),"calibrationStatus":val(&cal,"calStatus",json!("unknown")),"rpy":rpy("rpyCalib"),"height":height.unwrap_or(1.22),"heightDefault":height.is_none(),"wideRpy":rpy("wideFromDeviceEuler"),"wideSensor":get("wideRoadCameraState","sensor")})
 }
 pub fn overlay(info: &Value, m: &Value) -> anyhow::Result<Value> {
+    let _profile = crate::profile::Scope::new("overlay_geometry");
     if !matches!(
         info["calibrationStatus"].as_str(),
         Some("calibrated" | "recalibrating")
@@ -405,15 +407,7 @@ impl Steering {
     }
 }
 
-pub fn frames(
-    decoded: &Decoded,
-    mut progress: impl FnMut(usize, usize),
-) -> anyhow::Result<(Vec<Value>, f64)> {
-    let view = View::new(&decoded.streams);
-    let mut models = view.rows("modelV2").to_vec();
-    if models.is_empty() {
-        bail!("이 로그에 modelV2 데이터가 없습니다.");
-    }
+fn camera_times(view: &View<'_>) -> BTreeMap<u64, u64> {
     let camera: BTreeMap<u64, u64> = view
         .rows("qRoadEncodeIdx")
         .iter()
@@ -424,18 +418,42 @@ pub fn frames(
             ))
         })
         .collect();
-    let clock = |row: &&Sample| {
-        camera
-            .get(&row.value["frameId"].as_u64().unwrap_or(0))
-            .copied()
-            .unwrap_or_else(|| {
-                row.value["timestampEof"]
-                    .as_u64()
-                    .filter(|v| *v != 0)
-                    .unwrap_or(row.stamp)
-            }) as f64
-            / 1e9
-    };
+    camera
+}
+fn model_time(camera: &BTreeMap<u64, u64>, row: &Sample) -> f64 {
+    camera
+        .get(&row.value["frameId"].as_u64().unwrap_or(0))
+        .copied()
+        .unwrap_or_else(|| {
+            row.value["timestampEof"]
+                .as_u64()
+                .filter(|v| *v != 0)
+                .unwrap_or(row.stamp)
+        }) as f64
+        / 1e9
+}
+/// Obtain the same model origin before allocating replay geometry.
+pub fn origin(decoded: &Decoded) -> anyhow::Result<f64> {
+    let view = View::new(&decoded.streams);
+    let camera = camera_times(&view);
+    view.rows("modelV2")
+        .iter()
+        .map(|row| model_time(&camera, row))
+        .min_by(f64::total_cmp)
+        .context("이 로그에 modelV2 데이터가 없습니다.")
+}
+
+pub fn frames(
+    decoded: &Decoded,
+    mut progress: impl FnMut(usize, usize),
+) -> anyhow::Result<(Vec<Value>, f64)> {
+    let view = View::new(&decoded.streams);
+    let mut models = view.rows("modelV2").to_vec();
+    if models.is_empty() {
+        bail!("이 로그에 modelV2 데이터가 없습니다.");
+    }
+    let camera = camera_times(&view);
+    let clock = |row: &&Sample| model_time(&camera, row);
     models.sort_by(|a, b| clock(a).total_cmp(&clock(b)));
     let origin = clock(&models[0]);
     let mut radar = view.rows("radarState").to_vec();
@@ -602,6 +620,7 @@ pub fn frames(
 }
 
 pub fn compact(data: &mut Value) {
+    let _profile = crate::profile::Scope::new("replay_compact");
     fn rounded(v: &mut Value, d: usize) {
         match v {
             Value::Array(a) => {
@@ -617,25 +636,25 @@ pub fn compact(data: &mut Value) {
             _ => {}
         }
     }
-    fn flat(v: &Value) -> Value {
-        json!(
-            arr(v)
-                .iter()
-                .filter_map(|p| Some(json!([r(num(&p[0])?, 3), r(num(&p[1])?, 3)])))
-                .collect::<Vec<_>>()
-        )
-    }
-    fn same(a: &Value, b: &Value) -> bool {
-        arr(a).len() == arr(b).len()
-            && a.is_array()
-            && arr(a).iter().zip(arr(b)).all(|(p, q)| {
-                arr(p).len() == 2
-                    && (0..2).all(|i| {
-                        num(&p[i])
-                            .zip(num(&q[i]))
-                            .is_some_and(|(a, b)| (a - b).abs() <= 0.002)
-                    })
-            })
+    fn same_flat(a: &Value, source: &Value) -> bool {
+        let Some(points) = a.as_array() else {
+            return false;
+        };
+        let mut expected = arr(source)
+            .iter()
+            .filter_map(|p| Some((r(num(&p[0])?, 3), r(num(&p[1])?, 3))));
+        for point in points {
+            let Some((x, y)) = expected.next() else {
+                return false;
+            };
+            if arr(point).len() != 2
+                || !num(&point[0]).is_some_and(|v| (v - x).abs() <= 0.002)
+                || !num(&point[1]).is_some_and(|v| (v - y).abs() <= 0.002)
+            {
+                return false;
+            }
+        }
+        expected.next().is_none()
     }
     let v2 = data["replayV"] != 2;
     let mut infos = data["cameraInfos"].as_array().cloned().unwrap_or_default();
@@ -701,9 +720,9 @@ pub fn compact(data: &mut Value) {
                             && arr(&frame[key])
                                 .iter()
                                 .zip(arr(source))
-                                .all(|(a, b)| same(a, &flat(b)))
+                                .all(|(a, b)| same_flat(a, b))
                     } else {
-                        same(&frame[key], &flat(source))
+                        same_flat(&frame[key], source)
                     };
                     if equal {
                         frame.as_object_mut().unwrap().remove(key);
@@ -768,6 +787,39 @@ pub fn compact(data: &mut Value) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn origin_uses_camera_then_model_then_event_clock_including_zero_camera_time() {
+        let sample = |stamp, value| Sample {
+            stamp,
+            valid: true,
+            value,
+        };
+        let mut decoded = Decoded::default();
+        decoded.streams.insert(
+            "modelV2".into(),
+            vec![
+                sample(
+                    3_000_000_000,
+                    json!({"frameId":1,"timestampEof":2_000_000_000u64}),
+                ),
+                sample(4_000_000_000, json!({"frameId":2,"timestampEof":0})),
+            ],
+        );
+        assert_eq!(origin(&decoded).unwrap(), 2.);
+        decoded.streams.insert(
+            "qRoadEncodeIdx".into(),
+            vec![sample(
+                1,
+                json!({"frameId":1,"timestampEof":1_500_000_000u64}),
+            )],
+        );
+        assert_eq!(origin(&decoded).unwrap(), 1.5);
+        decoded.streams.get_mut("qRoadEncodeIdx").unwrap()[0].value["timestampEof"] = json!(0);
+        assert_eq!(origin(&decoded).unwrap(), 0.);
+        decoded.streams.get_mut("modelV2").unwrap().clear();
+        assert!(origin(&decoded).is_err());
+    }
 
     #[test]
     fn compact_keeps_missing_overlay_null_even_with_other_frames_grid() {

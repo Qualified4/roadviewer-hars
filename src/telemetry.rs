@@ -30,6 +30,21 @@ fn long_state(v: Option<&Value>) -> Value {
     }
 }
 
+fn stream(times: Vec<Value>, values: BTreeMap<String, Vec<Value>>) -> Value {
+    Value::Object(serde_json::Map::from_iter([
+        ("times".into(), Value::Array(times)),
+        (
+            "values".into(),
+            Value::Object(
+                values
+                    .into_iter()
+                    .map(|(k, v)| (k, Value::Array(v)))
+                    .collect(),
+            ),
+        ),
+    ]))
+}
+
 pub fn extract(
     streams: &BTreeMap<String, Vec<Sample>>,
     origin: f64,
@@ -65,15 +80,17 @@ pub fn extract(
         let mut rows = rows.iter().collect::<Vec<_>>();
         rows.sort_by_key(|r| r.stamp);
         let fields = fields.as_object().unwrap();
-        let mut times = Vec::new();
-        let mut values: BTreeMap<String, Vec<Value>> =
-            fields.keys().map(|k| (k.clone(), Vec::new())).collect();
+        let mut times = Vec::with_capacity(rows.len());
+        let mut values: BTreeMap<String, Vec<Value>> = fields
+            .keys()
+            .map(|k| (k.clone(), Vec::with_capacity(rows.len())))
+            .collect();
         if topic == "controlsState" {
-            values.insert("desiredAngle".into(), Vec::new());
+            values.insert("desiredAngle".into(), Vec::with_capacity(rows.len()));
         }
         if topic == "carControl" {
-            values.insert("accelRequested".into(), Vec::new());
-            values.insert("decelRequested".into(), Vec::new());
+            values.insert("accelRequested".into(), Vec::with_capacity(rows.len()));
+            values.insert("decelRequested".into(), Vec::with_capacity(rows.len()));
         }
         for row in rows {
             let time = round(row.stamp as f64 / 1e9 - origin, 6);
@@ -171,8 +188,17 @@ pub fn extract(
                 });
             values.extend(extra);
         }
-        result.insert(topic.clone(), json!({"times":times,"values":values}));
+        result.insert(
+            topic.clone(),
+            stream(times.into_iter().map(|t| json!(t)).collect(), values),
+        );
     }
+    result.insert("ccnc".into(), ccnc(frames));
+    let mut output = json!({"duration":duration,"maxGap":0.15});
+    output["streams"] = Value::Object(result);
+    output
+}
+fn ccnc(frames: &[Value]) -> Value {
     let mut values: BTreeMap<String, Vec<Value>> = BTreeMap::new();
     for frame in frames {
         let targets = if frame["valid"] == true {
@@ -182,18 +208,21 @@ pub fn extract(
         };
         for slot in ["LF", "FF", "RF"] {
             let target = targets.and_then(|rows| rows.iter().find(|t| t["slot"] == slot));
-            values.entry(format!("{slot}Visible")).or_default().push(
-                targets
-                    .map(|_| json!(target.is_some()))
-                    .unwrap_or(Value::Null),
-            );
+            values
+                .entry(format!("{slot}Visible"))
+                .or_insert_with(|| Vec::with_capacity(frames.len()))
+                .push(
+                    targets
+                        .map(|_| json!(target.is_some()))
+                        .unwrap_or(Value::Null),
+                );
             values
                 .entry(format!("{slot}Distance"))
-                .or_default()
+                .or_insert_with(|| Vec::with_capacity(frames.len()))
                 .push(number(target.and_then(|t| t.get("x")), 1.));
             values
                 .entry(format!("{slot}Lateral"))
-                .or_default()
+                .or_insert_with(|| Vec::with_capacity(frames.len()))
                 .push(number(target.and_then(|t| t.get("yRel")), 1.));
         }
     }
@@ -202,11 +231,7 @@ pub fn extract(
             values.entry(format!("{slot}{field}")).or_default();
         }
     }
-    result.insert(
-        "ccnc".into(),
-        json!({"times":frames.iter().map(|f|f["t"].clone()).collect::<Vec<_>>(),"values":values}),
-    );
-    json!({"duration":duration,"maxGap":0.15,"streams":result})
+    stream(frames.iter().map(|f| f["t"].clone()).collect(), values)
 }
 
 pub fn drive_summary(telemetry: &Value) -> Value {

@@ -870,6 +870,7 @@ dependencies = [
  "fs2",
  "hex",
  "hmac",
+ "libc",
  "rand",
  "regex",
  "serde",

@@ -92,6 +92,7 @@ pub fn distance(a: &[f64; 2], b: &[f64; 2]) -> f64 {
     2. * 6371008.8 * h.sqrt().min(1.).asin()
 }
 pub fn collect(decoded: &Decoded, origin: f64) -> Value {
+    let _profile = crate::profile::Scope::new("gps_build");
     let mut chosen = vec![];
     let mut source = None;
     for topic in [

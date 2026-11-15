@@ -85,6 +85,7 @@ fn level(frame: &mut av::frame::Video, (mean, _, low, high): (f64, f64, u8, u8))
 }
 
 pub fn make(source: &Path, output: &Path) -> anyhow::Result<Value> {
+    let _profile = crate::profile::Scope::new("thumbnail_native");
     av::init()?;
     av::log::set_level(av::log::Level::Quiet);
     let mut options = av::Dictionary::new();
