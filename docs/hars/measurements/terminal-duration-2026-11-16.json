@@ -1,0 +1,40 @@
+{
+  "topic": "qcamera.ts terminal MP4 sample duration vs Python reference",
+  "base_commit": "a76c0c5",
+  "cause": {
+    "summary": "ffmpeg/ffprobe CLI sets scan_all_pmts=1; library callers (PyAV) do not. With it, stream probing reads ~5 s (about 102-103 frames) instead of stopping after 20 DTS intervals (21 frames), so r_frame_rate differs and the demuxer fills every TS packet duration from it; the MP4 muxer stores the last packet duration as the final sample.",
+    "ffmpeg_version_dependent": false,
+    "rfps_code_identical_for_h264": ["n5.1.6", "n6.1.1", "n7.1", "n8.0"],
+    "qcamera_sps_vui_timing_info_present": false,
+    "probed_rate_by_segment": {
+      "3": {"pyav_ffmpeg8_default": "241/12", "ffmpeg6_library_default": "241/12", "ffmpeg6_cli": "20/1", "pyav_ffmpeg8_scan_all_pmts": "20/1"},
+      "9": {"pyav_ffmpeg8_default": "239/12", "ffmpeg6_library_default": "239/12", "ffmpeg6_cli": "20/1", "pyav_ffmpeg8_scan_all_pmts": "20/1"},
+      "other_11": "20/1 in all four configurations"
+    },
+    "terminal_duration_ticks_90khz": {
+      "rule": "floor(90000 * r.den / r.num)",
+      "3": {"python": 4481, "previous_rust": 4500, "new_rust": 4481},
+      "9": {"python": 4518, "previous_rust": 4500, "new_rust": 4518}
+    }
+  },
+  "validation": {
+    "original13_full_json_identical": 13,
+    "original13_segments": 13,
+    "original13_model_frames": 15600,
+    "regression_real14_identical": 14,
+    "regression_real47_identical": 47,
+    "regression_61_model_frames": 72749,
+    "absolute_tolerance": 1e-6,
+    "excluded_fields": ["key"],
+    "videos_audited": 26,
+    "videos_all_nal_sha_equal_to_source": 26,
+    "videos_fully_decoded_without_error": 26,
+    "videos_pts_dts_keyframes_equal_to_previous_rust": 26,
+    "qcamera_pts_dts_keyframes_durations_stream_duration_equal_to_python": 13,
+    "qcamera_keyframes_per_video": 80,
+    "fcamera_keyframes_per_video": 60,
+    "fcamera_pre_existing_python_timestamp_rounding_max_us": 1,
+    "http_loopback_upload_auto_convert_segment3_qcamera_duration_equal_to_python": true,
+    "synthetic_pipeline_contract": {"new_binary": "pass", "previous_binary": "fail on .duration and .videos.qcamera.duration"}
+  }
+}
