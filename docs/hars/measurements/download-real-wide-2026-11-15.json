@@ -1,0 +1,23 @@
+[
+  {
+    "source": "qcamera",
+    "mp4_bytes": 1944484,
+    "sha256_matches_source": true,
+    "range_206": true,
+    "native_lossless_reverse_bytes": 2306196
+  },
+  {
+    "source": "front",
+    "mp4_bytes": 37884566,
+    "sha256_matches_source": true,
+    "range_206": true,
+    "native_lossless_reverse_bytes": 37873839
+  },
+  {
+    "source": "wide",
+    "mp4_bytes": 37570761,
+    "sha256_matches_source": true,
+    "range_206": true,
+    "native_lossless_reverse_bytes": 37560070
+  }
+]

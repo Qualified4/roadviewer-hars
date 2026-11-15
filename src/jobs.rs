@@ -54,6 +54,13 @@ impl Jobs {
                 .meta(&record)
                 .await
                 .map_err(|_| anyhow::anyhow!("missing conversion record"))?;
+            if meta["status"] == "ready" && meta.get("video_downloads").is_none() {
+                meta["video_downloads"] = download_entries(&folder).await?;
+                jobs.store
+                    .save_meta(meta.clone())
+                    .await
+                    .map_err(|_| anyhow::anyhow!("download metadata recovery failed"))?;
+            }
             if meta["status"] == "processing" {
                 meta["status"] = json!("queued");
                 meta["error"] = Value::Null;
@@ -342,6 +349,7 @@ impl Jobs {
         }
         meta["video_codecs"] = json!(codecs);
         meta["video_origins"] = json!(origins);
+        meta["video_downloads"] = download_entries(&folder).await?;
         for key in [
             "duration",
             "warnings",
@@ -378,4 +386,30 @@ impl Jobs {
         }
         Ok(())
     }
+}
+
+async fn download_entries(folder: &std::path::Path) -> std::io::Result<Value> {
+    let mut downloads = vec![];
+    for (source, raw, mp4) in [
+        ("qcamera", "qcamera.ts", "camera.mp4"),
+        ("front", "fcamera.hevc", "fcamera.mp4"),
+        ("wide", "ecamera.hevc", "ecamera.mp4"),
+    ] {
+        let retained = folder.join(mp4);
+        let derived = folder.join("prepared").join(mp4);
+        let original = folder.join(raw);
+        let (kind, path) = if retained.is_file() {
+            (mp4, retained)
+        } else if derived.is_file() {
+            (mp4, derived)
+        } else if original.is_file() {
+            (raw, original)
+        } else {
+            continue;
+        };
+        downloads.push(
+            json!({"source":source,"kind":kind,"bytes":tokio::fs::metadata(path).await?.len()}),
+        );
+    }
+    Ok(json!(downloads))
 }

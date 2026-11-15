@@ -73,6 +73,77 @@ async fn credentials(app: &App) -> Value {
     assert_eq!(status, StatusCode::CREATED);
     creds
 }
+
+#[tokio::test]
+async fn prepared_mp4_download_uses_existing_ui_routes_and_range() {
+    let temp = tempfile::tempdir().unwrap();
+    let a = app(temp.path()).await;
+    let record = roadviewer_hars::store::id();
+    let folder = temp.path().join(&record);
+    tokio::fs::create_dir_all(folder.join("prepared"))
+        .await
+        .unwrap();
+    tokio::fs::write(folder.join("prepared/fcamera.mp4"), b"0123456789")
+        .await
+        .unwrap();
+    a.store.save_meta(json!({"id":record,"name":"test","status":"ready","files":{"fcamera.hevc":"route--0--fcamera.hevc"},"video_downloads":[{"source":"front","kind":"fcamera.mp4","bytes":10}]})).await.unwrap();
+    for suffix in [
+        "original/fcamera.mp4",
+        "download/video",
+        "download?source=front&format=mp4",
+    ] {
+        let request = Request::builder()
+            .uri(format!("/api/logs/{record}/{suffix}"))
+            .header("range", "bytes=2-5")
+            .body(Body::empty())
+            .unwrap();
+        let response = ingress(a.clone()).oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::PARTIAL_CONTENT);
+        assert_eq!(response.headers()["content-range"], "bytes 2-5/10");
+        assert!(
+            response.headers()["content-disposition"]
+                .to_str()
+                .unwrap()
+                .contains("route--0--fcamera.mp4")
+        );
+        assert_eq!(
+            to_bytes(response.into_body(), 100).await.unwrap(),
+            &b"2345"[..]
+        );
+    }
+}
+
+#[tokio::test]
+async fn startup_fills_download_metadata_without_reconverting_existing_output() {
+    let temp = tempfile::tempdir().unwrap();
+    let record = roadviewer_hars::store::id();
+    let folder = temp.path().join(&record);
+    tokio::fs::create_dir_all(folder.join("prepared"))
+        .await
+        .unwrap();
+    tokio::fs::write(folder.join("prepared/ecamera.mp4"), b"retained-wide")
+        .await
+        .unwrap();
+    atomic_json(
+        &folder.join("meta.json"),
+        &json!({"id":record,"name":"existing","status":"ready","video":true}),
+    )
+    .await
+    .unwrap();
+    let a = app(temp.path()).await;
+    let meta = a.store.meta(&record).await.unwrap();
+    assert_eq!(meta["status"], "ready");
+    assert_eq!(
+        meta["video_downloads"],
+        json!([{"source":"wide","kind":"ecamera.mp4","bytes":13}])
+    );
+    assert_eq!(
+        tokio::fs::read(folder.join("prepared/ecamera.mp4"))
+            .await
+            .unwrap(),
+        b"retained-wide"
+    );
+}
 fn manifest(data: &[u8], streaming: bool) -> Value {
     json!({"batch_id":"test_batch_123456789","segments":[{"route":"2026-11-15--12-00-00","segment":0,"files":[{"kind":"rlog.zst","size":data.len(),"sha256":if streaming {Value::Null}else{json!(sha(data))}}]}]})
 }

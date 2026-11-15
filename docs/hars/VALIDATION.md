@@ -42,3 +42,9 @@ GitHub Actions는 최신 커밋의 `HARS CI` 실행을 확인해야 한다. 로�
 관측된 수정: 방향지시등 선택필드 누락, PTS 표시문자열6자리 대신 정수PTS/time_base 사용, Python telemetry_origin 반올림 순서와 decimal round를 맞췄다. 원본 Python의 동작은 변경하지 않았다. raw HEVC/TS 경계·업로드 중 전원 장애·디스크 고갈·전체 UI·HAOS·장시간 실장치·다른 차량/지역 코퍼스는 추가 검증 대상이다.
 
 결과: [실제14구간](measurements/replay-real14-2026-11-15.json), [실제47구간](measurements/replay-real47-2026-11-15.json), [썸네일 픽셀](measurements/thumbnail-pixels-2026-11-15.json). 좌표,영상,원본rlog,인증정보는 포함하지 않는다.
+
+### 다운로드 연결 보완
+
+최초 alpha.2 후보 `f4b124a`의 CI43708871726은 Rust/amd64/aarch64/HARS required 모두 성공했다. 이후 UI 다운로드 점검에서 `video_downloads` 목록 누락, 준비폴더 MP4를 찾지 못하는 original 경로와 단일영상 alias 누락을 발견해 별도 수정했다. 준비된 기존 레코드도 재변환 없이 시작 시 다운로드 메타를 채운다. 수정 범위의 Range206·Content-Range·파일명과 기존 레코드 복구 테스트를 추가했으며 최신 커밋 CI는 별도로 확인한다.
+
+실제 와이드6번구간의3카메라를 새서버에서 다운로드했다. 각 MP4 전체 SHA256이 입력 MP4와 일치하고206부분응답도 원본바이트와 일치했다. 원본형식TS/HEVC 역변환을 실제 API로 완료했고 서버의 native 압축비트스트림 검사를 통과했다. [실제 다운로드 결과](measurements/download-real-wide-2026-11-15.json). 위치정보는 지도 API에만 제공하고 `private, no-cache`를 적용한다.

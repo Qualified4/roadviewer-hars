@@ -133,6 +133,8 @@ pub fn ingress(app: App) -> Router {
         .route("/api/logs/{id}/video", get(video))
         .route("/api/logs/{id}/thumbnail", get(thumbnail))
         .route("/api/logs/{id}/original/{kind}", get(original))
+        .route("/api/logs/{id}/download/video", get(download_video))
+        .route("/api/logs/{id}/download", get(download_camera))
         .route("/health", get(health))
         .fallback(unsupported)
         .layer(DefaultBodyLimit::max(8 * 1024 * 1024 + 1))
@@ -245,6 +247,11 @@ async fn diagnostics(mut request: Request, next: Next) -> Response {
         response
             .headers_mut()
             .insert(h::CACHE_CONTROL, "no-store".parse().unwrap());
+    } else if path == "/api/tracks" || (path.starts_with("/api/logs/") && path.ends_with("/track"))
+    {
+        response
+            .headers_mut()
+            .insert(h::CACHE_CONTROL, "private, no-cache".parse().unwrap());
     } else if path.starts_with("/api/logs/")
         && (path.ends_with("/data") || path.ends_with("/telemetry"))
     {
@@ -1142,7 +1149,11 @@ async fn original(
         return Err(missing("not_found"));
     }
     let folder = app.store.folder(&id).await?;
-    let path = folder.join(&kind);
+    let mut path = folder.join(&kind);
+    let meta = app.store.meta(&id).await?;
+    if kind.ends_with(".mp4") && !path.is_file() {
+        path = folder.join("prepared").join(&kind);
+    }
     if !path.exists()
         && matches!(
             kind.as_str(),
@@ -1178,11 +1189,93 @@ async fn original(
         crate::media::reverse(&retained, &kind, &output, offset)
             .await
             .map_err(|_| bad("media_export_failed"))?;
-        let response = serve(output.clone(), request).await;
+        let response = serve(output.clone(), request)
+            .await
+            .map(|response| attachment(response, &meta, &kind));
         // ServeFile has already opened its file. Linux keeps it readable after unlink.
         let _ = tokio::fs::remove_file(&output).await;
         return response;
     }
     safe_file(&folder, &path).await?;
-    serve(path, request).await
+    Ok(attachment(serve(path, request).await?, &meta, &kind))
+}
+fn attachment(mut response: Response, meta: &Value, kind: &str) -> Response {
+    let raw = match kind {
+        "camera.mp4" => "qcamera.ts",
+        "fcamera.mp4" => "fcamera.hevc",
+        "ecamera.mp4" => "ecamera.hevc",
+        _ => kind,
+    };
+    let fallback = meta["files"]["rlog.zst"]
+        .as_str()
+        .and_then(|v| v.strip_suffix("rlog.zst"))
+        .map(|prefix| format!("{prefix}{raw}"))
+        .unwrap_or_else(|| kind.into());
+    let source = meta["files"][raw]
+        .as_str()
+        .or_else(|| meta["files"][kind].as_str())
+        .unwrap_or(&fallback)
+        .rsplit(['/', '\\'])
+        .next()
+        .unwrap_or(kind);
+    let name = if kind.ends_with(".mp4") {
+        format!(
+            "{}.mp4",
+            source.rsplit_once('.').map(|v| v.0).unwrap_or(source)
+        )
+    } else {
+        source.into()
+    };
+    let encoded = name
+        .bytes()
+        .map(|b| {
+            if b.is_ascii_alphanumeric() || matches!(b, b'.' | b'_' | b'-') {
+                (b as char).to_string()
+            } else {
+                format!("%{b:02X}")
+            }
+        })
+        .collect::<String>();
+    if let Ok(value) = format!("attachment; filename*=UTF-8''{encoded}").parse() {
+        response.headers_mut().insert(h::CONTENT_DISPOSITION, value);
+    }
+    response
+}
+async fn download_video(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    request: Request,
+) -> Result<Response> {
+    let meta = app.store.meta(&id).await?;
+    let kind = meta["video_downloads"]
+        .as_array()
+        .and_then(|v| {
+            v.iter()
+                .find(|v| v["source"] == "front")
+                .or_else(|| v.first())
+        })
+        .and_then(|v| v["kind"].as_str())
+        .ok_or_else(|| missing("not_found"))?
+        .to_owned();
+    original(State(app), Path((id, kind)), request).await
+}
+async fn download_camera(
+    State(app): State<App>,
+    Path(id): Path<String>,
+    Query(q): Query<BTreeMap<String, String>>,
+    request: Request,
+) -> Result<Response> {
+    let source = q.get("source").map(String::as_str).unwrap_or("qcamera");
+    let (mp4, raw) = match source {
+        "qcamera" => ("camera.mp4", "qcamera.ts"),
+        "front" => ("fcamera.mp4", "fcamera.hevc"),
+        "wide" => ("ecamera.mp4", "ecamera.hevc"),
+        _ => return Err(bad("invalid_video_source")),
+    };
+    let kind = match q.get("format").map(String::as_str).unwrap_or("mp4") {
+        "mp4" => mp4,
+        "original" => raw,
+        _ => return Err(bad("invalid_download_format")),
+    };
+    original(State(app), Path((id, kind.into())), request).await
 }

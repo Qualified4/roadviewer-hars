@@ -74,3 +74,9 @@ Windows 작업 폴더 안의 소스를 WSL Ubuntu 24.04에서 빌드했다. Rust
 
 - 복사제거후대표6번Rust만재측정완료(기존Python재사용):4.526059s/CPU4.031083s/meanRSS280495.8KiB/peak348612KiB. Python보다여전히느리고무거움. cache key제외전체4출력다시차이0. before/after메트릭안전JSON을docs/hars/measurements에보존.
 - 이제최종소스커밋과CI를진행한다. 원본소스검사WindowsGit286PASS이며WSLgit설정차이에따른CRLFfalse mismatch만발생했다.
+
+- 커밋095a922(변환/큐),f4b124a(CI/실제코퍼스증거)를main에푸시. f4b124a의CI43708871726 4개job 모두success.
+- CI후최종UI점검에서다운로드목록메타/단일영상alias/preparedMP4 original경로누락발견. src/jobs.rs/http.rs+tests/contract.rs 보완. 기존ready레코드는시작시download메타보충(재변환안함). 지도private no-cache추가. 범위Clippy·contract13개/recovery4개통과. 최신src조금수정후재검증은이미끝남(다운로드prefix fallback+cachepolicy포함).
+- 독립서버exec19369종료전진행작업없음확인,현재exec9050에서최신debugbinary로root `/tmp/hars-alpha2-upload-wide/data`18199/18198실행중. 테스트끝나면같은root/pid확인후종료할것. 원래HAOS아님.
+- 실제3카메라 MP4다운로드 SHA256입력과일치,Range206바이트일치,원본TS/HEVC역변환API완료(nativeNAL검사내장). docs측정download-real-wide JSON에안전한수치보존.
+- 아직추가수정미커밋,다음작업은해당fix커밋/푸시→최신커밋CI확인. 이전f4CIgreen을새fix커밋CIgreen으로보고하면안됨. 전체61구간비교·CPU측정은반복안함. release노트준비됐으나tag/GHCR/Release게시없음,운영변경없음.
