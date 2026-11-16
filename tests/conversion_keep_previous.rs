@@ -41,6 +41,8 @@ enum Fault {
     /// The server parked in publication after an MP4 moved next to its original, before the
     /// directory sync that precedes deleting the original.
     Publish,
+    /// The server parked at this crash point.
+    Crash(&'static str),
 }
 
 struct Server {
@@ -120,6 +122,9 @@ async fn start(root: &Path, fault: Fault, limit: u64) -> Server {
             }
             Fault::Publish => {
                 command.env("HARS_CRASH_POINT", "publish_mp4_moved");
+            }
+            Fault::Crash(point) => {
+                command.env("HARS_CRASH_POINT", point);
             }
             Fault::None => {}
         }
@@ -633,6 +638,109 @@ async fn retention_off_deletes_an_original_only_after_its_mp4_is_durable() {
     assert_eq!(
         std::fs::read(r.folder.join("rlog.zst")).unwrap(),
         r.originals["rlog.zst"]
+    );
+    no_attempts(&r.folder);
+    drop(server);
+}
+
+/// Each original has a verified Drive copy, and each MP4 was removed by an earlier archive cleanup: retention off
+/// makes the copies the stored originals and the new local MP4s visible again.
+fn with_remote_copies(r: &Recording) {
+    use sha2::Digest;
+    let mut m = meta(&r.folder);
+    let copy = |kind: &str| {
+        let bytes = &r.originals[kind];
+        json!({"location":"local","remote":{"backend":"gdrive","file_id":format!("drive-{kind}"),
+            "bytes":bytes.len(),"sha256":hex::encode(sha2::Sha256::digest(bytes)),"uploaded_at":1.0}})
+    };
+    let removed = json!({"location":"removed","bytes":1,"removed_at":1.0,"reason":"nas_full"});
+    m["storage"] = json!({"qcamera.ts":copy("qcamera.ts"),"fcamera.hevc":copy("fcamera.hevc"),
+        "camera.mp4":removed,"fcamera.mp4":removed});
+    std::fs::write(r.folder.join("meta.json"), m.to_string()).unwrap();
+}
+
+/// What a finished retention-off publication leaves: the MP4s next to the log, no original, the index naming
+/// the Drive copies as the stored originals and hiding no MP4.
+fn published_without_originals(r: &Recording) -> Value {
+    let m = wait_status(&r.folder, "ready");
+    assert_eq!(m["videos"]["front"]["frames"], FRAMES, "{m}");
+    assert_eq!(m["videos"]["qcamera"]["frames"], FRAMES, "{m}");
+    for (raw, mp4) in [
+        ("qcamera.ts", "camera.mp4"),
+        ("fcamera.hevc", "fcamera.mp4"),
+    ] {
+        assert!(!r.folder.join(raw).exists(), "{raw}");
+        assert!(r.folder.join(mp4).is_file(), "{mp4}");
+        assert_eq!(m["storage"][raw]["location"], "gdrive", "{raw}: {m}");
+        assert_eq!(
+            m["storage"][raw]["file_id"],
+            format!("drive-{raw}"),
+            "{raw}: {m}"
+        );
+        assert!(m["storage"].get(mp4).is_none(), "{mp4}: {m}");
+    }
+    no_attempts(&r.folder);
+    m["storage"].clone()
+}
+
+/// Retention off with archived copies: a server killed at any point of the publication (an MP4 moved, the
+/// metadata saved, an original deleted) restarts into the same end state as an uninterrupted one, with the index
+/// and the disk agreeing. An original deleted before its index change was durable once left its Drive copy
+/// unpromoted and its MP4 hidden behind `removed`.
+#[tokio::test(flavor = "multi_thread")]
+async fn retention_off_publication_converges_from_every_crash_point() {
+    let r = recording(false);
+    with_remote_copies(&r);
+    let server = start(&r.root, Fault::None, 0).await;
+    let expected = published_without_originals(&r);
+    drop(server);
+    for point in [
+        "publish_mp4_moved",
+        "publish_original_deleted",
+        "publish_meta_saved",
+    ] {
+        let r = recording(false);
+        with_remote_copies(&r);
+        let mut server = start(&r.root, Fault::Crash(point), 0).await;
+        wait_for(point, Duration::from_secs(60), || server.marker.exists());
+        server.child.kill().unwrap();
+        server.child.wait().unwrap();
+        drop(server);
+        let server = start(&r.root, Fault::None, 0).await;
+        assert_eq!(published_without_originals(&r), expected, "{point}");
+        assert_eq!(
+            std::fs::read(r.folder.join("rlog.zst")).unwrap(),
+            r.originals["rlog.zst"]
+        );
+        drop(server);
+    }
+}
+
+/// A conversion that read the stored MP4s (retention off, originals gone) leaves no MP4 of its own in
+/// `prepared/`. An original restored next to a stored MP4 before a restart resumes that publication is not
+/// this conversion's source: it stays, as does the MP4.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_restored_original_next_to_a_stored_mp4_survives_a_resumed_publication() {
+    let r = recording(false);
+    r.converted().await;
+    let stored = ["camera.mp4", "fcamera.mp4"].map(|k| std::fs::read(r.folder.join(k)).unwrap());
+    r.requeue();
+    let mut server = start(&r.root, Fault::Crash("publish_installed"), 0).await;
+    wait_for("publish_installed", Duration::from_secs(60), || {
+        server.marker.exists()
+    });
+    for raw in ["qcamera.ts", "fcamera.hevc"] {
+        std::fs::write(r.folder.join(raw), &r.originals[raw]).unwrap();
+    }
+    server.child.kill().unwrap();
+    server.child.wait().unwrap();
+    drop(server);
+    let server = start(&r.root, Fault::None, 0).await;
+    wait_status(&r.folder, "ready");
+    r.originals_kept();
+    assert_eq!(
+        ["camera.mp4", "fcamera.mp4"].map(|k| std::fs::read(r.folder.join(k)).unwrap()),
+        stored
     );
     no_attempts(&r.folder);
     drop(server);
