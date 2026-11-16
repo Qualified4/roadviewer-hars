@@ -46,7 +46,12 @@ pub async fn atomic_json(path: &Path, value: &impl Serialize) -> std::io::Result
         tokio::fs::rename(&temp, path).await?;
         #[cfg(unix)]
         {
-            let parent = path.parent().unwrap().to_path_buf();
+            // A bare file name (a CLI argument) has the empty path as its parent.
+            let parent = path
+                .parent()
+                .filter(|p| !p.as_os_str().is_empty())
+                .unwrap_or(Path::new("."))
+                .to_path_buf();
             tokio::task::spawn_blocking(move || std::fs::File::open(parent)?.sync_all()).await??;
         }
         Ok(())

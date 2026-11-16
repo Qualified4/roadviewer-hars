@@ -7,6 +7,20 @@ use std::{net::SocketAddr, path::PathBuf};
 /// How long blocking work still running when the server stops may take. A share copy whose cycle is dropped stops at
 /// its next block and removes its part well within it; a call stuck on a hung mount must not hold the exit.
 const SHUTDOWN_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
+/// Commands whose standard output is their one JSON result, so their log goes to stderr. The server and
+/// `convert-log` keep logging to stdout: the conversion process's log lines are relayed by `jobs` from there.
+const RESULT_ON_STDOUT: [&str; 10] = [
+    "__inspect",
+    "__thumbnail",
+    "__native-hevc",
+    "__pure-remux",
+    "__native-ts",
+    "remux",
+    "track-log",
+    "analyze-log",
+    "import-auth",
+    "inspect-log",
+];
 
 fn main() -> anyhow::Result<()> {
     let runtime = tokio::runtime::Runtime::new()?;
@@ -16,14 +30,23 @@ fn main() -> anyhow::Result<()> {
 }
 
 async fn run() -> anyhow::Result<()> {
+    let args = std::env::args().collect::<Vec<_>>();
+    let writer = if args
+        .get(1)
+        .is_some_and(|v| RESULT_ON_STDOUT.contains(&v.as_str()))
+    {
+        tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr)
+    } else {
+        tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stdout)
+    };
     tracing_subscriber::fmt()
         .json()
+        .with_writer(writer)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "roadviewer_hars=info".into()),
         )
         .init();
-    let args = std::env::args().collect::<Vec<_>>();
     if args.get(1).is_some_and(|v| v == "__inspect") {
         anyhow::ensure!(args.len() == 4, "invalid internal inspection job");
         let result =

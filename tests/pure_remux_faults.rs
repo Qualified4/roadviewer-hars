@@ -64,7 +64,7 @@ impl Case {
             .env_remove("HARS_CRASH_POINT")
             .env("RUST_LOG", "roadviewer_hars=info")
             .stdout(Stdio::piped())
-            .stderr(Stdio::null());
+            .stderr(Stdio::piped());
         c
     }
     /// Only the original, the clock and finished outputs may remain.
@@ -81,16 +81,27 @@ impl Case {
     }
     fn retry(&self, name: &str) -> String {
         let output = self.root.join(name);
-        let out = self.command(&output).output().unwrap();
-        let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-        assert!(out.status.success(), "{stdout}");
+        let log = result(&self.command(&output).output().unwrap());
         assert!(
-            stdout.contains(r#""event":"remux_engine","engine":"pure""#),
-            "{stdout}"
+            log.contains(r#""event":"remux_engine","engine":"pure""#),
+            "{log}"
         );
-        assert!(!stdout.contains("remux_fallback"), "{stdout}");
-        stdout
+        assert!(!log.contains("remux_fallback"), "{log}");
+        log
     }
+}
+
+/// The `remux` command's stdout is exactly its one JSON result line; its log,
+/// returned here, goes to stderr.
+fn result(out: &std::process::Output) -> String {
+    let log = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(out.status.success(), "{log}");
+    let stdout = std::str::from_utf8(&out.stdout).unwrap();
+    let lines = stdout.lines().collect::<Vec<_>>();
+    assert_eq!(lines.len(), 1, "{stdout}");
+    let value: serde_json::Value = serde_json::from_str(lines[0]).unwrap();
+    assert_eq!(value["validated"], true, "{stdout}");
+    log
 }
 
 fn wait_marker(marker: &Path, child: &mut Child) {
@@ -133,11 +144,9 @@ fn killed_pure_worker_falls_back_and_leaves_no_partial_output() {
     assert_eq!(workers.len(), 1, "one pure worker runs");
     // SAFETY: plain kill(2) on the worker pid read from /proc just now.
     assert_eq!(unsafe { libc::kill(workers[0], libc::SIGKILL) }, 0);
-    let out = child.wait_with_output().unwrap();
-    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    assert!(out.status.success(), "{stdout}");
-    assert!(stdout.contains(r#""event":"remux_fallback""#), "{stdout}");
-    assert!(stdout.contains(r#""engine":"ffmpeg""#), "{stdout}");
+    let log = result(&child.wait_with_output().unwrap());
+    assert!(log.contains(r#""event":"remux_fallback""#), "{log}");
+    assert!(log.contains(r#""engine":"ffmpeg""#), "{log}");
     c.clean(&["out.mp4"]);
     std::fs::remove_file(&output).unwrap();
     c.retry("again.mp4");
@@ -157,9 +166,8 @@ fn second_read_path_writes_the_same_file() {
         .env("HARS_PURE_REMUX_BUFFER_LIMIT", "0")
         .output()
         .unwrap();
-    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    assert!(out.status.success(), "{stdout}");
-    assert!(stdout.contains(r#""engine":"pure""#) && !stdout.contains("remux_fallback"));
+    let log = result(&out);
+    assert!(log.contains(r#""engine":"pure""#) && !log.contains("remux_fallback"));
     assert_eq!(std::fs::read(once).unwrap(), std::fs::read(twice).unwrap());
     c.clean(&["once.mp4", "twice.mp4"]);
 }
@@ -223,9 +231,10 @@ fn write_limit_fails_both_engines_cleanly_and_a_retry_completes() {
         });
     }
     let out = command.output().unwrap();
-    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
-    assert!(!out.status.success(), "{stdout}");
-    assert!(stdout.contains(r#""event":"remux_fallback""#), "{stdout}");
+    let log = String::from_utf8_lossy(&out.stderr).into_owned();
+    assert!(!out.status.success(), "{log}");
+    assert!(out.stdout.is_empty(), "a failed remux prints no result");
+    assert!(log.contains(r#""event":"remux_fallback""#), "{log}");
     c.clean(&[]);
     c.retry("out.mp4");
     c.clean(&["out.mp4"]);
