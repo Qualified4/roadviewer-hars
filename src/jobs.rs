@@ -467,6 +467,7 @@ impl Jobs {
                 tokio::fs::rename(&prepared, &backup).await?;
             }
             tokio::fs::rename(&staging, &prepared).await?;
+            sync_dirs(&[&folder]).await?;
         }
         let summary: Value = read_json(&prepared.join("summary.json")).await?;
         let keep = self.store.processing.read().await["keep_original_video"] != false;
@@ -487,7 +488,9 @@ impl Jobs {
             // An archived original stays the stored copy; its MP4 remains converted output in prepared/.
             let archived = index::location(&meta, raw) != "local"
                 || index::is_archived_location(&index::location(&meta, mp4));
-            if !keep && !archived && prepared.join(mp4).is_file() {
+            // A restart resuming this generation's publication finds the MP4s it already moved.
+            let moved = installed && !prepared.join(mp4).exists() && folder.join(mp4).is_file();
+            if !keep && !archived && (moved || prepared.join(mp4).is_file()) {
                 // An MP4 removed by archive cleanup exists again, locally: the index must not hide it.
                 if index::location(&meta, mp4) == "removed"
                     && let Some(storage) = meta["storage"].as_object_mut()
@@ -496,7 +499,12 @@ impl Jobs {
                 }
                 // The conversion verified frame count, timestamps and compressed
                 // bitstream before reaching its durable publication journal.
-                tokio::fs::rename(prepared.join(mp4), folder.join(mp4)).await?;
+                if !moved {
+                    tokio::fs::rename(prepared.join(mp4), folder.join(mp4)).await?;
+                    crate::fault::point("publish_mp4_moved");
+                }
+                // The conversion synced the MP4 itself; its new name must be durable before the original goes.
+                sync_dirs(&[&folder, &prepared]).await?;
                 // The MP4 is new content: a copy of the previous one no longer describes it.
                 if index::drop_remote(&mut meta, mp4, None).is_some() {
                     tracing::info!(kind = mp4, "remote_copy_superseded_left_on_archive");
@@ -596,6 +604,19 @@ impl Jobs {
         }
         out
     }
+}
+async fn sync_dirs(dirs: &[&std::path::Path]) -> std::io::Result<()> {
+    let dirs = dirs.iter().map(|d| d.to_path_buf()).collect::<Vec<_>>();
+    tokio::task::spawn_blocking(move || {
+        #[cfg(unix)]
+        for dir in &dirs {
+            std::fs::File::open(dir)?.sync_all()?;
+        }
+        #[cfg(not(unix))]
+        let _ = dirs;
+        Ok(())
+    })
+    .await?
 }
 fn mtime_ns(stat: &std::fs::Metadata) -> u64 {
     #[cfg(unix)]

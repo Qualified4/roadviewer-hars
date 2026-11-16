@@ -1,5 +1,5 @@
 //! One isolated conversion worker. All outputs go to a caller-owned staging directory.
-use crate::{logs, media, replay, store, telemetry, track};
+use crate::{logs, media, pure_remux::FailureClass, replay, store, telemetry, track};
 use anyhow::Context;
 use serde_json::{Value, json};
 use std::{
@@ -263,9 +263,32 @@ pub async fn prepare(
             }
             Err(error) => {
                 let _ = tokio::fs::remove_file(dest.join(mp4)).await;
+                let failure = media::failure(&error);
+                let label = if *name == "qcamera" { "qcamera" } else { raw };
+                if failure.class != FailureClass::Resource {
+                    warnings.push(format!("{label} 영상 준비 실패: {error}"));
+                    continue;
+                }
+                // The same disk, memory or deadline may not fail the next attempt, unlike an input or
+                // engine failure: a camera the published result plays is not dropped for it.
+                if meta["videos"][name].is_object()
+                    || recording.join("prepared").join(mp4).is_file()
+                {
+                    tracing::error!(
+                        event = "conversion_kept_previous",
+                        kind = *raw,
+                        failure_class = failure.class.name(),
+                        reason_code = failure.code,
+                        reason = failure.reason,
+                    );
+                    return Err(anyhow::Error::new(failure)
+                        .context(format!("{label}: previous conversion result kept")));
+                }
                 warnings.push(format!(
-                    "{} 영상 준비 실패: {error}",
-                    if *name == "qcamera" { "qcamera" } else { raw }
+                    "{label} 영상 준비 실패: {} ({}): {}",
+                    failure.class.name(),
+                    failure.code,
+                    failure.reason
                 ));
             }
         }

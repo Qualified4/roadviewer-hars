@@ -487,6 +487,14 @@ pub fn relay_remux_event(record: &str, line: &str) {
             kind = text("kind"),
             bytes = fields["bytes"].as_u64(),
         ),
+        Some("conversion_kept_previous") => tracing::error!(
+            event = "conversion_kept_previous",
+            record,
+            kind = text("kind"),
+            failure_class = text("failure_class"),
+            reason_code = text("reason_code"),
+            reason = text("reason"),
+        ),
         Some(name @ ("remux_fallback" | "remux_failure")) => {
             let level = event["level"].as_str().unwrap_or("WARN");
             macro_rules! relay {
@@ -821,8 +829,9 @@ impl Drop for Scratch {
     }
 }
 
-/// How a worker process ended, as a failure class.
-fn worker_failure(error: &anyhow::Error) -> crate::pure_remux::Failure {
+/// Any media error as a failure class: how a worker process ended, the
+/// deadline, then `Failure::classify` (an engine's own class, OS errors).
+pub fn failure(error: &anyhow::Error) -> crate::pure_remux::Failure {
     use crate::pure_remux::{Failure, FailureClass as C};
     if error.downcast_ref::<Deadline>().is_some() {
         return Failure::new(C::Resource, "deadline", format!("{error:#}"));
@@ -879,7 +888,7 @@ async fn pure(
             .arg(source)
             .arg(&job_path)
             .arg(&temp);
-        let bytes = run(&mut command).await.map_err(|e| worker_failure(&e))?;
+        let bytes = run(&mut command).await.map_err(|e| failure(&e))?;
         serde_json::from_slice::<Reply>(&bytes)
             .map_err(|e| Failure::new(C::Internal, "worker_reply", e))?
     } else {
@@ -1094,8 +1103,31 @@ async fn verify_and_place(
         "last sample duration changed during remux"
     );
     verify_mp4_boxes(temp, kind != "qcamera.ts").await?;
-    tokio::fs::rename(temp, output).await?;
+    durable_rename(temp, output).await?;
     Ok(info)
+}
+
+/// The MP4's bytes and its name reach the disk before it counts as written: a publication with
+/// retention off deletes the original it replaces.
+async fn durable_rename(temp: &Path, output: &Path) -> std::io::Result<()> {
+    let (temp, output) = (temp.to_path_buf(), output.to_path_buf());
+    tokio::task::spawn_blocking(move || {
+        std::fs::File::open(&temp)?.sync_all()?;
+        std::fs::rename(&temp, &output)?;
+        sync_parent(&output)
+    })
+    .await?
+}
+
+/// fsync of the directory holding `path`, so a rename or removal in it survives a power cut.
+pub fn sync_parent(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::File::open(parent)?.sync_all()?;
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
 }
 async fn verify_mp4_boxes(path: &Path, hevc: bool) -> anyhow::Result<()> {
     use tokio::io::AsyncSeekExt;

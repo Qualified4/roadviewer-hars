@@ -75,6 +75,7 @@ impl AnnexB {
 /// The CLI runs this in an isolated worker with its existing timeout/output cap.
 pub fn inspect(source: &Path, kind: &str) -> anyhow::Result<crate::media::Inspection> {
     let _profile = crate::profile::Scope::new("native_inspection");
+    crate::fault::point("native_inspect");
     use serde_json::json;
     ffmpeg::init()?;
     ffmpeg::log::set_level(ffmpeg::log::Level::Quiet);
