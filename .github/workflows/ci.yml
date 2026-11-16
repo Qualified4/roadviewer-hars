@@ -39,8 +39,13 @@ jobs:
           /tmp/hars-compat-env/bin/python integration/ccnc_compat.py --rust "$PWD/target/debug/roadviewer-hars"
       - name: Python and Rust full replay conversion oracle
         run: /tmp/hars-compat-env/bin/python integration/pipeline_contract.py "$PWD/target/debug/roadviewer-hars"
+      - name: Original client upload fault injection
+        run: /tmp/hars-compat-env/bin/python integration/uploader_faults.py --rust "$PWD/target/debug/roadviewer-hars"
+      - name: Experimental pure Rust remux feature
+        run: cargo clippy --locked --all-targets --features pure-remux -- -D warnings && cargo test --locked --features pure-remux --test pure_remux
       - run: python3 scripts/verify_reference.py
       - run: python3 scripts/check_release.py
+      - run: python3 scripts/check_coexistence.py
   container:
     name: Container (${{ matrix.arch }})
     strategy:

@@ -132,3 +132,14 @@ Windows 작업 폴더 안의 소스를 WSL Ubuntu 24.04에서 빌드했다. Rust
 - 최종perf215samples/499Hz/lost0,관측CPU.431초(기준.886). strace sourceRead77.283→37.527MB,pipe75.518MB→124729bytes,outputRead112.634→75.076MB. 논리IO(재읽기포함),디스크물리bytes아님. 무미디어startup5회control/median보존,성공한mux순수init와직접감산안함.
 - ego Space15:새13/segment3 HEVC1344×760 play/pause/30s; q59.9s/duration59.989089/ready4/error0/Frame4800; 실제지도/overlay/차량그래프확인. 별도기존47 3cam/segment6 wide44.999989s/ready4/error0. 사진private유지. Spacefinish및두ownedloopback서버모든ready확인후종료.
 - 원본39파일 총691661569bytes SHA불변. 공개숫자5JSON원본파일/GPS/인증/perf메모리/payload없음확인. STATUS/PERFORMANCE/VALIDATION/DEVELOPMENT갱신. source314ed18외도구·문서아직미커밋. 다음doc/tool커밋→PR1개→Rust36+amd64/aarch64필수CI→요청된기존개발절차대로결과확인/병합. 실제HAOS/포트/설정/원본Python/openpilot/운영GHCR/릴리스는변경안함.
+## 2026-11-16 alpha.3 기능 완성·안정화 (조정 기록)
+
+- 기준 `a76c0c5`. 저장소에 AGENTS.md/CLAUDE.md 없음, DEVELOPMENT.md와 사용자 전역 지침 적용. 병렬 작업자는 WSL `~/hars-wt/<작업명>` 사본과 `~/hars-targets/<작업명>`에서 일하고 브랜치만 올림. 조정자가 검토·PR·CI·병합.
+- 병합(각 PR CI 4개 검사 통과 확인 후): #4 qcamera 마지막 duration(`ee2fa7d`), #3 저장 공간 보호·삭제 저널(`8fee5d4`), #5 Drive/NAS 백엔드(`3003dac`), #6 업로드 장애 주입·결함 수정, #7 API 동등성, #8 순수 Rust 리먹싱 실험(`f74d95d`).
+- #4 원인 정정: 이전 메모의 "FFmpeg 6/8 버전 차이"는 틀림. `ffmpeg`/`ffprobe` CLI가 `scan_all_pmts=1`을 강제해 TS 탐색이 약 103프레임까지 이어지고 20/1로 추정. PyAV는 라이브러리 기본값으로 21프레임에서 241/12·239/12 추정. 같은 FFmpeg에서 옵션만 바꿔 양쪽 재현. qcamera 리먹싱을 libavformat 기본값 경로(`native_video::remux_ts`)로 변경. 13/13, 14/14, 47/47(72,749프레임) 동등.
+- #3 독립 검토 지적 3건 수정: 세션 생성 전체를 registration 락 안에서, 자동 정리는 route 전체 락 후 재확인, 삭제 커밋 시점은 숨김 rename(복구는 `.deleting-<id>`만 완료, 숨겨지지 않은 저널 항목은 폐기). 기존 테스트 2개 기대값을 "재시작 시 삭제 완료"→"기록 보존"으로 변경(보존 쪽 정책 변경).
+- 결정: 변환 중 기록의 수동 삭제는 Python처럼 변환 취소 후 삭제(자동 정리는 route 전체 보호). UI 오류 형식은 `error`=코드, `message`=Python 문장 유지(화면 표시 문장 동일, 장치 업로더는 코드로 재시도 판단). 순수 Rust 리먹싱은 채택 보류, FFmpeg 엔진 기본 유지.
+- #6/#7 독립 검토: 차단 사유 없음. 3자 잠금 순환(가져오기 begin/장치 begin/finish)과 레거시 업로드 사전 입장은 통합 merge에서 수정. 남은 지적(408 재시도 불가, 슬롯 순서, flush, ZIP 임시 파일·fd, 부팅 문구)은 `fix/upload-parity-followup`에서 처리 중.
+- 진행 중: `feat/archiver`(아카이버 본체·설정 라우트, 기준 `3003dac`), `fix/upload-parity-followup`(검토 잔여, 기존 구간 카메라 추가, finish 실패 세션 정책; 기준 `f74d95d`).
+- 남음: 원격 파일 재생·다운로드, 보충 변환(backfill/gap_backfill), 지도 보충(tracks/run·stop), Python 원격 데이터 읽기 전용 조회, 버전 alpha.3, 문서·인벤토리 갱신, `scripts/check_coexistence.py` CI 연결, 컨테이너 기동 검사에 TS 사례 추가, 실제 코퍼스 전체 재검증과 브라우저 확인.
+- 운영 주의: `drive.file` 범위라 Python이 올린 파일을 읽으려면 같은 OAuth client ID 필요(미확인). Python `.archive.json`을 HARS 데이터 폴더에 복사 금지.
