@@ -711,11 +711,16 @@ async fn drive_sign_in_routes_report_codes_never_tokens() {
         (StatusCode::OK, json!({"connected": false}))
     );
     assert!(!drive_auth(&e).connected());
-    // Range: the next work item's routes answer 501, never a fake success.
+    // Signed out, a maps pass is still accepted (Python `run_track_fill`); with nothing to read it simply ends.
     let (status, _) = e
         .req("POST", "/api/settings/archive/tracks/run", Value::Null)
         .await;
-    assert_eq!(status, StatusCode::NOT_IMPLEMENTED);
+    assert_eq!(status, StatusCode::ACCEPTED);
+    assert!(!e.a().track_run_once().await);
+    let (_, body) = e
+        .req("GET", "/api/settings/archive/tracks/run", Value::Null)
+        .await;
+    assert_eq!(body["track_fill"]["manual"], false);
 }
 
 fn drive_auth(e: &Env) -> std::sync::Arc<roadviewer_hars::archive::DriveAuth> {
@@ -774,10 +779,10 @@ async fn capacity_moves_take_pinned_recordings_last() {
     );
 }
 
-/// Python  fields; HARS conversions write the route themselves, so a moved log counts as read.
-/// Reading routes from Drive is not ported: a pass is refused with 501 rather than reported as started.
+/// Python `TrackBackfill.status()` fields; HARS conversions write the route themselves, so a moved log counts as read.
+/// A pass by hand is accepted once at a time (tests/archive_track_fill.rs runs them).
 #[tokio::test]
-async fn drive_maps_status_has_python_fields_and_a_pass_is_not_faked() {
+async fn drive_maps_status_has_python_fields() {
     let e = drive_env(json!({"archive_mode": "move", "archive_allow_local_delete": true})).await;
     let id = e.record('a', &[("rlog.zst", data(1000, 1))], OLD).await;
     let prepared = e.root.join(&id).join("prepared");
@@ -835,11 +840,23 @@ async fn drive_maps_status_has_python_fields_and_a_pass_is_not_faked() {
         .req("POST", "/api/settings/archive/tracks/run", Value::Null)
         .await;
     assert_eq!(
-        (status, body["error"].clone()),
-        (StatusCode::NOT_IMPLEMENTED, json!("feature_not_ported"))
+        (
+            status,
+            body["started"].clone(),
+            body["track_fill"]["manual"].clone()
+        ),
+        (StatusCode::ACCEPTED, json!(true), json!(true))
     );
-    let (status, _) = e
+    let (status, body) = e
+        .req("POST", "/api/settings/archive/tracks/run", Value::Null)
+        .await;
+    assert_eq!(
+        (status, body["error"].clone()),
+        (StatusCode::CONFLICT, json!("track_fill_running"))
+    );
+    let (status, body) = e
         .req("POST", "/api/settings/archive/tracks/stop", Value::Null)
         .await;
     assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["track_fill"]["manual"], false);
 }

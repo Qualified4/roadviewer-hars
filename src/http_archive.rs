@@ -434,60 +434,13 @@ pub fn touched(meta: &Value) -> bool {
         .any(|k| index::location(meta, k) != "local")
 }
 
-/// Python `TrackBackfill.status()`. HARS writes every conversion's route (track_v 2, track_read), so a Drive-only
-/// log lacks one only when it came from elsewhere; reading those from Drive is not ported: no pass ever runs here
-/// and the counts are those of the library.
+/// Python `TrackBackfill.status()` (also the storage block's `archive.track_fill`).
 pub async fn track_fill(app: &App) -> Value {
-    let metas = app
-        .store
-        .records
-        .read()
-        .await
-        .values()
-        .cloned()
-        .collect::<Vec<_>>();
-    let root = app.store.root.clone();
-    let (total, done, failed) = tokio::task::spawn_blocking(move || {
-        let (mut total, mut done, mut failed) = (0u64, 0u64, 0u64);
-        for m in &metas {
-            let folder = root.join(m["id"].as_str().unwrap_or_default());
-            let where_ = index::location(m, "rlog.zst");
-            let drive_only = where_ == "gdrive"
-                || where_ == "local"
-                    && index::remote(m, "rlog.zst").is_some()
-                    && !folder.join("rlog.zst").is_file();
-            if !drive_only
-                || m["status"] != "ready"
-                || !folder.join("prepared/data.json.gz").is_file()
-            {
-                continue;
-            }
-            let Ok(summary) = std::fs::read(folder.join("prepared/summary.json"))
-                .map_err(|_| ())
-                .and_then(|b| serde_json::from_slice::<Value>(&b).map_err(|_| ()))
-            else {
-                continue;
-            };
-            total += 1;
-            let read = summary["track_v"] == 2
-                && (summary["has_track"] == true || summary["track_read"] == true);
-            if read {
-                done += 1;
-            } else if summary["track_failures"].as_u64().unwrap_or(0) >= 3 {
-                failed += 1;
-            }
-        }
-        (total, done, failed)
-    })
-    .await
-    .unwrap_or((0, 0, 0));
-    json!({"enabled": app.archive.settings().gdrive_fill_tracks, "manual": false, "running": false,
-           "stopping": false, "waiting": null, "total": total, "done": done, "failed": failed,
-           "pending": total.saturating_sub(done + failed), "last_error": null, "retry_in": null,
-           "finished_at": null})
+    app.archive.track_fill_status().await
 }
 
-/// `/api/settings/archive/tracks/run`: GET is the status; a pass over Drive-only logs is not ported (501).
+/// `/api/settings/archive/tracks/run` (Python `run_track_fill`): GET is the status; POST starts one pass over the
+/// Drive-only recordings that still need a route, setting on or off. Never two passes at once.
 pub async fn track_fill_run(AxState(app): AxState<App>, method: Method) -> Response {
     if method == Method::GET {
         return reply(
@@ -498,11 +451,21 @@ pub async fn track_fill_run(AxState(app): AxState<App>, method: Method) -> Respo
     if !app.archive.settings().remote() {
         return error(StatusCode::CONFLICT, "gdrive_not_selected");
     }
-    error(StatusCode::NOT_IMPLEMENTED, "feature_not_ported")
+    if !app.archive.track_fill().request_run() {
+        return reply(
+            StatusCode::CONFLICT,
+            json!({"error": "track_fill_running", "track_fill": track_fill(&app).await}),
+        );
+    }
+    reply(
+        StatusCode::ACCEPTED,
+        json!({"started": true, "track_fill": track_fill(&app).await}),
+    )
 }
 
-/// `/api/settings/archive/tracks/stop`: nothing runs, so there is nothing to stop (Python answers the status).
+/// `/api/settings/archive/tracks/stop` (Python `stop_track_fill`): stops after the recording being read.
 pub async fn track_fill_stop(AxState(app): AxState<App>) -> Response {
+    app.archive.track_fill().request_stop();
     reply(
         StatusCode::OK,
         json!({"track_fill": track_fill(&app).await}),

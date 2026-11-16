@@ -90,6 +90,19 @@ async fn main() -> anyhow::Result<()> {
         result?;
         return Ok(());
     }
+    if args.get(1).is_some_and(|v| v == "track-log") {
+        anyhow::ensure!(
+            args.len() == 4,
+            "usage: roadviewer-hars track-log RLOG PREPARED"
+        );
+        let (rlog, prepared) = (PathBuf::from(&args[2]), PathBuf::from(&args[3]));
+        let fields = tokio::task::spawn_blocking(move || {
+            roadviewer_hars::archive::track_fill::extract(&rlog, &prepared)
+        })
+        .await??;
+        println!("{fields}");
+        return Ok(());
+    }
     if args.get(1).is_some_and(|v| v == "analyze-log") {
         anyhow::ensure!(
             args.len() == 4,
