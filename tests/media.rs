@@ -141,6 +141,109 @@ async fn camera_codec_mismatch_and_malformed_media_are_rejected() {
     assert!(media::inspect(&ts, "fcamera.hevc").await.is_err());
 }
 
+/// MP4 inputs another muxer wrote, as a conversion reads them: `moov` after `mdat`, an extra
+/// audio track and hev1 (parameter sets also in the samples) are read with the clock the host's
+/// ffprobe gives; an edit list that shifts the media is refused as unsupported, not misread.
+#[tokio::test]
+async fn other_muxers_mp4_inputs_are_read_or_refused_explicitly() {
+    let temp = tempfile::tempdir().unwrap();
+    let encode = |name: &str, args: &[&str]| {
+        let path = temp.path().join(name);
+        let mut cmd = Command::new("ffmpeg");
+        cmd.args(["-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i"])
+            .arg("testsrc2=size=160x96:rate=10")
+            .args(args)
+            .args(["-t", "1", "-threads", "1", "-pix_fmt", "yuv420p"]);
+        assert!(
+            cmd.arg(&path)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        );
+        path
+    };
+    let h264 = ["-c:v", "libx264", "-bf", "0", "-g", "10"];
+    let x265 = "pools=1:frame-threads=1:bframes=0:keyint=10:log-level=error";
+    let cases = [
+        (
+            "moov-last.mp4",
+            "camera.mp4",
+            encode("moov-last.mp4", &[&h264[..], &["-f", "mp4"]].concat()),
+        ),
+        (
+            "audio.mp4",
+            "camera.mp4",
+            encode(
+                "audio.mp4",
+                &[
+                    &["-f", "lavfi", "-i", "sine=frequency=440:sample_rate=8000"][..],
+                    &h264,
+                    &["-c:a", "aac", "-shortest", "-movflags", "+faststart"],
+                ]
+                .concat(),
+            ),
+        ),
+        (
+            "hev1.mp4",
+            "fcamera.mp4",
+            encode(
+                "hev1.mp4",
+                &[
+                    "-an",
+                    "-c:v",
+                    "libx265",
+                    "-x265-params",
+                    x265,
+                    "-tag:v",
+                    "hev1",
+                    "-movflags",
+                    "+faststart",
+                ],
+            ),
+        ),
+    ];
+    for (name, kind, path) in cases {
+        let read = media::inspect(&path, kind)
+            .await
+            .unwrap_or_else(|e| panic!("{name}: {e:#}"));
+        let probed = ffprobe(&path);
+        let times = probed["packets"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter(|p| p["codec_type"] == "video")
+            .map(|p| p["pts_time"].as_str().unwrap().parse::<f64>().unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(times.len(), 10, "{name}");
+        media::validate_times(&read.info, &times).unwrap();
+        let output = temp.path().join(format!("unused-{name}"));
+        media::remux(&path, kind, &output, &times).await.unwrap();
+        assert!(!output.exists(), "{name}: an MP4 input is used as it is");
+    }
+    let bframes = encode(
+        "bframes.mp4",
+        &[
+            "-an",
+            "-c:v",
+            "libx264",
+            "-bf",
+            "2",
+            "-g",
+            "10",
+            "-movflags",
+            "+faststart",
+        ],
+    );
+    let error = media::inspect(&bframes, "camera.mp4").await.unwrap_err();
+    assert_eq!(
+        media::failure(&error).class,
+        roadviewer_hars::pure_remux::FailureClass::Unsupported,
+        "{error:#}"
+    );
+}
+
 #[tokio::test]
 async fn inspection_and_mux_hash_match_independent_ffmpeg_extraction() {
     for hevc in [false, true] {

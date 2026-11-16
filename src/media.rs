@@ -214,7 +214,12 @@ pub fn inspect_file(source: &Path, kind: &str) -> anyhow::Result<Inspection> {
     let _profile = crate::profile::Scope::new("native_inspection");
     crate::fault::point("native_inspect");
     let hevc = hevc_kind(kind).context("unsupported inspection kind")?;
-    read_input(source, kind, hevc).context(crate::pure_remux::Stage::Read)
+    read_input(source, kind, hevc)
+        .and_then(|inspection| {
+            validate_info(&inspection.info, kind)?;
+            Ok(inspection)
+        })
+        .context(crate::pure_remux::Stage::Read)
 }
 
 fn read_input(source: &Path, kind: &str, hevc: bool) -> anyhow::Result<Inspection> {

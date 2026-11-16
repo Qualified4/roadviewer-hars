@@ -16,7 +16,7 @@ const MOOV_LIMIT: u64 = 16 * 1024 * 1024;
 const SAMPLE_LIMIT: u64 = 32 * 1024 * 1024;
 const COUNT_LIMIT: usize = 262_144;
 
-/// What the read-back saw besides the FFmpeg-shaped `Inspection`.
+/// What the read-back saw besides the probe-shaped `Inspection`.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Layout {
     pub top_level: Vec<String>,
@@ -440,17 +440,25 @@ pub fn probe(path: &Path) -> anyhow::Result<serde_json::Value> {
 }
 
 /// Reads `path` as the converted camera MP4 of `hevc` or H.264 and returns
-/// the same `Inspection` shape the FFmpeg inspector produces, plus layout.
+/// the same `Inspection` shape the input inspection produces, plus layout.
 pub fn inspect(path: &Path, hevc: bool) -> anyhow::Result<(Inspection, Layout)> {
     read(path, hevc, false)
 }
 
-/// [`inspect`] for FFmpeg's copy: one H.264 sample is one access unit, a field pair included.
+/// [`inspect`] for an MP4 another muxer wrote (an input, or the MP4 an export reads): one H.264
+/// sample is one access unit, a field pair included; `moov` may follow `mdat`, and tracks other
+/// than the one video track are left out.
 pub fn inspect_copy(path: &Path, hevc: bool) -> anyhow::Result<(Inspection, Layout)> {
-    read(path, hevc, !hevc)
+    read(path, hevc, true)
 }
 
-fn read(path: &Path, hevc: bool, fields: bool) -> anyhow::Result<(Inspection, Layout)> {
+fn is_video(trak: &[([u8; 4], &[u8])]) -> anyhow::Result<bool> {
+    let mdia = children(one(trak, b"mdia")?)?;
+    Ok(full(one(&mdia, b"hdlr")?)?.1.get(4..8) == Some(b"vide"))
+}
+
+fn read(path: &Path, hevc: bool, copy: bool) -> anyhow::Result<(Inspection, Layout)> {
+    let fields = copy && !hevc;
     let mut file = File::open(path)?;
     let len = file.metadata()?.len();
     let mut at = 0;
@@ -498,7 +506,7 @@ fn read(path: &Path, hevc: bool, fields: bool) -> anyhow::Result<(Inspection, La
         .zip(mdat)
         .context("missing faststart/decoder configuration")?;
     ensure!(
-        moov_at < data_start,
+        copy || moov_at < data_start,
         "missing faststart/decoder configuration"
     );
     let mut bytes = vec![0u8; usize::try_from(moov_len)?];
@@ -510,9 +518,19 @@ fn read(path: &Path, hevc: bool, fields: bool) -> anyhow::Result<(Inspection, La
     let traks = moov
         .iter()
         .filter(|(k, _)| k == b"trak")
-        .collect::<Vec<_>>();
-    ensure!(traks.len() == 1, "expected one video stream");
-    let trak = children(traks[0].1)?;
+        .map(|(_, body)| children(body))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let mut videos = Vec::new();
+    for trak in &traks {
+        if is_video(trak)? {
+            videos.push(trak);
+        }
+    }
+    ensure!(
+        videos.len() == 1 && (copy || traks.len() == 1),
+        "expected one video stream"
+    );
+    let trak = videos[0];
     let track_duration = tkhd_duration(one(&trak, b"tkhd")?)?;
     let mut edit_list = Vec::new();
     if let Some(edts) = optional(&trak, b"edts")? {
@@ -549,7 +567,10 @@ fn read(path: &Path, hevc: bool, fields: bool) -> anyhow::Result<(Inspection, La
     } else {
         (b"avc1", b"avcC")
     };
-    ensure!(&tag == expected_tag, "camera codec mismatch");
+    // hev1/avc3 may also carry parameter sets inside the samples; another muxer's file may use
+    // them, the engine writes hvc1/avc1 only.
+    let in_band = copy && &tag == if hevc { b"hev1" } else { b"avc3" };
+    ensure!(&tag == expected_tag || in_band, "camera codec mismatch");
     let mut r = Reader::new(entry);
     r.take(24)?;
     let (width, height) = (r.u16()?, r.u16()?);
@@ -611,7 +632,7 @@ fn read(path: &Path, hevc: bool, fields: bool) -> anyhow::Result<(Inspection, La
             let nal = &rest[4..4 + n];
             let kind = pictures.unit(nal)?;
             ensure!(
-                !(hevc && matches!(kind, 32..=34)),
+                in_band || !(hevc && matches!(kind, 32..=34)),
                 "hvc1 parameter sets must be out of band"
             );
             access.add(hevc, kind, nal)?;
@@ -662,7 +683,7 @@ mod tests {
 
     /// An IDR frame coded as two field pictures: both slices start a picture.
     #[test]
-    fn a_field_pair_is_one_sample_only_in_an_ffmpeg_copy() {
+    fn a_field_pair_is_one_sample_only_in_another_muxers_copy() {
         let field: &[u8] = &[0x65, 0x88, 0x84];
         let pair = sample(&[field, field]);
         assert!(pair.check(true, false).is_err());

@@ -14,8 +14,8 @@ use std::{io::Read, path::Path};
 pub const TIMESCALE: u32 = 1_000_000;
 const READ_CHUNK: usize = 1024 * 1024;
 
-/// `sps_max_num_reorder_pics` of the highest sub-layer, which FFmpeg exposes
-/// as `has_b_frames` and the FFmpeg engine requires to be zero.
+/// `sps_max_num_reorder_pics` of the highest sub-layer (a reader's
+/// `has_b_frames`); this engine maps one picture per clock entry, so it must be zero.
 pub fn reorder_pictures(sps: &[u8]) -> anyhow::Result<u32> {
     ensure!(sps.len() > 2, "truncated SPS");
     let mut r = Bits::new(&sps[2..]);

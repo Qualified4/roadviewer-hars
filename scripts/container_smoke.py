@@ -1,7 +1,17 @@
-"""Boot a disposable image; exercise real TLS and HTTP without production volumes."""
+"""Boot a disposable image; exercise real TLS and HTTP without production volumes, and convert,
+thumbnail and export synthetic camera videos inside an image that has no media tool.
+
+The inputs in scripts/smoke/ are synthetic (lavfi testsrc2, 10 frames at 160x96), made once with a
+development FFmpeg:
+    ffmpeg -f lavfi -i testsrc2=size=160x96:rate=10 -t 1 -an -threads 1 -c:v libx264 \
+        -pix_fmt yuv420p -bf 0 -g 10 -f mpegts qcamera.ts
+    ffmpeg -f lavfi -i testsrc2=size=160x96:rate=10 -t 1 -an -threads 1 -c:v libx265 -pix_fmt yuv420p \
+        -x265-params pools=1:frame-threads=1:bframes=0:keyint=10:log-level=error -f hevc fcamera.hevc
+"""
 import json
 import os
 from pathlib import Path
+import shutil
 import ssl
 import subprocess
 import sys
@@ -25,6 +35,9 @@ with tempfile.TemporaryDirectory(prefix="hars-tls-") as temp:
     (root / "options.json").write_text(json.dumps({"max_upload_mb":512,"device_https_enabled":True}))
     (root / "clock.json").write_text(json.dumps([0,.1,.2,.31,.4,.5,.6,.7,.8,.9]))
     (root / "ts-clock.json").write_text(json.dumps([i/10 for i in range(10)]))
+    for fixture in ("qcamera.ts", "fcamera.hevc"):
+        shutil.copy(Path(__file__).resolve().parent / "smoke" / fixture, root / fixture)
+        os.chmod(root / fixture, 0o644)
     # Deterministic readiness regression: config checks remain immediate, while
     # the actual TLS daemon starts after a short scheduling delay.
     wrapper=root/"bin"
@@ -72,24 +85,46 @@ with tempfile.TemporaryDirectory(prefix="hars-tls-") as temp:
         assert request(tls + "/api/device/test")[0] == 200
         assert request(tls + "/api/logs")[0] == 404
         command("docker", "exec", name, "sh", "-c", "test ! -x /usr/bin/python3 && test ! -x /usr/local/bin/python")
-        def remux(source, kind, clock, output):
-            # stdout is the one JSON result; the log on stderr must show the pure engine, not a fallback.
-            done=subprocess.run(["docker","exec",name,"roadviewer-hars","remux",source,kind,clock,output],capture_output=True,text=True,check=True)
+        # No media tool in the runtime: the conversions below run on HARS alone.
+        command("docker", "exec", name, "sh", "-c",
+                "! command -v ffmpeg && ! command -v ffprobe && ! ldconfig -p | grep -E 'lib(av(codec|format|util)|swscale)'")
+        def hars(*args):
+            # stdout is the one JSON result; the log goes to stderr.
+            done=subprocess.run(["docker","exec",name,"roadviewer-hars",*args],capture_output=True,text=True,check=True)
             lines=done.stdout.splitlines()
-            assert len(lines)==1 and json.loads(lines[0])["validated"] is True, done.stdout
+            assert len(lines)==1, done.stdout
             events=[]
             for line in done.stderr.splitlines():
                 try:
                     events.append(json.loads(line).get("fields",{}))
                 except ValueError:
                     pass
+            return json.loads(lines[0]), events
+        def remux(source, kind, clock, output):
+            result, events = hars("remux", source, kind, clock, output)
+            assert result["validated"] is True, result
             engines=[e.get("engine") for e in events if e.get("event")=="remux_engine"]
-            assert engines==["pure"] and not any(e.get("event")=="remux_fallback" for e in events), engines
-        command("docker","exec",name,"ffmpeg","-v","error","-nostdin","-y","-f","lavfi","-i","testsrc2=size=160x96:rate=10","-t","1","-an","-threads","1","-c:v","libx265","-x265-params","pools=1:frame-threads=1:bframes=0:log-level=error","-f","hevc","/tmp/fcamera.hevc",stderr=subprocess.DEVNULL)
-        remux("/tmp/fcamera.hevc","fcamera.hevc","/ssl/clock.json","/tmp/fcamera.mp4")
-        command("docker","exec",name,"ffmpeg","-v","error","-nostdin","-y","-f","lavfi","-i","testsrc2=size=160x96:rate=10","-t","1","-an","-threads","1","-c:v","libx264","-pix_fmt","yuv420p","-bf","0","-g","10","-f","mpegts","/tmp/qcamera.ts",stderr=subprocess.DEVNULL)
-        remux("/tmp/qcamera.ts","qcamera.ts","/ssl/ts-clock.json","/tmp/qcamera.mp4")
-        print("Container boot, trusted TLS, API isolation, Python-free runtime, and pure-engine VFR HEVC and H.264 TS: PASS")
+            assert engines==["pure"] and not any(e.get("event") in ("remux_fallback","remux_failure") for e in events), events
+        def signature(path, kind):
+            return hars("__inspect", path, kind)[0]["signature"]
+        def jpeg(path):
+            head=command("docker","exec",name,"sh","-c",f"head -c 2 {path} | od -An -tx1; stat -c %s {path}").split()
+            assert head[:2]==["ff","d8"] and int(head[2])>100, head
+        cameras = [("/ssl/fcamera.hevc","fcamera.hevc","/ssl/clock.json","/tmp/fcamera.mp4","fcamera.mp4",0),
+                   ("/ssl/qcamera.ts","qcamera.ts","/ssl/ts-clock.json","/tmp/camera.mp4","camera.mp4",1.4)]
+        for source, kind, clock, mp4, mp4_kind, offset in cameras:
+            remux(source, kind, clock, mp4)
+            restored = "/tmp/restored." + kind
+            result, events = hars("reverse", mp4, kind, restored, str(offset))
+            assert result == {"exported": True, "engine": "pure", "reencoded": False}, result
+            assert any(e.get("event")=="reverse_engine" and e.get("engine")=="pure" for e in events), events
+            # The original, its MP4 and the export hold the same compressed pictures and parameter sets.
+            original = signature(source, kind)
+            assert signature(mp4, mp4_kind) == original and signature(restored, kind) == original, kind
+            hars("__thumbnail", mp4, "/tmp/thumbnail-" + kind + ".jpg")
+            jpeg("/tmp/thumbnail-" + kind + ".jpg")
+        print("Container boot, trusted TLS, API isolation, Python- and FFmpeg-free runtime, pure-engine VFR HEVC "
+              "and H.264 TS conversion, original-format export and thumbnails: PASS")
     except Exception:
         if started:
             try:

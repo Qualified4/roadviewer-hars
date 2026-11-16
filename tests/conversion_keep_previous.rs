@@ -189,7 +189,28 @@ impl Server {
             .unwrap_or_default();
         (parse_response(&raw).0, body)
     }
+    /// The server's own view of the record reaches `ready`. `wait_status` reads `meta.json`, which
+    /// the server renames into place (and syncs) before it updates the record it answers from, so
+    /// the file can say `ready` a moment before the API does.
+    async fn ready(&self, id: &str) {
+        let start = Instant::now();
+        loop {
+            let (status, body) = http(self.ui, "GET", "/api/logs", &[], b"").await;
+            let row = body["logs"]
+                .as_array()
+                .and_then(|logs| logs.iter().find(|r| r["id"] == id).cloned());
+            if status == 200 && row.as_ref().is_some_and(|r| r["status"] == "ready") {
+                return;
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "the server did not report ready: {status} {row:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
     async fn plays(&self, id: &str, source: &str, file: &Path) {
+        self.ready(id).await;
         let (status, body) = self.range(id, source).await;
         assert_eq!(status, 206, "{source}");
         assert_eq!(body, std::fs::read(file).unwrap()[..100], "{source}");

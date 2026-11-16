@@ -45,7 +45,7 @@ impl Payload {
             !unit.is_empty() && unit.len() <= NAL_LIMIT,
             "NAL unit exceeds bounded memory limit"
         );
-        // Refused before the bytes are staged, so a large input is handed to FFmpeg early.
+        // Refused before the bytes are staged, so a large input fails early.
         if self.len + 4 + unit.len() as u64 >= self.limit {
             return Err(Unsupported("output beyond 3 GiB").into());
         }

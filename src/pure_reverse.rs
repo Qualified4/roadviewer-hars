@@ -4,7 +4,7 @@
 //! `pure_remux::readback` checks it and states what the export must hold, and `shiguredo_mp4`'s
 //! demuxer feeds the writer. The written file is then read back (`media::NalHasher`, the forward
 //! engine's TS demuxer) and must match the first read. Failures carry the forward engine's
-//! `FailureClass`; `media` decides from it whether the FFmpeg export may try the input.
+//! `FailureClass`, which `media` logs and returns; no other export retries the input.
 mod annexb;
 mod ts;
 
@@ -26,7 +26,7 @@ use std::{
 
 const MOOV_LIMIT: usize = 16 * 1024 * 1024;
 const SAMPLE_LIMIT: usize = 32 * 1024 * 1024;
-/// An export larger than this is left to the FFmpeg export.
+/// An export larger than this is refused as unsupported.
 pub const OUTPUT_LIMIT: u64 = 4 << 30;
 pub const TIMESCALE: u64 = 90_000;
 

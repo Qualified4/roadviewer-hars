@@ -1,6 +1,13 @@
 """Size report of a built HARS image, as JSON on stdout (standard library only).
 
     python3 scripts/image_report.py TAG [--compare OTHER_TAG] [--binary PATH]
+                                        [--require-no-ffmpeg] [--summary FILE]
+
+--require-no-ffmpeg exits 1 (after printing the report) when the image holds an
+`ffmpeg`/`ffprobe`/`ffplay` executable, an FFmpeg shared library
+(libavcodec/format/util/device/filter, libswscale/swresample, libpostproc) or
+package, or when the binary links one. --summary appends a Markdown table of
+the sizes and that check to FILE (a CI job summary).
 
 Reports the uncompressed size (`docker image inspect`), a transfer-like
 compressed size (each layer's uncompressed tar gzip -6, summed), the layer
@@ -167,6 +174,9 @@ def report(tag, binary):
     ldd = in_container(tag, f"ldd {binary} || true").splitlines()
     links = [line.strip().split()[0] for line in ldd if line.strip()]
     files = in_container(tag, "find / -xdev \\( -type f -o -type l \\) 2>/dev/null | grep -v '^/proc' || true").splitlines()
+    # What the dynamic loader would find, whatever directory holds it.
+    loadable = [line.split(" => ")[-1].strip() for line in in_container(tag, "ldconfig -p 2>/dev/null || true").splitlines()
+                if " => " in line]
     ffmpeg_files = sorted(f for f in files if FFMPEG_FILE.search(f))
     size_of = in_container(tag, "for f in $(find / -xdev -type f \\( -name 'ffmpeg' -o -name 'ffprobe' -o -name 'libav*.so*' -o -name 'libsw*.so*' -o -name 'libpostproc*.so*' \\) 2>/dev/null); do stat -c '%s %n' \"$f\"; done").split()
     pkgs = packages(tag)
@@ -186,6 +196,9 @@ def report(tag, binary):
         "binary_dynamic_links": links,
         "binary_ffmpeg_links": [l for l in links if FFMPEG_FILE.search("/" + l)],
         "ffmpeg_files": ffmpeg_files,
+        "ffmpeg_loadable_libraries": sorted(f for f in loadable if FFMPEG_FILE.search(f)),
+        "executables_on_path": sorted(
+            set(in_container(tag, "for c in ffmpeg ffprobe ffplay; do command -v $c; done; exit 0").split())),
         "ffmpeg_file_bytes": sum(int(size_of[i]) for i in range(0, len(size_of), 2)),
         "ffmpeg_packages": sorted(p for p in pkgs if FFMPEG_PACKAGE.search(p)),
         "packages": len(pkgs),
@@ -193,13 +206,40 @@ def report(tag, binary):
     }
 
 
+def ffmpeg_found(out):
+    """Every FFmpeg trace the report found, by kind; empty when there is none."""
+    kinds = ("ffmpeg_files", "ffmpeg_loadable_libraries", "executables_on_path", "ffmpeg_packages",
+             "binary_ffmpeg_links")
+    return {k: out[k] for k in kinds if out[k]}
+
+
+def summary(out, found):
+    mb = lambda n: f"{n / 1e6:.1f} MB"
+    rows = [("Architecture", out["architecture"]),
+            ("Unpacked layers", mb(out["uncompressed_bytes"])),
+            ("Registry layer blobs (gzip)", mb(out["layer_blobs_bytes"])),
+            ("Layers, gzip -6 each", mb(out["compressed_layers_gzip6_bytes"])),
+            ("`docker image inspect` Size", mb(out["docker_inspect_size_bytes"])),
+            ("Packages", str(out["packages"])),
+            ("Binary", f"{mb(out['binary']['bytes'])}, stripped: {out['binary'].get('stripped')}"),
+            ("Binary links", ", ".join(out["binary_dynamic_links"])),
+            ("FFmpeg in the image", "none" if not found else json.dumps(found))]
+    lines = [f"### HARS image `{out['tag']}`", "", "| | |", "|---|---|"]
+    lines += [f"| {k} | {v} |" for k, v in rows]
+    return "\n".join(lines) + "\n"
+
+
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     p.add_argument("tag")
     p.add_argument("--compare", help="an image built without some packages: what TAG has beyond it")
     p.add_argument("--binary", default="/usr/local/bin/roadviewer-hars")
+    p.add_argument("--require-no-ffmpeg", action="store_true")
+    p.add_argument("--summary", help="append a Markdown summary to this file")
     args = p.parse_args()
     out = report(args.tag, args.binary)
+    found = ffmpeg_found(out)
+    out["ffmpeg_found"] = found
     if args.compare:
         other = report(args.compare, args.binary)
         mine, theirs = packages(args.tag), packages(args.compare)
@@ -225,6 +265,12 @@ def main():
         }
     json.dump(out, sys.stdout, indent=1)
     print()
+    if args.summary:
+        with open(args.summary, "a", encoding="utf-8") as f:
+            f.write(summary(out, found))
+    if args.require_no_ffmpeg and found:
+        print("FFmpeg found in the image: " + json.dumps(found), file=sys.stderr)
+        sys.exit(1)
 
 
 if __name__ == "__main__":
