@@ -121,7 +121,17 @@ pub struct Store {
     pub processing: RwLock<Value>,
     /// The archiver bound to this store (upload admission and deletion consult it).
     pub archive: std::sync::RwLock<std::sync::Weak<crate::archive::Archive>>,
-    _instance: std::fs::File,
+    _instance: InstanceLock,
+}
+
+/// The exclusive data-folder lock, released when its store goes rather than when the last copy of its descriptor
+/// closes: a child spawned anywhere in this process holds a copy until its exec, and the flock lives on that shared
+/// open file description, so a store reopened right after a drop would find its own lock still held.
+struct InstanceLock(std::fs::File);
+impl Drop for InstanceLock {
+    fn drop(&mut self) {
+        let _ = fs2::FileExt::unlock(&self.0);
+    }
 }
 
 impl Store {
@@ -142,6 +152,7 @@ impl Store {
         }
         let instance = opts.open(root.join(".hars-instance.lock"))?;
         fs2::FileExt::try_lock_exclusive(&instance)?;
+        let instance = InstanceLock(instance);
         let sweep = root.clone();
         tokio::task::spawn_blocking(move || sweep_temps(&sweep, 2)).await?;
         tokio::fs::create_dir_all(root.join(".uploads")).await?;
