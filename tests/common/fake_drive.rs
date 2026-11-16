@@ -116,6 +116,10 @@ pub struct St {
     pub list_lag: u32,
     /// The line dies for a session once it holds this many bytes: its PUTs answer 503.
     pub cut_after: Option<usize>,
+    /// Full-file downloads left that send half the file and then break the connection.
+    pub cut_media: u32,
+    /// A pause before each 64 KiB of a full-file download (a slow link).
+    pub media_delay: Option<std::time::Duration>,
     pub no_auth: bool,
     pub file_count: u32,
     pub session_count: u32,
@@ -481,7 +485,14 @@ pub async fn handle(
             .unwrap()
             .captures(&range)
         else {
-            return (StatusCode::OK, f.content.clone()).into_response();
+            let cut = st.cut_media > 0;
+            if cut {
+                st.cut_media -= 1;
+            }
+            if !cut && st.media_delay.is_none() {
+                return (StatusCode::OK, f.content.clone()).into_response();
+            }
+            return media_stream(f.content.clone(), cut, st.media_delay);
         };
         let len = f.content.len();
         let start: usize = caps[1].parse().unwrap();
@@ -615,6 +626,33 @@ pub async fn handle(
         }
     }
     reply(404, Some(error_body(&path, 404, Some("notFound"))), &[])
+}
+
+/// A full-file answer streamed in pieces: slowed by , or broken off halfway () after promising the
+/// whole length, as a dropped connection looks to the client.
+fn media_stream(content: Vec<u8>, cut: bool, delay: Option<std::time::Duration>) -> Response {
+    let len = content.len();
+    let stop = if cut { len / 2 } else { len };
+    let pieces: Vec<Bytes> = content[..stop]
+        .chunks(64 << 10)
+        .map(Bytes::copy_from_slice)
+        .collect();
+    let stream =
+        futures_util::stream::unfold((pieces.into_iter(), cut), move |(mut it, cut)| async move {
+            if let Some(d) = delay {
+                tokio::time::sleep(d).await;
+            }
+            match it.next() {
+                Some(b) => Some((Ok::<_, std::io::Error>(b), (it, cut))),
+                None if cut => Some((Err(std::io::Error::other("cut")), (it, false))),
+                None => None,
+            }
+        });
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-length", len.to_string())
+        .body(axum::body::Body::from_stream(stream))
+        .unwrap()
 }
 
 pub async fn start_fake() -> Shared {

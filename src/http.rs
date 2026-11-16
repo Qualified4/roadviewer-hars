@@ -42,6 +42,7 @@ pub struct App {
     pub jobs: Arc<crate::jobs::Jobs>,
     pub archive: Arc<crate::archive::Archive>,
     pub network: Arc<crate::network::Network>,
+    pub legacy: Arc<crate::legacy_archive::Legacy>,
     transfer_slots: Arc<tokio::sync::Semaphore>,
     pub slot_wait: std::time::Duration,
     pub body_idle: std::time::Duration,
@@ -58,6 +59,8 @@ impl App {
         crate::storage::open(&store).await?;
         crate::transfer::cleanup_staging(&store.root)?;
         crate::media_read::cleanup_staging(&store.root)?;
+        crate::legacy_archive::cleanup_staging(&store.root)?;
+        let legacy = Arc::new(crate::legacy_archive::Legacy::open(&store.root).await?);
         let auth = Arc::new(Auth::open(&store.root).await?);
         let uploads =
             Uploads::open(store.clone(), auth.clone(), max_upload_mb * 1024 * 1024).await?;
@@ -88,6 +91,7 @@ impl App {
             jobs,
             archive,
             network: Arc::new(crate::network::Network::from_env()),
+            legacy,
             transfer_slots: Arc::new(tokio::sync::Semaphore::new(8)),
             slot_wait: std::time::Duration::from_secs(30),
             body_idle: std::time::Duration::from_secs(30),
@@ -198,6 +202,22 @@ pub fn ingress(app: App) -> Router {
             post(http_archive::gdrive_disconnect),
         )
         .route("/api/logs/{id}/archive/retry", post(http_archive::retry))
+        .route(
+            "/api/settings/archive/legacy/scan",
+            post(crate::legacy_archive::scan),
+        )
+        .route(
+            "/api/settings/archive/legacy/import",
+            post(crate::legacy_archive::import),
+        )
+        .route(
+            "/api/settings/archive/legacy/status",
+            get(crate::legacy_archive::status),
+        )
+        .route(
+            "/api/settings/archive/legacy/cancel",
+            post(crate::legacy_archive::cancel),
+        )
         .route("/api/settings/devices", get(devices))
         .route(
             "/api/settings/devices/pairing",
