@@ -229,14 +229,9 @@ list's `thumbnail`, `thumbnail_score`, `thumbnail_version` fields were equal to 
   cases and the corpus are the evidence. A panic is caught (`catch_unwind`) and the worker's
   address-space limit and deadline bound the rest.
 - B-frame H.264 with edit lists or more than 16 reordered pictures is not covered by any test.
-- `tests/conversion_keep_previous.rs`
-  `a_resource_failure_keeps_the_published_result_and_a_later_conversion_completes` is
-  intermittent: it failed in 2 of 4 runs (`409` instead of `206` on a range request for the front
-  video right after the record is ready) and passed in the other 2, including the last full
-  `cargo test --locked --all-targets --no-fail-fast` (35 test binaries, 289 passed, 0 failed).
-  Whether it is intermittent on `d846fc6` as well, or made more likely by the slower thumbnail,
-  is not established.
-- `media::thumbnail` still calls `validate_upload` (`ffprobe`) before the worker; step 3 replaces
-  it, after which the thumbnail path runs without any FFmpeg program or library.
-- The production image still installs the FFmpeg runtime (step 3), so the image is not smaller
-  yet; this step adds 1,471,392 bytes to the stripped binary and drops its `libswscale.so.7` link.
+- The intermittent `409` of `tests/conversion_keep_previous.rs` noted here was a race in that
+  test, present on `d846fc6` too (2 of 20 runs there); step 3 found and fixed it
+  ([FFMPEG-REMOVAL.md](FFMPEG-REMOVAL.md#불안정-테스트-2건)).
+- Since step 3, `media::thumbnail`'s check before the worker is the pure Rust upload check, and
+  the image holds no FFmpeg program or library ([FFMPEG-REMOVAL.md](FFMPEG-REMOVAL.md)). This
+  step added 1,471,392 bytes to the stripped binary and dropped its `libswscale.so.7` link.

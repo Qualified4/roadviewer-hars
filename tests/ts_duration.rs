@@ -393,8 +393,7 @@ async fn python_terminal_estimate_reproduces_library_rate_probe() {
         .as_array()
         .unwrap()
         .iter()
-        .filter(|p| p["size"].as_str().is_none_or(|s| s != "0"))
-        .last()
+        .rfind(|p| p["size"].as_str().is_none_or(|s| s != "0"))
         .map(|p| p["duration"].as_i64().unwrap())
         .unwrap();
     assert_eq!(python_last, terminal);

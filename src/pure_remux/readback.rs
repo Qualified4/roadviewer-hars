@@ -531,9 +531,9 @@ fn read(path: &Path, hevc: bool, copy: bool) -> anyhow::Result<(Inspection, Layo
         "expected one video stream"
     );
     let trak = videos[0];
-    let track_duration = tkhd_duration(one(&trak, b"tkhd")?)?;
+    let track_duration = tkhd_duration(one(trak, b"tkhd")?)?;
     let mut edit_list = Vec::new();
-    if let Some(edts) = optional(&trak, b"edts")? {
+    if let Some(edts) = optional(trak, b"edts")? {
         let (version, body) = full(one(&children(edts)?, b"elst")?)?;
         let mut r = Reader::new(body);
         for _ in 0..counted(r.u32()?)? {
@@ -546,7 +546,7 @@ fn read(path: &Path, hevc: bool, copy: bool) -> anyhow::Result<(Inspection, Layo
             edit_list.push(entry);
         }
     }
-    let mdia = children(one(&trak, b"mdia")?)?;
+    let mdia = children(one(trak, b"mdia")?)?;
     let (timescale, media_duration) = header_clock(one(&mdia, b"mdhd")?)?;
     ensure!(
         timescale > 0 && movie_timescale > 0,

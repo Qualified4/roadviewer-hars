@@ -19,8 +19,8 @@ read only. Scenarios (all by default):
                waits for active uploads, all ready; then four reconversions at
                concurrency 4; process-tree peak RSS and concurrent workers
   bframe       a B-frame qcamera.ts (re-encoded from the corpus, synthetic):
-               explicit fallback to FFmpeg, ready, Range playback
-  ffmpeg       a server with HARS_REMUX_ENGINE=ffmpeg: the same upload flow
+               refused as unsupported (no other engine since 2.0.0-alpha.4): ready
+               with a warning and without that camera, the original kept
 
 Prints and writes one JSON report (counts and states only, no paths, clocks or
 coordinates). usage:
@@ -473,19 +473,6 @@ def scenario_bframe(ctx):
     return out
 
 
-def scenario_ffmpeg(ctx):
-    s = ctx.server(env={"HARS_REMUX_ENGINE": "ffmpeg"})
-    s.request("/api/settings/processing", "POST", {"auto_convert": True, "concurrency": 1, "keep_original_video": True})
-    record = upload(s, segment_files(ctx.corpus, ctx.segments[0]))
-    row, states = s.wait(record, ("ready", "error"))
-    out = {"states": states, "status": row["status"], "engines": engines(s.events(record)),
-           "other_events": [e for e in s.events(record) if e["event"] != "remux_engine"]}
-    for camera in ("qcamera", "front"):
-        out[camera] = playback(s, record, camera)
-    s.stop()
-    return out
-
-
 class Context:
     def __init__(self, args):
         self.corpus, self.binary, self.out, self.ports, self.segments = args.corpus, args.binary, args.output, args.ports, args.segments
@@ -510,7 +497,7 @@ class Context:
         self.started, self.keep = [], None
 
 
-SCENARIOS = ["play", "cancel", "kill_worker", "kill_convert", "restart", "fsize", "memory", "concurrent", "bframe", "ffmpeg"]
+SCENARIOS = ["play", "cancel", "kill_worker", "kill_convert", "restart", "fsize", "memory", "concurrent", "bframe"]
 
 
 def main():

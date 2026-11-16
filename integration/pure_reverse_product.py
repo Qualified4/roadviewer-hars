@@ -9,9 +9,8 @@ uploaded TS/HEVC, every `/api/logs/<id>/original/<kind>` is the export. Checked:
 response, Range requests (start, middle, suffix) against the whole, the ZIP download
 (`/api/logs/download.zip?format=original`) against the whole, which engine wrote each
 (`reverse_engine` events), and the export against the uploaded original
-(`pure_reverse_audit.describe`). The same data folder is then served with
-HARS_REMUX_ENGINE=ffmpeg and its exports compared with the pure ones. The report holds labels,
-counts and booleans only.
+(`pure_reverse_audit.describe`). (Before 2.0.0-alpha.4 the same data folder was also served
+with the FFmpeg engine; that engine is gone.) The report holds labels, counts and booleans only.
 """
 import argparse
 import hashlib
@@ -115,26 +114,6 @@ def main():
     finally:
         server.stop()
     server.log.rename(args.out / "server-pure.log")
-    server = product.Server(args.binary, args.out, args.ports, env={"HARS_REMUX_ENGINE": "ffmpeg"})
-    try:
-        for (segment, record, _), entry in zip(records, report["records"]):
-            for kind in CAMERAS:
-                _, _, whole = server.request(f"/api/logs/{record}/original/{kind}", raw=True, full=True)
-                path = scratch / f"{record[:8]}-ffmpeg-{kind}"
-                path.write_bytes(whole)
-                hevc = kind.endswith(".hevc")
-                theirs = audit.describe(path, hevc)
-                mine = pure[(record, kind)][1]
-                entry[kind]["vs_ffmpeg_engine"] = {
-                    "bytes": audit.difference(mine, theirs, hevc),
-                    "normalized_nal_equal": mine["normalized_nal_sha256"] == theirs["normalized_nal_sha256"],
-                    "frames_equal": mine["frames"] == theirs["frames"],
-                    "keyframes_equal": mine["keyframes"] == theirs["keyframes"],
-                    "parameter_sets_equal": mine["parameter_sets"] == theirs["parameter_sets"],
-                    "clocks_equal": None if hevc else mine["clocks"] == theirs["clocks"]}
-        report["ffmpeg_server_events"] = events(server)
-    finally:
-        server.stop()
     for f in scratch.iterdir():
         f.unlink()
     (args.out / "report.json").write_text(json.dumps(report, indent=1) + "\n")
