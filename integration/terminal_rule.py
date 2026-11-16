@@ -130,18 +130,23 @@ def model(rlog, sources, schema):
     return out
 
 
-def _check(errors, label, value, expected):
+def _check(errors, passed, label, value, expected):
+    """Records a mismatch, or `label` as checked; only checked fields are aligned."""
     if not isinstance(value, (int, float)) or abs(value - expected) > EXACT:
         errors[label] = {"value": value, "expected": expected}
+    else:
+        passed.add(label)
 
 
 def reconcile(files, known, drive_summary):
     """Check each side against its own model, then align the derived fields.
 
     `files` maps a file name to (python, hars) parsed JSON; `known` comes from
-    `model`. Returns ({field: {"python", "hars"}}, {field: mismatch}).
+    `model`. A (file, field) is set equal only when both sides passed their
+    check there; any other difference stays for the full comparison. Returns
+    ({field: {"python", "hars"}}, {field: mismatch}).
     """
-    applied, errors = {}, {}
+    applied, errors, passed = {}, {}, set()
     if not known:return applied, errors
     ends = {}
     for name in ("data.json.gz", "summary.json"):
@@ -150,33 +155,34 @@ def reconcile(files, known, drive_summary):
             videos = doc.get("videos") or {}
             for camera, values in known.items():
                 if camera in videos:
-                    _check(errors, f"{name}.videos.{camera}.duration:{side}", videos[camera]["duration"], values[side])
+                    _check(errors, passed, f"{name}.videos.{camera}.duration:{side}", videos[camera]["duration"], values[side])
                     applied[f"videos.{camera}.duration"] = {k: values[k] for k in ("python", "hars", "basis")}
             default = doc.get("video")
             if isinstance(default, dict):
                 camera = next((c for c, v in videos.items() if v == default), None)
                 if camera in known:
-                    _check(errors, f"{name}.video.duration:{side}", default["duration"], known[camera][side])
+                    _check(errors, passed, f"{name}.video.duration:{side}", default["duration"], known[camera][side])
             if name == "data.json.gz":
                 ends[side] = max([doc["logEnd"]] + [v["start"] + v["duration"] for v in videos.values()])
-                _check(errors, f"{name}.duration:{side}", doc["duration"], ends[side])
+                _check(errors, passed, f"{name}.duration:{side}", doc["duration"], ends[side])
             elif side in ends:
-                _check(errors, f"{name}.duration:{side}", doc["duration"], ends[side])
+                _check(errors, passed, f"{name}.duration:{side}", doc["duration"], ends[side])
     if "telemetry.json.gz" in files:
         for side, doc in zip(("python", "hars"), files["telemetry.json.gz"]):
-            if side in ends:_check(errors, f"telemetry.json.gz.duration:{side}", doc["duration"], ends[side])
+            if side in ends:_check(errors, passed, f"telemetry.json.gz.duration:{side}", doc["duration"], ends[side])
         if "summary.json" in files:
             for side, telemetry, summary in zip(("python", "hars"), files["telemetry.json.gz"], files["summary.json"]):
                 if summary.get("drive_summary") != drive_summary(telemetry):
                     errors[f"summary.json.drive_summary:{side}"] = {"value": summary.get("drive_summary"), "expected": drive_summary(telemetry)}
     if ends:applied["duration"] = dict(ends)
+    both = lambda label: f"{label}:python" in passed and f"{label}:hars" in passed
     for name, (python, hars) in files.items():
         for camera in known:
-            if camera in (python.get("videos") or {}) and camera in (hars.get("videos") or {}):
+            if both(f"{name}.videos.{camera}.duration"):
                 hars["videos"][camera]["duration"] = python["videos"][camera]["duration"]
-        if isinstance(python.get("video"), dict) and isinstance(hars.get("video"), dict):
+        if both(f"{name}.video.duration"):
             hars["video"]["duration"] = python["video"]["duration"]
-        if ends and "duration" in python and "duration" in hars:
+        if both(f"{name}.duration"):
             hars["duration"] = python["duration"]
         drive = name == "summary.json" and "drive_summary" in python and "drive_summary" in hars
         if drive and not any(k.startswith("summary.json.drive_summary") for k in errors):
