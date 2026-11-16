@@ -169,7 +169,7 @@ CI는 기존 `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS re
 
 ### 최종 커밋 검증
 
-코드 기준 `3e2338d`(PR #14, 이후 커밋은 문서만 변경)의 release 실행 파일로 캐시된 Python 기준 결과와 비교했다. 영상 길이 필드는 [TERMINAL-DURATION.md](TERMINAL-DURATION.md)의 방식대로 양쪽 값을 각각 계산해 대조하고, 나머지 필드는 1e-6 절대오차다.
+PR #15까지 병합한 `main`(`2a8474f`)을 포함한 통합 브랜치의 release 실행 파일로 캐시된 Python 기준 결과와 비교했다. 그 전 단계(`d849d10`, `3e2338d`)에서도 같은 결과였다. 영상 길이 필드는 [TERMINAL-DURATION.md](TERMINAL-DURATION.md)의 방식대로 양쪽 값을 각각 계산해 대조하고, 나머지 필드는 1e-6 절대오차다.
 
 | 코퍼스 | 구간 | 동등 | 모델 프레임 |
 |---|---:|---:|---:|
@@ -177,7 +177,7 @@ CI는 기존 `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS re
 | 기존 14구간 | 14 | 14 | 16,350 |
 | 기존 47구간 | 47 | 47 | 56,399 |
 
-기존 61구간·72,749프레임이 유지된다. PR #13 최종 커밋에서 전체 테스트 271개가 3회 연속 통과했고, 컨테이너 검사와 `integration/pipeline_contract.py`가 통과했다.
+기존 61구간·72,749프레임이 유지된다. PR #15 최종 커밋에서 전체 테스트 283개가 3회 연속 통과했고 `integration/pipeline_contract.py`가 통과했다. 컨테이너 검사는 CI의 amd64·aarch64에서 통과했다.
 
 ### 미검증 요약
 
