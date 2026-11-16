@@ -42,6 +42,7 @@ pub struct App {
     pub jobs: Arc<crate::jobs::Jobs>,
     pub archive: Arc<crate::archive::Archive>,
     pub network: Arc<crate::network::Network>,
+    pub legacy: Arc<crate::legacy_archive::Legacy>,
     transfer_slots: Arc<tokio::sync::Semaphore>,
     pub slot_wait: std::time::Duration,
     pub body_idle: std::time::Duration,
@@ -58,6 +59,8 @@ impl App {
         crate::storage::open(&store).await?;
         crate::transfer::cleanup_staging(&store.root)?;
         crate::media_read::cleanup_staging(&store.root)?;
+        crate::legacy_archive::cleanup_staging(&store.root)?;
+        let legacy = Arc::new(crate::legacy_archive::Legacy::open(&store.root).await?);
         let auth = Arc::new(Auth::open(&store.root).await?);
         let uploads =
             Uploads::open(store.clone(), auth.clone(), max_upload_mb * 1024 * 1024).await?;
@@ -88,6 +91,7 @@ impl App {
             jobs,
             archive,
             network: Arc::new(crate::network::Network::from_env()),
+            legacy,
             transfer_slots: Arc::new(tokio::sync::Semaphore::new(8)),
             slot_wait: std::time::Duration::from_secs(30),
             body_idle: std::time::Duration::from_secs(30),
@@ -198,6 +202,22 @@ pub fn ingress(app: App) -> Router {
             post(http_archive::gdrive_disconnect),
         )
         .route("/api/logs/{id}/archive/retry", post(http_archive::retry))
+        .route(
+            "/api/settings/archive/legacy/scan",
+            post(crate::legacy_archive::scan),
+        )
+        .route(
+            "/api/settings/archive/legacy/import",
+            post(crate::legacy_archive::import),
+        )
+        .route(
+            "/api/settings/archive/legacy/status",
+            get(crate::legacy_archive::status),
+        )
+        .route(
+            "/api/settings/archive/legacy/cancel",
+            post(crate::legacy_archive::cancel),
+        )
         .route("/api/settings/devices", get(devices))
         .route(
             "/api/settings/devices/pairing",
@@ -1252,60 +1272,51 @@ async fn original(
             Err(e) => return Ok(e.into_response()),
             Ok(Some(Source::Path(path))) => path,
             Ok(Some(Source::Remote(file))) => {
-                match crate::media_read::stage_remote(&app.archive, &folder, &file).await {
-                    Ok(path) => {
-                        staged = Some(path.clone());
-                        path
-                    }
+                match crate::media_read::stage(&app.archive, &folder, &file).await {
+                    Ok(copy) => staged.insert(copy).path().to_owned(),
                     Err(e) => return Ok(e.into_response()),
                 }
             }
             Ok(None) => folder.join("prepared").join(mp4),
         };
-        let exported = async {
-            media_file_check(&folder, &retained).await?;
-            let exports = app.store.root.join(".exports");
-            tokio::fs::create_dir_all(&exports).await?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                tokio::fs::set_permissions(&exports, std::fs::Permissions::from_mode(0o700))
-                    .await?;
-            }
-            let output = exports.join(format!(
-                "{}.{}",
-                crate::store::id(),
-                if kind == "qcamera.ts" { "ts" } else { "hevc" }
-            ));
-            let meta = app.store.meta(&id).await?;
-            let offset = meta["video_origins"][source].as_f64().unwrap_or(0.);
-            crate::media::reverse(&retained, &kind, &output, offset)
+        media_file_check(&folder, &retained).await?;
+        let exports = app.store.root.join(".exports");
+        tokio::fs::create_dir_all(&exports).await?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&exports, std::fs::Permissions::from_mode(0o700)).await?;
+        }
+        let output = exports.join(format!(
+            "{}.{}",
+            crate::store::id(),
+            if kind == "qcamera.ts" { "ts" } else { "hevc" }
+        ));
+        let meta = app.store.meta(&id).await?;
+        let offset = meta["video_origins"][source].as_f64().unwrap_or(0.);
+        let output =
+            crate::media_read::export_original(retained, staged, kind.clone(), output, offset)
                 .await
                 .map_err(|_| bad("media_export_failed"))?;
-            let response = serve(output.clone(), request)
-                .await
-                .map(|response| attachment(response, &meta, &kind));
-            // ServeFile has already opened its file. Linux keeps it readable after unlink.
-            let _ = tokio::fs::remove_file(&output).await;
-            response
-        }
-        .await;
-        if let Some(path) = &staged {
-            crate::media_read::unstage(path).await;
-        }
-        return exported;
+        let response = serve(output.path().to_owned(), request)
+            .await
+            .map(|response| attachment(response, &meta, &kind));
+        // ServeFile has already opened its file. Linux keeps it readable after unlink.
+        output.remove().await;
+        return response;
     }
     media_file_check(&folder, &path).await?;
     Ok(attachment(serve(path, request).await?, &meta, &kind))
 }
 /// A file a media route serves: inside the recording folder it must stay there (no link out); elsewhere it is a
-/// path the archive index resolved on the share.
+/// path the archive index resolved on the share, which must be a regular file there and not a link.
 async fn media_file_check(folder: &std::path::Path, path: &std::path::Path) -> Result<()> {
     if path.starts_with(folder) {
         return safe_file(folder, path).await;
     }
-    match tokio::fs::metadata(path).await {
-        Ok(m) if m.is_file() => Ok(()),
+    let share_path = path.to_owned();
+    match tokio::task::spawn_blocking(move || crate::archive::nas::share_meta(&share_path)).await {
+        Ok(Ok(m)) if m.is_file() => Ok(()),
         _ => Err(missing("not_found")),
     }
 }

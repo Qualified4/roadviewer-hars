@@ -106,6 +106,9 @@ pub async fn delete_log(
     // Every upload finish waits on the registration lock, so the conversion is stopped outside it
     // and the recording is judged again once it is held.
     stop_conversion(&app, &id).await?;
+    // The archiver holds a record's lock while it confirms the share copy (up to PROBE_WAIT_SECONDS): that wait is
+    // taken here, not under the registration lock that every upload finish and settings save needs too.
+    drop(app.store.record_lock(&id).await.lock_owned().await);
     let registration = app.store.registration.lock().await;
     if let Some(skipped) = refusal(&app, &id, skip_pinned).await? {
         return Ok(skipped);

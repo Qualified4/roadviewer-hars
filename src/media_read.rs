@@ -135,6 +135,62 @@ pub async fn media_path(
         .ok_or_else(MediaError::not_found)
 }
 
+/// A staged copy or an export, removed when this is dropped. A request whose client goes away is dropped at its next
+/// await, and what it staged or exported must go with it instead of filling the data root until a restart (Python's
+/// `except BaseException: unstage(dest)`); the removal itself runs on a blocking thread, so it is not cut short.
+#[derive(Debug)]
+pub struct Temporary {
+    path: Option<PathBuf>,
+    staged: bool,
+}
+impl Temporary {
+    pub fn file(path: PathBuf) -> Self {
+        Self {
+            path: Some(path),
+            staged: false,
+        }
+    }
+    pub fn path(&self) -> &Path {
+        self.path.as_deref().unwrap_or(Path::new(""))
+    }
+    /// The path, for a caller that removes it itself.
+    pub fn keep(mut self) -> PathBuf {
+        self.path.take().unwrap_or_default()
+    }
+    /// Removed now, the removal awaited.
+    pub async fn remove(mut self) {
+        if let Some(path) = self.path.take() {
+            let staged = self.staged;
+            let _ = tokio::task::spawn_blocking(move || remove_temporary(&path, staged)).await;
+        }
+    }
+}
+impl Drop for Temporary {
+    fn drop(&mut self) {
+        let Some(path) = self.path.take() else {
+            return;
+        };
+        let staged = self.staged;
+        match tokio::runtime::Handle::try_current() {
+            Ok(runtime) => {
+                runtime.spawn_blocking(move || remove_temporary(&path, staged));
+            }
+            Err(_) => remove_temporary(&path, staged),
+        }
+    }
+}
+fn remove_temporary(path: &Path, staged: bool) {
+    if !staged {
+        let _ = std::fs::remove_file(path);
+    } else if let Some(dir) = path.parent() {
+        // `.staging` itself only once empty: other requests' copies stay.
+        let _ = std::fs::remove_dir_all(dir);
+        if let Some(staging) = dir.parent() {
+            let _ = std::fs::remove_dir(staging);
+        }
+    }
+}
+
 /// Python `stage_remote`: a hash-verified local copy of a remote-only file under `<folder>/.staging`, for where a
 /// path is needed (original-format export, the converter's inputs). The caller removes it with [`unstage`].
 pub async fn stage_remote(
@@ -142,6 +198,15 @@ pub async fn stage_remote(
     folder: &Path,
     file: &RemoteFile,
 ) -> Result<PathBuf, MediaError> {
+    stage(archive, folder, file).await.map(Temporary::keep)
+}
+
+/// [`stage_remote`], removed when the result (or this future, mid-download) is dropped.
+pub async fn stage(
+    archive: &Archive,
+    folder: &Path,
+    file: &RemoteFile,
+) -> Result<Temporary, MediaError> {
     let free = fs2::available_space(&archive.root)
         .map_err(|_| MediaError::new("storage_unavailable", false))?;
     if free < file.size + STAGING_MARGIN {
@@ -151,29 +216,53 @@ pub async fn stage_remote(
         .join(STAGING)
         .join(uuid::Uuid::new_v4().simple().to_string())
         .join(&file.kind);
-    tokio::fs::create_dir_all(dest.parent().unwrap())
+    let staged = Temporary {
+        path: Some(dest.clone()),
+        staged: true,
+    };
+    if tokio::fs::create_dir_all(dest.parent().unwrap())
         .await
-        .map_err(|_| MediaError::new("storage_unavailable", false))?;
+        .is_err()
+    {
+        staged.remove().await;
+        return Err(MediaError::new("storage_unavailable", false));
+    }
     let backend = archive.backend();
     let sha = file.reference.sha256.clone();
     if let Err(e) = backend
         .download_to(&file.reference, &dest, sha.as_deref())
         .await
     {
-        unstage(&dest).await;
+        staged.remove().await;
         return Err(MediaError::from_backend(&e));
     }
-    Ok(dest)
+    Ok(staged)
 }
 
 /// Python `unstage`: the staged copy's folder, and `.staging` once nothing else uses it.
 pub async fn unstage(path: &Path) {
-    if let Some(dir) = path.parent() {
-        let _ = tokio::fs::remove_dir_all(dir).await;
-        if let Some(staging) = dir.parent() {
-            let _ = tokio::fs::remove_dir(staging).await;
+    let path = path.to_owned();
+    let _ = tokio::task::spawn_blocking(move || remove_temporary(&path, true)).await;
+}
+
+/// Python's original-format export (`media.reverse`) of `input` into `output`, run as a task of its own: a request
+/// dropped meanwhile leaves the task to finish, and the task then drops the staged input and the output it made.
+pub async fn export_original(
+    input: PathBuf,
+    staged: Option<Temporary>,
+    kind: String,
+    output: PathBuf,
+    offset: f64,
+) -> anyhow::Result<Temporary> {
+    tokio::spawn(async move {
+        let out = Temporary::file(output);
+        let made = crate::media::reverse(&input, &kind, out.path(), offset).await;
+        if let Some(staged) = staged {
+            staged.remove().await;
         }
-    }
+        made.map(|()| out)
+    })
+    .await?
 }
 
 /// A remote file (or one range of it) as a response body, one chunk at a time. Python `remote_chunks`: the request is
@@ -392,7 +481,13 @@ pub async fn remote_response(
     hs.insert(h::ACCEPT_RANGES, HeaderValue::from_static("bytes"));
     // Playback has no Content-Length (Content-Range carries the size): Ingress buffers a response it knows is small.
     if attachment.is_some() || range.is_none() {
-        hs.insert(h::CONTENT_LENGTH, HeaderValue::from(end + 1 - start));
+        // An empty file has no last byte: Python's end - start + 1 is 0 there.
+        let length = if range.is_some() {
+            end + 1 - start
+        } else {
+            size
+        };
+        hs.insert(h::CONTENT_LENGTH, HeaderValue::from(length));
     }
     if range.is_some() {
         hs.insert(

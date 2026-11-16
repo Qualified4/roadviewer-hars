@@ -10,6 +10,7 @@ pub mod http;
 pub mod http_archive;
 pub mod http_storage;
 pub mod jobs;
+pub mod legacy_archive;
 pub mod listing;
 pub mod logs;
 pub mod media;

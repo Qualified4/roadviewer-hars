@@ -4,8 +4,18 @@ use roadviewer_hars::{
 };
 use std::{net::SocketAddr, path::PathBuf};
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
+/// How long blocking work still running when the server stops may take. A share copy whose cycle is dropped stops at
+/// its next block and removes its part well within it; a call stuck on a hung mount must not hold the exit.
+const SHUTDOWN_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
+
+fn main() -> anyhow::Result<()> {
+    let runtime = tokio::runtime::Runtime::new()?;
+    let result = runtime.block_on(run());
+    runtime.shutdown_timeout(SHUTDOWN_LIMIT);
+    result
+}
+
+async fn run() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
         .json()
         .with_env_filter(
@@ -194,6 +204,15 @@ async fn main() -> anyhow::Result<()> {
         (16..=2048).contains(&max_upload_mb),
         "invalid upload size option"
     );
+    if args.get(1).is_some_and(|v| v == "legacy-archive") {
+        let app = App::open(root, web, true, max_upload_mb)
+            .await
+            .map_err(|e| {
+                e.context("the data folder is in use by a running server or cannot be opened")
+            })?;
+        let code = roadviewer_hars::legacy_archive::cli(app, &args[2..]).await?;
+        std::process::exit(code);
+    }
     let mut app = App::open(root, web, ingress_only, max_upload_mb).await?;
     app.device_https_enabled = ha_mode && options.device_https_enabled;
     if ha_mode {
@@ -248,7 +267,8 @@ async fn main() -> anyhow::Result<()> {
             std::future::pending::<anyhow::Result<()>>().await
         }
     };
-    // The archiver stops after the file it is on once serving ends, instead of being cut off mid-copy.
+    // Once serving ends the archiver starts no new cycle. The cycle in progress is not waited for: it is dropped with
+    // the runtime, which cancels its share copy (the part is removed) and gives blocking work SHUTDOWN_LIMIT.
     let ui = async {
         let result = ui.await;
         archive.shutdown();

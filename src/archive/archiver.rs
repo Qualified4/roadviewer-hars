@@ -397,6 +397,25 @@ impl Archive {
             .clone()
     }
 
+    /// A Drive client on this data root's grant (`.gdrive-auth.json`) whatever the write backend is, for reading a
+    /// Python folder. With Drive active its client (and token refresh) is shared; nothing is activated.
+    pub fn drive_reader(&self) -> Option<super::DriveClient> {
+        if let WriteBackend::Drive(d) = &*self.backend() {
+            return Some(d.client().clone());
+        }
+        let mut s = self.settings();
+        s.backend = settings::Backend::Gdrive;
+        let factory = self
+            .factory
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        match factory(&s, &self.root) {
+            WriteBackend::Drive(d) => Some(d.client().clone()),
+            WriteBackend::Nas(_) => None,
+        }
+    }
+
     /// The device-flow sign-in of the active Drive backend (None for the NAS), made on first use.
     pub fn connection(&self) -> Option<Arc<DriveConnection>> {
         let mut a = self
@@ -937,18 +956,16 @@ pub(crate) fn stat(path: &Path) -> std::io::Result<(u64, u64)> {
     Ok((m.len(), mtime))
 }
 
-/// A share path's metadata, read off the runtime's workers: a hung mount holds a blocking thread, not a worker.
+/// A share path's own metadata (a link is not followed), read off the runtime's workers: a hung mount holds a
+/// blocking thread, not a worker.
 pub(crate) async fn share_stat(path: &Path) -> std::io::Result<std::fs::Metadata> {
     let path = path.to_owned();
-    tokio::task::spawn_blocking(move || std::fs::metadata(path))
+    tokio::task::spawn_blocking(move || super::nas::share_meta(&path))
         .await
         .unwrap_or_else(|_| Err(std::io::Error::other("join")))
 }
 pub(crate) async fn share_remove(path: &Path) -> std::io::Result<()> {
-    let path = path.to_owned();
-    tokio::task::spawn_blocking(move || super::nas::remove_target(&path))
-        .await
-        .unwrap_or_else(|_| Err(std::io::Error::other("join")))
+    super::nas::remove_share_file(path).await
 }
 
 pub(crate) fn is_file(path: &Path) -> bool {

@@ -226,6 +226,12 @@ macro_rules! impl_read {
 impl_read!(WriteBackend);
 impl_read!(LegacyBackend);
 
+impl LegacyBackend {
+    pub async fn list_media(&self) -> Result<Vec<LegacyFile>> {
+        dispatch!(self, b => b.list_media().await)
+    }
+}
+
 impl ArchiveWrite for WriteBackend {
     async fn activate(&self) {
         dispatch!(self, b => b.activate().await)
