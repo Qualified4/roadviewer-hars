@@ -33,21 +33,23 @@
 
 ## 실패 분류와 대체 정책
 
-순서: `media`가 입력을 검사하고(TS는 FFmpeg 패킷 검사가 두 엔진 공통의 원본 검사다) 마지막 sample 길이를 한 번 정한 뒤 순수 엔진을 실행한다. 순수 엔진의 실패는 타입(`pure_remux::FailureClass`)으로만 분류한다. 오류 문자열은 판정에 쓰지 않는다. 분류 순서: `Unsupported` 원인 → OS 자원 오류(`io::Error`의 errno) → 오류가 난 단계(`Stage`: 입력 읽기 `invalid`, 쓰기 `internal`, 다시 읽기 `verification`). worker 프로세스의 종료 방식(`media::worker_failure`)도 같은 분류로 바꾼다.
+순서: `media`가 입력을 검사하고(TS는 FFmpeg 패킷 검사가 두 엔진 공통의 원본 검사다) 마지막 sample 길이를 한 번 정한 뒤 순수 엔진을 실행한다. 순수 엔진의 실패는 타입(`pure_remux::FailureClass`)으로만 분류한다. 오류 문자열은 판정에 쓰지 않는다. 분류 순서: `Unsupported` 원인 → OS 자원 오류(`io::Error`의 errno) → 오류가 난 단계(`Stage`: 입력 읽기 `invalid`, 쓰기 `internal`, 다시 읽기 `verification`). worker 프로세스의 종료 방식도 같은 분류로 바꾼다(`media::failure`). 기계 때문에 실패한 media worker는 종료 코드 75로 끝난다(`media::RESOURCE_EXIT`; FFmpeg 엔진의 쓰기 errno ENOSPC·EFBIG·EDQUOT·ENOMEM·EIO 포함, `native_video::resource_error`). 그래서 FFmpeg 사본의 디스크 부족도 `resource`다. 변환(`convert.rs`)도 문자열이 아니라 이 `Failure` 값으로 판정한다.
 
 | 분류 | 예 | 대체 | 로그 이벤트(수준) | 최종 상태 |
 |---|---|---|---|---|
-| `unsupported` | B-frame TS, interlaced, scaling matrix, HEVC 시각이 0에서 시작하지 않음, HEVC parameter set 중간 변경, 한 PES에 여러 picture, 스크램블 표시 | FFmpeg 1회 | `remux_fallback`(INFO) | FFmpeg 출력이 같은 검사를 통과하면 게시, 아니면 해당 영상 없음 |
+| `unsupported` | B-frame TS, interlaced, scaling matrix, HEVC 시각이 0에서 시작하지 않음, HEVC parameter set 중간 변경, 한 PES에 여러 picture, 스크램블 표시, 출력 3 GiB 이상(payload를 쓰는 중 그 NAL에서 판정), 여유 공간이 입력×2 + 100 MiB 미만(`low_space`, 순수 엔진을 실행하지 않음) | FFmpeg 1회 | `remux_fallback`(INFO) | FFmpeg 출력이 같은 검사를 통과하면 게시, 아니면 해당 영상 없음 |
 | `invalid` | parameter set의 forbidden bit, parameter set 없음, NAL 32 MiB 초과, 첫 그림 전 parameter set 64개/1 MiB 초과, 프레임 수 불일치, 시작 코드 없는 PES 앞부분, TS 연속성 오류·transport error·PTS 없는 PES, 잘린 TS 패킷 | FFmpeg 1회, 같은 입력 검사·한도로 | `remux_fallback`(WARN) | [손상 입력 사례](#손상-입력-사례) |
 | `internal` | 쓰기 단계 오류, panic(worker 종료 코드 101), worker 신호 종료(SIGSEGV 등), worker 응답 해석 실패 | FFmpeg 1회(독립 검사 통과 시만 게시) | `remux_fallback`(ERROR) | 게시 또는 해당 영상 없음 |
 | `verification` | 순수 출력이 판독 검사(서명, 시각, 레이아웃, sync 표시, sample 경계)와 불일치 | FFmpeg 1회(같은 검사) | `remux_fallback`(ERROR) | 게시 또는 해당 영상 없음 |
-| `resource` | ENOSPC, EFBIG(`RLIMIT_FSIZE`), EDQUOT, ENOMEM, 기타 OS I/O 오류, 180초 시간 상한, worker SIGKILL(OOM killer·종료), SIGABRT(메모리 상한에서 할당 실패) | **없음** | `remux_failure`(WARN) | 해당 영상 없음, 부분 출력 삭제 |
+| `resource` | ENOSPC, EFBIG(`RLIMIT_FSIZE`), EDQUOT, ENOMEM, 기타 OS I/O 오류(TS 읽기의 EIO 포함), 180초 시간 상한, worker SIGKILL(OOM killer·종료), SIGABRT(메모리 상한에서 할당 실패), worker 종료 코드 75 | **없음** | `remux_failure`(WARN) | 게시된 결과가 그 카메라를 재생하면 변환 전체 실패(`error`), 이전 결과 유지. 아니면 해당 영상 없음 + 경고. 부분 출력 삭제 |
 
-- "해당 영상 없음"은 Python `prepare_video` 실패와 같다: 그 카메라 MP4 없이 기록은 `ready`, `warnings`에 `<카메라> 영상 준비 실패: …`. 원본은 남는다(원본 보존 끔이어도 `jobs`는 MP4를 만든 카메라의 원본만 지운다). 다시 변환하려면 사용자가 변환 결과를 지우고 다시 변환한다(Python과 같음). 시험: `tests/conversion_resource.rs`.
+- "해당 영상 없음"은 Python `prepare_video` 실패와 같다: 그 카메라 MP4 없이 기록은 `ready`, `warnings`에 `<카메라> 영상 준비 실패: …`. `resource`면 경고가 `… 영상 준비 실패: resource (<reason_code>): <이유>`로 분류를 드러낸다. 원본은 남는다(원본 보존 끔이어도 `jobs`는 MP4를 만든 카메라의 원본만 지운다). 다시 변환하려면 사용자가 변환 결과를 지우고 다시 변환한다(Python과 같음). 시험: `tests/conversion_resource.rs`, `tests/conversion_keep_previous.rs`.
+- 이전 결과 보호: `resource` 실패는 같은 디스크·메모리·시간이 다음 시도에서는 풀릴 수 있다. 그래서 게시된 결과가 그 카메라 영상을 가졌으면(기록 메타 `videos.<카메라>`가 있거나 `prepared/<mp4>`가 있으면) 그 카메라 없이 `ready`로 바꾸지 않고 변환 전체를 실패로 끝낸다. 변환 프로세스가 `conversion_kept_previous`(ERROR, `kind`·`failure_class`·`reason_code`·`reason`)를 남기고 실패하고, `jobs`의 기존 실패 규칙대로 상태 `error`, 오류 `conversion failed; original data preserved`, staging 삭제. `prepared/`, 저장된 MP4(원본 보존 끔), 원본, 메타의 결과 필드는 바뀌지 않는다. 사용자가 다시 변환하면(Python처럼 그때 `clear_prepared`) 정상 결과가 된다. 입력·엔진 실패(`unsupported`·`invalid`·`internal`·`verification`)에는 적용하지 않는다: 같은 입력이면 다시 해도 같은 결과라 기록이 영영 `ready`가 되지 못하고, 원본(또는 그 카메라의 유일한 MP4 원본)은 어느 경우에도 지워지지 않는다. 이것이 Python과 다른 점이다(Python은 카메라 실패를 원인과 무관하게 경고로 넘긴다). 취소는 실패가 아니라 기존 취소 규칙(`unconverted`)으로 끝나고 이전 결과는 그대로다.
 - 이벤트 필드: `event`, `engine`(`pure`), `kind`(카메라 종류), `failure_class`, `reason_code`(집계용 고정 코드), `reason`(300자 이내 오류 사슬), `fallback`(bool), `fallback_result`(`published`/`failed`), `fallback_reason`. raw HEVC 앞부분의 NAL 아닌 바이트는 `remux_input_prefix`(WARN, `bytes`)로 남긴다. 서버는 변환 자식 프로세스의 이 이벤트를 레코드 id(`record`)와 같은 수준으로 다시 기록한다(`media::relay_remux_event`). 조회는 서버 로그(구조화 JSON)만 쓴다. 기록 메타나 API 응답에는 넣지 않았다: 공개 스키마가 Python과 같아야 하고, 엔진 진단은 운영자용이기 때문이다.
-- 한 변환에서 대체는 최대 1회다(`remux_inner`에 재시도 루프가 없다). 실패한 변환은 기존 변환 큐 규칙대로 끝나고 자동으로 다시 돌지 않는다.
+- 대체는 카메라 파일 하나당 최대 1회다(`remux_inner`에 재시도 루프가 없다). 한 기록에는 카메라 파일이 셋까지라 기록당 최대 3회다. 실패한 변환은 기존 변환 큐 규칙대로 끝나고 자동으로 다시 돌지 않는다.
 - FFmpeg 대체 출력도 순수 출력과 같은 검사를 받는다: raw HEVC는 libavformat 파서와 무관한 `NalHasher` 원본 서명(`media::raw_signature`, 같은 NAL·parameter set 한도)이 FFmpeg 패킷 서명·출력 서명과 같아야 하고, 출력은 FFmpeg inspect와 `pure_remux::readback` 두 판독기로 읽는다(sync 표시, sample당 그림 1개, 서명, 마지막 sample 길이). 공통 검사는 `verify_and_place`다.
 - 부분 출력: 엔진의 sample payload는 출력 폴더의 이름 없는 임시 파일(`O_TMPFILE`, `tempfile::tempfile_in`)이라 어떤 종료에도 남지 않는다. 출력 임시 파일과 job/clock JSON은 drop 가드(`media::Scratch`)가 실패·취소·시간 초과 때 지운다. 변환이 실패·취소되면 `jobs`가 프로세스 그룹을 종료한 뒤 그 세대의 staging 폴더를 지운다(아직 게시 전이므로 안전). 서버가 변환 중에 죽어 남은 staging 폴더는 다음 시작 때 지운다(`Jobs::open`; 저널에 없는 세대만. 저널에 있는 세대는 기존대로 `publish`가 처리하고, 취소된 완료 세대는 staging을 남긴다). 게시는 원자적 rename이라 기존 결과는 새 결과가 검사를 통과하기 전에는 바뀌지 않는다.
+- 내구성: 두 엔진의 MP4는 rename 전에 `sync_all`하고, rename 뒤 그 폴더도 sync한다(`media::durable_rename`). 원본 보존 끔에서 `publish`는 MP4를 기록 폴더로 옮긴 뒤 기록 폴더와 `prepared/`를 sync하고 나서야 원본을 지운다. 그 사이에 서버가 죽으면 원본이 남고, 재시작의 저널 복구가 이미 옮긴 MP4를 알아보고 원본 삭제까지 마친다(`retention_off_deletes_an_original_only_after_its_mp4_is_durable`; 이전에는 복구가 옮긴 MP4를 못 보고 원본을 남겼다). 정전 자체는 모의하지 못했다(순서만 시험).
 - 고아 worker: 모든 media worker와 변환 프로세스는 `PR_SET_PDEATHSIG(SIGKILL)`로 시작한다(`media::die_with_parent`). 부모가 SIGKILL로 죽어도 worker가 끝나며, 시험(`killed_conversion_process_takes_its_worker_and_a_retry_completes`)은 이 설정을 빼면 실패한다.
 
 `times[0] ≠ 0`: 제품 경로에서는 일어나지 않는다. `convert.rs`가 raw HEVC 시각을 첫 프레임 기준으로, TS 시각을 최소 PTS 기준으로 만들기 때문이다. CLI 등에서 들어오면 순수 엔진이 거부하고 FFmpeg 엔진이 edit list로 처리한다(기존 동작).
@@ -79,7 +81,7 @@ TS 잘림 규칙(`native_video::truncated_video_payload`): 파일 길이가 188�
 ## 메모리 구조와 상한
 
 - worker가 메모리에 두는 것: sample 표(프레임당 크기·길이·키프레임, 측정 기울기 약 1.8 KB/프레임), parameter set(첫 그림 전 64개/1 MiB 한도), NAL 분할 버퍼와 해시 버퍼(각 NAL 32 MiB 한도). sample payload는 메모리에 모으지 않는다: 첫 읽기에서 출력 폴더의 이름 없는 임시 파일(`O_TMPFILE`)에 쓰고, moov를 쓴 뒤 `copy_file_range`로 mdat 자리에 옮긴다. 그래서 입력 바이트 수가 아니라 프레임 수와 가장 큰 NAL이 메모리를 정한다.
-- 상한: worker는 job을 읽은 뒤 주소 공간을 현재 크기 + 256 MiB로 묶는다(`RLIMIT_AS`, `pure_remux::MEMORY_BUDGET_MIB`; 시험용 `HARS_PURE_WORKER_MEMORY_MB`). 넘으면 할당 실패로 SIGABRT → `resource`/`out_of_memory`, 대체 없음. 실제 실행 파일 경로에서 확인했다(아래 [제품 경로 검증](#제품-경로-검증)의 memory).
+- 상한: worker는 job을 읽은 뒤 주소 공간을 현재 크기 + 256 MiB로 묶는다(`RLIMIT_AS`, `pure_remux::MEMORY_BUDGET_MIB`; 시험용 `HARS_PURE_WORKER_MEMORY_MB`는 debug 빌드에서만 읽는다. 제품에서 줄일 이유가 없고, 너무 작은 값은 모든 영상을 `resource`로 실패시킨다). 넘으면 할당 실패로 SIGABRT → `resource`/`out_of_memory`, 대체 없음. 실제 실행 파일 경로에서 확인했다(아래 [제품 경로 검증](#제품-경로-검증)의 memory).
 - 동시 실행: 한 프로세스의 media worker는 2개까지(`media::WORKERS`). 서버는 변환 설정(1~4)만큼 변환 프로세스를 띄우고, 각 변환은 카메라를 차례로 처리하므로 순수 worker는 변환당 1개다. 측정: 동시 2변환에서 순수 worker 최대 2개, 동시 4변환에서 4개.
 
 측정(합성 raw HEVC 1280×720, 실제 실행 파일 `remux` CLI, 외부 상한 `systemd-run --scope -p MemoryMax=2G -p MemorySwapMax=0`, 각 1회). "최고 RSS"는 `wait4`로 읽은 가장 큰 단일 프로세스(CLI 또는 worker)의 정확한 값이다. 측정 스크립트가 입력을 메모리에 들고 있으면 exec 전 공유 페이지가 자식 값에 잡히므로(처음 측정에서 적대적 입력이 약 292 MiB로 잘못 나옴) 입력은 디스크로만 흘려 쓴다(`integration/pure_remux_memory.py`).
@@ -105,6 +107,7 @@ TS 잘림 규칙(`native_video::truncated_video_payload`): 파일 길이가 188�
 - 공통: 코덱·해상도, 프레임 수와 로그 시각 ±2 ms, 정규화 VCL SHA + decoder header set이 입력과 같음, TS는 패킷별 PTS/DTS가 입력 PES 시각 − 최소 PTS와 정확히 같음, 마지막 sample 길이가 정한 값과 같음, time base(TS 1/90000, HEVC 1/1000000), moov가 mdat 앞, avcC/hvcC 존재.
 - 마지막 sample 길이: composition offset이 없으면(순수 출력, B-frame 없는 FFmpeg 사본) libavformat stream duration − (마지막 DTS − 첫 DTS). B-frame FFmpeg 사본은 libavformat이 edit list를 따른 stream duration을 보고하므로 이 식이 맞지 않는다(카메라 시각이 흔들리면 첫·마지막 composition offset이 다르다). 그 사본은 독립 판독기가 읽은 stts의 마지막 값으로 확인한다. 이전에는 이 식을 모든 출력에 적용해 실주행형 B-frame TS의 대체가 늘 실패했다(`b_frame_ts_falls_back_to_ffmpeg`가 흔들리는 시각과 기록된 다음 프레임으로 이것을 재현한다).
 - 순수 엔진 추가: top-level이 정확히 `ftyp, moov, mdat`(패딩 없음), mdhd duration = stts 합(이 엔진은 composition offset을 쓰지 않는다. FFmpeg의 B-frame 사본에는 적용하지 않는다).
+- sample 경계: 순수 출력은 sample당 그림 1개. FFmpeg 사본(`readback::inspect_copy`)은 H.264에 한해 필드 두 개(PAFF, 한 액세스 유닛)를 한 sample로 허용한다. 순수 엔진은 interlaced를 `unsupported`로 넘기므로 PAFF는 FFmpeg 사본만 받는다. 규칙 단위 시험만 있고, 실제 PAFF 파일은 만들 도구가 없어(x264는 MBAFF만 부호화) 미검증이다.
 - 판독기는 시험에서 FFmpeg inspect·ffprobe와 같은 값을 내는지 교차 확인한다(`tests/media.rs`의 필드 비교, `tests/pure_remux.rs`).
 
 ## 컨테이너 차이 처리
@@ -157,7 +160,12 @@ TS 잘림 규칙(`native_video::truncated_video_payload`): 파일 길이가 188�
 | `HARS_REMUX_ENGINE=ffmpeg` 서버 | 같은 흐름 `ready`, 두 카메라 `remux_engine` ffmpeg, Range 206 |
 | 실제 UI(`/view/<id>/`, headless Edge, 매번 새 임시 프로필) | 순수 기록 2회, B-frame 대체 기록 1회 모두 9/9: 메타데이터, 카메라 전환(front ↔ qcamera), 재생, 일시정지, 중간·말미 시킹(readyState 4), 오버레이 캔버스 그려짐, 지도(track 요청, 지도 요소), 차량 그래프(telemetry 요청, 그래프 6개) |
 
-UI 검사는 iframe 안의 실제 페이지를 사용자처럼 조작한다(버튼 클릭, seek 막대 입력). 단독 `<video>` 재생 검사([브라우저 재생](#브라우저-재생))와 별개다. 자동화하지 않은 것: 영상 화질의 눈 확인, 오버레이 그림이 영상과 맞는지의 눈 확인, 지도 타일(외부 네트워크) 로드, 터치·키보드 단축키. 실제 tmpfs 디스크 부족은 `sudo` 권한이 없어 미검증이다(`RLIMIT_FSIZE`로 EFBIG를 대신 확인).
+UI 검사는 iframe 안의 실제 페이지를 사용자처럼 조작한다(버튼 클릭, seek 막대 입력). 단독 `<video>` 재생 검사([브라우저 재생](#브라우저-재생))와 별개다. 자동화하지 않은 것: 영상 화질의 눈 확인, 오버레이 그림이 영상과 맞는지의 눈 확인, 지도 타일(외부 네트워크) 로드, 터치·키보드 단축키. 실제 디스크 부족(ENOSPC)은 user namespace 안의 작은 tmpfs로 확인했다(`integration/low_space_tmpfs.sh`, root 불필요, 합성 raw HEVC 10,126,246바이트, release `remux` CLI). 서버 전체 흐름의 ENOSPC는 `RLIMIT_FSIZE`의 EFBIG와 여유 공간 주입(`HARS_AVAILABLE_SPACE_BYTES`, debug 전용)으로 확인했다.
+
+| tmpfs 크기 | `3834c10` | 이번 수정 |
+|---|---|---|
+| 입력 × 1.5 | 순수 엔진 `resource`/`no_space`, 대체 없음, 실패(종료 1) | `remux_fallback` `unsupported`/`low_space` → FFmpeg `published`, 출력 10,127,301바이트, 남은 임시 파일 0 |
+| 입력 × 0.5 | (측정 안 함) | `low_space` → FFmpeg도 ENOSPC, FFmpeg worker 종료 코드 75(`resource`), 남은 파일 0 |
 
 ## 브라우저 재생
 
@@ -214,6 +222,28 @@ UI 검사는 iframe 안의 실제 페이지를 사용자처럼 조작한다(버�
 
 FFmpeg 엔진(대체 경로): 같은 실행 3구간 HEVC 합 최종 2.834초, `2d0b87d` 2.980초, `0ed74af` 2.283초. 이번 작업의 parameter set 직접 제거는 `filter_units`보다 조금 빠르고, `0ed74af` 대비 증가는 그 뒤에 넣은 FFmpeg 사본의 독립 판독 검사(출력 재읽기·서명) 몫이다. 검사는 유지한다.
 
+(e) MP4 fsync·여유 공간 판정(이번 수정)의 비용. 같은 기계, release 빌드, 구현별 warmup 1회 + 교차 5회, 측정 직전 load average 1.2~1.8(writeback 단계 시작 직후 5.1, 빌드 직후). 출력 바이트는 바뀌지 않았다: 13구간 26영상 MP4가 `3834c10` 빌드와 바이트가 같고, replay JSON은 Python과 13/13 동등하다. 숫자 집계: 같은 JSON의 `e_durability_and_low_space`.
+
+| HEVC 13영상 리먹싱(영상별 중앙값의 합, 괄호는 회차 합 범위) | 경과(초) | CPU(초) |
+|---|---|---|
+| 1차: `3834c10` | 4.795 (4.706–5.002) | 2.398 |
+| 1차: fsync(`460a046`) | 5.268 (5.114–5.410) | 2.634 |
+| 1차: FFmpeg 엔진(`460a046`) | 11.920 (11.919–12.235) | 5.872 |
+| 2차: `3834c10` | 5.007 (4.864–5.289) | 2.446 |
+| 2차: fsync(`460a046`) | 5.444 (5.406–5.545) | 2.575 |
+| 2차: fsync + 먼저 writeback 시작(최종 `76db648`) | **5.253** (5.102–5.460) | 2.517 |
+
+fsync만 넣으면 HEVC 리먹싱이 약 9 % 느려졌다(영상당 약 35 ms, MP4 약 37 MB를 ext4에 쓰고 기다리는 시간). MP4를 다 쓴 직후 `sync_file_range(SYNC_FILE_RANGE_WRITE)`로 쓰기를 먼저 시작해 판독 검사와 겹치게 하자 `3834c10` 대비 +4.9 %(영상당 약 19 ms)로 줄었다. 내구성 보장(rename 전 `sync_all`, 폴더 sync)은 그대로다. 순수 엔진은 여전히 FFmpeg 엔진의 절반 이하 시간이다. 여유 공간 판정은 `statvfs` 한 번이라 측정에서 따로 보이지 않는다.
+
+| 전체 변환 3·7·9번 합(구간별 중앙값의 합) | 경과(초) | CPU(초) |
+|---|---|---|
+| Python | 13.510 | 11.572 |
+| FFmpeg 엔진(`460a046`) | 11.521 | 9.018 |
+| 순수 fsync(`460a046`) | 9.848 | 8.142 |
+| 순수 `3834c10` | 9.667 | 8.070 |
+
+전체 변환은 fsync로 경과 +1.9 %, CPU +0.9 %이고 회차 범위 안이다(로그 분석이 대부분). 모든 결과는 Python 출력과 비교해 통과했다.
+
 무엇이 수치를 제한하는가:
 
 - 순수 HEVC: drvfs 입력 읽기와 SHA-256 두 번(입력 `NalHasher`, 출력 판독)이다.
@@ -240,7 +270,7 @@ FFmpeg 엔진(대체 경로): 같은 실행 3구간 HEVC 합 최종 2.834초, `2
 
 ```sh
 cargo test --test pure_remux --test terminal_duration --test ts_duration --test pure_remux_faults \
-  --test archive_pure_remux --test conversion_resource
+  --test archive_pure_remux --test conversion_resource --test conversion_keep_previous
 python integration/real_conversion_compare.py CORPUS BINARY ORACLE OUT --limit 13
 python integration/pure_remux_audit.py CORPUS OUT ORACLE
 python integration/pipeline_contract.py BINARY

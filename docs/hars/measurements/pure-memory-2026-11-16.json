@@ -860,5 +860,265 @@
   "full_conversion": "log decode (zstd), telemetry and log analysis CPU; the remux engine is about a tenth of it",
   "concurrent": "CPU-bound per conversion on 16 logical CPUs; peak RSS is about 360 MB per conversion process (log analysis)",
   "ffmpeg_engine_vs_0ed74af": "the independent read-back of the FFmpeg copy added before this work; removing parameter sets without filter_units made it slightly faster"
+ },
+ "e_durability_and_low_space": {
+  "note": "same machine as above; release builds; interleaved warmup 1 + 5 rounds (rotated and reversed order) per phase",
+  "builds": {
+   "before": "3834c10",
+   "pure_fsync": "460a046 (MP4 fsync + directory sync + low-space check)",
+   "pure_writeback": "76db648 (pure_fsync + writeback started before the read-back)",
+   "ffmpeg": "460a046 with HARS_REMUX_ENGINE=ffmpeg"
+  },
+  "remux_hevc_13_run1": {
+   "variants": {
+    "before": {
+     "elapsed_sum_of_video_medians_seconds": 4.7951,
+     "cpu_sum_of_video_medians_seconds": 2.3976,
+     "elapsed_sum_per_round_seconds": {
+      "median": 4.7837,
+      "min": 4.7056,
+      "max": 5.0017,
+      "n": 5
+     },
+     "mean_rss_tree_kib_median": 59044,
+     "peak_rss_tree_kib_max": 72684
+    },
+    "pure_fsync": {
+     "elapsed_sum_of_video_medians_seconds": 5.2676,
+     "cpu_sum_of_video_medians_seconds": 2.6339,
+     "elapsed_sum_per_round_seconds": {
+      "median": 5.3265,
+      "min": 5.1144,
+      "max": 5.4098,
+      "n": 5
+     },
+     "mean_rss_tree_kib_median": 59242,
+     "peak_rss_tree_kib_max": 72252
+    },
+    "ffmpeg": {
+     "elapsed_sum_of_video_medians_seconds": 11.9202,
+     "cpu_sum_of_video_medians_seconds": 5.8724,
+     "elapsed_sum_per_round_seconds": {
+      "median": 11.9857,
+      "min": 11.9193,
+      "max": 12.2354,
+      "n": 5
+     },
+     "mean_rss_tree_kib_median": 69792,
+     "peak_rss_tree_kib_max": 99740
+    },
+    "python": {
+     "elapsed_sum_of_video_medians_seconds": 7.548,
+     "cpu_sum_of_video_medians_seconds": 4.1156,
+     "elapsed_sum_per_round_seconds": {
+      "median": 7.5591,
+      "min": 7.481,
+      "max": 7.7288,
+      "n": 5
+     },
+     "mean_rss_tree_kib_median": 44205,
+     "peak_rss_tree_kib_max": 51064
+    }
+   },
+   "samples": 260,
+   "all_verified": true
+  },
+  "remux_hevc_13_run2": {
+   "variants": {
+    "before": {
+     "elapsed_sum_of_video_medians_seconds": 5.0067,
+     "cpu_sum_of_video_medians_seconds": 2.4464,
+     "elapsed_sum_per_round_seconds": {
+      "median": 5.0735,
+      "min": 4.8641,
+      "max": 5.2888,
+      "n": 5
+     },
+     "mean_rss_tree_kib_median": 59091,
+     "peak_rss_tree_kib_max": 71428
+    },
+    "pure_fsync": {
+     "elapsed_sum_of_video_medians_seconds": 5.444,
+     "cpu_sum_of_video_medians_seconds": 2.5748,
+     "elapsed_sum_per_round_seconds": {
+      "median": 5.4661,
+      "min": 5.4058,
+      "max": 5.545,
+      "n": 5
+     },
+     "mean_rss_tree_kib_median": 58394,
+     "peak_rss_tree_kib_max": 71800
+    },
+    "pure_writeback": {
+     "elapsed_sum_of_video_medians_seconds": 5.2528,
+     "cpu_sum_of_video_medians_seconds": 2.5174,
+     "elapsed_sum_per_round_seconds": {
+      "median": 5.2545,
+      "min": 5.1019,
+      "max": 5.4599,
+      "n": 5
+     },
+     "mean_rss_tree_kib_median": 58601,
+     "peak_rss_tree_kib_max": 72168
+    },
+    "python": {
+     "elapsed_sum_of_video_medians_seconds": 7.8818,
+     "cpu_sum_of_video_medians_seconds": 4.2828,
+     "elapsed_sum_per_round_seconds": {
+      "median": 8.003,
+      "min": 7.8605,
+      "max": 8.2482,
+      "n": 5
+     },
+     "mean_rss_tree_kib_median": 44292,
+     "peak_rss_tree_kib_max": 51160
+    }
+   },
+   "samples": 260,
+   "all_verified": true
+  },
+  "full_conversion_pure_fsync": {
+   "builds": "before = 3834c10, pure and ffmpeg = 460a046",
+   "segments": {
+    "3": {
+     "python": {
+      "runs": 5,
+      "elapsed_seconds": {
+       "median": 4.4149,
+       "min": 4.3399,
+       "max": 4.7486
+      },
+      "cpu_seconds_median": 3.7744,
+      "equivalent_to_python": true
+     },
+     "ffmpeg": {
+      "runs": 5,
+      "elapsed_seconds": {
+       "median": 3.8592,
+       "min": 3.6916,
+       "max": 3.9141
+      },
+      "cpu_seconds_median": 3.0129,
+      "equivalent_to_python": true
+     },
+     "pure": {
+      "runs": 5,
+      "elapsed_seconds": {
+       "median": 3.2491,
+       "min": 3.1783,
+       "max": 3.4012
+      },
+      "cpu_seconds_median": 2.6944,
+      "equivalent_to_python": true
+     },
+     "before": {
+      "runs": 5,
+      "elapsed_seconds": {
+       "median": 3.1745,
+       "min": 3.1469,
+       "max": 3.2629
+      },
+      "cpu_seconds_median": 2.6505,
+      "equivalent_to_python": true
+     }
+    },
+    "7": {
+     "python": {
+      "runs": 5,
+      "elapsed_seconds": {
+       "median": 4.6858,
+       "min": 4.4634,
+       "max": 4.8973
+      },
+      "cpu_seconds_median": 4.0207,
+      "equivalent_to_python": true
+     },
+     "ffmpeg": {
+      "runs": 5,
+      "elapsed_seconds": {
+       "median": 3.8679,
+       "min": 3.7821,
+       "max": 4.0449
+      },
+      "cpu_seconds_median": 3.0482,
+      "equivalent_to_python": true
+     },
+     "pure": {
+      "runs": 5,
+      "elapsed_seconds": {
+       "median": 3.306,
+       "min": 3.1944,
+       "max": 4.1791
+      },
+      "cpu_seconds_median": 2.7607,
+      "equivalent_to_python": true
+     },
+     "before": {
+      "runs": 5,
+      "elapsed_seconds": {
+       "median": 3.3515,
+       "min": 3.26,
+       "max": 3.5681
+      },
+      "cpu_seconds_median": 2.792,
+      "equivalent_to_python": true
+     }
+    },
+    "9": {
+     "python": {
+      "runs": 5,
+      "elapsed_seconds": {
+       "median": 4.4091,
+       "min": 4.3943,
+       "max": 4.6174
+      },
+      "cpu_seconds_median": 3.7774,
+      "equivalent_to_python": true
+     },
+     "ffmpeg": {
+      "runs": 5,
+      "elapsed_seconds": {
+       "median": 3.794,
+       "min": 3.6954,
+       "max": 3.846
+      },
+      "cpu_seconds_median": 2.9573,
+      "equivalent_to_python": true
+     },
+     "pure": {
+      "runs": 5,
+      "elapsed_seconds": {
+       "median": 3.2932,
+       "min": 3.2384,
+       "max": 3.3565
+      },
+      "cpu_seconds_median": 2.6871,
+      "equivalent_to_python": true
+     },
+     "before": {
+      "runs": 5,
+      "elapsed_seconds": {
+       "median": 3.1408,
+       "min": 3.0931,
+       "max": 3.2806
+      },
+      "cpu_seconds_median": 2.6277,
+      "equivalent_to_python": true
+     }
+    }
+   }
+  },
+  "output_bytes": "26 camera MP4s of the 13 segments identical between 3834c10 and the final build; replay JSON 13/13 without differences against Python",
+  "low_space_tmpfs": {
+   "input_bytes": 10126246,
+   "tmpfs_1_5x": {
+    "3834c10": "pure resource/no_space, no fallback, failed",
+    "final": "unsupported/low_space -> ffmpeg published, 10127301 bytes, nothing left"
+   },
+   "tmpfs_0_5x": {
+    "final": "low_space -> ffmpeg ENOSPC, worker exit 75 (resource), nothing left"
+   }
+  },
+  "limits": "the remaining remux cost is the fsync of each MP4 (about 37 MB per video) to ext4; the full conversion is dominated by log decoding and analysis"
  }
 }
