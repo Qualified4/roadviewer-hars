@@ -261,27 +261,7 @@ fn first_picture_size(data: &[u8]) -> anyhow::Result<(u16, u16)> {
         }
         Ok(())
     })?;
-    let sets = sets.configuration();
-    let pick = |k: u8| {
-        sets.iter()
-            .filter(|(kind, _)| *kind == k)
-            .map(|(_, v)| v.clone())
-            .collect::<Vec<_>>()
-    };
-    let (sps, pps) = (pick(7), pick(8));
-    ensure!(
-        !sps.is_empty() && !pps.is_empty(),
-        "missing pictures or decoder configuration"
-    );
-    let entry = build_avc1_box(
-        &sps,
-        &pps,
-        &H264SampleEntryConfig {
-            length_size: LengthSize::FourBytes,
-        },
-    )
-    .map_err(|e| anyhow::anyhow!("invalid H.264 decoder configuration: {e}"))?;
-    Ok((entry.visual.width, entry.visual.height))
+    super::annexb::picture_size(false, &sets.configuration())
 }
 
 fn stream_info(width: u16, height: u16) -> serde_json::Value {

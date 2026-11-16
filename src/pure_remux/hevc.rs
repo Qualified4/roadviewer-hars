@@ -212,31 +212,9 @@ pub fn probe(source: &Path) -> anyhow::Result<serde_json::Value> {
         scanner.finish(&mut on)?;
     }
     ensure!(picture.get(), "missing pictures or decoder configuration");
-    let sets = sets.configuration();
-    let pick = |k: u8| {
-        sets.iter()
-            .filter(|(kind, _)| *kind == k)
-            .map(|(_, v)| v.clone())
-            .collect::<Vec<_>>()
-    };
-    let (vps, sps, pps) = (pick(32), pick(33), pick(34));
-    ensure!(
-        !vps.is_empty() && !sps.is_empty() && !pps.is_empty(),
-        "missing pictures or decoder configuration"
-    );
-    let entry = build_hvc1_box(
-        &vps,
-        &sps,
-        &pps,
-        &H265SampleEntryConfig {
-            length_size: LengthSize::FourBytes,
-            avg_frame_rate: H265SampleEntryConfig::AVG_FRAME_RATE_UNSPECIFIED,
-            constant_frame_rate: H265ConstantFrameRate::Unknown,
-        },
-    )
-    .map_err(|e| anyhow::anyhow!("invalid HEVC decoder configuration: {e}"))?;
+    let (width, height) = super::annexb::picture_size(true, &sets.configuration())?;
     Ok(
-        serde_json::json!({"streams":[{"codec_type":"video","codec_name":"hevc","width":entry.visual.width,"height":entry.visual.height}]}),
+        serde_json::json!({"streams":[{"codec_type":"video","codec_name":"hevc","width":width,"height":height}]}),
     )
 }
 

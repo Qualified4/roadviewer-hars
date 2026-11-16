@@ -2,7 +2,8 @@
 //! tree and sample tables itself, without `shiguredo_mp4` (which wrote them)
 //! or the writer's Annex B splitting, and hashes the samples with
 //! `media::NalHasher`, the splitter that also hashed the input. Shared with
-//! the writer: only `mp4::check_dimensions` (the same size rule both apply).
+//! the writer: only `mp4::check_dimensions` (the same size rule both apply)
+//! and `annexb::picture_size` (the size the SPS states, which a decoder uses).
 use crate::media::{Inspection, NalHasher};
 use anyhow::{Context, bail, ensure};
 use serde_json::json;
@@ -151,6 +152,55 @@ fn sets_avcc(payload: &[u8]) -> anyhow::Result<(u8, Vec<Vec<u8>>)> {
         sets.push(r.take(n)?.to_vec());
     }
     Ok((length, sets))
+}
+
+/// The picture size the first SPS states (`annexb::picture_size`), not the sample entry's
+/// width and height, which a decoder ignores: a file whose entry understates its pictures is
+/// judged by the pictures. hev1/avc3 may leave the parameter sets in band, so the first sample's
+/// count when the configuration lacks them.
+fn sps_size(
+    file: &mut File,
+    hevc: bool,
+    config: &[Vec<u8>],
+    length: u8,
+    first: Option<(u64, u64)>,
+) -> anyhow::Result<(u16, u16)> {
+    let parameter_sets = |units: &[&[u8]]| -> anyhow::Result<Vec<(u8, Vec<u8>)>> {
+        let mut sets = Vec::new();
+        for unit in units {
+            let kind = super::annexb::kind(unit, hevc)?;
+            if super::annexb::is_parameter_set(kind, hevc) {
+                sets.push((kind, unit.to_vec()));
+            }
+        }
+        Ok(sets)
+    };
+    let mut sets = parameter_sets(&config.iter().map(Vec::as_slice).collect::<Vec<_>>())?;
+    let required: &[u8] = if hevc { &[32, 33, 34] } else { &[7, 8] };
+    if !required.iter().all(|k| sets.iter().any(|(s, _)| s == k))
+        && let Some((position, size)) = first
+    {
+        ensure!(
+            size > 0 && size <= SAMPLE_LIMIT,
+            "invalid video packet or inspection limit"
+        );
+        let mut sample = vec![0u8; usize::try_from(size)?];
+        file.seek(SeekFrom::Start(position))?;
+        file.read_exact(&mut sample)?;
+        let n = usize::from(length);
+        let (mut rest, mut units) = (&sample[..], Vec::new());
+        while !rest.is_empty() {
+            ensure!(rest.len() >= n, "truncated MP4 sample");
+            let len = rest[..n]
+                .iter()
+                .fold(0usize, |a, b| (a << 8) | usize::from(*b));
+            ensure!(len > 0 && len <= rest.len() - n, "truncated MP4 sample");
+            units.push(&rest[n..n + len]);
+            rest = &rest[n + len..];
+        }
+        sets.extend(parameter_sets(&units)?);
+    }
+    super::annexb::picture_size(hevc, &sets)
 }
 
 fn sets_hvcc(payload: &[u8]) -> anyhow::Result<(u8, Vec<Vec<u8>>)> {
@@ -425,15 +475,26 @@ pub fn probe(path: &Path) -> anyhow::Result<serde_json::Value> {
         ensure!(r.u32()? >= 1, "missing MP4 sample entry");
         let entries = children(r.rest())?;
         let (tag, entry) = *entries.first().context("missing MP4 sample entry")?;
-        let mut r = Reader::new(entry);
-        r.take(24)?;
-        let (width, height) = (r.u16()?, r.u16()?);
-        tables(&stbl)?;
-        let codec = match &tag {
-            b"avc1" | b"avc3" => "h264",
-            b"hvc1" | b"hev1" => "hevc",
-            _ => "other",
+        let t = tables(&stbl)?;
+        let (codec, config_box) = match &tag {
+            b"avc1" | b"avc3" => ("h264", b"avcC"),
+            b"hvc1" | b"hev1" => ("hevc", b"hvcC"),
+            _ => {
+                streams.push(json!({"codec_type":"video","codec_name":"other","codec_tag_string":String::from_utf8_lossy(&tag)}));
+                continue;
+            }
         };
+        let hevc = codec == "hevc";
+        let mut r = Reader::new(entry);
+        r.take(78)?;
+        let config = one(&children(r.rest())?, config_box)?;
+        let (length, sets) = if hevc {
+            sets_hvcc(config)?
+        } else {
+            sets_avcc(config)?
+        };
+        let first = t.positions.first().copied().zip(t.sizes.first().copied());
+        let (width, height) = sps_size(&mut file, hevc, &sets, length, first)?;
         streams.push(json!({"codec_type":"video","codec_name":codec,"codec_tag_string":String::from_utf8_lossy(&tag),"width":width,"height":height,"time_base":format!("1/{timescale}")}));
     }
     Ok(json!({"streams":streams}))
@@ -573,7 +634,7 @@ fn read(path: &Path, hevc: bool, copy: bool) -> anyhow::Result<(Inspection, Layo
     ensure!(&tag == expected_tag || in_band, "camera codec mismatch");
     let mut r = Reader::new(entry);
     r.take(24)?;
-    let (width, height) = (r.u16()?, r.u16()?);
+    let entry_size = (r.u16()?, r.u16()?);
     r.take(50)?;
     let inner = children(r.rest())?;
     let config = one(&inner, config_box)?;
@@ -582,10 +643,17 @@ fn read(path: &Path, hevc: bool, copy: bool) -> anyhow::Result<(Inspection, Layo
     } else {
         sets_avcc(config)?
     };
-    super::mp4::check_dimensions(width, height)?;
     ensure!(length == 4, "unsupported NAL length size");
 
     let t = tables(&stbl)?;
+    let first = t.positions.first().copied().zip(t.sizes.first().copied());
+    let (width, height) = sps_size(&mut file, hevc, &sets, length, first)?;
+    super::mp4::check_dimensions(width, height)?;
+    // The engine writes its sample entry from the same SPS.
+    ensure!(
+        copy || entry_size == (width, height),
+        "MP4 sample entry size disagrees with its SPS"
+    );
     let count = t.sizes.len();
     ensure!(count > 0, "missing pictures or decoder configuration");
     let keyframes = t.sync.clone().unwrap_or_else(|| (0..count).collect());

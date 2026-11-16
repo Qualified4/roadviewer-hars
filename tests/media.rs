@@ -329,3 +329,75 @@ async fn inspection_and_mux_hash_match_independent_ffmpeg_extraction() {
         }
     }
 }
+
+/// An MP4 sample entry whose width and height disagree with the pictures: a decoder, and so the
+/// ffprobe check this one replaced, goes by the SPS. Pictures too wide for a camera are refused
+/// however small the entry says they are, and pictures of a camera size are read at that size
+/// whatever the entry says.
+#[tokio::test]
+async fn mp4_size_is_the_sps_size_not_the_sample_entry_size() {
+    let temp = tempfile::tempdir().unwrap();
+    let encode = |name: &str, size: &str, hevc: bool| {
+        let path = temp.path().join(name);
+        let mut cmd = Command::new("ffmpeg");
+        cmd.args(["-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i"])
+            .arg(format!("testsrc2=size={size}:rate=10"))
+            .args(["-t", "1", "-an", "-threads", "1", "-pix_fmt", "yuv420p"]);
+        if hevc {
+            cmd.args([
+                "-c:v",
+                "libx265",
+                "-x265-params",
+                "pools=1:frame-threads=1:bframes=0:keyint=10:log-level=error",
+                "-tag:v",
+                "hvc1",
+            ]);
+        } else {
+            cmd.args(["-c:v", "libx264", "-bf", "0", "-g", "10"]);
+        }
+        assert!(
+            cmd.args(["-movflags", "+faststart"])
+                .arg(&path)
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .status()
+                .unwrap()
+                .success()
+        );
+        path
+    };
+    let restate = |path: &Path, tag: &[u8; 4], width: u16, height: u16| {
+        let mut bytes = std::fs::read(path).unwrap();
+        let stsd = bytes.windows(4).position(|w| w == b"stsd").unwrap();
+        let entry = stsd + bytes[stsd..].windows(4).position(|w| w == tag).unwrap();
+        bytes[entry + 28..entry + 30].copy_from_slice(&width.to_be_bytes());
+        bytes[entry + 30..entry + 32].copy_from_slice(&height.to_be_bytes());
+        std::fs::write(path, bytes).unwrap();
+    };
+    let size = |v: &serde_json::Value| {
+        let stream = &v["streams"][0];
+        (stream["width"].clone(), stream["height"].clone())
+    };
+    for (hevc, kind, tag) in [
+        (false, "camera.mp4", b"avc1"),
+        (true, "fcamera.mp4", b"hvc1"),
+    ] {
+        let wide = encode(&format!("wide-{kind}"), "4224x96", hevc);
+        restate(&wide, tag, 1920, 1080);
+        assert_eq!(size(&ffprobe(&wide)), (4224.into(), 96.into()), "{kind}");
+        assert!(media::validate_upload(&wide, kind).await.is_err(), "{kind}");
+        assert!(media::inspect(&wide, kind).await.is_err(), "{kind}");
+
+        let camera = encode(&format!("camera-{kind}"), "160x96", hevc);
+        restate(&camera, tag, 8000, 8000);
+        assert_eq!(size(&ffprobe(&camera)), (160.into(), 96.into()), "{kind}");
+        let probed = media::validate_upload(&camera, kind)
+            .await
+            .unwrap_or_else(|e| panic!("{kind}: {e:#}"));
+        assert_eq!(size(&probed), (160.into(), 96.into()), "{kind}");
+        let read = media::inspect(&camera, kind)
+            .await
+            .unwrap_or_else(|e| panic!("{kind}: {e:#}"));
+        assert_eq!(size(&read.info), (160.into(), 96.into()), "{kind}");
+    }
+}

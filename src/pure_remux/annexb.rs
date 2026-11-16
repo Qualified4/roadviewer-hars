@@ -174,6 +174,53 @@ pub fn configuration_sets(raw_in_order: &[(u8, &[u8])]) -> Vec<(u8, Vec<u8>)> {
         .collect()
 }
 
+/// Width and height the first SPS of `sets` states, cropped (conformance window), as the sample
+/// entry the engine writes states them: the size a decoder, and so ffprobe, reports. `sets` holds
+/// the parameter sets by NAL type (VPS, SPS, PPS for HEVC; SPS, PPS for H.264).
+pub fn picture_size(hevc: bool, sets: &[(u8, Vec<u8>)]) -> anyhow::Result<(u16, u16)> {
+    use shiguredo_mp4::bitstream::{h264, h265};
+    let pick = |k: u8| {
+        sets.iter()
+            .filter(|(kind, _)| *kind == k)
+            .map(|(_, v)| v.clone())
+            .collect::<Vec<_>>()
+    };
+    if hevc {
+        let (vps, sps, pps) = (pick(32), pick(33), pick(34));
+        ensure!(
+            !vps.is_empty() && !sps.is_empty() && !pps.is_empty(),
+            "missing pictures or decoder configuration"
+        );
+        let entry = h265::build_hvc1_box(
+            &vps,
+            &sps,
+            &pps,
+            &h265::H265SampleEntryConfig {
+                length_size: h265::LengthSize::FourBytes,
+                avg_frame_rate: h265::H265SampleEntryConfig::AVG_FRAME_RATE_UNSPECIFIED,
+                constant_frame_rate: h265::H265ConstantFrameRate::Unknown,
+            },
+        )
+        .map_err(|e| anyhow::anyhow!("invalid HEVC decoder configuration: {e}"))?;
+        Ok((entry.visual.width, entry.visual.height))
+    } else {
+        let (sps, pps) = (pick(7), pick(8));
+        ensure!(
+            !sps.is_empty() && !pps.is_empty(),
+            "missing pictures or decoder configuration"
+        );
+        let entry = h264::build_avc1_box(
+            &sps,
+            &pps,
+            &h264::H264SampleEntryConfig {
+                length_size: h264::LengthSize::FourBytes,
+            },
+        )
+        .map_err(|e| anyhow::anyhow!("invalid H.264 decoder configuration: {e}"))?;
+        Ok((entry.visual.width, entry.visual.height))
+    }
+}
+
 /// RBSP reader for the few SPS fields the MP4 helpers do not expose.
 pub struct Bits {
     rbsp: Vec<u8>,
