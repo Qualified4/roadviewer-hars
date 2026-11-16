@@ -4,8 +4,7 @@
 use crate::error::ApiError;
 use axum::{
     Json,
-    extract::Request,
-    http::{Method, StatusCode, header as h},
+    http::{StatusCode, header as h},
     response::{IntoResponse, Response},
 };
 use serde_json::{Value, json};
@@ -343,26 +342,8 @@ pub fn local_time(seconds: f64) -> (i32, u32, u32, u32, u32, u32) {
     (year, month, day, rest / 3600, rest / 60 % 60, rest % 60)
 }
 
-/// Unknown paths answer 404 as Python does; Python routes not yet in HARS answer 501.
-pub async fn fallback(method: Method, request: Request) -> Response {
-    let path = request.uri().path();
-    let pending = [
-        "/api/settings/archive",
-        "/api/settings/archive/run",
-        "/api/settings/archive/tracks/run",
-        "/api/settings/archive/tracks/stop",
-        "/api/settings/archive/gdrive/connect",
-        "/api/settings/archive/gdrive/disconnect",
-        "/api/storage/cleanup",
-    ];
-    let segments = path.split('/').collect::<Vec<_>>();
-    let log_route = segments.len() >= 4 && segments[1] == "api" && segments[2] == "logs";
-    let unported = pending.contains(&path)
-        || (log_route && segments.len() == 4 && method == Method::DELETE)
-        || (log_route && segments.len() == 6 && segments[4] == "archive" && segments[5] == "retry");
-    if unported {
-        return ApiError(StatusCode::NOT_IMPLEMENTED, "feature_not_ported").into_response();
-    }
+/// Unknown paths answer 404 as Python does. Every Python route is registered, so nothing answers 501.
+pub async fn fallback() -> Response {
     Fail::not_found().into_response()
 }
 pub async fn method_not_allowed() -> Response {
