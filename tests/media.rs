@@ -330,6 +330,24 @@ async fn inspection_and_mux_hash_match_independent_ffmpeg_extraction() {
     }
 }
 
+/// A damaged TS packet is refused with the reader's reason, without the source location in the
+/// build machine's crate registry that the reader appends.
+#[tokio::test]
+async fn a_damaged_ts_packet_is_refused_without_a_build_path() {
+    let temp = tempfile::tempdir().unwrap();
+    let ts = temp.path().join("qcamera.ts");
+    fixture(&ts, false);
+    let mut bytes = std::fs::read(&ts).unwrap();
+    bytes[188 * 5] = 0;
+    std::fs::write(&ts, bytes).unwrap();
+    let error = format!("{:#}", media::inspect(&ts, "qcamera.ts").await.unwrap_err());
+    assert!(error.contains("invalid MPEG-TS packet: "), "{error}");
+    assert!(
+        !error.contains(".rs:") && !error.contains("cargo"),
+        "{error}"
+    );
+}
+
 /// An MP4 sample entry whose width and height disagree with the pictures: a decoder, and so the
 /// ffprobe check this one replaced, goes by the SPS. Pictures too wide for a camera are refused
 /// however small the entry says they are, and pictures of a camera size are read at that size

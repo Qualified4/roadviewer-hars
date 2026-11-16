@@ -118,6 +118,15 @@ impl<R: std::io::Read> std::io::Read for Watched<R> {
     }
 }
 
+/// The packet reader's message ends with where in its source it failed, a path into the build
+/// machine's crate registry; the reason ends up in records and logs without it.
+fn packet_error(error: &impl std::fmt::Display) -> anyhow::Error {
+    let text = error.to_string();
+    let first = text.lines().next().unwrap_or_default();
+    let reason = first.split(" (at ").next().unwrap_or_default();
+    anyhow::anyhow!("invalid MPEG-TS packet: {reason}")
+}
+
 fn demux_from(
     input: impl std::io::Read,
     mut each: impl FnMut(Pes) -> anyhow::Result<()>,
@@ -138,7 +147,7 @@ fn demux_from(
     };
     while let Some(packet) = reader.read_ts_packet().map_err(|e| match failed.take() {
         Some(io) => anyhow::Error::new(io).context("reading MPEG-TS"),
-        None => anyhow::anyhow!("invalid MPEG-TS packet: {e}"),
+        None => packet_error(&e),
     })? {
         if packet.header.transport_error_indicator {
             bail!("MPEG-TS transport error");
