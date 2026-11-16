@@ -1018,9 +1018,14 @@ async fn fetch_once(
             let Some(chunk) = chunk else {
                 break;
             };
+            count += chunk.len() as u64;
+            // The listed size is what was reserved: a file that grew since, or a server sending
+            // more, stops here instead of filling the disk before the size check.
+            if count > f.remote.bytes {
+                return Err(Fetch::Retry("size_mismatch".into()));
+            }
             sha.update(&chunk);
             md5.update(&chunk);
-            count += chunk.len() as u64;
             file.write_all(&chunk).await.map_err(io)?;
             session.touch();
             crate::fault::point("legacy_import_mid_file");
