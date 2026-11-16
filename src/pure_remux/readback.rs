@@ -532,8 +532,9 @@ pub fn inspect(path: &Path, hevc: bool) -> anyhow::Result<(Inspection, Layout)> 
             ensure!(rest.len() >= 4, "truncated MP4 sample");
             let n = u32::from_be_bytes(rest[..4].try_into()?) as usize;
             ensure!(n > 0 && n <= rest.len() - 4, "truncated MP4 sample");
+            // A flagged unit is the input's, copied as it is (`annexb::kind`);
+            // the signature still compares it byte for byte.
             let nal = &rest[4..4 + n];
-            ensure!(nal[0] & 0x80 == 0, "forbidden NAL header bit");
             let kind = pictures.unit(nal)?;
             ensure!(
                 !(hevc && matches!(kind, 32..=34)),

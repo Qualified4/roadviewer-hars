@@ -14,21 +14,11 @@ impl Drop for AnnexB {
 }
 impl AnnexB {
     fn new(stream: &ffmpeg::Stream<'_>, hevc: bool) -> anyhow::Result<Self> {
-        Self::configured(
-            stream,
-            if hevc {
-                c"hevc_mp4toannexb"
-            } else {
-                c"h264_mp4toannexb"
-            },
-            None,
-        )
-    }
-    fn configured(
-        stream: &ffmpeg::Stream<'_>,
-        name: &std::ffi::CStr,
-        remove_types: Option<&std::ffi::CStr>,
-    ) -> anyhow::Result<Self> {
+        let name = if hevc {
+            c"hevc_mp4toannexb"
+        } else {
+            c"h264_mp4toannexb"
+        };
         use ffmpeg::ffi::*;
         // SAFETY: static C names, initialized out-pointer, and stream parameters
         // remain live until copied. RAII frees even partially initialized contexts.
@@ -46,44 +36,8 @@ impl AnnexB {
                 "copy filter parameters"
             );
             (*ptr).time_base_in = stream.time_base().into();
-            if let Some(types) = remove_types {
-                anyhow::ensure!(
-                    av_opt_set(
-                        (*ptr).priv_data,
-                        c"remove_types".as_ptr(),
-                        types.as_ptr(),
-                        0
-                    ) >= 0,
-                    "configure parameter set filter"
-                );
-            }
             anyhow::ensure!(av_bsf_init(ptr) >= 0, "initialize Annex B filter");
             Ok(owner)
-        }
-    }
-    fn filter_one(&mut self, packet: &mut ffmpeg::Packet) -> anyhow::Result<ffmpeg::Packet> {
-        use ffmpeg::codec::packet::Mut;
-        // SAFETY: filter_units is a synchronous one-input/one-output filter.
-        // Packet ownership is transferred to this live context and a fresh
-        // owned packet receives it. Check the drain contract on every call.
-        unsafe {
-            anyhow::ensure!(
-                ffmpeg::ffi::av_bsf_send_packet(self.0, packet.as_mut_ptr()) >= 0,
-                "send parameter set filter packet"
-            );
-            let mut out = ffmpeg::Packet::empty();
-            anyhow::ensure!(
-                ffmpeg::ffi::av_bsf_receive_packet(self.0, out.as_mut_ptr()) >= 0
-                    && !out.is_corrupt()
-                    && out.size() > 0,
-                "filter removed a video frame"
-            );
-            let mut extra = ffmpeg::Packet::empty();
-            anyhow::ensure!(
-                ffmpeg::ffi::av_bsf_receive_packet(self.0, extra.as_mut_ptr()) == -libc::EAGAIN,
-                "unexpected buffered video packet"
-            );
-            Ok(out)
         }
     }
     fn feed(
@@ -185,6 +139,13 @@ pub fn inspect(source: &Path, kind: &str) -> anyhow::Result<crate::media::Inspec
     let tag = String::from_utf8_lossy(&tag.to_le_bytes()).into_owned();
     let info = json!({"codec_type":"video","codec_name":if hevc {"hevc"} else {"h264"},"codec_tag_string":tag,"width":width,"height":height,"has_b_frames":delay,"time_base":format!("{}/{}",tb.numerator(),tb.denominator()),"duration_ts":duration,"duration":duration.map(|d|d as f64*f64::from(tb)).map(|d|d.to_string())});
     let mut filter = AnnexB::new(stream, hevc)?;
+    if kind == "qcamera.ts" {
+        let pid = u16::try_from(stream.id()).context("invalid MPEG-TS video PID")?;
+        anyhow::ensure!(
+            !truncated_video_payload(source, pid)?,
+            "the last MPEG-TS packet is cut inside video payload"
+        );
+    }
     drop(videos);
     let mut hash = crate::media::NalHasher::new(hevc);
     let mut packets = Vec::new();
@@ -303,6 +264,76 @@ pub fn remux_ts(source: &Path, output: &Path, offset: i64, terminal: i64) -> any
     Ok(())
 }
 
+/// The packet without its VPS/SPS/PPS: hvc1 keeps them in hvcC, and FFmpeg
+/// 5/6's MOV muxer would also keep in-band copies. Every other unit keeps the
+/// bytes the pure engine frames from the file (`annexb::Unit::sample`, zeros
+/// after a unit included), not `filter_units`' rewrite, which drops them. The
+/// parser may leave the `zero_byte` of the next packet's start code at the end
+/// of this one; `next` (the next packet, `None` at the end) places it.
+fn without_parameter_sets(
+    packet: &ffmpeg::Packet,
+    next: Option<&[u8]>,
+) -> anyhow::Result<ffmpeg::Packet> {
+    use crate::pure_remux::annexb;
+    let data = packet.data().context("missing HEVC packet bytes")?;
+    // Bytes before the first start code hold no unit (`media::leading_bytes`).
+    let first = annexb::find_start(data, 0).context("HEVC packet without NAL units")?;
+    let lead = next.map(|next| &next[..annexb::find_start(next, 0).unwrap_or(next.len())]);
+    let mut kept = Vec::with_capacity(data.len());
+    annexb::for_each_nal(&data[first..], |unit| {
+        if annexb::is_parameter_set(annexb::kind(unit.raw, true)?, true) {
+            return Ok(());
+        }
+        kept.extend_from_slice(&[0, 0, 0, 1]);
+        match (unit.last, lead) {
+            (true, Some(lead)) => {
+                let start = kept.len();
+                kept.extend_from_slice(unit.raw);
+                kept.extend_from_slice(lead);
+                let framed = annexb::framed(&kept[start..]).len();
+                kept.truncate(start + framed);
+            }
+            _ => kept.extend_from_slice(unit.sample()),
+        }
+        Ok(())
+    })?;
+    anyhow::ensure!(!kept.is_empty(), "HEVC packet without a picture");
+    let mut out = ffmpeg::Packet::copy(&kept);
+    out.set_flags(packet.flags());
+    Ok(out)
+}
+
+/// libavformat drops a final TS packet shorter than 188 bytes. When it carries
+/// payload of the video stream, the last picture would lose bytes that are in
+/// the file, so the source scan refuses it for every engine. A cut at a packet
+/// boundary, or inside the first four bytes, drops nothing the file holds.
+fn truncated_video_payload(source: &Path, pid: u16) -> anyhow::Result<bool> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(source)?;
+    let length = file.metadata()?.len();
+    let partial = (length % 188) as usize;
+    if partial < 4 {
+        return Ok(false);
+    }
+    file.seek(SeekFrom::Start(length - partial as u64))?;
+    let mut tail = vec![0; partial];
+    file.read_exact(&mut tail)?;
+    // Not a packet start: the file is not 188-byte framed from its first byte,
+    // so what the demuxer drops is unknown.
+    if tail[0] != 0x47 {
+        return Ok(true);
+    }
+    if (u16::from(tail[1] & 0x1f) << 8 | u16::from(tail[2])) != pid || tail[3] & 0x10 == 0 {
+        return Ok(false);
+    }
+    let payload = if tail[3] & 0x20 != 0 {
+        5 + usize::from(tail.get(4).copied().unwrap_or(183))
+    } else {
+        4
+    };
+    Ok(partial > payload)
+}
+
 /// `terminal` is the last sample duration in microseconds (`terminal_duration`).
 pub fn remux_hevc(
     source: &Path,
@@ -342,10 +373,6 @@ pub fn remux_hevc(
         "not HEVC"
     );
     let stream_index = stream.index();
-    // hvc1 parameter sets belong to hvcC, not samples. FFmpeg 5/6's MOV muxer
-    // keeps in-band copies; filter only VPS/SPS/PPS after hashing the original.
-    // The stream parameters copied to the output retain the decoder config.
-    let mut parameter_sets = AnnexB::configured(&stream, c"filter_units", Some(c"32|33|34"))?;
     let decoder = ffmpeg::codec::context::Context::from_parameters(stream.parameters())?
         .decoder()
         .video()?;
@@ -373,27 +400,12 @@ pub fn remux_hevc(
     options.set("movflags", "+faststart");
     drop(out.write_header_with(options)?);
     let time_base = out.stream(0).context("missing output stream")?.time_base();
-    let mut index = 0;
+    let (mut read, mut index) = (0, 0);
     let mut hash = crate::media::NalHasher::new(true);
-    loop {
-        let mut packet = ffmpeg::Packet::empty();
-        match packet.read(&mut input) {
-            Ok(()) => {}
-            Err(ffmpeg::Error::Eof) => break,
-            Err(_) => bail!("HEVC packet read failed"),
-        }
-        if packet.stream() != stream_index || packet.size() == 0 {
-            continue;
-        }
-        anyhow::ensure!(
-            !packet.is_corrupt() && index < times.len() && packet.size() <= 32 * 1024 * 1024,
-            "invalid HEVC packet count or corrupt packet"
-        );
-        // Raw HEVC packets are Annex B already; the existing mp4toannexb
-        // filter is a passthrough for this input format. Keep the exact same
-        // bounded NAL/header SHA policy, in the pass that copies the packets.
-        hash.feed(packet.data().context("missing HEVC packet bytes")?)?;
-        let mut packet = parameter_sets.filter_one(&mut packet)?;
+    // One packet of lookahead: a packet's last unit ends where the next begins.
+    let mut held: Option<ffmpeg::Packet> = None;
+    let mut write = |held: &ffmpeg::Packet, next: Option<&[u8]>| -> anyhow::Result<()> {
+        let mut packet = without_parameter_sets(held, next)?;
         let stamp = (times[index] * 1_000_000.).round_ties_even() as i64;
         let duration = match times.get(index + 1) {
             Some(next) => ((next - times[index]) * 1_000_000.).round() as i64,
@@ -407,7 +419,37 @@ pub fn remux_hevc(
         packet.set_stream(0);
         packet.write_interleaved(&mut out)?;
         index += 1;
+        Ok(())
+    };
+    loop {
+        let mut packet = ffmpeg::Packet::empty();
+        match packet.read(&mut input) {
+            Ok(()) => {}
+            Err(ffmpeg::Error::Eof) => break,
+            Err(_) => bail!("HEVC packet read failed"),
+        }
+        if packet.stream() != stream_index || packet.size() == 0 {
+            continue;
+        }
+        anyhow::ensure!(
+            !packet.is_corrupt() && read < times.len() && packet.size() <= 32 * 1024 * 1024,
+            "invalid HEVC packet count or corrupt packet"
+        );
+        // Raw HEVC packets are Annex B already; the existing mp4toannexb
+        // filter is a passthrough for this input format. Keep the exact same
+        // bounded NAL/header SHA policy, in the pass that copies the packets.
+        let data = packet.data().context("missing HEVC packet bytes")?;
+        hash.feed(data)?;
+        if let Some(previous) = &held {
+            write(previous, Some(data))?;
+        }
+        held = Some(packet);
+        read += 1;
     }
+    if let Some(last) = &held {
+        write(last, None)?;
+    }
+    drop(write);
     anyhow::ensure!(
         index == times.len(),
         "HEVC frame count differs from logged clock"

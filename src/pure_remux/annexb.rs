@@ -74,7 +74,9 @@ pub fn for_each_nal(
     })
 }
 
-/// Bounded streaming splitter for raw Annex B files.
+/// Bounded streaming splitter for raw Annex B files. Bytes before the first
+/// start code hold no NAL unit; they are skipped as libavformat's raw HEVC
+/// demuxer and MOV muxer skip them (`media::leading_bytes` reports them).
 pub struct Scanner {
     buffer: Vec<u8>,
     begin: Option<usize>,
@@ -96,22 +98,15 @@ impl Scanner {
         self.buffer.extend_from_slice(data);
         let mut consumed = 0;
         while let Some(at) = find_start(&self.buffer, self.searched) {
-            match self.begin {
-                None => ensure!(
-                    self.buffer[..at].iter().all(|b| *b == 0),
-                    "non Annex B prefix"
-                ),
-                Some(begin) => each(Unit {
+            if let Some(begin) = self.begin {
+                each(Unit {
                     raw: &self.buffer[begin..at],
                     last: false,
-                })?,
+                })?;
             }
             self.begin = Some(at + 3);
             self.searched = at + 3;
             consumed = at + 3;
-        }
-        if self.begin.is_none() {
-            ensure!(self.buffer.iter().all(|b| *b == 0), "non Annex B prefix");
         }
         self.buffer.drain(..consumed);
         self.begin = self.begin.map(|b| b - consumed);
@@ -143,12 +138,19 @@ impl Scanner {
 pub fn kind(unit: &[u8], hevc: bool) -> anyhow::Result<u8> {
     let unit = trim(unit);
     ensure!(unit.len() >= if hevc { 2 } else { 1 }, "truncated NAL unit");
-    ensure!(unit[0] & 0x80 == 0, "forbidden NAL header bit");
-    Ok(if hevc {
+    let kind = if hevc {
         (unit[0] >> 1) & 63
     } else {
         unit[0] & 31
-    })
+    };
+    // A flagged parameter set leaves no picture decodable (libavformat, and so
+    // Python, refuse it too); any other flagged unit is copied byte for byte as
+    // libavformat's packet copy does, so the file keeps every input picture.
+    ensure!(
+        unit[0] & 0x80 == 0 || !is_parameter_set(kind, hevc),
+        "forbidden NAL header bit"
+    );
+    Ok(kind)
 }
 
 pub fn is_parameter_set(kind: u8, hevc: bool) -> bool {

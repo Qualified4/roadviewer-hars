@@ -1,7 +1,7 @@
 //! Pure Rust lossless remux engine for raw camera originals (H.264 MPEG-TS and
 //! raw HEVC), the default engine. Every failure carries a `FailureClass`;
 //! `media` decides from it alone whether the FFmpeg engine may try the input.
-mod annexb;
+pub(crate) mod annexb;
 mod hevc;
 mod mp4;
 pub mod readback;

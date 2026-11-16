@@ -275,16 +275,14 @@ impl NalHasher {
         }
     }
     /// Linear in the fed bytes however small the units are: the consumed
-    /// prefix is dropped once per call, not once per unit.
+    /// prefix is dropped once per call, not once per unit. Bytes before the
+    /// stream's first start code hold no unit and are not hashed, as Python's
+    /// `Pictures` split leaves them out (`leading_bytes` reports them).
     pub fn feed(&mut self, bytes: &[u8]) -> anyhow::Result<()> {
         self.buffer.extend_from_slice(bytes);
         let mut consumed = 0;
         let mut result = Ok(());
-        while let Some((prefix, begin)) = start_code(&self.buffer, consumed) {
-            if !self.buffer[consumed..prefix].iter().all(|b| *b == 0) {
-                result = Err(anyhow::anyhow!("non Annex B prefix"));
-                break;
-            }
+        while let Some((_, begin)) = start_code(&self.buffer, consumed) {
             let Some((end, _)) = start_code(&self.buffer, begin.max(self.searched)) else {
                 self.searched = self.buffer.len().saturating_sub(3).max(begin);
                 break;
@@ -311,11 +309,7 @@ impl NalHasher {
         self.units.add(unit)
     }
     pub fn finish(mut self) -> anyhow::Result<Signature> {
-        if let Some((prefix, begin)) = start_code(&self.buffer, 0) {
-            anyhow::ensure!(
-                self.buffer[..prefix].iter().all(|b| *b == 0),
-                "non Annex B prefix"
-            );
+        if let Some((_, begin)) = start_code(&self.buffer, 0) {
             self.units.add(&self.buffer[begin..])?;
         }
         let units = self.units;
@@ -487,6 +481,12 @@ pub fn relay_remux_event(record: &str, line: &str) {
             terminal_ticks = fields["terminal_ticks"].as_u64(),
             terminal_basis = text("terminal_basis"),
         ),
+        Some("remux_input_prefix") => tracing::warn!(
+            event = "remux_input_prefix",
+            record,
+            kind = text("kind"),
+            bytes = fields["bytes"].as_u64(),
+        ),
         Some(name @ ("remux_fallback" | "remux_failure")) => {
             let level = event["level"].as_str().unwrap_or("WARN");
             macro_rules! relay {
@@ -512,6 +512,37 @@ pub fn relay_remux_event(record: &str, line: &str) {
             }
         }
         _ => {}
+    }
+}
+
+/// Bytes before a raw Annex B file's first start code, up to the last one that
+/// is not zero padding (`leading_zero_8bits`, `zero_byte`), or 0: no NAL unit
+/// holds them, so every engine and the input signature leave them out, as
+/// libavformat does. Reading stops past the NAL limit, where the engines
+/// refuse the file anyway.
+pub fn leading_bytes(source: &Path) -> std::io::Result<u64> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(source)?;
+    let mut window = Vec::new();
+    let mut chunk = vec![0u8; 64 * 1024];
+    let (mut passed, mut extent) = (0u64, 0u64);
+    loop {
+        let n = file.read(&mut chunk)?;
+        window.extend_from_slice(&chunk[..n]);
+        let found = window.windows(3).position(|w| w == [0, 0, 1]);
+        let end = found.unwrap_or(if n == 0 {
+            window.len()
+        } else {
+            window.len().saturating_sub(2)
+        });
+        if let Some(i) = window[..end].iter().rposition(|b| *b != 0) {
+            extent = passed + i as u64 + 1;
+        }
+        if found.is_some() || n == 0 || passed > crate::pure_remux::annexb::NAL_LIMIT as u64 {
+            return Ok(extent);
+        }
+        passed += end as u64;
+        window.drain(..end);
     }
 }
 
@@ -627,6 +658,14 @@ async fn remux_inner(
         });
     }
     let clocks = clocks(kind, times, inspection.as_ref(), next_frame_ns)?;
+    if kind.ends_with(".hevc") {
+        let path = source.to_path_buf();
+        // A read error here surfaces, classified, in the engine that reads next.
+        if let Ok(Ok(bytes @ 1..)) = tokio::task::spawn_blocking(move || leading_bytes(&path)).await
+        {
+            tracing::warn!(event = "remux_input_prefix", kind, bytes);
+        }
+    }
     let mut fallback = None;
     if engine == Engine::Pure {
         match pure(source, kind, output, times, &clocks, inspection.as_ref()).await {
