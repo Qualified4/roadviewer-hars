@@ -19,11 +19,15 @@ options:
   device_https_enabled: false
   device_certfile: fullchain.pem
   device_keyfile: privkey.pem
+  archive_gdrive_client_id: ""
+  archive_gdrive_client_secret: ""
 schema:
   max_upload_mb: int(16,2048)
   device_https_enabled: bool
   device_certfile: str
   device_keyfile: str
+  archive_gdrive_client_id: str
+  archive_gdrive_client_secret: password
 ports:
   8443/tcp: null
 ports_description:
@@ -31,6 +35,8 @@ ports_description:
 map:
   - type: ssl
     read_only: true
+  - type: share
+    read_only: false
 backup_exclude:
   - "roadviewer-hars/[0-9a-f]*"
   - "roadviewer-hars/.uploads*"

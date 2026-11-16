@@ -469,7 +469,12 @@ fn tolerant_size(path: &Path) -> std::io::Result<u64> {
 /// Python `reserved`: the outstanding part of every upload reservation (received chunks are
 /// already counted as used).
 pub async fn reserved(root: &Path) -> std::io::Result<u64> {
+    reserved_except(root, None).await
+}
+/// Python `reserved(exclude=...)`: a committing upload's own reservation is not room it still needs.
+pub async fn reserved_except(root: &Path, exclude: Option<&str>) -> std::io::Result<u64> {
     let uploads = root.join(".uploads");
+    let exclude = exclude.map(str::to_owned);
     tokio::task::spawn_blocking(move || {
         let mut total = 0u64;
         let entries = match std::fs::read_dir(&uploads) {
@@ -479,6 +484,12 @@ pub async fn reserved(root: &Path) -> std::io::Result<u64> {
         };
         for entry in entries {
             let path = entry?.path();
+            if exclude
+                .as_deref()
+                .is_some_and(|e| path.file_name().is_some_and(|n| n == e))
+            {
+                continue;
+            }
             let bytes = match std::fs::read(path.join("reservation.json")) {
                 Ok(v) => serde_json::from_slice::<Value>(&v)
                     .ok()
@@ -591,8 +602,20 @@ pub async fn eviction_plan(
     incoming: &[String],
     protected_ids: &BTreeSet<String>,
 ) -> std::io::Result<Plan> {
-    let guards = guards(&store.root, incoming, protected_ids).await?;
+    let guards = eviction_guards(store, incoming, protected_ids).await?;
     Ok(plan_eviction(&facts(store).await?, &guards))
+}
+async fn eviction_guards(
+    store: &Store,
+    incoming: &[String],
+    protected_ids: &BTreeSet<String>,
+) -> std::io::Result<Guards> {
+    let mut guards = guards(&store.root, incoming, protected_ids).await?;
+    // Only a recent "connected" result (never a probe under the registration lock) makes archived recordings evictable.
+    guards.archive_reachable = store
+        .archive()
+        .is_some_and(|a| a.last_state() == Some(crate::archive::State::Connected));
+    Ok(guards)
 }
 
 /// Python `admit`. `commit` carries the held registration lock: only then may recordings be
@@ -605,18 +628,46 @@ pub async fn admit(
     protected_ids: &BTreeSet<String>,
     commit: Option<&MutexGuard<'_, ()>>,
 ) -> Result<u64> {
+    admit_reserved(store, total, incoming, staging, protected_ids, commit, None).await
+}
+/// [`admit`] for the upload session `reservation` committing now (Python `reservation_id`).
+pub async fn admit_reserved(
+    store: &Store,
+    total: u64,
+    incoming: &[String],
+    staging: bool,
+    protected_ids: &BTreeSet<String>,
+    commit: Option<&MutexGuard<'_, ()>>,
+    reservation: Option<&str>,
+) -> Result<u64> {
     let settings = load_settings(&store.root).await?;
     let limits = limits(&settings);
     let needed = needed(total, staging);
+    if let Some(archive) = store.archive()
+        && let Some(threshold) = archive.drive_move()
+    {
+        return drive_move_admit(
+            store,
+            &archive,
+            (limits, threshold),
+            needed,
+            incoming,
+            protected_ids,
+            commit.and(reservation),
+        )
+        .await;
+    }
     let mut current = space(store, commit.is_some()).await?;
     if check(limits, current, needed)? == Verdict::Fits {
         return Ok(needed);
     }
-    let plan = eviction_plan(store, incoming, protected_ids).await?;
+    let guards = eviction_guards(store, incoming, protected_ids).await?;
+    let plan = plan_eviction(&facts(store).await?, &guards);
     preflight(limits, current, needed, plan.reclaim)?;
     let Some(registration) = commit else {
         return Ok(needed);
     };
+    let pinned = pins(&load_settings(&store.root).await?);
     for route in &plan.routes {
         let ids = route
             .records
@@ -631,11 +682,26 @@ pub async fn admit(
             .filter(|m| route_key(m) == route.route)
             .filter_map(|m| m["id"].as_str().map(str::to_owned))
             .collect::<Vec<_>>();
-        // `convert` and the scheduler queue a segment under its record lock alone, so any segment
-        // of the route may have been queued since the plan was made: the route is then kept whole.
-        delete_records(store, registration, &ids, &members, "storage_limit", |m| {
-            matches!(m["status"].as_str(), Some("queued" | "processing"))
-        })
+        // `convert` and the scheduler queue a segment under its record lock alone, so the plan's
+        // rule is applied again to what the locks hold now.
+        delete_records(
+            store,
+            registration,
+            &ids,
+            &members,
+            "storage_limit",
+            |m, locked| {
+                let route = locked
+                    .iter()
+                    .map(|m| RecordFacts::from_meta(m, &pinned, 0))
+                    .collect::<Vec<_>>();
+                Judgement::of(eviction_protection(
+                    &RecordFacts::from_meta(m, &pinned, 0),
+                    &route,
+                    &guards,
+                ))
+            },
+        )
         .await?;
         current = space(store, true).await?;
         if enough(limits, current, needed) {
@@ -643,6 +709,64 @@ pub async fn admit(
         }
     }
     Err(StorageError::NoDeletable.into())
+}
+
+/// Python `admit`'s `drive_move` branch: with Drive in move mode the quota and the local threshold are a MOVE
+/// trigger, never a reason to discard data or refuse an otherwise safe upload. Only a physical shortage refuses.
+async fn drive_move_admit(
+    store: &Store,
+    archive: &crate::archive::Archive,
+    (limits, threshold): (Limits, u64),
+    needed: u64,
+    incoming: &[String],
+    protected_ids: &BTreeSet<String>,
+    reservation: Option<&str>,
+) -> Result<u64> {
+    let used = store.used().await? as u128;
+    let reserved = reserved_except(&store.root, reservation).await? as u128;
+    let free = fs2::available_space(&store.root)? as u128;
+    let need = needed as u128;
+    let disk_full = free < reserved + need + MARGIN as u128;
+    let limit = limits.max_bytes as u128;
+    if disk_full
+        || limit > 0 && used + reserved + need >= limit
+        || threshold > 0 && used + reserved + need >= threshold as u128
+    {
+        archive.request_reclaim(
+            if disk_full { needed } else { 0 },
+            incoming,
+            protected_ids,
+            reservation,
+        );
+    }
+    if disk_full {
+        return Err(StorageError::InsufficientDisk.into());
+    }
+    Ok(needed)
+}
+
+/// Archived files of a recording about to be deleted (Python `delete_recording`): NAS files by kind, and for an
+/// explicit deletion also the Drive files it refers to. Recorded before the local commit point, so a crash
+/// leaves the recording whole (its row is skipped while its meta.json exists) or the row ready to finish.
+async fn queue_archived(root: &Path, meta: &Value, explicit: bool) -> std::io::Result<()> {
+    use crate::archive::index;
+    let id = meta["id"].as_str().unwrap_or_default();
+    let kinds: Vec<String> = MEDIA_KINDS
+        .iter()
+        .filter(|k| index::location(meta, k) == "nas")
+        .map(|k| (*k).to_owned())
+        .collect();
+    let refs = if explicit {
+        index::remote_refs(meta, true)
+    } else {
+        Vec::new()
+    };
+    if kinds.is_empty() && refs.is_empty() {
+        return Ok(());
+    }
+    crate::archive::pending::PendingDeletes::new(root)
+        .add(id, &kinds, &refs, explicit)
+        .await
 }
 
 // ---------------------------------------------------------------- deletion journal
@@ -771,17 +895,40 @@ async fn gone(root: &Path, id: &str) -> std::io::Result<bool> {
         && !tokio::fs::try_exists(hidden_path(root, id)).await?)
 }
 
-/// Delete `ids` while holding the record locks of them and of `group`. `keep` is checked again
-/// under those locks; if it holds for any of them, nothing is deleted, so a protection decided
-/// for a whole route stays whole. Returns the deleted ids. A failure before a recording is hidden
-/// leaves it whole and listed; a hidden one is finished now or by the periodic `recover`.
+/// What a deletion decides for one of its targets, judged again under the record locks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Judgement {
+    Delete,
+    /// This recording stays; the other targets are judged on their own.
+    Skip,
+    /// A protection of the whole group (a route being converted): nothing is deleted.
+    KeepAll,
+}
+impl Judgement {
+    /// The judgement `eviction_protection` gives: route-wide protections keep the whole route, per-recording ones
+    /// (pins, remote copies, an unreachable archive) only that recording (Python `admit`).
+    pub fn of(protection: Option<Protection>) -> Self {
+        match protection {
+            None => Self::Delete,
+            Some(Protection::RouteReceiving | Protection::Uploading | Protection::Converting) => {
+                Self::KeepAll
+            }
+            Some(_) => Self::Skip,
+        }
+    }
+}
+
+/// Delete `ids` while holding the record locks of them and of `group`. `judge` sees each target and
+/// every locked recording again under those locks. Returns the deleted ids. A failure before a
+/// recording is hidden leaves it whole and listed; a hidden one is finished now or by the periodic
+/// `recover`.
 pub async fn delete_records(
     store: &Store,
     registration: &MutexGuard<'_, ()>,
     ids: &[String],
     group: &[String],
     reason: &str,
-    keep: impl Fn(&Value) -> bool,
+    judge: impl Fn(&Value, &[Value]) -> Judgement,
 ) -> Result<Vec<String>> {
     let mut locked = ids.iter().chain(group).cloned().collect::<Vec<_>>();
     locked.sort();
@@ -790,20 +937,32 @@ pub async fn delete_records(
     for id in &locked {
         held.push(store.record_lock(id).await.lock_owned().await);
     }
-    let mut targets = Vec::new();
-    for id in locked {
-        let Ok(meta) = store.meta(&id).await else {
-            continue;
-        };
-        if keep(&meta) {
-            return Ok(vec![]);
+    let mut metas = Vec::new();
+    for id in &locked {
+        if let Ok(meta) = store.meta(id).await {
+            metas.push(meta);
         }
-        if ids.contains(&id) {
-            targets.push(id);
+    }
+    let mut targets = Vec::new();
+    for meta in metas.iter().filter(|m| ids.iter().any(|i| m["id"] == *i)) {
+        let judgement = match judge(meta, &metas) {
+            // Drive is extension storage: only an explicit complete deletion may remove its files.
+            Judgement::Delete if reason != "manual" && has_remote_refs(meta) => Judgement::Skip,
+            j => j,
+        };
+        match judgement {
+            Judgement::KeepAll => return Ok(vec![]),
+            Judgement::Skip => {}
+            Judgement::Delete => targets.push(meta["id"].as_str().unwrap_or_default().to_owned()),
         }
     }
     if targets.is_empty() {
         return Ok(targets);
+    }
+    for id in &targets {
+        if let Ok(meta) = store.meta(id).await {
+            queue_archived(&store.root, &meta, reason == "manual").await?;
+        }
     }
     journal_add(&store.root, &targets, reason).await?;
     for id in &targets {
@@ -855,12 +1014,18 @@ pub async fn recover(store: &Store, _registration: &MutexGuard<'_, ()>) -> std::
         }
     }
     let mut settled = done.clone();
+    let mut kept = Vec::new();
     for entry in &journal {
         if !hidden.contains(&entry.id) {
             tracing::warn!(reason = %entry.reason, "delete_journal_entry_discarded");
             settled.push(entry.id.clone());
+            kept.push(entry.id.clone());
         }
     }
+    // The archived files queued for a deletion that did not happen still belong to their recording.
+    crate::archive::pending::PendingDeletes::new(&store.root)
+        .forget(&kept)
+        .await?;
     journal_remove(&store.root, &settled).await?;
     match failure {
         Some(e) => Err(e),

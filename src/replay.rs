@@ -432,6 +432,15 @@ fn model_time(camera: &BTreeMap<u64, u64>, row: &Sample) -> f64 {
         }) as f64
         / 1e9
 }
+/// The replay clock of the model frame `frame_id` (camera time, else the model's, else the event's).
+pub fn frame_clock(decoded: &Decoded, frame_id: u64) -> Option<f64> {
+    let view = View::new(&decoded.streams);
+    let camera = camera_times(&view);
+    view.rows("modelV2")
+        .iter()
+        .find(|row| row.value["frameId"].as_u64() == Some(frame_id))
+        .map(|row| model_time(&camera, row))
+}
 /// Obtain the same model origin before allocating replay geometry.
 pub fn origin(decoded: &Decoded) -> anyhow::Result<f64> {
     let view = View::new(&decoded.streams);

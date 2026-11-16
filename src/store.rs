@@ -114,6 +114,8 @@ pub struct Store {
     record_locks: Mutex<BTreeMap<String, Arc<Mutex<()>>>>,
     pub registration: Mutex<()>,
     pub processing: RwLock<Value>,
+    /// The archiver bound to this store (upload admission and deletion consult it).
+    pub archive: std::sync::RwLock<std::sync::Weak<crate::archive::Archive>>,
     _instance: std::fs::File,
 }
 
@@ -176,6 +178,7 @@ impl Store {
             record_locks: Mutex::new(BTreeMap::new()),
             registration: Mutex::new(()),
             processing: RwLock::new(processing),
+            archive: std::sync::RwLock::new(std::sync::Weak::new()),
             _instance: instance,
         }))
     }
@@ -211,6 +214,12 @@ impl Store {
         atomic_json(&self.root.join(&name).join("meta.json"), &meta).await?;
         self.records.write().await.insert(name, meta);
         Ok(())
+    }
+    pub fn archive(&self) -> Option<Arc<crate::archive::Archive>> {
+        self.archive
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .upgrade()
     }
     pub async fn used(&self) -> std::io::Result<u64> {
         let root = self.root.clone();

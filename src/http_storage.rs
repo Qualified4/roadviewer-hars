@@ -36,9 +36,13 @@ pub async fn settings(
     headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<Value>> {
-    let _registration = app.store.registration.lock().await;
+    let registration = app.store.registration.lock().await;
     let mut settings = storage::load_settings(&app.store.root).await?;
     if method == Method::POST {
+        // A manual archive run decided what to move with these settings: they stay until it ends.
+        if app.archive.manual_active() {
+            return Err(conflict("archive_running"));
+        }
         let (max, policy) = json_type(&headers)
             .then(|| storage::parse_settings_update(&body))
             .flatten()
@@ -49,14 +53,20 @@ pub async fn settings(
     }
     let used = app.store.used().await?;
     app.used.store(used, Ordering::Relaxed);
-    Ok(Json(json!({
+    let mut snapshot = json!({
         "max_bytes": settings["max_bytes"],
         "policy": settings["policy"],
         "used_bytes": used,
         "free_bytes": fs2::available_space(&app.store.root)?,
         "reserved_bytes": storage::reserved(&app.store.root).await?,
-        "archive": {"enabled": false, "state": "disabled", "reason": "not_ported"},
-    })))
+    });
+    drop(registration);
+    // The archive is probed and measured after the lock is released: a slow mount must not stall the server.
+    snapshot["archive"] = crate::http_archive::archive_block(&app.archive).await;
+    if app.archive.settings().remote() {
+        snapshot["archive"]["track_fill"] = crate::http_archive::track_fill(&app).await;
+    }
+    Ok(Json(snapshot))
 }
 
 pub async fn pin(
@@ -96,6 +106,9 @@ pub async fn delete_log(
     // Every upload finish waits on the registration lock, so the conversion is stopped outside it
     // and the recording is judged again once it is held.
     stop_conversion(&app, &id).await?;
+    // The archiver holds a record's lock while it confirms the share copy (up to PROBE_WAIT_SECONDS): that wait is
+    // taken here, not under the registration lock that every upload finish and settings save needs too.
+    drop(app.store.record_lock(&id).await.lock_owned().await);
     let registration = app.store.registration.lock().await;
     if let Some(skipped) = refusal(&app, &id, skip_pinned).await? {
         return Ok(skipped);
@@ -106,7 +119,13 @@ pub async fn delete_log(
         std::slice::from_ref(&id),
         &[],
         "manual",
-        |m| m["status"] == "processing",
+        |m, _| {
+            if m["status"] == "processing" {
+                storage::Judgement::KeepAll
+            } else {
+                storage::Judgement::Delete
+            }
+        },
     )
     .await?;
     drop(registration);
@@ -115,6 +134,7 @@ pub async fn delete_log(
         return Err(conflict("conversion_busy"));
     }
     app.jobs.progress.write().await.remove(&id);
+    crate::http_archive::process_pending(&app.archive).await;
     if let Ok(used) = app.store.used().await {
         app.used.store(used, Ordering::Relaxed);
     }

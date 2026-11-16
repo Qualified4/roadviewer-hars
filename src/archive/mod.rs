@@ -4,13 +4,26 @@
 //! Write scope: a backend that can write ([`ArchiveWrite`]) is bound to a HARS-owned root, marked
 //! `hars_owner=roadviewer-hars` (Drive appProperties) or `"owner": "roadviewer-hars"` (NAS sentinel). Data written by
 //! the Python Road Viewer is reached through [`DriveLegacy`] / [`NasLegacy`], which only implement [`ArchiveRead`].
+pub mod archiver;
+mod archiver_manual;
+mod archiver_nas;
+mod archiver_recover;
+mod archiver_remote;
 pub mod backend;
 pub mod drive;
 pub mod drive_auth;
 mod fsutil;
 pub mod http_client;
+pub mod index;
 pub mod nas;
+pub mod pending;
+pub mod resolve;
+pub mod settings;
+pub mod track_fill;
 
+pub use archiver::{Archive, Factory, Host};
+pub use archiver_manual::Transfer;
+pub use archiver_remote::{UPLOAD_WORKERS, remote_reason};
 pub use backend::*;
 pub use drive::{
     DriveBackend, DriveClient, DriveConnection, DriveLegacy, DriveSettings, PendingCode,
@@ -212,6 +225,12 @@ macro_rules! impl_read {
 }
 impl_read!(WriteBackend);
 impl_read!(LegacyBackend);
+
+impl LegacyBackend {
+    pub async fn list_media(&self) -> Result<Vec<LegacyFile>> {
+        dispatch!(self, b => b.list_media().await)
+    }
+}
 
 impl ArchiveWrite for WriteBackend {
     async fn activate(&self) {

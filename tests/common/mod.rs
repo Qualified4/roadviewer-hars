@@ -1,5 +1,7 @@
 //! Shared fault-test harness: raw loopback HTTP, RV1 signing and data-root invariants.
 #![allow(dead_code)]
+pub mod archive_env;
+pub mod fake_drive;
 use hmac::{Hmac, Mac};
 use roadviewer_hars::{
     auth::random_token,
@@ -294,6 +296,15 @@ pub async fn invariants(
         hidden.is_empty(),
         "hidden deletions left behind: {hidden:?}"
     );
+    // Without an archive nothing may queue a remote deletion (Python `PendingDeletes` stays absent or empty).
+    let pending = root.join(roadviewer_hars::archive::pending::PENDING_DELETES);
+    if let Ok(bytes) = std::fs::read(&pending) {
+        let rows: Value = serde_json::from_slice(&bytes).expect("pending deletes must parse");
+        assert!(
+            rows.as_array().is_some_and(Vec::is_empty),
+            "pending archive deletions left behind: {rows}"
+        );
+    }
 
     let uploads = root.join(".uploads");
     let mut sessions = 0;
