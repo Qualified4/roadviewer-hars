@@ -113,7 +113,13 @@ pub async fn delete_log(
         std::slice::from_ref(&id),
         &[],
         "manual",
-        |m| m["status"] == "processing",
+        |m, _| {
+            if m["status"] == "processing" {
+                storage::Judgement::KeepAll
+            } else {
+                storage::Judgement::Delete
+            }
+        },
     )
     .await?;
     drop(registration);

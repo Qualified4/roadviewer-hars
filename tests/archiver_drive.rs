@@ -425,7 +425,7 @@ async fn automatic_cleanup_never_deletes_a_recording_with_drive_files() {
         std::slice::from_ref(&id),
         &[],
         "storage_limit",
-        |_| false,
+        |_, _| roadviewer_hars::storage::Judgement::Delete,
     )
     .await
     .unwrap();

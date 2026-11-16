@@ -591,12 +591,20 @@ pub async fn eviction_plan(
     incoming: &[String],
     protected_ids: &BTreeSet<String>,
 ) -> std::io::Result<Plan> {
+    let guards = eviction_guards(store, incoming, protected_ids).await?;
+    Ok(plan_eviction(&facts(store).await?, &guards))
+}
+async fn eviction_guards(
+    store: &Store,
+    incoming: &[String],
+    protected_ids: &BTreeSet<String>,
+) -> std::io::Result<Guards> {
     let mut guards = guards(&store.root, incoming, protected_ids).await?;
     // Only a recent "connected" result (never a probe under the registration lock) makes archived recordings evictable.
     guards.archive_reachable = store
         .archive()
         .is_some_and(|a| a.last_state() == Some(crate::archive::State::Connected));
-    Ok(plan_eviction(&facts(store).await?, &guards))
+    Ok(guards)
 }
 
 /// Python `admit`. `commit` carries the held registration lock: only then may recordings be
@@ -630,11 +638,13 @@ pub async fn admit(
     if check(limits, current, needed)? == Verdict::Fits {
         return Ok(needed);
     }
-    let plan = eviction_plan(store, incoming, protected_ids).await?;
+    let guards = eviction_guards(store, incoming, protected_ids).await?;
+    let plan = plan_eviction(&facts(store).await?, &guards);
     preflight(limits, current, needed, plan.reclaim)?;
     let Some(registration) = commit else {
         return Ok(needed);
     };
+    let pinned = pins(&load_settings(&store.root).await?);
     for route in &plan.routes {
         let ids = route
             .records
@@ -649,11 +659,26 @@ pub async fn admit(
             .filter(|m| route_key(m) == route.route)
             .filter_map(|m| m["id"].as_str().map(str::to_owned))
             .collect::<Vec<_>>();
-        // `convert` and the scheduler queue a segment under its record lock alone, so any segment
-        // of the route may have been queued since the plan was made: the route is then kept whole.
-        delete_records(store, registration, &ids, &members, "storage_limit", |m| {
-            matches!(m["status"].as_str(), Some("queued" | "processing"))
-        })
+        // `convert` and the scheduler queue a segment under its record lock alone, so the plan's
+        // rule is applied again to what the locks hold now.
+        delete_records(
+            store,
+            registration,
+            &ids,
+            &members,
+            "storage_limit",
+            |m, locked| {
+                let route = locked
+                    .iter()
+                    .map(|m| RecordFacts::from_meta(m, &pinned, 0))
+                    .collect::<Vec<_>>();
+                Judgement::of(eviction_protection(
+                    &RecordFacts::from_meta(m, &pinned, 0),
+                    &route,
+                    &guards,
+                ))
+            },
+        )
         .await?;
         current = space(store, true).await?;
         if enough(limits, current, needed) {
@@ -842,17 +867,40 @@ async fn gone(root: &Path, id: &str) -> std::io::Result<bool> {
         && !tokio::fs::try_exists(hidden_path(root, id)).await?)
 }
 
-/// Delete `ids` while holding the record locks of them and of `group`. `keep` is checked again
-/// under those locks; if it holds for any of them, nothing is deleted, so a protection decided
-/// for a whole route stays whole. Returns the deleted ids. A failure before a recording is hidden
-/// leaves it whole and listed; a hidden one is finished now or by the periodic `recover`.
+/// What a deletion decides for one of its targets, judged again under the record locks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Judgement {
+    Delete,
+    /// This recording stays; the other targets are judged on their own.
+    Skip,
+    /// A protection of the whole group (a route being converted): nothing is deleted.
+    KeepAll,
+}
+impl Judgement {
+    /// The judgement `eviction_protection` gives: route-wide protections keep the whole route, per-recording ones
+    /// (pins, remote copies, an unreachable archive) only that recording (Python `admit`).
+    pub fn of(protection: Option<Protection>) -> Self {
+        match protection {
+            None => Self::Delete,
+            Some(Protection::RouteReceiving | Protection::Uploading | Protection::Converting) => {
+                Self::KeepAll
+            }
+            Some(_) => Self::Skip,
+        }
+    }
+}
+
+/// Delete `ids` while holding the record locks of them and of `group`. `judge` sees each target and
+/// every locked recording again under those locks. Returns the deleted ids. A failure before a
+/// recording is hidden leaves it whole and listed; a hidden one is finished now or by the periodic
+/// `recover`.
 pub async fn delete_records(
     store: &Store,
     registration: &MutexGuard<'_, ()>,
     ids: &[String],
     group: &[String],
     reason: &str,
-    keep: impl Fn(&Value) -> bool,
+    judge: impl Fn(&Value, &[Value]) -> Judgement,
 ) -> Result<Vec<String>> {
     let mut locked = ids.iter().chain(group).cloned().collect::<Vec<_>>();
     locked.sort();
@@ -861,17 +909,23 @@ pub async fn delete_records(
     for id in &locked {
         held.push(store.record_lock(id).await.lock_owned().await);
     }
-    let mut targets = Vec::new();
-    for id in locked {
-        let Ok(meta) = store.meta(&id).await else {
-            continue;
-        };
-        // Drive is extension storage: only an explicit complete deletion may remove its files.
-        if keep(&meta) || reason != "manual" && has_remote_refs(&meta) {
-            return Ok(vec![]);
+    let mut metas = Vec::new();
+    for id in &locked {
+        if let Ok(meta) = store.meta(id).await {
+            metas.push(meta);
         }
-        if ids.contains(&id) {
-            targets.push(id);
+    }
+    let mut targets = Vec::new();
+    for meta in metas.iter().filter(|m| ids.iter().any(|i| m["id"] == *i)) {
+        let judgement = match judge(meta, &metas) {
+            // Drive is extension storage: only an explicit complete deletion may remove its files.
+            Judgement::Delete if reason != "manual" && has_remote_refs(meta) => Judgement::Skip,
+            j => j,
+        };
+        match judgement {
+            Judgement::KeepAll => return Ok(vec![]),
+            Judgement::Skip => {}
+            Judgement::Delete => targets.push(meta["id"].as_str().unwrap_or_default().to_owned()),
         }
     }
     if targets.is_empty() {
