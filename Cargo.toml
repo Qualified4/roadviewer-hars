@@ -27,7 +27,7 @@ md-5 = "0.10"
 rand = "0.9"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls-native-roots"] }
-# Thumbnail decoders: SIMD features off, so every crate they bring is `forbid(unsafe_code)`.
+# Thumbnail decoders: SIMD features off, so the decoder crates are all `forbid(unsafe_code)`.
 rusty_h264-decoder = { version = "=0.17.2", default-features = false, features = ["std"] }
 rusty_h265 = { version = "=0.7.1", default-features = false }
 serde = { version = "1", features = ["derive"] }

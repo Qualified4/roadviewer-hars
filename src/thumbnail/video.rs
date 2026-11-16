@@ -168,7 +168,13 @@ fn track(file: &mut File, wanted: usize) -> anyhow::Result<Track> {
             0 => (len - at, 8),
             n => (u64::from(n), 8),
         };
-        ensure!(size >= prefix && size <= len - at, "invalid MP4 box size");
+        ensure!(size >= prefix, "invalid MP4 box size");
+        if size > len - at {
+            // A file cut short (the first bytes of an archived video) keeps its complete boxes;
+            // its samples are read until the end, as FFmpeg does.
+            ensure!(&header[4..8] != b"moov", "truncated MP4 metadata");
+            break;
+        }
         if &header[4..8] == b"moov" {
             ensure!(
                 moov.is_none() && size <= MOOV_LIMIT,
@@ -242,12 +248,9 @@ fn track(file: &mut File, wanted: usize) -> anyhow::Result<Track> {
     };
     let mut r = Reader { data: entry, at: 0 };
     r.take(24)?;
-    let (width, height) = (usize::from(r.u16()?), usize::from(r.u16()?));
-    ensure!(
-        width > 0 && width <= MAX_WIDTH && height > 0 && height <= MAX_HEIGHT,
-        "unsupported thumbnail dimensions"
-    );
-    r.take(50)?;
+    // The sample entry's own width and height are not used: FFmpeg sizes the stream from its
+    // parameter sets.
+    r.take(54)?;
     let inner = children(&entry[r.at..])?;
     let (length_size, sets) = match codec {
         Codec::H264 => sets_avcc(one(&inner, b"avcC")?)?,
@@ -423,17 +426,25 @@ impl Bits {
     }
 }
 
-/// H.264 SPS `video_full_range_flag` (FFmpeg's h264 decoder then outputs `yuvj420p`).
-fn h264_full_range(sps: &[u8]) -> anyhow::Result<bool> {
+/// What the decoder configuration says before any picture: the cropped size, which FFmpeg's
+/// stream parameters carry and the size bound is checked on, and `video_full_range_flag`.
+struct Sequence {
+    width: u64,
+    height: u64,
+    full_range: bool,
+}
+
+fn h264_sequence(sps: &[u8]) -> anyhow::Result<Sequence> {
     let mut b = Bits::new(sps.get(1..).context("truncated parameter set")?);
     let profile = b.bits(8)?;
     b.bits(16)?;
     b.ue()?;
+    let mut chroma = 1;
     if matches!(
         profile,
         100 | 110 | 122 | 244 | 44 | 83 | 86 | 118 | 128 | 138 | 139 | 134 | 135
     ) {
-        let chroma = b.ue()?;
+        chroma = b.ue()?;
         if chroma == 3 {
             b.bit()?;
         }
@@ -474,31 +485,62 @@ fn h264_full_range(sps: &[u8]) -> anyhow::Result<bool> {
     }
     b.ue()?;
     b.bit()?;
-    b.ue()?;
-    b.ue()?;
-    if b.bit()? == 0 {
+    let width_mbs = u64::from(b.ue()?) + 1;
+    let height_units = u64::from(b.ue()?) + 1;
+    let frames_only = b.bit()? == 1;
+    if !frames_only {
         b.bit()?;
     }
     b.bit()?;
+    let fields = if frames_only { 1 } else { 2 };
+    let (unit_x, unit_y) = match chroma {
+        0 | 3 => (1, fields),
+        2 => (2, fields),
+        _ => (2, 2 * fields),
+    };
+    let mut crop = [0u64; 4];
     if b.bit()? == 1 {
-        for _ in 0..4 {
-            b.ue()?;
+        for c in &mut crop {
+            *c = u64::from(b.ue()?);
         }
     }
-    if b.bit()? == 0 {
-        return Ok(false);
-    }
-    if b.bit()? == 1 && b.bits(8)? == 255 {
-        b.bits(32)?;
-    }
+    let width = (width_mbs * 16).saturating_sub(unit_x * (crop[0] + crop[1]));
+    let height = (height_units * 16 * fields).saturating_sub(unit_y * (crop[2] + crop[3]));
+    let mut full_range = false;
     if b.bit()? == 1 {
-        b.bit()?;
+        if b.bit()? == 1 && b.bits(8)? == 255 {
+            b.bits(32)?;
+        }
+        if b.bit()? == 1 {
+            b.bit()?;
+        }
+        if b.bit()? == 1 {
+            b.bits(3)?;
+            full_range = b.bit()? == 1;
+        }
     }
-    if b.bit()? == 0 {
-        return Ok(false);
-    }
-    b.bits(3)?;
-    Ok(b.bit()? == 1)
+    Ok(Sequence {
+        width,
+        height,
+        full_range,
+    })
+}
+
+fn hevc_sequence(sps: &[u8]) -> anyhow::Result<Sequence> {
+    ensure!(sps.len() > 2, "truncated parameter set");
+    let rbsp = rusty_h265::nal::unescape(&sps[2..]);
+    let sps = rusty_h265::ps::parse_sps(&rbsp.data).map_err(|e| anyhow::anyhow!("{e}"))?;
+    let (sub_x, sub_y) = match sps.chroma_format_idc {
+        1 => (2, 2),
+        2 => (2, 1),
+        _ => (1, 1),
+    };
+    let [left, right, top, bottom] = sps.conf_win.map(u64::from);
+    Ok(Sequence {
+        width: u64::from(sps.width).saturating_sub(sub_x * (left + right)),
+        height: u64::from(sps.height).saturating_sub(sub_y * (top + bottom)),
+        full_range: sps.vui.is_some_and(|v| v.video_full_range_flag),
+    })
 }
 
 fn plane(width: usize, height: usize, data: Vec<u8>) -> Plane {
@@ -570,16 +612,30 @@ pub fn decode(
 ) -> anyhow::Result<()> {
     let mut file = File::open(path)?;
     let track = track(&mut file, limit)?;
-    let full_range = match track.codec {
+    let sequence = match track.codec {
         Codec::H264 => track
             .sets
             .iter()
             .find(|s| s.first().is_some_and(|b| b & 31 == 7))
-            .map(|s| h264_full_range(s))
-            .transpose()?
-            .unwrap_or(false),
-        Codec::Hevc => hevc_full_range(&track.sets),
-    };
+            .map(|s| h264_sequence(s)),
+        Codec::Hevc => track
+            .sets
+            .iter()
+            .find(|s| s.first().is_some_and(|b| (b >> 1) & 63 == 33))
+            .map(|s| hevc_sequence(s)),
+    }
+    .transpose()?;
+    // Parameter sets only in band (avc3, hev1): the decoded pictures are checked instead.
+    if let Some(s) = &sequence {
+        ensure!(
+            s.width > 0
+                && s.width <= MAX_WIDTH as u64
+                && s.height > 0
+                && s.height <= MAX_HEIGHT as u64,
+            "unsupported thumbnail dimensions"
+        );
+    }
+    let full_range = sequence.is_some_and(|s| s.full_range);
     let mut decoder = match track.codec {
         Codec::H264 => Decoder::H264(Box::default()),
         Codec::Hevc => {
@@ -595,6 +651,7 @@ pub fn decode(
     let time = |pts: i64| (pts - track.start) as f64 / f64::from(track.timescale);
     let limited = track.samples.len() == limit;
     let mut sample = Vec::new();
+    let mut fresh = true;
     let emit = |pts: i64,
                 image: Image,
                 each: &mut dyn FnMut(Frame) -> anyhow::Result<bool>|
@@ -628,19 +685,29 @@ pub fn decode(
         match &mut decoder {
             Decoder::H264(d) => {
                 let mut au = Vec::with_capacity(sample.len() + 64);
-                if index == 0 {
+                if fresh {
                     for set in &track.sets {
                         au.extend_from_slice(&[0, 0, 0, 1]);
                         au.extend_from_slice(set);
                     }
+                    fresh = false;
                 }
                 for nal in &nals {
                     au.extend_from_slice(&[0, 0, 0, 1]);
                     au.extend_from_slice(nal);
                 }
-                if let Ok(Some(frame)) = guarded(|| d.decode(&au))? {
-                    let size = (frame.width, frame.height);
-                    out.push((pts, h264_image(size, frame.y, frame.u, frame.v)?));
+                match guarded(|| d.decode(&au))? {
+                    Ok(Some(frame)) => {
+                        let size = (frame.width, frame.height);
+                        out.push((pts, h264_image(size, frame.y, frame.u, frame.v)?));
+                    }
+                    Ok(None) => {}
+                    // The decoder keeps no usable state after an error; like FFmpeg, decoding
+                    // resumes at the next picture that needs no reference.
+                    Err(_) => {
+                        **d = rusty_h264_decoder::Decoder::new();
+                        fresh = true;
+                    }
                 }
             }
             Decoder::Hevc(d) => {
@@ -695,17 +762,4 @@ pub fn decode(
         }
     }
     Ok(())
-}
-
-/// HEVC VUI `video_full_range_flag`, read through `rusty_h265`'s own SPS parser.
-fn hevc_full_range(sets: &[Vec<u8>]) -> bool {
-    sets.iter()
-        .filter(|s| s.len() > 2 && (s[0] >> 1) & 63 == 33)
-        .any(|s| {
-            let rbsp = rusty_h265::nal::unescape(&s[2..]);
-            rusty_h265::ps::parse_sps(&rbsp.data)
-                .ok()
-                .and_then(|sps| sps.vui.map(|v| v.video_full_range_flag))
-                .unwrap_or(false)
-        })
 }
