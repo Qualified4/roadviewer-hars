@@ -422,3 +422,34 @@ fn memory_limit_fails_without_fallback_and_the_default_fits_the_bounds() {
     c.clean(&[]);
     c.retry("out.mp4");
 }
+
+/// The pure engine needs about twice the input free (its payload and the MP4 coexist); with less,
+/// FFmpeg writes the single copy instead, recorded as a routine (unsupported) fallback.
+#[test]
+fn low_space_selects_the_single_copy_engine() {
+    use roadviewer_hars::media::{SPACE_MARGIN, pure_fits};
+    let input = 700 * 1024 * 1024;
+    assert!(pure_fits(input, 2 * input + SPACE_MARGIN));
+    assert!(!pure_fits(input, 2 * input + SPACE_MARGIN - 1));
+    assert!(!pure_fits(input, input + SPACE_MARGIN));
+    assert!(!pure_fits(u64::MAX, u64::MAX));
+    let c = case();
+    let available = (2 * c.original.len() as u64 + SPACE_MARGIN - 1).to_string();
+    let log = result(
+        &c.command(&c.root.join("out.mp4"))
+            .env("HARS_AVAILABLE_SPACE_BYTES", &available)
+            .output()
+            .unwrap(),
+    );
+    fell_back(&log, "unsupported", "low_space", "INFO");
+    c.clean(&["out.mp4"]);
+    let enough = (2 * c.original.len() as u64 + SPACE_MARGIN).to_string();
+    let log = result(
+        &c.command(&c.root.join("pure.mp4"))
+            .env("HARS_AVAILABLE_SPACE_BYTES", &enough)
+            .output()
+            .unwrap(),
+    );
+    assert_eq!(engines(&log), ["pure"], "{log}");
+    c.clean(&["out.mp4", "pure.mp4"]);
+}

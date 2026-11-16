@@ -18,6 +18,8 @@ pub fn set_worker_executable(path: PathBuf) -> anyhow::Result<()> {
         .map_err(|_| anyhow::anyhow!("media worker already configured"))
 }
 const OUTPUT_LIMIT: u64 = 64 * 1024 * 1024;
+/// Exit status of a media worker whose job failed for the machine (EX_TEMPFAIL).
+pub const RESOURCE_EXIT: i32 = 75;
 /// A media worker that ended without success; how it ended tells a crash or
 /// a kill (the kernel's OOM killer, a shutdown) from a reported error.
 #[derive(Debug)]
@@ -675,7 +677,11 @@ async fn remux_inner(
         }
     }
     let mut fallback = None;
-    if engine == Engine::Pure {
+    if engine == Engine::Pure
+        && let Some(short) = short_for_pure(source, output)
+    {
+        fallback = Some(short);
+    } else if engine == Engine::Pure {
         match pure(source, kind, output, times, &clocks, inspection.as_ref()).await {
             Ok(info) => {
                 count(0);
@@ -730,6 +736,47 @@ async fn remux_inner(
         engine: Engine::Ffmpeg,
         fallback,
         terminal: Some(clocks.terminal),
+    })
+}
+
+/// Room kept free beyond what an engine writes, as the conversion's own floor (`convert`).
+pub const SPACE_MARGIN: u64 = 100 * 1024 * 1024;
+
+/// The pure engine holds its payload next to the MP4 it is copied into, so it needs about twice
+/// the input; FFmpeg writes the MP4 alone.
+pub fn pure_fits(input: u64, available: u64) -> bool {
+    input
+        .checked_mul(2)
+        .and_then(|n| n.checked_add(SPACE_MARGIN))
+        .is_some_and(|needed| available >= needed)
+}
+
+/// Why the pure engine is skipped for lack of space, if it is. The FFmpeg engine then writes the
+/// single copy. Debug builds let tests state the free space.
+fn short_for_pure(source: &Path, output: &Path) -> Option<crate::pure_remux::Failure> {
+    let input = std::fs::metadata(source).ok()?.len();
+    let dir = output
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    let stated = cfg!(debug_assertions)
+        .then(|| {
+            std::env::var("HARS_AVAILABLE_SPACE_BYTES")
+                .ok()?
+                .parse()
+                .ok()
+        })
+        .flatten();
+    let available = match stated {
+        Some(v) => v,
+        None => fs2::available_space(dir).ok()?,
+    };
+    (!pure_fits(input, available)).then(|| {
+        crate::pure_remux::Failure::new(
+            crate::pure_remux::FailureClass::Unsupported,
+            "low_space",
+            format!("{available} bytes free for a {input} byte input: one copy only"),
+        )
     })
 }
 
@@ -848,6 +895,7 @@ pub fn failure(error: &anyhow::Error) -> crate::pure_remux::Failure {
                 Some(_) => (C::Internal, "worker_crash"),
                 // An unwinding panic exits with 101.
                 None if status.code() == Some(101) => (C::Internal, "panic"),
+                None if status.code() == Some(RESOURCE_EXIT) => (C::Resource, "worker_resource"),
                 None => (C::Internal, "worker_error"),
             };
             return Failure::new(class, code, format!("{error:#}"));
@@ -855,7 +903,12 @@ pub fn failure(error: &anyhow::Error) -> crate::pure_remux::Failure {
         #[cfg(not(unix))]
         return Failure::new(C::Internal, "worker_error", format!("{error:#} {status}"));
     }
-    Failure::classify(error)
+    match Failure::classify(error) {
+        f if f.class != C::Resource && crate::native_video::resource_error(error) => {
+            Failure::new(C::Resource, "io_error", f.reason)
+        }
+        f => f,
+    }
 }
 
 /// The pure engine's attempt. Any failure is returned classified; its output
@@ -1034,7 +1087,7 @@ async fn ffmpeg(
     // the pictures, one picture per sample and the same signature.
     let file = temp.clone();
     let (read, layout) =
-        tokio::task::spawn_blocking(move || crate::pure_remux::readback::inspect(&file, hevc))
+        tokio::task::spawn_blocking(move || crate::pure_remux::readback::inspect_copy(&file, hevc))
             .await??;
     anyhow::ensure!(
         read.signature == before,

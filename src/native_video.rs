@@ -3,6 +3,21 @@ use anyhow::{Context, bail};
 use ffmpeg_next as ffmpeg;
 use std::path::Path;
 
+/// Whether a media worker's error is the machine's (storage, memory) rather than its input's, so
+/// that its exit status says so (`media::RESOURCE_EXIT`). FFmpeg reports a failed write by errno.
+pub fn resource_error(error: &anyhow::Error) -> bool {
+    if let Some(ffmpeg::Error::Other { errno }) = error.downcast_ref::<ffmpeg::Error>() {
+        #[cfg(unix)]
+        return matches!(
+            *errno,
+            libc::ENOSPC | libc::EFBIG | libc::EDQUOT | libc::ENOMEM | libc::EIO
+        );
+        #[cfg(not(unix))]
+        return false;
+    }
+    crate::pure_remux::Failure::classify(error).class == crate::pure_remux::FailureClass::Resource
+}
+
 // Own the FFmpeg bitstream filter. Send transfers packet ownership; receive
 // returns owned packets. No raw pointers leave this synchronous worker.
 struct AnnexB(*mut ffmpeg::ffi::AVBSFContext);

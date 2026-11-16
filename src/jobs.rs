@@ -334,6 +334,7 @@ impl Jobs {
         };
         let stdout = child.stdout.take().unwrap();
         let mut lines = BufReader::new(stdout).lines();
+        let reaped = std::sync::atomic::AtomicBool::new(false);
         let future = async {
             while let Some(line) = lines.next_line().await? {
                 if let Ok(v) = serde_json::from_str::<Value>(&line)
@@ -347,8 +348,10 @@ impl Jobs {
                     crate::media::relay_remux_event(record, &line);
                 }
             }
+            let status = child.wait().await?;
+            reaped.store(true, std::sync::atomic::Ordering::Relaxed);
             anyhow::ensure!(
-                child.wait().await?.success(),
+                status.success(),
                 "conversion failed; original data preserved"
             );
             Ok::<_, anyhow::Error>(())
@@ -377,9 +380,12 @@ impl Jobs {
             result=tokio::time::timeout(std::time::Duration::from_secs(timeout),future)=>{
                 if let Err(error)=result.context("conversion deadline exceeded; original data preserved").and_then(|r|r){
                     // Nothing of this generation was published yet: its partial output goes with its
-                    // processes (the child may have exited already, so a failed kill is expected).
-                    let _=stop(&mut child);
-                    let _=child.wait().await;
+                    // processes. A reaped leader's id may belong to another group by now; its media
+                    // workers die with it (PDEATHSIG).
+                    if !reaped.load(std::sync::atomic::Ordering::Relaxed) {
+                        let _=stop(&mut child);
+                        let _=child.wait().await;
+                    }
                     let _=tokio::fs::remove_dir_all(&staging).await;
                     return Err(error);
                 }

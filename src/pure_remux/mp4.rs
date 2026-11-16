@@ -1,4 +1,4 @@
-use super::annexb::NAL_LIMIT;
+use super::{Unsupported, annexb::NAL_LIMIT};
 use anyhow::{Context, ensure};
 use shiguredo_mp4::{
     TrackKind,
@@ -22,9 +22,13 @@ pub struct Payload {
     file: BufWriter<File>,
     len: u64,
     sample_start: u64,
+    limit: u64,
 }
 impl Payload {
     pub fn create(output: &Path) -> anyhow::Result<Self> {
+        Self::with_limit(output, FILE_LIMIT)
+    }
+    fn with_limit(output: &Path, limit: u64) -> anyhow::Result<Self> {
         let dir = output
             .parent()
             .filter(|p| !p.as_os_str().is_empty())
@@ -33,6 +37,7 @@ impl Payload {
             file: BufWriter::with_capacity(1024 * 1024, tempfile::tempfile_in(dir)?),
             len: 0,
             sample_start: 0,
+            limit,
         })
     }
     pub fn nal(&mut self, unit: &[u8]) -> anyhow::Result<()> {
@@ -40,6 +45,10 @@ impl Payload {
             !unit.is_empty() && unit.len() <= NAL_LIMIT,
             "NAL unit exceeds bounded memory limit"
         );
+        // Refused before the bytes are staged, so a large input is handed to FFmpeg early.
+        if self.len + 4 + unit.len() as u64 >= self.limit {
+            return Err(Unsupported("output beyond 3 GiB").into());
+        }
         self.file.write_all(&(unit.len() as u32).to_be_bytes())?;
         self.file.write_all(unit)?;
         self.len += 4 + unit.len() as u64;
@@ -144,7 +153,9 @@ pub fn write(path: &Path, plan: &Plan, payload: Payload) -> anyhow::Result<()> {
         total == payload.len && payload.pending() == 0,
         "sample table disagrees with its payload"
     );
-    ensure!(total < FILE_LIMIT, "unsupported: output beyond 3 GiB");
+    if total >= payload.limit {
+        return Err(Unsupported("output beyond 3 GiB").into());
+    }
     let reserved = exact_reservation(plan)?;
     let mut muxer = Mp4FileMuxer::with_options(Mp4FileMuxerOptions {
         reserved_moov_box_size: reserved,
@@ -181,4 +192,34 @@ pub fn write(path: &Path, plan: &Plan, payload: Payload) -> anyhow::Result<()> {
     }
     file.flush()?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::pure_remux::{Failure, FailureClass};
+
+    /// The output bound stops staging at the unit that would cross it, as an unsupported input
+    /// (FFmpeg copies it), without writing the input out first.
+    #[test]
+    fn the_output_bound_refuses_early_as_unsupported() {
+        let dir = tempfile::tempdir().unwrap();
+        let limit = 10_000;
+        let mut payload = Payload::with_limit(&dir.path().join("out.mp4"), limit).unwrap();
+        let unit = [0x26u8; 996];
+        let mut accepted = 0;
+        let error = loop {
+            match payload.nal(&unit) {
+                Ok(()) => accepted += 1,
+                Err(e) => break e,
+            }
+        };
+        assert_eq!(accepted, 9);
+        assert!(payload.len < limit);
+        assert_eq!(payload.len, 9 * 1000);
+        assert!(error.downcast_ref::<Unsupported>().is_some(), "{error:#}");
+        let failure = Failure::classify(&error.context(crate::pure_remux::Stage::Read));
+        assert_eq!(failure.class, FailureClass::Unsupported);
+        assert!(crate::media::falls_back(failure.class));
+    }
 }

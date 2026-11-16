@@ -72,9 +72,41 @@ struct Pes {
 /// 33-bit values. Conditions FFmpeg tolerates silently (lost packets,
 /// scrambling, transport errors, missing PTS) are refused as unsupported so
 /// the FFmpeg engine handles them instead of a different guess here.
-fn demux(source: &Path, mut each: impl FnMut(Pes) -> anyhow::Result<()>) -> anyhow::Result<()> {
+fn demux(source: &Path, each: impl FnMut(Pes) -> anyhow::Result<()>) -> anyhow::Result<()> {
     let file = std::fs::File::open(source)?;
-    let mut reader = TsPacketReader::new(BufReader::with_capacity(1024 * 1024, file));
+    demux_from(BufReader::with_capacity(1024 * 1024, file), each)
+}
+
+/// Keeps the reader's own error: the packet reader reports it as text only, and a failing disk
+/// must stay an OS error (a resource failure), not read as a damaged input.
+struct Watched<R> {
+    inner: R,
+    failed: std::rc::Rc<std::cell::RefCell<Option<std::io::Error>>>,
+}
+impl<R: std::io::Read> std::io::Read for Watched<R> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        self.inner.read(buf).inspect_err(|e| {
+            if e.kind() == std::io::ErrorKind::Interrupted {
+                return;
+            }
+            let copy = match e.raw_os_error() {
+                Some(code) => std::io::Error::from_raw_os_error(code),
+                None => std::io::Error::new(e.kind(), e.to_string()),
+            };
+            *self.failed.borrow_mut() = Some(copy);
+        })
+    }
+}
+
+fn demux_from(
+    input: impl std::io::Read,
+    mut each: impl FnMut(Pes) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
+    let failed = std::rc::Rc::default();
+    let mut reader = TsPacketReader::new(Watched {
+        inner: input,
+        failed: std::rc::Rc::clone(&failed),
+    });
     let mut video = None;
     let mut continuity: Option<u8> = None;
     let mut pes: Option<Pes> = None;
@@ -84,10 +116,10 @@ fn demux(source: &Path, mut each: impl FnMut(Pes) -> anyhow::Result<()>) -> anyh
         }
         each(done)
     };
-    while let Some(packet) = reader
-        .read_ts_packet()
-        .map_err(|e| anyhow::anyhow!("invalid MPEG-TS packet: {e}"))?
-    {
+    while let Some(packet) = reader.read_ts_packet().map_err(|e| match failed.take() {
+        Some(io) => anyhow::Error::new(io).context("reading MPEG-TS"),
+        None => anyhow::anyhow!("invalid MPEG-TS packet: {e}"),
+    })? {
         if packet.header.transport_error_indicator {
             bail!("MPEG-TS transport error");
         }
@@ -325,4 +357,31 @@ pub fn remux(
     let _profile = crate::profile::Scope::new("pure_ts_write");
     super::mp4::write(output, &plan, payload).context(Stage::Write)?;
     Ok(signature)
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::pure_remux::{Failure, FailureClass, Stage};
+
+    fn class(input: impl std::io::Read) -> (FailureClass, String) {
+        let error = super::demux_from(input, |_| Ok(())).unwrap_err();
+        let failure = Failure::classify(&error.context(Stage::Read));
+        (failure.class, failure.code)
+    }
+
+    /// A failing disk is the machine (no FFmpeg retry of the same read), a damaged file the input.
+    #[test]
+    fn a_read_error_stays_an_os_error_and_garbage_stays_invalid() {
+        struct Failing;
+        impl std::io::Read for Failing {
+            fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
+                Err(std::io::Error::from_raw_os_error(libc::EIO))
+            }
+        }
+        assert_eq!(class(Failing), (FailureClass::Resource, "io_error".into()));
+        assert_eq!(
+            class(&[0u8; 188 * 2][..]),
+            (FailureClass::Invalid, "invalid_input".into())
+        );
+    }
 }

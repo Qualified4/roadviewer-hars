@@ -186,7 +186,7 @@ pub async fn prepare(
     // Reserve a margin, and let every write surface ENOSPC. This does not delete
     // or move any input, nor claim that an estimate guarantees a complete job.
     anyhow::ensure!(
-        fs2::available_space(&dest)? > 100 * 1024 * 1024,
+        fs2::available_space(&dest)? > media::SPACE_MARGIN,
         "insufficient conversion disk space"
     );
     progress("log_read", 0.);

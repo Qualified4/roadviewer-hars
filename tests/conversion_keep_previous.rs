@@ -29,6 +29,9 @@ enum Fault {
     Kill,
     /// Writes beyond the limit fail with EFBIG, as on a full disk.
     WriteLimit,
+    /// Too little free space for the pure engine, so FFmpeg writes the single copy, and that
+    /// write fails at the limit: the FFmpeg worker's exit status says resource.
+    SingleCopyWriteLimit,
     /// The pure worker parked past the media deadline.
     Deadline,
     /// Media inspection parked past the media deadline (MP4 inputs have no remux worker).
@@ -93,7 +96,10 @@ async fn start(root: &Path, fault: Fault, limit: u64) -> Server {
                     .env("HARS_CRASH_POINT", "native_inspect")
                     .env("HARS_MEDIA_DEADLINE_SECONDS", "2");
             }
-            Fault::WriteLimit => {
+            Fault::WriteLimit | Fault::SingleCopyWriteLimit => {
+                if matches!(fault, Fault::SingleCopyWriteLimit) {
+                    command.env("HARS_AVAILABLE_SPACE_BYTES", "0");
+                }
                 // SAFETY: only async-signal-safe calls run between fork and exec. Ignored SIGXFSZ
                 // survives exec, so oversized writes fail with EFBIG instead of killing.
                 unsafe {
@@ -395,7 +401,7 @@ fn write_limit(r: &Recording) -> u64 {
 
 /// `workers`: how many pure workers a `Kill` fault kills, one after the other.
 async fn faulted(r: &Recording, fault: Fault, workers: usize) -> Server {
-    let limit = if matches!(fault, Fault::WriteLimit) {
+    let limit = if matches!(fault, Fault::WriteLimit | Fault::SingleCopyWriteLimit) {
         write_limit(r)
     } else {
         0
@@ -411,7 +417,12 @@ async fn faulted(r: &Recording, fault: Fault, workers: usize) -> Server {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn a_resource_failure_keeps_the_published_result_and_a_later_conversion_completes() {
-    for fault in [Fault::Kill, Fault::WriteLimit, Fault::Deadline] {
+    for fault in [
+        Fault::Kill,
+        Fault::WriteLimit,
+        Fault::SingleCopyWriteLimit,
+        Fault::Deadline,
+    ] {
         let r = recording(true);
         let ready = r.converted().await;
         let prepared = files(&r.folder.join("prepared"));
@@ -425,7 +436,7 @@ async fn a_resource_failure_keeps_the_published_result_and_a_later_conversion_co
         }
         no_attempts(&r.folder);
         r.originals_kept();
-        if !matches!(fault, Fault::WriteLimit) {
+        if !matches!(fault, Fault::WriteLimit | Fault::SingleCopyWriteLimit) {
             let log = server.log();
             assert!(log.contains("conversion_kept_previous"), "{fault:?}: {log}");
             assert!(!log.contains("remux_fallback"), "{fault:?}: {log}");
@@ -467,7 +478,12 @@ async fn a_resource_failure_keeps_the_stored_videos_when_originals_are_not_retai
 #[tokio::test(flavor = "multi_thread")]
 async fn a_first_conversion_failing_for_resources_is_ready_with_a_warning_and_keeps_originals() {
     for keep in [true, false] {
-        for fault in [Fault::Kill, Fault::WriteLimit, Fault::Deadline] {
+        for fault in [
+            Fault::Kill,
+            Fault::WriteLimit,
+            Fault::SingleCopyWriteLimit,
+            Fault::Deadline,
+        ] {
             let r = recording(keep);
             let server = faulted(&r, fault, 2).await;
             let m = wait_status(&r.folder, "ready");

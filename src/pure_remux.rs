@@ -134,7 +134,7 @@ impl Failure {
 /// Address space a worker may add once its job is read: twice the largest
 /// buffers a valid input can need (NAL splitter and hash buffer, one sample,
 /// one PES: 32 MiB each, with growth slack). Internal setting
-/// `HARS_PURE_WORKER_MEMORY_MB` changes it, for fault tests.
+/// `HARS_PURE_WORKER_MEMORY_MB` changes it in debug builds, for fault tests.
 pub const MEMORY_BUDGET_MIB: u64 = 256;
 
 /// Caps the worker's address space at its current size plus `budget_mib`, so

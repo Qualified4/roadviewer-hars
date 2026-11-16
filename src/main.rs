@@ -34,6 +34,13 @@ fn main() -> anyhow::Result<()> {
     };
     let result = runtime.block_on(run());
     runtime.shutdown_timeout(SHUTDOWN_LIMIT);
+    if worker
+        && let Err(error) = &result
+        && roadviewer_hars::native_video::resource_error(error)
+    {
+        eprintln!("Error: {error:?}");
+        std::process::exit(roadviewer_hars::media::RESOURCE_EXIT);
+    }
     result
 }
 
@@ -91,12 +98,17 @@ async fn run() -> anyhow::Result<()> {
         anyhow::ensure!(args.len() == 5, "invalid internal media job");
         let job: roadviewer_hars::pure_remux::Job =
             roadviewer_hars::store::read_json(std::path::Path::new(&args[3])).await?;
-        roadviewer_hars::pure_remux::limit_memory(
-            std::env::var("HARS_PURE_WORKER_MEMORY_MB")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(roadviewer_hars::pure_remux::MEMORY_BUDGET_MIB),
-        )?;
+        // A test setting, as the media deadline's: a release build always uses the budget the bounds need.
+        let budget = cfg!(debug_assertions)
+            .then(|| {
+                std::env::var("HARS_PURE_WORKER_MEMORY_MB")
+                    .ok()?
+                    .parse()
+                    .ok()
+            })
+            .flatten()
+            .unwrap_or(roadviewer_hars::pure_remux::MEMORY_BUDGET_MIB);
+        roadviewer_hars::pure_remux::limit_memory(budget)?;
         let reply = roadviewer_hars::pure_remux::Reply::from(roadviewer_hars::pure_remux::remux(
             std::path::Path::new(&args[2]),
             std::path::Path::new(&args[4]),

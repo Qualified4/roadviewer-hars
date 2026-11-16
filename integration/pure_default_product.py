@@ -13,7 +13,8 @@ read only. Scenarios (all by default):
   restart      the server SIGKILLed mid-conversion: no orphan, requeued, ready
   fsize        server under RLIMIT_FSIZE (SIGXFSZ ignored, writes fail EFBIG):
                resource failure without fallback, originals unchanged
-  memory       worker memory budget 1 MiB: resource failure without fallback
+  memory       worker memory budget 1 MiB (debug build BINARY only): resource
+               failure without fallback
   concurrent   four uploads at once with two conversions: automatic conversion
                waits for active uploads, all ready; then four reconversions at
                concurrency 4; process-tree peak RSS and concurrent workers

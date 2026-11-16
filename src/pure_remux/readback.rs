@@ -211,9 +211,11 @@ impl Access {
     /// HEVC sync samples are exactly the IRAP pictures. H.264 IDR pictures
     /// must be sync samples; libavformat also marks I pictures with a
     /// recovery point, so a non-IDR sync sample must at least be intra.
-    fn check(&self, sync: bool) -> anyhow::Result<()> {
+    /// `fields`: an H.264 sample may hold the two field pictures of one frame (PAFF), as FFmpeg
+    /// copies them; this engine refuses interlaced input, so its own samples hold one picture.
+    fn check(&self, sync: bool, fields: bool) -> anyhow::Result<()> {
         ensure!(
-            self.vcl > 0 && self.first_starts && self.starts == 1,
+            self.vcl > 0 && self.first_starts && (self.starts == 1 || fields && self.starts == 2),
             "MP4 sample is not one picture"
         );
         ensure!(
@@ -372,6 +374,15 @@ fn tables(stbl: &[([u8; 4], &[u8])]) -> anyhow::Result<Tables> {
 /// Reads `path` as the converted camera MP4 of `hevc` or H.264 and returns
 /// the same `Inspection` shape the FFmpeg inspector produces, plus layout.
 pub fn inspect(path: &Path, hevc: bool) -> anyhow::Result<(Inspection, Layout)> {
+    read(path, hevc, false)
+}
+
+/// [`inspect`] for FFmpeg's copy: one H.264 sample is one access unit, a field pair included.
+pub fn inspect_copy(path: &Path, hevc: bool) -> anyhow::Result<(Inspection, Layout)> {
+    read(path, hevc, !hevc)
+}
+
+fn read(path: &Path, hevc: bool, fields: bool) -> anyhow::Result<(Inspection, Layout)> {
     let mut file = File::open(path)?;
     let len = file.metadata()?.len();
     let mut at = 0;
@@ -538,7 +549,7 @@ pub fn inspect(path: &Path, hevc: bool) -> anyhow::Result<(Inspection, Layout)> 
             access.add(hevc, kind, nal)?;
             rest = &rest[4 + n..];
         }
-        access.check(sync.contains(&i))?;
+        access.check(sync.contains(&i), fields)?;
         let decode = i64::try_from(dts)?;
         let presentation = decode
             .checked_add(t.offsets[i])
@@ -567,4 +578,29 @@ pub fn inspect(path: &Path, hevc: bool) -> anyhow::Result<(Inspection, Layout)> 
             edit_list,
         },
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Access;
+
+    fn sample(nals: &[&[u8]]) -> Access {
+        let mut access = Access::default();
+        for nal in nals {
+            access.add(false, nal[0] & 31, nal).unwrap();
+        }
+        access
+    }
+
+    /// An IDR frame coded as two field pictures: both slices start a picture.
+    #[test]
+    fn a_field_pair_is_one_sample_only_in_an_ffmpeg_copy() {
+        let field: &[u8] = &[0x65, 0x88, 0x84];
+        let pair = sample(&[field, field]);
+        assert!(pair.check(true, false).is_err());
+        pair.check(true, true).unwrap();
+        assert!(sample(&[field, field, field]).check(true, true).is_err());
+        sample(&[field]).check(true, true).unwrap();
+        sample(&[field]).check(true, false).unwrap();
+    }
 }
