@@ -21,6 +21,7 @@ pub mod network;
 pub mod parity;
 pub mod profile;
 pub mod pure_remux;
+pub mod pure_reverse;
 pub mod recording_update;
 pub mod replay;
 pub mod storage;

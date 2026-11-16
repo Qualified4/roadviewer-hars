@@ -9,13 +9,15 @@ use std::{net::SocketAddr, path::PathBuf};
 const SHUTDOWN_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
 /// Commands whose standard output is their one JSON result, so their log goes to stderr. The server and
 /// `convert-log` keep logging to stdout: the conversion process's log lines are relayed by `jobs` from there.
-const RESULT_ON_STDOUT: [&str; 10] = [
+const RESULT_ON_STDOUT: [&str; 12] = [
     "__inspect",
     "__thumbnail",
     "__native-hevc",
     "__pure-remux",
+    "__pure-reverse",
     "__native-ts",
     "remux",
+    "reverse",
     "track-log",
     "analyze-log",
     "import-auth",
@@ -98,22 +100,29 @@ async fn run() -> anyhow::Result<()> {
         anyhow::ensure!(args.len() == 5, "invalid internal media job");
         let job: roadviewer_hars::pure_remux::Job =
             roadviewer_hars::store::read_json(std::path::Path::new(&args[3])).await?;
-        // A test setting, as the media deadline's: a release build always uses the budget the bounds need.
-        let budget = cfg!(debug_assertions)
-            .then(|| {
-                std::env::var("HARS_PURE_WORKER_MEMORY_MB")
-                    .ok()?
-                    .parse()
-                    .ok()
-            })
-            .flatten()
-            .unwrap_or(roadviewer_hars::pure_remux::MEMORY_BUDGET_MIB);
-        roadviewer_hars::pure_remux::limit_memory(budget)?;
+        roadviewer_hars::pure_remux::limit_memory(worker_budget())?;
         let reply = roadviewer_hars::pure_remux::Reply::from(roadviewer_hars::pure_remux::remux(
             std::path::Path::new(&args[2]),
             std::path::Path::new(&args[4]),
             &job,
         ));
+        println!("{}", serde_json::to_string(&reply)?);
+        roadviewer_hars::profile::finish();
+        return Ok(());
+    }
+    if args.get(1).is_some_and(|v| v == "__pure-reverse") {
+        anyhow::ensure!(args.len() == 6, "invalid internal media job");
+        let job = roadviewer_hars::pure_reverse::Job {
+            kind: args[3].clone(),
+            offset: args[4].parse()?,
+        };
+        roadviewer_hars::pure_remux::limit_memory(worker_budget())?;
+        let reply =
+            roadviewer_hars::pure_reverse::Reply::from(roadviewer_hars::pure_reverse::reverse(
+                std::path::Path::new(&args[2]),
+                std::path::Path::new(&args[5]),
+                &job,
+            ));
         println!("{}", serde_json::to_string(&reply)?);
         roadviewer_hars::profile::finish();
         return Ok(());
@@ -204,6 +213,25 @@ async fn run() -> anyhow::Result<()> {
         println!(
             "{}",
             serde_json::json!({"validated":true,"frames":times.len(),"reencoded":false})
+        );
+        return Ok(());
+    }
+    if args.get(1).is_some_and(|v| v == "reverse") {
+        anyhow::ensure!(
+            args.len() == 6,
+            "usage: roadviewer-hars reverse MP4 ORIGINAL_KIND NEW_OUTPUT SOURCE_PTS"
+        );
+        let engine = roadviewer_hars::media::reverse_using(
+            roadviewer_hars::media::Engine::configured()?,
+            std::path::Path::new(&args[2]),
+            &args[3],
+            std::path::Path::new(&args[4]),
+            args[5].parse()?,
+        )
+        .await?;
+        println!(
+            "{}",
+            serde_json::json!({"exported":true,"engine":engine.name(),"reencoded":false})
         );
         return Ok(());
     }
@@ -326,6 +354,20 @@ async fn run() -> anyhow::Result<()> {
     tokio::select! {result=async {tokio::try_join!(ui,device)}=>{result?;},result=native_exit=>{result?;}}
     Ok(())
 }
+/// Address space a pure worker may add. A test setting, as the media deadline's: a release build
+/// always uses the budget the bounds need.
+fn worker_budget() -> u64 {
+    cfg!(debug_assertions)
+        .then(|| {
+            std::env::var("HARS_PURE_WORKER_MEMORY_MB")
+                .ok()?
+                .parse()
+                .ok()
+        })
+        .flatten()
+        .unwrap_or(roadviewer_hars::pure_remux::MEMORY_BUDGET_MIB)
+}
+
 async fn shutdown() {
     #[cfg(unix)]
     {

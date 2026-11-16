@@ -61,18 +61,23 @@ impl Clock {
     }
 }
 
-struct Pes {
-    pts: u64,
-    dts: u64,
+pub(crate) struct Pes {
+    pub pts: u64,
+    pub dts: u64,
+    /// `random_access_indicator` of the packet that starts this PES.
+    pub random_access: bool,
     expected: Option<usize>,
-    data: Vec<u8>,
+    pub data: Vec<u8>,
 }
 
 /// One complete PES of the single H.264 elementary stream: clocks are raw
 /// 33-bit values. Conditions FFmpeg tolerates silently (lost packets,
 /// scrambling, transport errors, missing PTS) are refused as unsupported so
 /// the FFmpeg engine handles them instead of a different guess here.
-fn demux(source: &Path, each: impl FnMut(Pes) -> anyhow::Result<()>) -> anyhow::Result<()> {
+pub(crate) fn demux(
+    source: &Path,
+    each: impl FnMut(Pes) -> anyhow::Result<()>,
+) -> anyhow::Result<()> {
     let file = std::fs::File::open(source)?;
     demux_from(BufReader::with_capacity(1024 * 1024, file), each)
 }
@@ -152,6 +157,10 @@ fn demux_from(
             .adaptation_field
             .as_ref()
             .is_some_and(|a| a.discontinuity_indicator);
+        let random_access = packet
+            .adaptation_field
+            .as_ref()
+            .is_some_and(|a| a.random_access_indicator);
         if !(resync || continuity.is_none_or(|c| (c + 1) & 15 == counter)) {
             bail!("MPEG-TS continuity error (missing packet)");
         }
@@ -179,6 +188,7 @@ fn demux_from(
                 pes = Some(Pes {
                     pts,
                     dts,
+                    random_access,
                     expected,
                     data: start.data.to_vec(),
                 });
