@@ -311,13 +311,9 @@ impl Archive {
                         continue;
                     }
                     // An index without a size would leave the estimate unchanged: measure the file instead.
-                    let size = match index::bytes_of(&e) {
-                        0 => nas
-                            .path_for(id, kind)
-                            .ok()
-                            .and_then(|p| std::fs::metadata(p).ok())
-                            .map_or(0, |m| m.len()),
-                        n => n,
+                    let size = match (index::bytes_of(&e), nas.path_for(id, kind)) {
+                        (0, Ok(p)) => share_stat(&p).await.map_or(0, |m| m.len()),
+                        (n, _) => n,
                     };
                     match self.remove_archived(nas, id, kind, &e).await {
                         None => return removed,
@@ -501,7 +497,7 @@ impl Archive {
                     if f.file_name().to_string_lossy().ends_with(".part")
                         && f.file_type()?.is_file()
                     {
-                        std::fs::remove_file(f.path())?;
+                        super::nas::remove_stale_part(&f.path())?;
                     }
                 }
             }

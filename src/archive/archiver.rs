@@ -938,7 +938,7 @@ pub(crate) async fn share_stat(path: &Path) -> std::io::Result<std::fs::Metadata
 }
 pub(crate) async fn share_remove(path: &Path) -> std::io::Result<()> {
     let path = path.to_owned();
-    tokio::task::spawn_blocking(move || std::fs::remove_file(path))
+    tokio::task::spawn_blocking(move || super::nas::remove_target(&path))
         .await
         .unwrap_or_else(|_| Err(std::io::Error::other("join")))
 }

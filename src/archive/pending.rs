@@ -228,9 +228,14 @@ impl PendingDeletes {
             }
             let mut gone = BTreeSet::new();
             for kind in row_kinds {
-                let present = nas
-                    .path_for(&id, &kind)
-                    .is_ok_and(|p| std::fs::symlink_metadata(p).is_ok_and(|m| m.is_file()));
+                let present = match nas.path_for(&id, &kind) {
+                    Ok(p) => tokio::task::spawn_blocking(move || {
+                        std::fs::symlink_metadata(p).is_ok_and(|m| m.is_file())
+                    })
+                    .await
+                    .unwrap_or(false),
+                    Err(_) => false,
+                };
                 let r = RemoteRef::new(BackendKind::Smb, format!("{id}/{kind}"), 0, None, None);
                 match nas.delete(&r).await {
                     Ok(true) => {
