@@ -39,6 +39,8 @@
 - **UI 오류 형식.** `{"error": "<코드>", "message": "<Python 문장>"}`이다. Python은 `error`에 문장을 넣는다. 화면은 `message`를 먼저 표시하므로 보이는 문장은 같다.
 - **영상 길이.** 마지막 프레임 길이를 Python의 프레임레이트 추정이 아니라 rlog의 실제 타이밍으로 정한다. `videos.*.duration`, `video.duration`, replay·summary·telemetry의 `duration`이 구간별로 -3.96 ms ~ +1.16 ms 다르다. 주행 요약은 같다.
 - **원격 쓰기 범위.** HARS는 `Road Viewer HARS` 폴더(Drive)와 owner `roadviewer-hars` sentinel(NAS)에만 쓴다. Python의 폴더는 읽기만 한다.
+- **잘린 qcamera.** TS의 마지막 패킷이 영상 데이터 중간에서 잘린 파일을 Python은 그 데이터를 버린 채 게시한다. HARS는 그 카메라를 실패로 끝내고 원본을 보존한다. 패킷 경계에서 잘린 파일은 Python처럼 게시한다.
+- **자원 실패와 기존 결과.** 리먹싱이 디스크 부족·시간 초과·메모리 상한·강제 종료로 실패했을 때, 디스크에 그 카메라를 재생할 수 있는 게시 결과가 있으면 이번 시도를 버리고 그 결과로 되돌린다. Python은 그 카메라가 빠진 결과를 게시한다. 게시 결과가 없으면 Python과 같다.
 - **삭제.** 숨김 rename을 확정 시점으로 하는 저널을 쓴다. Python은 `rmtree` 한 번이다.
 - **finish 중 크래시.** 등록 저널로 복구해 같은 영수증을 돌려준다. Python은 영수증을 잃는다.
 - **보충 변환.** `backfill.py`·`gap_backfill.py`는 이식하지 않았다. 옛 Python 변환기가 쓰지 않던 값을 채우는 용도이고 HARS 변환기는 처음부터 그 값을 쓴다. Python에서 가져온 옛 기록의 해당 값은 재변환으로 채운다.

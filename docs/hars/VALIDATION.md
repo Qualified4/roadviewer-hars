@@ -155,6 +155,18 @@ CI는 기존 `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS re
 - 사용자 권한 tmpfs에서 실제 ENOSPC를 확인했다(`integration/low_space_tmpfs.sh`). 여유가 입력의 1.5배이면 FFmpeg 엔진이 선택되어 성공하고, 0.5배이면 `resource`로 끝난다.
 - 컨테이너 기동 검사(bookworm, FFmpeg 5.1)가 amd64와 aarch64에서 HEVC와 H.264 TS를 순수 엔진으로 대체 없이 변환하는지 확인한다.
 
+### 최종 독립 검토 반영 (PR #15)
+
+병합 전에 독립 검토를 받지 못했던 세 범위(읽기 전용 가져오기, 아카이버 2차 수정, 리먹싱 재검토 수정)를 다시 검토했다. 차단 사유는 없었고 아래를 수정 전 코드에서 실패하는 테스트로 재현한 뒤 고쳤다.
+
+- "이전 결과 유지"가 유지할 결과가 없는데 발동해 기록이 `error`에 고착되던 문제. 판정은 디스크만 본다(게시된 summary에 그 카메라가 있고 MP4가 실제로 존재). 결과가 있으면 그 `ready` 결과로 되돌리고 경고와 오류 수준 이벤트 `conversion_kept_previous`를 남긴다. 없으면 Python처럼 그 카메라 없이 `ready`와 경고다. 같은 기록에 실패를 3회 주입해도 `ready`로 수렴한다.
+- 자원 실패의 범위를 ENOSPC, EFBIG, EDQUOT, ENOMEM, 시간 초과, 강제 종료, 메모리 상한으로 좁혔다. 그 밖의 errno는 읽기 단계면 `invalid`, 쓰기 단계면 `internal`이다.
+- NAS의 모든 unlink와 rmdir이 writer 가드 아래에서 sentinel의 owner와 storage id를 다시 읽는다. probe 캐시가 connected인 상태에서 sentinel을 Python 소유로 바꾼 뒤 삭제·정리·대기 삭제를 돌려 Python 구조 파일이 그대로임을 단언한다.
+- 원본 비보존 설정에서 원본 삭제를 메타 저장 뒤로 옮겼다. 중단 지점 3곳에서 재시작해도 중단 없이 끝난 경우와 같은 끝 상태가 된다.
+- 가져오기 다운로드는 목록의 크기를 넘으면 즉시 멈추고, 파일이 20만 개를 넘는 원격 목록은 거부한다.
+- 전체 테스트 283개가 3회 연속 통과했다. 실제 실행 파일로 재변환 중 쓰기 한도와 worker 강제 종료를 주입해 `ready`와 경고, 남은 카메라의 Range 206 재생, 원본 보존, 이후 재변환 성공을 확인했다.
+- 남은 한계: 서로 다른 변환 프로세스가 같은 여유 공간을 보고 동시에 순수 엔진을 고르는 경쟁, NAS에서 확인과 열기 사이의 심볼릭 링크 바꿔치기, sentinel 최초 생성 시의 밀리초 단위 틈.
+
 ### 최종 커밋 검증
 
 코드 기준 `3e2338d`(PR #14, 이후 커밋은 문서만 변경)의 release 실행 파일로 캐시된 Python 기준 결과와 비교했다. 영상 길이 필드는 [TERMINAL-DURATION.md](TERMINAL-DURATION.md)의 방식대로 양쪽 값을 각각 계산해 대조하고, 나머지 필드는 1e-6 절대오차다.

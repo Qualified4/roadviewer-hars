@@ -143,3 +143,10 @@ Windows 작업 폴더 안의 소스를 WSL Ubuntu 24.04에서 빌드했다. Rust
 - 진행 중: `feat/archiver`(아카이버 본체·설정 라우트, 기준 `3003dac`), `fix/upload-parity-followup`(검토 잔여, 기존 구간 카메라 추가, finish 실패 세션 정책; 기준 `f74d95d`).
 - 남음: 원격 파일 재생·다운로드, 보충 변환(backfill/gap_backfill), 지도 보충(tracks/run·stop), Python 원격 데이터 읽기 전용 조회, 버전 alpha.3, 문서·인벤토리 갱신, `scripts/check_coexistence.py` CI 연결, 컨테이너 기동 검사에 TS 사례 추가, 실제 코퍼스 전체 재검증과 브라우저 확인.
 - 운영 주의: `drive.file` 범위라 Python이 올린 파일을 읽으려면 같은 OAuth client ID 필요(미확인). Python `.archive.json`을 HARS 데이터 폴더에 복사 금지.
+- 이후 병합: #9 카메라 추가·finish 세션 해제(`d849d10`), #10 아카이버·원격 재생·지도 보충(`6048381`), #11 Python 원격 읽기 전용 가져오기(`67204ec`), #12 아카이버 2차 검토 수정(`4cee231`), #13 순수 Rust 리먹싱 기본 전환·마지막 프레임 길이 규칙·메모리·대체 정책(`09c48e9`), #15 최종 검토 수정(`2a8474f`). #14는 버전·CI·문서 통합.
+- 사용자 추가 지시 3건 반영: (1) 순수 Rust 엔진을 기본 리먹싱 경로로, (2) 마지막 sample duration은 Python 일치가 아니라 rlog 실제 타이밍 기준(연속 12쌍에서 0~1 tick, Python 추정은 최대 356 ticks 오차), (3) HEVC 메모리(72→36 MiB worker, payload 임시 파일 + `copy_file_range`)와 대체 경로 안전성(실패 5분류, resource는 대체 없음).
+- 결정: 자원 실패 시 디스크에 재생 가능한 게시 결과가 있을 때만 이전 결과로 되돌림(없으면 Python처럼 카메라 누락 경고). 처음에는 `meta.videos` 기준으로 변환을 실패시켰는데 재변환이 `prepared`를 먼저 지워 `error` 고착이 생겨 최종 검토 뒤 바꿈. TS 마지막 패킷이 영상 payload 안에서 잘린 입력은 Python과 달리 거부.
+- 환경 사건: 16:12경 WSL 서비스가 멈춤(`Wsl/Service/E_UNEXPECTED`). 추정 원인은 최적화 전 빌드에 파라미터 세트만 100 MB인 입력을 상한 없이 돌린 메모리 측정. 사용자 승인 후 `wsl --shutdown --force`로 복구. 이후 큰 실험은 2 GiB 외부 상한 아래에서만 실행.
+- 불안정 테스트 3건의 원인: NAS 복사 취소 경합(제품 잠재 결함, 수정), 자식 프로세스가 상속한 잠금 fd(테스트·main 공통, 수정), WSL 벽시계 역행에 의존한 아카이브 테스트(테스트 가정, 수정).
+- 독립 검토는 6회(저장 공간, 업로드·API, 아카이버, 아카이버 후속, 순수 엔진 2회, 최종). 차단 사유는 없었고 should-fix는 모두 재현 테스트와 함께 반영.
+- 남은 미검증은 STATUS.md의 "운영 전환 전 남은 위험"과 VALIDATION.md의 "미검증 요약"을 따른다. 태그·릴리스·운영 포트 변경은 하지 않았다.

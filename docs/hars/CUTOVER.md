@@ -30,6 +30,7 @@
 - **Python의 `.archive.json`을 HARS 데이터 폴더에 복사하지 않는다.** storage id가 섞여 Drive는 `unavailable`이 되고 NAS는 sentinel을 새로 만들지 않는다.
 - NAS에서 두 앱은 서로 다른 하위 폴더를 쓴다. HARS 경로를 Python의 공유 폴더로 지정하면 `not_owned`로 거부된다.
 - owner 표식이 없는 구버전 Python sentinel의 NAS 폴더는 읽기 전용 가져오기도 거부한다.
+- 읽기 전용 가져오기에서 NAS 파일과 체크섬이 없는 Drive 파일은 크기, mtime, 로컬 재해시로만 받아들인다. 결과의 `verified_by`가 이를 드러낸다(`size`, `rv_sha256`, `sha256Checksum`, `md5Checksum`, `readback`). 파일이 20만 개를 넘는 원격은 `422 legacy_too_large`로 거부한다.
 
 앱별 `/data`는 Supervisor에서 격리한다. 두 컨테이너에 같은 데이터 호스트 경로를 연결하지 않는다. 같은 NAS/Drive 계정이어도 아카이브의 루트·삭제 소유권을 분리해야 한다. HARS에 기존 Python 아카이브의 이동·삭제 권한을 주지 않는다.
 
