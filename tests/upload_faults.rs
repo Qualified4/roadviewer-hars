@@ -383,12 +383,13 @@ async fn camera_added_to_registered_segment_is_refused_without_changes() {
         before
     );
     assert!(!temp.path().join(&record).join("qcamera.ts").exists());
+    // A refused finish releases its session, as every failed Python finish does.
     invariants(
         temp.path(),
         server.ui,
         Expect {
             registered: &[&[&log]],
-            sessions: 1,
+            sessions: 0,
         },
     )
     .await;
@@ -983,4 +984,110 @@ async fn legacy_upload_disk_full_is_reported_as_507() {
         },
     )
     .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn failed_finish_releases_the_session_so_the_uploader_starts_over() {
+    let (temp, server, creds) = fixture().await;
+    let dev = server.device;
+    let (log, video) = segment(33, 64 * KIB);
+    let files: [&[u8]; 2] = [&log, &video];
+    let manifest = batch(
+        "finish_fail_0000001",
+        33,
+        &[("rlog.zst", &log), ("qcamera.ts", &video)],
+    );
+    let session = begin(dev, &creds, &manifest).await;
+    upload_all(dev, &session, &files, 32 * KIB).await;
+    // The uploader's streamed checksum disagrees with the stored bytes.
+    let (code, body) = finish(dev, &session, &[&log, &log]).await;
+    assert_eq!(
+        (code, body["error"].as_str().unwrap()),
+        (422, "checksum_mismatch")
+    );
+    invariants(
+        temp.path(),
+        server.ui,
+        Expect {
+            registered: &[],
+            sessions: 0,
+        },
+    )
+    .await;
+    // `uploader.py` keeps its checkpoint; a retried job begins the same batch again. Python then
+    // has no session for it, so every file is sent again rather than finishing the same bytes.
+    let retry = begin(dev, &creds, &manifest).await;
+    assert_ne!(retry["id"], session["id"]);
+    assert_eq!(retry["files"][0]["received"], 0);
+    assert_eq!(retry["files"][1]["received"], 0);
+    upload_all(dev, &retry, &files, 32 * KIB).await;
+    let (code, result) = finish(dev, &retry, &files).await;
+    assert_eq!(code, 201, "{result}");
+
+    // A camera file that is not media goes the same way (Python's ValueError inside `finally`).
+    let (other, _) = segment(34, 32 * KIB);
+    let bad = b"not an hevc stream".repeat(64);
+    let parts: [&[u8]; 2] = [&other, &bad];
+    let manifest = batch(
+        "finish_fail_0000002",
+        34,
+        &[("rlog.zst", &other), ("fcamera.hevc", &bad)],
+    );
+    let session = begin(dev, &creds, &manifest).await;
+    upload_all(dev, &session, &parts, 32 * KIB).await;
+    let (code, body) = finish(dev, &session, &parts).await;
+    assert_eq!(
+        (code, body["error"].as_str().unwrap()),
+        (400, "invalid_file")
+    );
+    assert_eq!(status(dev, &session).await.0, 404);
+    invariants(
+        temp.path(),
+        server.ui,
+        Expect {
+            registered: &[&files],
+            sessions: 0,
+        },
+    )
+    .await;
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn finish_refused_before_registration_keeps_the_session() {
+    let (temp, server, creds) = fixture().await;
+    let dev = server.device;
+    let (log, _) = segment(35, 64 * KIB);
+    let manifest = batch("finish_keep_0000001", 35, &[("rlog.zst", &log)]);
+    let session = begin(dev, &creds, &manifest).await;
+    assert_eq!(put(dev, &session, 0, 0, &log[..32 * KIB]).await.0, 200);
+    let (code, body) = finish(dev, &session, &[&log]).await;
+    assert_eq!(
+        (code, body["error"].as_str().unwrap()),
+        (409, "incomplete_upload")
+    );
+    let mut headers = bearer(&session);
+    headers.push(("Content-Type", "application/json".into()));
+    let path = format!(
+        "/api/device/uploads/{}/finish",
+        session["id"].as_str().unwrap()
+    );
+    let (code, body) = http(dev, "POST", &path, &headers, br#"{"sha256":["x"]}"#).await;
+    assert_eq!(
+        (code, body["error"].as_str().unwrap()),
+        (400, "invalid_file")
+    );
+    invariants(
+        temp.path(),
+        server.ui,
+        Expect {
+            registered: &[],
+            sessions: 1,
+        },
+    )
+    .await;
+    assert_eq!(
+        put(dev, &session, 0, 32 * KIB, &log[32 * KIB..]).await.0,
+        200
+    );
+    assert_eq!(finish(dev, &session, &[&log]).await.0, 201);
 }
