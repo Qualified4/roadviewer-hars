@@ -182,6 +182,8 @@ UI 검사는 iframe 안의 실제 페이지를 사용자처럼 조작한다(버�
 | 입력 × 1.5 | 순수 엔진 `resource`/`no_space`, 대체 없음, 실패(종료 1) | `remux_fallback` `unsupported`/`low_space` → FFmpeg `published`, 출력 10,127,301바이트, 남은 임시 파일 0 |
 | 입력 × 0.5 | (측정 안 함) | `low_space` → FFmpeg도 ENOSPC, FFmpeg worker 종료 코드 75(`resource`), 남은 파일 0 |
 
+한계(동시 변환): 여유 공간 판정(`media::short_for_pure`)은 그 순간의 여유 공간만 본다. 동시 변환(설정 `concurrency` 2~4)은 기록마다 별도 변환 프로세스(`convert-log`)라, 서로 같은 여유 공간을 보고 각자 순수 엔진(입력의 약 2배)을 고를 수 있다. 프로세스 사이의 예약 장치는 두지 않았다(프로세스 내 카운터로는 다른 변환을 볼 수 없다). 그 결과 ENOSPC가 나면 그 카메라는 `resource`(`no_space`)로 끝난다: 게시된 결과가 있으면 그 결과로 `ready` + 경고, 없으면 그 카메라 없이 `ready` + 경고이고, 어느 쪽도 `error`에 머물지 않으며 원본은 남는다. 공간이 돌아온 뒤 다시 변환하면 된다.
+
 ## 브라우저 재생
 
 `integration/browser_video_check.py`로 Windows Microsoft Edge(`--headless=new`, 매번 새 임시 프로필, 사용자 브라우저·ego-browser 미사용)를 돌렸다. 영상은 WSL의 다중 스레드 Range 서버(127.0.0.1, 지정 포트)로 제공했다. 순수 엔진 26개와 FFmpeg 엔진(`HARS_REMUX_ENGINE=ffmpeg`) 26개를 각각 3회, 총 156회 확인했다.
