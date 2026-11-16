@@ -536,7 +536,7 @@ fn clocks(
     let Some(input) = inspection else {
         let stamps = times
             .iter()
-            .map(|t| (t * 1_000_000.).round() as i64)
+            .map(|t| (t * 1_000_000.).round_ties_even() as i64)
             .collect::<Vec<_>>();
         return Ok(Clocks {
             timescale: 1_000_000,

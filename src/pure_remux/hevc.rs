@@ -201,9 +201,11 @@ pub fn remux(
     times: &[f64],
     terminal: u32,
 ) -> anyhow::Result<Signature> {
+    // Python's `round()` (half to even) sets these stamps in the reference;
+    // log clocks ending in exactly 500 ns land on a tie.
     let stamps = times
         .iter()
-        .map(|t| (t * f64::from(TIMESCALE)).round() as u64)
+        .map(|t| (t * f64::from(TIMESCALE)).round_ties_even() as u64)
         .collect::<Vec<_>>();
     ensure!(
         stamps.windows(2).all(|s| s[1] > s[0]),

@@ -83,11 +83,6 @@ def hars_terminal(stamps, timescale, gap_ns):
     return (typical, "median_interval") if typical is not None else (reference, "nominal")
 
 
-def half_up(x):
-    whole = math.floor(x)
-    return whole + (1 if x - whole >= 0.5 else 0)
-
-
 def read_log(rlog, schema):
     import capnp, zstandard
     log = capnp.load(str(schema))
@@ -129,7 +124,7 @@ def model(rlog, sources, schema):
             out[camera] = {"python": (last + 90000 * den // num) / 90000, "hars": (last + ticks) / 90000, "basis": basis}
         else:
             times = [(e - eofs[0]) / 1e9 for e in eofs]
-            stamps = [half_up(t * 1e6) for t in times]
+            stamps = [round(t * 1e6) for t in times]
             ticks, basis = hars_terminal(stamps, 1_000_000, gap)
             out[camera] = {"python": (round(times[-1] * 1e6) + 50000) / 1e6, "hars": (stamps[-1] + ticks) / 1e6, "basis": basis}
     return out

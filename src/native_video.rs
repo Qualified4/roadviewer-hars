@@ -394,7 +394,7 @@ pub fn remux_hevc(
         // bounded NAL/header SHA policy, in the pass that copies the packets.
         hash.feed(packet.data().context("missing HEVC packet bytes")?)?;
         let mut packet = parameter_sets.filter_one(&mut packet)?;
-        let stamp = (times[index] * 1_000_000.).round() as i64;
+        let stamp = (times[index] * 1_000_000.).round_ties_even() as i64;
         let duration = match times.get(index + 1) {
             Some(next) => ((next - times[index]) * 1_000_000.).round() as i64,
             None => terminal,
