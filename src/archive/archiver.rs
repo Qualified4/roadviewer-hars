@@ -397,6 +397,25 @@ impl Archive {
             .clone()
     }
 
+    /// A Drive client on this data root's grant (`.gdrive-auth.json`) whatever the write backend is, for reading a
+    /// Python folder. With Drive active its client (and token refresh) is shared; nothing is activated.
+    pub fn drive_reader(&self) -> Option<super::DriveClient> {
+        if let WriteBackend::Drive(d) = &*self.backend() {
+            return Some(d.client().clone());
+        }
+        let mut s = self.settings();
+        s.backend = settings::Backend::Gdrive;
+        let factory = self
+            .factory
+            .read()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
+        match factory(&s, &self.root) {
+            WriteBackend::Drive(d) => Some(d.client().clone()),
+            WriteBackend::Nas(_) => None,
+        }
+    }
+
     /// The device-flow sign-in of the active Drive backend (None for the NAS), made on first use.
     pub fn connection(&self) -> Option<Arc<DriveConnection>> {
         let mut a = self

@@ -206,6 +206,15 @@ async fn run() -> anyhow::Result<()> {
         (16..=2048).contains(&max_upload_mb),
         "invalid upload size option"
     );
+    if args.get(1).is_some_and(|v| v == "legacy-archive") {
+        let app = App::open(root, web, true, max_upload_mb)
+            .await
+            .map_err(|e| {
+                e.context("the data folder is in use by a running server or cannot be opened")
+            })?;
+        let code = roadviewer_hars::legacy_archive::cli(app, &args[2..]).await?;
+        std::process::exit(code);
+    }
     let mut app = App::open(root, web, ingress_only, max_upload_mb).await?;
     app.device_https_enabled = ha_mode && options.device_https_enabled;
     if ha_mode {

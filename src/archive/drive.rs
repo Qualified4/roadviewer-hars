@@ -102,6 +102,7 @@ pub enum SessionAnswer {
 }
 
 /// Drive v3 calls. Token handling: one refresh on 401, then auth_expired. Session URIs never reach an error.
+#[derive(Clone)]
 pub struct DriveClient {
     pub http: Arc<Http>,
     pub auth: Arc<DriveAuth>,
@@ -1404,6 +1405,71 @@ impl DriveLegacy {
     pub async fn stat_recent(&self, r: &RemoteRef) -> Result<Option<RemoteStat>> {
         self.core.stat_recent(r).await
     }
+    /// Python's folders named `name` (its `gdrive_folder_name`), oldest first: a folder with the Python storage id
+    /// and no HARS owner mark.
+    pub async fn python_folders(client: &DriveClient, name: &str) -> Result<Vec<LegacyFolder>> {
+        let query = format!(
+            "name='{}' and mimeType='{FOLDER_MIME}' and trashed=false",
+            q(name)
+        );
+        let mut found: Vec<LegacyFolder> = client
+            .list(&query, "files(id,name,createdTime,appProperties)")
+            .await?
+            .iter()
+            .filter(|f| text(f, "name") == Some(name))
+            .filter_map(|f| {
+                let p = props(f);
+                if prop(&p, OWNER_KEY).is_some() {
+                    return None;
+                }
+                Some(LegacyFolder {
+                    folder_id: text(f, "id")?.to_owned(),
+                    storage_id: prop(&p, "rv_storage_id")?.to_owned(),
+                    created: text(f, "createdTime").unwrap_or_default().to_owned(),
+                })
+            })
+            .collect();
+        found.sort_by(|a, b| (&a.created, &a.folder_id).cmp(&(&b.created, &b.folder_id)));
+        Ok(found)
+    }
+    /// Every media file of the folder with its `rv_sha256` mark (Python's `find_all` filters).
+    pub async fn list_media(&self) -> Result<Vec<LegacyFile>> {
+        let Some(scope) = self.scope() else {
+            return Ok(Vec::new());
+        };
+        let query = format!(
+            "appProperties has {{ key='rv_storage_id' and value='{}' }} and trashed=false and '{}' in parents",
+            q(&scope.storage_id),
+            q(&scope.folder_id)
+        );
+        Ok(self
+            .core
+            .client
+            .list(&query, &format!("files({FILE_FIELDS})"))
+            .await?
+            .iter()
+            .filter_map(|f| {
+                let p = props(f);
+                let kind = prop(&p, "rv_kind")?;
+                if !scope.accepts(&p) || !super::MEDIA_KINDS.contains(&kind) {
+                    return None;
+                }
+                Some(LegacyFile {
+                    id: prop(&p, "rv_id")?.to_owned(),
+                    kind: kind.to_owned(),
+                    marked_sha256: prop(&p, "rv_sha256").map(str::to_owned),
+                    remote: remote_ref(f),
+                })
+            })
+            .collect())
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct LegacyFolder {
+    pub folder_id: String,
+    pub storage_id: String,
+    pub created: String,
 }
 
 impl ArchiveRead for DriveLegacy {
