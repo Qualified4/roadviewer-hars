@@ -80,3 +80,105 @@ CI는 기존 `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS re
 - ego Chromium 실제 UI에서 원본 HEVC 재생/일시정지·30초 탐색, qcamera 전환/59.9초 말미 탐색(readyState4/오류0), 지도·GPS 경로·실제 차량 그래프·overlay를 확인했다. 기존47코퍼스는 별도3cam 업로드 후 와이드44.999989초 탐색도 통과했다. 새13코퍼스에 실제 ecamera 원본이 있는 것처럼 보고하지 않는다. [업로드·다운로드·관측·브라우저 결과](measurements/original13-upload-browser-2026-11-15.json).
 
 전용 브라우저 Space와 테스트 서버는 모든 레코드 ready를 확인하고 종료했다. 사진/원본 로그·영상/GPS 좌표/인증정보/원시 perf 메모리/strace payload를 Git에 넣지 않았다. Python/openpilot 원본·HAOS·Ingress·운영 포트/도메인/업로드 설정·GHCR 운영 이미지·릴리스는 변경하지 않았다. 실제 raw ecamera, HAOS/실장치/TLS 장시간 운영, ISO 전용 conformance suite, 서로 다른 FFmpeg/PyAV 탐색 설정의 완전한 분리는 미검증이다.
+
+## alpha.3 기능 완성·안정화 (2026-11-16)
+
+기준 `a76c0c5`에서 PR #3~#13을 거쳤다. 각 PR은 `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS required`가 모두 성공한 뒤 병합했다. 아래에서 "모의"는 테스트 프로세스 안의 모의 서버나 임시 폴더를 뜻한다. 실제 Google Drive, 실제 NAS, 실제 HAOS, 실제 차량 장치에는 접속하지 않았다.
+
+### 영상 시간축
+
+- 원본 13구간의 3·9번 qcamera 마지막 sample duration 차이(Python 4481/4518 ticks, HARS 4500)의 원인은 `ffmpeg`/`ffprobe` CLI가 강제하는 `scan_all_pmts=1`이었다. 같은 FFmpeg에서 이 옵션만 바꿔 양쪽 값을 재현했다. 이전 문서의 "FFmpeg 6과 8의 버전 차이"는 틀린 가설이다.
+- 배포 이미지(bookworm, FFmpeg 5.1.9)에서 3·9·5번 구간을 직접 변환해 4481/4518/4500을 확인했다(libavformat 기본 옵션 경로, PR #4 시점).
+- 이후 마지막 프레임 길이의 기준을 Python 추정에서 rlog의 실제 타이밍으로 바꿨다. 근거와 규칙은 [TERMINAL-DURATION.md](TERMINAL-DURATION.md)에 있다. Python 대비 비교는 허용오차를 넓히지 않고, 입력에서 Python 값과 HARS 값을 각각 계산해 양쪽 출력이 자기 값과 1e-9 안에서 같은지 단언한다. 나머지 필드는 1e-6 비교 그대로다.
+- `tests/ts_duration.rs`의 합성 입력 전제 조건은 FFmpeg 5.1의 도구로 만든 스트림에서 성립하지 않는다. CI는 ubuntu-24.04(FFmpeg 6.1)에서 돈다.
+
+### 저장 공간과 삭제
+
+- `tests/storage.rs`: `admit` 계산식 경계, 507 코드 3종, 사전 점검에서 부족하면 무삭제, 전체·부분·미고정 혼합 주행의 고정 보호, 업로드 중 주행과 변환 대기·변환 중 기록의 보호, `pinned_routes` 이전, 삭제 저널의 중단 지점별 복구, 권한 오류 주입, 세션 생성과 정리의 경합, 계획 후 변환 대기로 바뀐 주행의 전체 건너뜀.
+- 삭제의 확정 시점은 숨김 rename이다. 재시작 복구는 숨겨진 폴더만 마무리하고, 저널에만 있고 온전한 기록은 지우지 않는다.
+- 독립 검토에서 나온 경합 3건은 수정 전 코드에서 실패하는 테스트로 재현한 뒤 고쳤다.
+
+### 업로드 장애
+
+- `tests/upload_faults.rs`, `tests/upload_crash.rs`, `integration/uploader_faults.py`: 청크 전송 중 TCP 종료, 재전송과 offset 충돌, SIGKILL(청크 fsync 전후, finish 5개 지점, 카메라 추가 6개 지점), finish 응답 유실, 중복 배치, 업로드 중 자동 변환 대기, `/dev/full`과 `RLIMIT_FSIZE`의 ENOSPC, 정체된 본문과 슬롯 고갈, 만료 토큰·폐기 장치·nonce 재사용.
+- 각 사례 뒤에 세션·예약·임시 파일·저널, 등록 파일 SHA-256, 목록 중복 여부를 재시작 전후로 검사한다.
+- 드러난 결함: 실패한 쓰기를 성공으로 응답(fsync 전 flush 누락), 장치 삭제 뒤 재시작 불가, 세션 폴더 삭제 중 크래시 뒤 재시작 불가, 정체된 본문의 슬롯 영구 점유. 모두 수정했다.
+- finish 검증 실패 뒤 세션을 유지하면 업로더의 재시도가 유휴 만료까지 같은 422를 받는 것을 3회 재현했고, Python처럼 세션을 해제하도록 바꿨다.
+- 실제 tmpfs ENOSPC는 root가 필요해 `integration/upload_enospc.py`로 로컬에서 1회만 실행했다. 전원 차단과 OS 크래시는 검증하지 않았다.
+
+### API 동등성
+
+- `integration/api_contract_compare.py`가 실제 Python 서버와 HARS를 loopback에 나란히 띄워 비교한다. 53개 요청에서 상태 코드 53개, JSON 키 집합 46개가 같다. 차이 7개는 오류 형식(HARS는 `error`에 코드, `message`에 Python 문장)과 `video_downloads` 키 하나다.
+- Python이 만든 tar를 HARS가 가져오고 HARS가 만든 tar를 Python이 가져온다. rlog SHA와 태그가 보존된다.
+- 네트워크 설정·재시작은 모의 Supervisor로만 확인했다.
+
+### 아카이빙
+
+- `tests/archive_backends.rs`, `tests/archiver*.rs`, `tests/archive_*.rs`, `integration/archive_e2e.py`: OAuth 장치 흐름과 토큰 갱신, resumable 업로드의 끊김 후 재개와 세션 만료 후 재시작, size·md5·sha256 검증, copy·move, 단계별 크래시 뒤 복구, 원격 장애 중 로컬 보존, NAS 미마운트·끊김, 수동 실행과 `archive_running`, 기록 삭제에서 원격 삭제 저널까지, 원격 Range 재생과 다운로드, 아카이브 입력 재변환, 지도 보충.
+- Python 구조의 폴더와 파일을 모의 Drive에 두고 아카이브·정리·삭제·연결 해제를 모두 실행한 뒤 바이트와 메타가 그대로임을 단언한다.
+- 독립 검토 지적: 언마운트 직후 로컬 디스크에 보관, 포기한 확인 작업의 뒤늦은 삭제, 다른 소유자 폴더에서의 삭제, 끊긴 요청의 임시 사본, 공유 폴더의 심볼릭 링크. 모두 재현 테스트와 함께 수정했다.
+- 중단된 NAS 복사가 다음 주기의 임시 파일을 rename하던 경합은 병렬 부하에서 100회 중 8회 실패했고, 대상별 배타 락과 취소 확인을 넣은 뒤 100회 중 0회다.
+
+### Python 원격 데이터 읽기 전용 가져오기
+
+- `tests/legacy_archive.rs`, `integration/legacy_import_e2e.py`: 스캔, 가져오기 성공, 해시 불일치, 중복, 카메라 추가, 용량 부족, 5xx, 다운로드 중간 끊김, 취소, SIGKILL 3개 지점에서 Python 폴더·파일을 대상으로 한 요청이 GET뿐임을 요청 로그로 단언한다.
+- NAS 원본은 읽기 전용 권한(0555, 0444)으로 두고 전후 상태가 같음을 단언한다.
+
+### 실제 코퍼스 회귀
+
+`d849d10`(PR #9까지)에서 캐시된 Python 기준 결과와 1e-6 절대오차로 비교했다.
+
+| 코퍼스 | 구간 | 동등 | 모델 프레임 |
+|---|---:|---:|---:|
+| 원본 형식 | 13 | 13 | 15,600 |
+| 기존 14구간 | 14 | 14 | 16,350 |
+| 기존 47구간 | 47 | 47 | 56,399 |
+
+최종 커밋의 결과는 이 절 끝의 "최종 커밋 검증"에 적는다.
+
+### HAOS 병행 설치(구성 수준)
+
+- `scripts/check_coexistence.py`가 slug, 이미지, 패널명, 데이터 루트, 미게시 호스트 포트, `boot: manual`, Supervisor API 권한을 Python 앱 구성과 대조한다. CI에서 실행한다.
+- 컨테이너 기동 검사는 같은 이미지의 nginx로 Supervisor의 포트 응답을 흉내 낸다. TLS 프록시는 Python처럼 Supervisor가 알려 준 포트가 있을 때만 뜬다.
+- 실제 HAOS에서의 설치·시작·종료·업데이트·재시작·Ingress는 검증하지 않았다.
+
+### 순수 Rust 리먹싱 엔진(기본 경로)
+
+- 원본 13구간 26영상: 패킷 수 1,200, PTS/DTS, 키프레임, sample payload SHA, decoder configuration 바이트, 정규화 전체 NAL SHA(원본 대비), 디코딩 프레임 MD5(Python 대비)가 모두 같다. 순수 엔진과 FFmpeg 엔진의 출력 스트림은 26개 모두 같고, 기본 실행에서 대체는 0회였다.
+- 실패는 `unsupported`, `invalid`, `internal`, `verification`, `resource`로 구분한다. `resource`(디스크 부족, 쓰기 한도, 180초 초과, 강제 종료, 메모리 상한)는 FFmpeg으로 대체하지 않는다. 나머지는 카메라 파일당 최대 1회 대체하고, 대체 출력도 입력 서명 검증과 독립 판독 검사를 통과해야 게시된다. 분류별 주입 테스트가 로그 이벤트와 최종 디스크 상태를 단언한다(`tests/pure_remux_faults.rs`, `tests/conversion_resource.rs`).
+- 게시된 결과에 그 카메라의 영상이 이미 있으면 `resource` 실패는 변환을 실패로 끝내고 이전 결과를 그대로 둔다. 실제 서버 실행 파일로 worker 강제 종료, 쓰기 한도, 시간 초과를 주입해 `prepared` 바이트와 메타가 그대로임을 확인한다(`tests/conversion_keep_previous.rs`).
+- MP4와 폴더를 fsync한 뒤 게시하고, 원본 비보존 설정에서는 그 뒤에만 원본을 지운다. MP4를 옮긴 직후 서버를 죽이면 원본이 남아 있음을 테스트한다. 정전 자체는 모의하지 못했다.
+- 손상 입력: forbidden bit가 선 slice·SEI는 Python처럼 바이트 그대로 게시한다. 첫 start code 앞의 junk는 버리고 경고 이벤트를 남긴다. TS 마지막 패킷이 영상 payload 안에서 잘린 입력은 거부한다. Python은 그 payload를 버린 채 게시한다. 패킷 경계에서 잘린 입력은 버려지는 바이트가 없어 게시한다.
+- 합성 경계 입력: 무작위 변형 320건(패닉 0, 시간 상한 안에 종료), B-frame TS(FFmpeg 대체 후 게시), 파라미터 세트만 100 MB(34.7 MiB에서 거부), 33 MiB NAL, 0프레임, EOS/EOB 경계. 실주행 B-frame·interlaced TS는 코퍼스에 없어 합성 입력으로만 확인했다. 실제 PAFF 파일은 만들지 못해 규칙 단위 테스트만 있다.
+- 실제 서버 실행 파일: 브라우저 업로드와 RV1 장치 업로드에서 자동 변환, Range 재생, 원본 보존 모드의 SHA 일치, 비보존 모드의 역변환 NAL·TS PTS 일치, `/api/logs/<id>/cancel` 취소, worker·변환 프로세스·서버 SIGKILL 뒤 재시작, 쓰기 한도와 메모리 상한, 동시 업로드 4개의 변환 대기, B-frame TS 대체 뒤 재생, `HARS_REMUX_ENGINE=ffmpeg` 서버.
+- 실제 재생 페이지(`/view/<id>/`)를 격리된 headless Edge로 구동했다. 카메라 전환, 재생·일시정지, 중간·말미 시킹, 오버레이 캔버스, 지도 요소, 차량 그래프의 9개 항목이 3회 모두 통과했다. 화질과 오버레이 정합의 눈 확인, 지도 타일 로드, 키보드·터치는 자동화하지 못했다.
+- 사용자 권한 tmpfs에서 실제 ENOSPC를 확인했다(`integration/low_space_tmpfs.sh`). 여유가 입력의 1.5배이면 FFmpeg 엔진이 선택되어 성공하고, 0.5배이면 `resource`로 끝난다.
+- 컨테이너 기동 검사(bookworm, FFmpeg 5.1)가 amd64와 aarch64에서 HEVC와 H.264 TS를 순수 엔진으로 대체 없이 변환하는지 확인한다.
+
+### 최종 독립 검토 반영 (PR #15)
+
+병합 전에 독립 검토를 받지 못했던 세 범위(읽기 전용 가져오기, 아카이버 2차 수정, 리먹싱 재검토 수정)를 다시 검토했다. 차단 사유는 없었고 아래를 수정 전 코드에서 실패하는 테스트로 재현한 뒤 고쳤다.
+
+- "이전 결과 유지"가 유지할 결과가 없는데 발동해 기록이 `error`에 고착되던 문제. 판정은 디스크만 본다(게시된 summary에 그 카메라가 있고 MP4가 실제로 존재). 결과가 있으면 그 `ready` 결과로 되돌리고 경고와 오류 수준 이벤트 `conversion_kept_previous`를 남긴다. 없으면 Python처럼 그 카메라 없이 `ready`와 경고다. 같은 기록에 실패를 3회 주입해도 `ready`로 수렴한다.
+- 자원 실패의 범위를 ENOSPC, EFBIG, EDQUOT, ENOMEM, 시간 초과, 강제 종료, 메모리 상한으로 좁혔다. 그 밖의 errno는 읽기 단계면 `invalid`, 쓰기 단계면 `internal`이다.
+- NAS의 모든 unlink와 rmdir이 writer 가드 아래에서 sentinel의 owner와 storage id를 다시 읽는다. probe 캐시가 connected인 상태에서 sentinel을 Python 소유로 바꾼 뒤 삭제·정리·대기 삭제를 돌려 Python 구조 파일이 그대로임을 단언한다.
+- 원본 비보존 설정에서 원본 삭제를 메타 저장 뒤로 옮겼다. 중단 지점 3곳에서 재시작해도 중단 없이 끝난 경우와 같은 끝 상태가 된다.
+- 가져오기 다운로드는 목록의 크기를 넘으면 즉시 멈추고, 파일이 20만 개를 넘는 원격 목록은 거부한다.
+- 전체 테스트 283개가 3회 연속 통과했다. 실제 실행 파일로 재변환 중 쓰기 한도와 worker 강제 종료를 주입해 `ready`와 경고, 남은 카메라의 Range 206 재생, 원본 보존, 이후 재변환 성공을 확인했다.
+- 남은 한계: 서로 다른 변환 프로세스가 같은 여유 공간을 보고 동시에 순수 엔진을 고르는 경쟁, NAS에서 확인과 열기 사이의 심볼릭 링크 바꿔치기, sentinel 최초 생성 시의 밀리초 단위 틈.
+
+### 최종 커밋 검증
+
+PR #15까지 병합한 `main`(`2a8474f`)을 포함한 통합 브랜치의 release 실행 파일로 캐시된 Python 기준 결과와 비교했다. 그 전 단계(`d849d10`, `3e2338d`)에서도 같은 결과였다. 영상 길이 필드는 [TERMINAL-DURATION.md](TERMINAL-DURATION.md)의 방식대로 양쪽 값을 각각 계산해 대조하고, 나머지 필드는 1e-6 절대오차다.
+
+| 코퍼스 | 구간 | 동등 | 모델 프레임 |
+|---|---:|---:|---:|
+| 원본 형식 | 13 | 13 | 15,600 |
+| 기존 14구간 | 14 | 14 | 16,350 |
+| 기존 47구간 | 47 | 47 | 56,399 |
+
+기존 61구간·72,749프레임이 유지된다. PR #15 최종 커밋에서 전체 테스트 283개가 3회 연속 통과했고 `integration/pipeline_contract.py`가 통과했다. 컨테이너 검사는 CI의 amd64·aarch64에서 통과했다.
+
+### 미검증 요약
+
+실제 HAOS(설치, Ingress, 재시작, 포트 승계, aarch64 실기기 재생), 실제 Google Drive와 SMB 마운트, 실제 Supervisor, 실제 차량 장치의 장시간·동시 업로드, 전원 차단과 OS 크래시, Safari·Firefox, 실주행 B-frame·interlaced 영상, 4 GiB 초과 ZIP.

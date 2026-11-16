@@ -8,7 +8,7 @@ COPY resources ./resources
 RUN cargo build --locked --release
 
 FROM debian:bookworm-slim
-ARG BUILD_VERSION=2.0.0-alpha.2
+ARG BUILD_VERSION=2.0.0-alpha.3
 ARG BUILD_ARCH=amd64
 LABEL io.hass.version="${BUILD_VERSION}" \
       io.hass.type="app" \

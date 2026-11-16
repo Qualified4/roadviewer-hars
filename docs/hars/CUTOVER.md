@@ -15,17 +15,32 @@
 | 호스트 HTTPS 포트 | 현재 운영 포트 유지 | 기본 비활성(null), 검증 시 사용하지 않는 별도 포트 |
 | 로컬 데이터 | 해당 앱 전용 /data/roadviewer | 해당 앱 전용 /data/roadviewer-hars |
 | 인증 상태 | 해당 데이터 루트/.devices.json | 해당 데이터 루트/.devices.json |
-| 아카이브 | 기존 설정 유지 | **현재 미구현**. 구현 후 별도 HARS 폴더·소유권 표식 필수 |
+| 아카이브 쓰기 위치 | Drive 폴더 `Road Viewer`, NAS sentinel owner `roadviewer` | Drive 폴더 `Road Viewer HARS`(`hars_owner=roadviewer-hars`), NAS sentinel owner `roadviewer-hars` |
+| Supervisor API | `hassio_api: true` | `hassio_api: true`(자기 앱의 포트 매핑 조회·변경·재시작만 호출) |
+| 리먹싱 엔진 | PyAV | 순수 Rust(기본), `HARS_REMUX_ENGINE=ffmpeg`으로 FFmpeg 엔진 선택 |
+
+## 같은 Drive 계정·NAS를 함께 쓸 때
+
+구성 수준과 모의 서버로 검증했다. 실제 Google Drive와 SMB 마운트에서는 검증하지 않았다.
+
+- HARS는 소유 표식이 있는 자기 루트에만 쓰고 지운다. 표식이 없는 대상의 쓰기·삭제는 요청을 보내기 전에 거부한다. NAS는 쓰기 직전에 sentinel을 다시 읽는다.
+- Python이 보관한 기록은 `POST /api/settings/archive/legacy/scan`과 `legacy/import`로 읽기 전용으로 조회하고 HARS 로컬로 복사한다. 원격에는 조회와 다운로드 요청만 나간다. 태그·북마크·고정은 원격에 없어 옮겨지지 않는다.
+- **같은 OAuth client ID가 필요하다.** Drive 권한이 `drive.file` 범위라서 다른 client로 만든 파일은 보이지 않는다. HARS 옵션 `archive_gdrive_client_id`/`archive_gdrive_client_secret`에 Python과 같은 값을 넣는다.
+- **HARS에서 Drive 연결을 해제하면 토큰을 revoke한다.** 같은 client와 계정을 쓰는 Python의 연결도 끊길 수 있다. 병행 운영 중에는 HARS의 연결 해제를 피하거나 Python 재연결을 준비한다.
+- **Python의 `.archive.json`을 HARS 데이터 폴더에 복사하지 않는다.** storage id가 섞여 Drive는 `unavailable`이 되고 NAS는 sentinel을 새로 만들지 않는다.
+- NAS에서 두 앱은 서로 다른 하위 폴더를 쓴다. HARS 경로를 Python의 공유 폴더로 지정하면 `not_owned`로 거부된다.
+- owner 표식이 없는 구버전 Python sentinel의 NAS 폴더는 읽기 전용 가져오기도 거부한다.
+- 읽기 전용 가져오기에서 NAS 파일과 체크섬이 없는 Drive 파일은 크기, mtime, 로컬 재해시로만 받아들인다. 결과의 `verified_by`가 이를 드러낸다(`size`, `rv_sha256`, `sha256Checksum`, `md5Checksum`, `readback`). 파일이 20만 개를 넘는 원격은 `422 legacy_too_large`로 거부한다.
 
 앱별 `/data`는 Supervisor에서 격리한다. 두 컨테이너에 같은 데이터 호스트 경로를 연결하지 않는다. 같은 NAS/Drive 계정이어도 아카이브의 루트·삭제 소유권을 분리해야 한다. HARS에 기존 Python 아카이브의 이동·삭제 권한을 주지 않는다.
 
 개발 시 HARS 호스트 포트는 예를 들어 18443처럼 현재 사용하지 않는 포트를 선택한다. 이 숫자가 사용 가능한지는 HAOS에서 직접 확인해야 한다. 기존 포워딩·DNS·인증서 설정과 openpilot URL을 변경하지 않는다. 테스트 클라이언트만 테스트 주소를 사용한다.
 
-HARS 앱 옵션 `device_https_enabled`는 기본 false이며 HTTPS 포트 매핑도 null이다. 테스트 시 운영자의 앱 설정에서 별도 테스트 포트와 TLS 파일을 지정한다. 설정 UI의 Supervisor 포트 수정 기능은 아직 이식하지 않았다. Ingress와 외부 장치 API는 분리되어 있다.
+HARS 앱 옵션 `device_https_enabled`는 기본 false이며 HTTPS 포트 매핑도 null이다. 외부 TLS 프록시는 Supervisor가 알려 준 호스트 포트가 있고 이 옵션이 켜져 있을 때만 뜬다. 설정 UI의 포트 변경과 재시작은 Supervisor의 `addons/self` API로 동작하며, 모의 Supervisor로만 검증했다. Ingress와 외부 장치 API는 분리되어 있다.
 
 ## 승인 전 완료해야 할 게이트
 
-- `STATUS.md`의 핵심 미구현 항목이 모두 구현·검증됨.
+- `STATUS.md`의 "미검증" 항목 중 실제 HAOS·실제 Drive/NAS·실제 장치 항목을 운영 환경의 격리된 테스트로 확인함.
 - 동일 원본 로그의 재생 JSON·텔레메트리·GPS·영상/로그 시간축에 대한 Python/Rust 동등성 확인.
 - 실제 qcamera/fcamera/ecamera 영상의 프레임·비트스트림·브라우저 재생/시킹 확인.
 - 실제 ccnc-hda1 장치에서 테스트 주소로 업로드 중단·재연결·영수증 복구·장치 폐기 검증.

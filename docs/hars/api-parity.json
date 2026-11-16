@@ -1,0 +1,446 @@
+{
+  "hars_version": "2.0.0-alpha.3",
+  "python_version": "1.3.16",
+  "python_commit": "71add1a04ed505fc2cb6982052db4a9945d0808f",
+  "summary": {
+    "python_routes": 53,
+    "implemented": 53,
+    "not_ported": 0,
+    "error_body": "UI errors carry a code in `error` and the Python sentence in `message`"
+  },
+  "routes": [
+    {
+      "path": "/",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/device/pair",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/device/test",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/device/uploads",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/device/uploads/<id>",
+      "methods": [
+        "GET",
+        "DELETE"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/device/uploads/<id>/files/<int:index>",
+      "methods": [
+        "PUT"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/device/uploads/<id>/finish",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/<id>",
+      "methods": [
+        "DELETE"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/<id>/archive/retry",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/<id>/bookmarks",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/<id>/bookmarks/<bookmark_id>",
+      "methods": [
+        "PUT",
+        "DELETE"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/<id>/convert",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented",
+      "hars_note": "keeps the previous prepared data until the new conversion publishes"
+    },
+    {
+      "path": "/api/logs/<id>/data",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/<id>/download",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/<id>/download/video",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented",
+      "hars_note": "prefers the HARS video_downloads list, which may name a prepared MP4"
+    },
+    {
+      "path": "/api/logs/<id>/original/<kind>",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/<id>/pin",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/<id>/prepared",
+      "methods": [
+        "DELETE"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/<id>/tags",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/<id>/telemetry",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/<id>/thumbnail",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented",
+      "hars_note": "generated at conversion, not on demand"
+    },
+    {
+      "path": "/api/logs/<id>/track",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/<id>/video",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/download.zip",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/export.tar",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/import",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/logs/import/<id>/finish",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/progress",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/settings/archive",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/settings/archive/gdrive/connect",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented",
+      "hars_note": "verified against a mock Drive server only"
+    },
+    {
+      "path": "/api/settings/archive/gdrive/disconnect",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/settings/archive/run",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/settings/archive/tracks/run",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hars": "implemented",
+      "hars_note": "does not wait for video playback as Python does"
+    },
+    {
+      "path": "/api/settings/archive/tracks/stop",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/settings/device-network",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hars": "implemented",
+      "hars_note": "verified against a mock Supervisor only"
+    },
+    {
+      "path": "/api/settings/device-network/restart",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented",
+      "hars_note": "verified against a mock Supervisor only"
+    },
+    {
+      "path": "/api/settings/devices",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented",
+      "hars_note": "device port also requires the HARS option device_https_enabled"
+    },
+    {
+      "path": "/api/settings/devices/<id>",
+      "methods": [
+        "DELETE"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/settings/devices/<id>/revoke",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/settings/devices/pairing",
+      "methods": [
+        "GET",
+        "POST",
+        "DELETE"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/settings/processing",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hars": "implemented",
+      "hars_note": "keep_original_video stays configurable"
+    },
+    {
+      "path": "/api/settings/storage",
+      "methods": [
+        "GET",
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/storage/cleanup",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/tracks",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/upload",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/uploads",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/uploads/<id>",
+      "methods": [
+        "DELETE"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/uploads/<id>/failure",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/uploads/<id>/files/<int:index>",
+      "methods": [
+        "PUT"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/api/uploads/<id>/finish",
+      "methods": [
+        "POST"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/assets/<path:name>",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented"
+    },
+    {
+      "path": "/view/<id>/",
+      "methods": [
+        "GET"
+      ],
+      "hars": "implemented"
+    }
+  ],
+  "hars_only_routes": [
+    {
+      "path": "/health",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/api/logs/<id>/cancel",
+      "methods": [
+        "POST"
+      ],
+      "note": "cancel a queued or running conversion"
+    },
+    {
+      "path": "/api/settings/archive/legacy/scan",
+      "methods": [
+        "POST"
+      ],
+      "note": "list a Python-owned Drive folder or NAS path, read-only"
+    },
+    {
+      "path": "/api/settings/archive/legacy/import",
+      "methods": [
+        "POST"
+      ],
+      "note": "copy selected Python-archived recordings into HARS"
+    },
+    {
+      "path": "/api/settings/archive/legacy/status",
+      "methods": [
+        "GET"
+      ]
+    },
+    {
+      "path": "/api/settings/archive/legacy/cancel",
+      "methods": [
+        "POST"
+      ]
+    }
+  ],
+  "note": "Route list comes from inventory.json, which scripts/inventory.py regenerates from the Python source. This file records the HARS side and is edited by hand."
+}
