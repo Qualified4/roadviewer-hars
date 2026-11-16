@@ -1,7 +1,8 @@
 //! Baseline 4:2:0 JPEG of the thumbnail with the quantisation FFmpeg's `mjpeg` encoder uses at
 //! `qmin = qmax = 4` (the MPEG-1 intra matrix times 4/8, DC step 8, one table for all planes)
-//! and per-picture optimal Huffman tables, as its default `huffman=optimal`. The DCT is the
-//! libjpeg integer one, so the bytes differ from FFmpeg's while the quantisation steps are equal.
+//! with its rounding, and per-picture optimal Huffman tables, as its default `huffman=optimal`.
+//! The DCT is the libjpeg integer one, so the bytes differ from FFmpeg's while the quantisation
+//! steps are equal.
 use super::scale::{Image, Plane};
 
 const MPEG1_INTRA: [u8; 64] = [
@@ -126,9 +127,12 @@ fn block(plane: &Plane, bx: usize, by: usize, q: &[u16; 64]) -> [i32; 64] {
         }
     }
     fdct(&mut b);
-    for (v, &step) in b.iter_mut().zip(q) {
+    // FFmpeg's intra quantiser: DC rounded half up (it codes unshifted samples), AC with its
+    // `intra_quant_bias` of 3/8 of a step towards zero.
+    b[0] = (b[0] + i32::from(q[0]) * 4).div_euclid(i32::from(q[0]) * 8);
+    for (v, &step) in b.iter_mut().zip(q).skip(1) {
         let step = i32::from(step) * 8;
-        let magnitude = (v.abs() + step / 2) / step;
+        let magnitude = (8 * v.abs() + 3 * step) / (8 * step);
         *v = if *v < 0 { -magnitude } else { magnitude };
     }
     b
