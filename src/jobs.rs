@@ -494,8 +494,12 @@ impl Jobs {
             // An archived original stays the stored copy; its MP4 remains converted output in prepared/.
             let archived = index::location(&meta, raw) != "local"
                 || index::is_archived_location(&index::location(&meta, mp4));
-            // A restart resuming this generation's publication finds the MP4s it already moved.
-            let moved = installed && !prepared.join(mp4).exists() && folder.join(mp4).is_file();
+            // A restart resuming this generation's publication finds an MP4 it already moved next to
+            // the original it was made from (a conversion reads a local original before a stored MP4).
+            let moved = installed
+                && !prepared.join(mp4).exists()
+                && folder.join(mp4).is_file()
+                && folder.join(raw).is_file();
             if !keep && !archived && (moved || prepared.join(mp4).is_file()) {
                 // An MP4 removed by archive cleanup exists again, locally: the index must not hide it.
                 if index::location(&meta, mp4) == "removed"
