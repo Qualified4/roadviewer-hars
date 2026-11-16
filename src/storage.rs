@@ -549,7 +549,11 @@ pub async fn guards(
                 }
             }
             if let Some(plan) = read("commit.json")? {
-                for m in plan["records"].as_array().into_iter().flatten() {
+                // A journaled camera addition protects the recording it adds to.
+                for m in ["records", "updates"]
+                    .iter()
+                    .flat_map(|k| plan[k].as_array().into_iter().flatten())
+                {
                     if let Some(id) = m["id"].as_str() {
                         g.busy_ids.insert(id.to_owned());
                     }

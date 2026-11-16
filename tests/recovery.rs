@@ -216,3 +216,85 @@ async fn failed_temporary_sweep_and_leftover_exports_do_not_block_startup() {
     );
     drop(a);
 }
+
+#[tokio::test]
+async fn camera_addition_supersedes_an_interrupted_conversion_publication() {
+    for installed in [false, true] {
+        let temp = tempfile::tempdir().unwrap();
+        let a = app(temp.path()).await;
+        let names = [
+            "2026-11-15--12-00-00--1--rlog.zst",
+            "2026-11-15--12-00-00--1--qcamera.ts",
+        ];
+        let session = a
+            .uploads
+            .begin_browser(json!({"files":[{"name":names[0],"size":3},{"name":names[1],"size":5}]}))
+            .await
+            .unwrap();
+        let name = session["id"].as_str().unwrap().to_owned();
+        for (i, data) in [&b"abc"[..], b"video"].iter().enumerate() {
+            a.uploads
+                .chunk(&name, i, Some(0), data, false, &HeaderMap::new())
+                .await
+                .unwrap();
+        }
+        let record = id();
+        let generation = id();
+        let folder = temp.path().join(&record);
+        std::fs::create_dir(&folder).unwrap();
+        std::fs::write(folder.join("rlog.zst"), b"abc").unwrap();
+        let meta = json!({"id":record,"name":"n","status":"processing","conversion_id":generation,
+            "files":{"rlog.zst":names[0]},"content_hashes":{"rlog.zst":{"size":3,"sha256":sha(b"abc")}}});
+        atomic_json(&folder.join("meta.json"), &meta).await.unwrap();
+        // A conversion publication killed midway, and the camera addition journaled after it.
+        let staging = folder.join(format!(".convert-{generation}"));
+        std::fs::create_dir(&staging).unwrap();
+        atomic_json(&staging.join("summary.json"), &json!({"duration":1.}))
+            .await
+            .unwrap();
+        atomic_json(&staging.join(".generation"), &generation)
+            .await
+            .unwrap();
+        let backup = folder.join(format!(".previous-{generation}"));
+        if installed {
+            std::fs::create_dir(&backup).unwrap();
+            std::fs::rename(&staging, folder.join("prepared")).unwrap();
+        }
+        atomic_json(
+            &folder.join(".conversion.json"),
+            &json!({"generation":generation}),
+        )
+        .await
+        .unwrap();
+        let update = json!({"id":record,"restored":false,"conversion_revision":1,
+            "kinds":[{"index":1,"kind":"qcamera.ts","name":names[1],"sha256":sha(b"video")}]});
+        let plan = json!({"records":[],"updates":[update],
+            "moves":[{"index":1,"id":record,"kind":"qcamera.ts","sha256":sha(b"video")}],
+            "result":{"logs":[],"duplicates":[],"updated":[]}});
+        atomic_json(
+            &temp.path().join(".uploads").join(&name).join("commit.json"),
+            &plan,
+        )
+        .await
+        .unwrap();
+        drop(a);
+        let a = app(temp.path()).await;
+        let meta = a.store.meta(&record).await.unwrap();
+        assert_eq!(meta["status"], "queued", "{installed}");
+        assert_eq!(meta.get("conversion_id"), None);
+        assert_eq!(meta["files"]["qcamera.ts"], names[1]);
+        assert_eq!(std::fs::read(folder.join("qcamera.ts")).unwrap(), b"video");
+        for gone in [
+            folder.join("prepared"),
+            staging.clone(),
+            backup.clone(),
+            folder.join(".conversion.json"),
+            temp.path().join(".uploads").join(&name),
+        ] {
+            assert!(!gone.exists(), "{installed}: {gone:?}");
+        }
+        drop(a);
+        let a = app(temp.path()).await;
+        assert_eq!(a.store.meta(&record).await.unwrap(), meta);
+    }
+}

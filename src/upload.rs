@@ -841,13 +841,18 @@ impl Uploads {
             let planned = async {
                 self.check_session(&s, device, headers).await?;
                 let plan = self.plan(&s, &digests).await?;
-                if plan["records"].as_array().is_some_and(|v| !v.is_empty()) {
-                    // Everything is received and verified: only now may old recordings make room.
+                if ["records", "updates"]
+                    .iter()
+                    .any(|k| plan[k].as_array().is_some_and(|v| !v.is_empty()))
+                {
+                    // Everything is received and verified: only now may old recordings make room,
+                    // never one this upload matched (Python `protected_ids`).
                     let names = s.files.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
                     let duplicates = plan["result"]["duplicates"]
                         .as_array()
                         .into_iter()
                         .flatten()
+                        .chain(plan["updates"].as_array().into_iter().flatten())
                         .filter_map(|d| d["id"].as_str().map(str::to_owned))
                         .collect();
                     crate::storage::admit(
@@ -912,8 +917,13 @@ impl Uploads {
         for meta in plan["records"].as_array().unwrap() {
             self.store.save_meta(meta.clone()).await?;
         }
+        let mut updated = vec![];
+        for update in plan["updates"].as_array().into_iter().flatten() {
+            updated.push(crate::recording_update::apply(&self.store, update).await?);
+        }
         crate::fault::point("finish_before_receipt");
-        let result = plan["result"].clone();
+        let mut result = plan["result"].clone();
+        result["updated"] = json!(updated);
         if device {
             let mut receipt = s.meta.read().await.clone();
             receipt["result"] = result.clone();
@@ -977,11 +987,22 @@ impl Uploads {
             let p = peer.path.join("commit.json");
             if p.exists() {
                 let plan: Value = read_json(&p).await?;
-                if plan["records"].as_array().unwrap().iter().any(|m| {
-                    digests
-                        .iter()
-                        .any(|d| m["content_hashes"]["rlog.zst"]["sha256"] == *d)
-                }) {
+                let updating = plan["updates"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|u| existing.iter().find(|m| m["id"] == u["id"]));
+                if plan["records"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .chain(updating)
+                    .any(|m| {
+                        digests
+                            .iter()
+                            .any(|d| m["content_hashes"]["rlog.zst"]["sha256"] == *d)
+                    })
+                {
                     return Err(conflict("upload_busy"));
                 }
             }
@@ -989,6 +1010,8 @@ impl Uploads {
         let mut records = Vec::new();
         let mut moves = Vec::new();
         let mut duplicates = Vec::new();
+        let mut updates = Vec::new();
+        let mut planned_kinds: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for group in groups.values() {
             let mut kinds = BTreeSet::new();
             let mut cameras = BTreeSet::new();
@@ -1002,17 +1025,50 @@ impl Uploads {
                 .find(|(_, kind, _)| kind == "rlog.zst")
                 .ok_or_else(|| bad("rlog_required"))?;
             if let Some(old) = existing
-                .iter()
+                .iter_mut()
                 .find(|m| m["content_hashes"]["rlog.zst"]["sha256"] == digests[log.0])
             {
-                // Additional camera registration requires invalidating prepared data atomically. Do not silently discard it.
-                if group
+                let old_id = old["id"].as_str().unwrap_or_default().to_owned();
+                let folder = self.store.root.join(&old_id);
+                let incoming = group
                     .iter()
-                    .any(|(_, kind, _)| old["files"].get(kind).is_none())
-                {
-                    return Err(conflict("batch_conflict"));
+                    .map(|(i, kind, _)| (kind.clone(), digests[*i].clone()))
+                    .collect::<BTreeMap<_, _>>();
+                let known = old["content_hashes"]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|(k, v)| Some((k.clone(), v["sha256"].as_str()?.to_owned())))
+                    .collect::<BTreeMap<_, _>>();
+                let planned = planned_kinds.entry(old_id.clone()).or_default();
+                let added = crate::recording_update::additional_videos(
+                    &folder, old, &incoming, &known, planned,
+                );
+                if added.is_empty() {
+                    let video_differs = group.iter().any(|(i, k, _)| {
+                        crate::recording_update::VIDEO_KINDS.contains(&k.as_str())
+                            && known.get(k) != Some(&digests[*i])
+                    });
+                    duplicates
+                        .push(json!({"id":old["id"],"name":log.2,"video_differs":video_differs}));
+                    continue;
                 }
-                duplicates.push(json!({"id":old["id"],"name":log.2,"video_differs":group.iter().any(|(i,k,_)|old["content_hashes"][k]["sha256"]!=digests[*i])}));
+                if let Some(refused) = crate::recording_update::refusal(old) {
+                    return Err(refused);
+                }
+                let restored =
+                    crate::recording_update::restored(&folder, &added, &incoming, &known);
+                let mut rows = vec![];
+                for kind in &added {
+                    let (i, _, _) = group.iter().find(|(_, k, _)| k == kind).unwrap();
+                    let name = s.files[*i].name.rsplit('/').next().unwrap().to_owned();
+                    moves.push(json!({"index":i,"id":old_id,"kind":kind,"sha256":digests[*i]}));
+                    old["files"][kind] = json!(name);
+                    old["content_hashes"][kind] = json!({"sha256":digests[*i]});
+                    planned.insert(kind.clone());
+                    rows.push((*i, kind.clone(), name, digests[*i].clone()));
+                }
+                updates.push(crate::recording_update::entry(old, restored, &rows));
                 continue;
             }
             let record = id();
@@ -1041,8 +1097,9 @@ impl Uploads {
             existing.push(meta.clone());
             records.push(meta);
         }
+        // `updated` is filled in when the journal is applied: it shows the recordings as saved.
         Ok(
-            json!({"records":records,"moves":moves,"result":{"logs":records,"duplicates":duplicates,"updated":[]}}),
+            json!({"records":records,"moves":moves,"updates":updates,"result":{"logs":records,"duplicates":duplicates,"updated":[]}}),
         )
     }
     pub async fn cleanup(&self) -> Result<usize> {

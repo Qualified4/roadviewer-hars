@@ -256,8 +256,28 @@ impl Jobs {
             } else {
                 600
             };
+        // A camera added to the recording (Python terminates its process) gives the record another
+        // generation; this output would lack the new camera, so it is dropped without a status.
+        let superseded = async {
+            loop {
+                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
+                if self
+                    .store
+                    .meta(record)
+                    .await
+                    .is_ok_and(|m| m["conversion_id"] != generation)
+                {
+                    return;
+                }
+            }
+        };
         tokio::select! {
             result=tokio::time::timeout(std::time::Duration::from_secs(timeout),future)=>{result.context("conversion deadline exceeded; original data preserved")??;},
+            _=superseded=>{
+                child.kill().await?;
+                let _=tokio::fs::remove_dir_all(&staging).await;
+                return Ok(());
+            }
             _=cancel.notified()=>{
                 child.kill().await?;
                 let lock=self.store.record_lock(record).await;let _guard=lock.lock().await;
@@ -306,6 +326,18 @@ impl Jobs {
         let prepared = folder.join("prepared");
         let staging = folder.join(format!(".convert-{generation}"));
         let backup = folder.join(format!(".previous-{generation}"));
+        if meta["conversion_id"] != generation {
+            // Superseded by a camera addition, which already cleared the replay data this
+            // generation would replace (including a half-published one) and queued the record.
+            for dir in [&staging, &backup] {
+                match tokio::fs::remove_dir_all(dir).await {
+                    Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+                    _ => {}
+                }
+            }
+            tokio::fs::remove_file(folder.join(".conversion.json")).await?;
+            return Ok(());
+        }
         let installed = read_json::<String>(&prepared.join(".generation"))
             .await
             .ok()
@@ -387,7 +419,7 @@ impl Jobs {
     }
 }
 
-async fn download_entries(folder: &std::path::Path) -> std::io::Result<Value> {
+pub(crate) async fn download_entries(folder: &std::path::Path) -> std::io::Result<Value> {
     let mut downloads = vec![];
     for (source, raw, mp4) in [
         ("qcamera", "qcamera.ts", "camera.mp4"),

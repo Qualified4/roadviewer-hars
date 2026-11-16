@@ -445,3 +445,104 @@ async fn automatic_conversion_waits_while_an_upload_is_receiving() {
     )
     .await;
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn sigkill_during_camera_addition_converges_on_restart() {
+    for point in [
+        "finish_after_journal",
+        "finish_after_move",
+        "update_before_metadata",
+        "finish_before_receipt",
+        "finish_after_receipt",
+        "session_removing",
+    ] {
+        let temp = tempfile::tempdir().unwrap();
+        let root = quiet(&temp);
+        let marker = temp.path().join("marker");
+        let (log, video) = segment(26, 96 * KIB);
+        let all = files(&log, &video);
+        let (record, creds) = {
+            let server = start(&root, None).await;
+            let creds = pair(server.ui, server.device).await;
+            let first = batch(&format!("add_first_{point}"), 26, &[("rlog.zst", &log)]);
+            let session = begin(server.device, &creds, &first).await;
+            upload_all(server.device, &session, &[&log], 64 * KIB).await;
+            let (code, result) = finish(server.device, &session, &[&log]).await;
+            assert_eq!(code, 201);
+            server.kill();
+            (result["logs"][0]["id"].as_str().unwrap().to_owned(), creds)
+        };
+        // Replay data of the log alone, which the addition must invalidate.
+        std::fs::create_dir(root.join(&record).join("prepared")).unwrap();
+        std::fs::write(root.join(&record).join("prepared/summary.json"), b"{}").unwrap();
+
+        let server = start(&root, Some((point, &marker))).await;
+        let manifest = batch(
+            &format!("add_camera_{point}"),
+            26,
+            &[("rlog.zst", &log), ("qcamera.ts", &video)],
+        );
+        let session = begin(server.device, &creds, &manifest).await;
+        upload_all(server.device, &session, &all, 64 * KIB).await;
+        let dev = server.device;
+        let pending = {
+            let session = session.clone();
+            let (log, video) = (log.clone(), video.clone());
+            tokio::spawn(async move { finish(dev, &session, &[&log, &video]).await })
+        };
+        crashed(&marker, point).await;
+        server.kill();
+        assert_eq!(
+            pending.await.unwrap().0,
+            0,
+            "{point}: response must be lost"
+        );
+
+        let server = start(&root, None).await;
+        let (code, result) = finish(server.device, &session, &all).await;
+        assert_eq!(code, 200, "{point}: {result}");
+        assert_eq!(result["logs"], json!([]), "{point}");
+        assert_eq!(result["duplicates"], json!([]), "{point}");
+        let updated = &result["updated"][0];
+        assert_eq!(updated["id"], record.as_str(), "{point}");
+        assert_eq!(
+            (&updated["status"], &updated["conversion_revision"]),
+            (&json!("unconverted"), &json!(1)),
+            "{point}"
+        );
+        let saved: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(root.join(&record).join("meta.json")).unwrap())
+                .unwrap();
+        assert_eq!(
+            &saved, updated,
+            "{point}: the receipt shows the saved recording"
+        );
+        assert!(!root.join(&record).join("prepared").exists(), "{point}");
+        invariants(
+            &root,
+            server.ui,
+            Expect {
+                registered: &[&all],
+                sessions: 0,
+            },
+        )
+        .await;
+        assert_eq!(
+            begin(server.device, &creds, &manifest).await,
+            json!({"state":"completed","result":result}),
+            "{point}"
+        );
+        server.kill();
+        let server = start(&root, None).await;
+        invariants(
+            &root,
+            server.ui,
+            Expect {
+                registered: &[&all],
+                sessions: 0,
+            },
+        )
+        .await;
+        assert_eq!(finish(server.device, &session, &all).await, (200, result));
+    }
+}
