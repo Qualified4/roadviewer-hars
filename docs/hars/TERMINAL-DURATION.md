@@ -81,6 +81,8 @@ HEVC(`fcamera.hevc`, µs): 실제 46,248~51,155 µs. Python의 0.05초 고정은
 
 UI(`app/web/app.js`): `data.duration`은 시크 막대 최대값·끝 시각·재생 정지 시점이다. `video.start + video.duration`은 영상 표시 구간(`videoAvailable`)과 마지막 프레임 유지(`finalVideoFrame`, 허용 오차는 `video.duration / video.frames` cadence에서 계산)에 쓴다. `syncVideo`는 `video.currentTime`을 `duration − 0.001`로 자른다. 구간을 이어 재생하는 기능은 없다(구간마다 따로 연다). 그래서 영상 끝이 실제 다음 프레임 시각에 맞으면, 마지막 프레임은 다음 구간이 시작될 시점까지 보이고 그 이상 늘지 않는다.
 
+재생 확인(headless Edge, 13구간 26영상 × 두 엔진 × 3회): `video.duration`이 replay JSON의 `videos.*.duration`과 같고(최대 4.4e-7초), 마지막 0.3초를 재생한 `ended` 시점이 정확히 `duration`이었다(156/156). 13구간 모두 영상 끝이 로그 끝보다 늦어 `duration`(시크 막대 끝)은 영상 끝이다. 오버레이·그래프는 로그 시간축(`frames[].t`)을 쓰므로 이 규칙으로 바뀌지 않는다(replay JSON의 나머지 필드가 Python과 같음으로 확인).
+
 ## Python 데이터와의 호환
 
 - Python이 만든 MP4(마지막 duration이 Python 규칙)는 재사용 경로에서 다시 쓰지 않는다. 검사는 프레임 수·시각·서명이고 마지막 duration을 보지 않는다(`tests/terminal_duration.rs`).

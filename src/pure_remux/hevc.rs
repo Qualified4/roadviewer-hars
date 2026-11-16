@@ -1,7 +1,8 @@
 use super::{
     Unsupported,
+    annexb::NAL_LIMIT,
     annexb::{Bits, Scanner, Unit, configuration_sets, is_parameter_set, kind},
-    mp4::{Plan, Writer},
+    mp4::{Kept, Plan, SAMPLE_LIMIT, Writer},
 };
 use crate::media::{NalHasher, Signature};
 use anyhow::{Context, ensure};
@@ -125,6 +126,7 @@ struct Sizing {
     sizes: Vec<(u64, bool)>,
     size: u64,
     first: Vec<(u8, Vec<u8>)>,
+    kept: Kept,
 }
 impl Sink for Sizing {
     fn nal(&mut self, kind: u8, unit: &Unit<'_>) -> anyhow::Result<()> {
@@ -133,7 +135,17 @@ impl Sink for Sizing {
                 self.first.push((kind, unit.raw.to_vec()));
             }
         } else {
-            self.size += 4 + unit.sample().len() as u64;
+            let sample = unit.sample();
+            ensure!(
+                !sample.is_empty() && sample.len() <= NAL_LIMIT,
+                "NAL unit exceeds bounded memory limit"
+            );
+            self.size += 4 + sample.len() as u64;
+            ensure!(
+                self.size <= SAMPLE_LIMIT,
+                "invalid video packet or inspection limit"
+            );
+            self.kept.nal(sample);
         }
         Ok(())
     }
@@ -193,8 +205,9 @@ fn entry(sets: &[(u8, Vec<u8>)]) -> anyhow::Result<SampleEntry> {
     Ok(SampleEntry::Hvc1(entry))
 }
 
-/// Two reads of the Annex B input: the first hashes it with the independent
-/// `NalHasher` splitter and sizes every sample, the second writes them.
+/// The first read of the Annex B input hashes it with the independent
+/// `NalHasher` splitter, sizes every sample and keeps the sample bytes when
+/// they fit `BUFFER_LIMIT`; otherwise a second read writes them.
 pub fn remux(
     source: &Path,
     output: &Path,
@@ -220,6 +233,7 @@ pub fn remux(
         sizes: Vec::with_capacity(stamps.len()),
         size: 0,
         first: Vec::new(),
+        kept: Kept::new(),
     };
     walk(source, Some(&mut hash), &mut sizing)?;
     let signature = hash.finish()?;
@@ -255,7 +269,10 @@ pub fn remux(
             samples,
         },
     )?;
-    walk(source, None, &mut writer)?;
+    match sizing.kept.take() {
+        Some(data) => writer.write_samples(&data)?,
+        None => walk(source, None, &mut writer)?,
+    }
     writer.finish()?;
     Ok(signature)
 }

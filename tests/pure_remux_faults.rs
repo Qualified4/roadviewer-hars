@@ -144,6 +144,26 @@ fn killed_pure_worker_falls_back_and_leaves_no_partial_output() {
     c.clean(&["again.mp4"]);
 }
 
+/// Inputs beyond the in-memory limit are read a second time; that path must
+/// write the same bytes as the single-read one.
+#[test]
+fn second_read_path_writes_the_same_file() {
+    let c = case();
+    let once = c.root.join("once.mp4");
+    c.retry("once.mp4");
+    let twice = c.root.join("twice.mp4");
+    let out = c
+        .command(&twice)
+        .env("HARS_PURE_REMUX_BUFFER_LIMIT", "0")
+        .output()
+        .unwrap();
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    assert!(out.status.success(), "{stdout}");
+    assert!(stdout.contains(r#""engine":"pure""#) && !stdout.contains("remux_fallback"));
+    assert_eq!(std::fs::read(once).unwrap(), std::fs::read(twice).unwrap());
+    c.clean(&["once.mp4", "twice.mp4"]);
+}
+
 #[test]
 fn killed_conversion_process_keeps_the_original_and_a_retry_completes() {
     let c = case();

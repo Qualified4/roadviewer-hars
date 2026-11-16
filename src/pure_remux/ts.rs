@@ -1,7 +1,8 @@
 use super::{
     Unsupported,
+    annexb::NAL_LIMIT,
     annexb::{Bits, configuration_sets, for_each_nal, is_parameter_set, kind},
-    mp4::{Plan, Writer},
+    mp4::{Kept, Plan, SAMPLE_LIMIT, Writer},
 };
 use crate::media::{NalHasher, Signature};
 use anyhow::{Context, bail, ensure};
@@ -216,9 +217,9 @@ struct Frame {
     keyframe: bool,
 }
 
-/// Two reads of the TS input: the first hashes the elementary stream with the
-/// independent `NalHasher` splitter and sizes every sample, the second writes
-/// them. Output clocks are DTS minus `offset`, the first (smallest) PTS.
+/// The first read of the TS input hashes the elementary stream with the
+/// independent `NalHasher` splitter, sizes every sample and keeps the sample
+/// bytes when they fit `BUFFER_LIMIT`; otherwise a second read writes them. Output clocks are DTS minus `offset`, the first (smallest) PTS.
 pub fn remux(
     source: &Path,
     output: &Path,
@@ -230,6 +231,7 @@ pub fn remux(
     let mut clock = Clock::default();
     let mut frames: Vec<Frame> = Vec::new();
     let mut first: Vec<(u8, Vec<u8>)> = Vec::new();
+    let mut kept = Kept::new();
     demux(source, |pes| {
         ensure!(
             frames.len() < PACKET_LIMIT,
@@ -254,9 +256,19 @@ pub fn remux(
             if frames.is_empty() && is_parameter_set(kind, false) {
                 first.push((kind, unit.raw.to_vec()));
             }
-            size += 4 + unit.sample().len() as u64;
+            let sample = unit.sample();
+            ensure!(
+                !sample.is_empty() && sample.len() <= NAL_LIMIT,
+                "NAL unit exceeds bounded memory limit"
+            );
+            size += 4 + sample.len() as u64;
+            kept.nal(sample);
             Ok(())
         })?;
+        ensure!(
+            size <= SAMPLE_LIMIT,
+            "invalid video packet or inspection limit"
+        );
         if delimiters > 1 || pictures == 0 {
             return Err(Unsupported("TS packet is not one access unit").into());
         }
@@ -321,10 +333,13 @@ pub fn remux(
             samples,
         },
     )?;
-    demux(source, |pes| {
-        for_each_nal(&pes.data, |unit| writer.write_nal(unit.sample()))?;
-        writer.end_sample()
-    })?;
+    match kept.take() {
+        Some(data) => writer.write_samples(&data)?,
+        None => demux(source, |pes| {
+            for_each_nal(&pes.data, |unit| writer.write_nal(unit.sample()))?;
+            writer.end_sample()
+        })?,
+    }
     writer.finish()?;
     Ok(signature)
 }

@@ -81,7 +81,13 @@
 
 ## 브라우저 재생
 
-측정 후 기록한다.
+`integration/browser_video_check.py`로 Windows Microsoft Edge(`--headless=new`, 매번 새 임시 프로필, 사용자 브라우저·ego-browser 미사용)를 돌렸다. 영상은 WSL의 다중 스레드 Range 서버(127.0.0.1, 지정 포트)로 제공했다. 순수 엔진 26개와 FFmpeg 엔진(`HARS_REMUX_ENGINE=ffmpeg`) 26개를 각각 3회, 총 156회 확인했다.
+
+- 오류(`error`, `MediaError`) 0. 중간(50 %)·말미(99.5 %) seek 후 readyState 최소 4. 재생 400 ms 후 진행, 일시정지 정상.
+- `loadedmetadata`: 중앙값 4 ms, 최대 120 ms(순수 엔진 1회차 첫 영상, cold start). 15초 대기 초과 0회. 이전 실험의 5번 TS 대기 초과는 3회 반복에서 재현되지 않았다. 이번 서버는 요청마다 스레드를 쓰므로, 이전의 단일 스레드 시험 서버가 원인이었다는 추정과 맞는다(확정은 아님).
+- `video.duration`: 두 엔진 26/26 같음, replay JSON의 `videos.*.duration`과 26/26 같음(최대 차이 4.4e-7초, float 표현 차이).
+- 말미 동기: 마지막 0.3초를 재생했을 때 `ended` 시점의 `currentTime − duration` = 0(156/156). 영상은 다음 프레임 시각에서 끝나고 그 뒤로 늘지 않는다.
+- `canPlayType`: hvc1은 `probably`. avc1 질의 문자열(`avc1.4d4028`)은 빈 값이었지만 재생은 모두 정상이어서, 질의 문자열이 이 영상의 profile과 맞지 않은 것으로 본다(재생 판단에 쓰지 않음).
 
 ## 성능
 

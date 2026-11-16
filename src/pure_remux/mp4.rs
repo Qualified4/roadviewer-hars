@@ -13,6 +13,39 @@ use std::{
 };
 
 pub const SAMPLE_LIMIT: u64 = 32 * 1024 * 1024;
+/// Sample bytes kept in memory by the first read; a larger input is read a
+/// second time instead (an archive share would otherwise be read twice).
+pub const BUFFER_LIMIT: usize = 64 * 1024 * 1024;
+
+/// Length-prefixed sample bytes gathered during the first read, if they fit.
+pub struct Kept(Option<Vec<u8>>, usize);
+impl Kept {
+    pub fn new() -> Self {
+        // Debug builds only: tests force the second-read path on small inputs.
+        let limit = if cfg!(debug_assertions) {
+            std::env::var("HARS_PURE_REMUX_BUFFER_LIMIT")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(BUFFER_LIMIT)
+        } else {
+            BUFFER_LIMIT
+        };
+        Self(Some(Vec::new()), limit)
+    }
+    pub fn nal(&mut self, unit: &[u8]) {
+        if let Some(data) = &mut self.0 {
+            if data.len() + 4 + unit.len() > self.1 {
+                self.0 = None;
+            } else {
+                data.extend_from_slice(&(unit.len() as u32).to_be_bytes());
+                data.extend_from_slice(unit);
+            }
+        }
+    }
+    pub fn take(self) -> Option<Vec<u8>> {
+        self.0
+    }
+}
 // stco offsets that straddle 4 GiB would switch the table to co64 between the
 // sizing run and the real one; camera segments are far below this.
 const FILE_LIMIT: u64 = 3 << 30;
@@ -168,6 +201,21 @@ impl Writer {
         if self.index == 1 {
             crate::fault::point("pure_remux_sample");
         }
+        Ok(())
+    }
+    /// Writes every planned sample from length-prefixed bytes kept by the
+    /// first read, so the input is read only once.
+    pub fn write_samples(&mut self, mut data: &[u8]) -> anyhow::Result<()> {
+        while self.index < self.plan.samples.len() {
+            let size = usize::try_from(self.plan.samples[self.index].0)?;
+            ensure!(size <= data.len(), "input changed between reads");
+            let (sample, rest) = data.split_at(size);
+            self.file.write_all(sample)?;
+            self.position += size as u64;
+            self.end_sample()?;
+            data = rest;
+        }
+        ensure!(data.is_empty(), "input changed between reads");
         Ok(())
     }
     pub fn finish(mut self) -> anyhow::Result<()> {
