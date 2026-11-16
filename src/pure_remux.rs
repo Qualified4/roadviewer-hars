@@ -5,7 +5,7 @@ pub(crate) mod annexb;
 mod hevc;
 mod mp4;
 pub mod readback;
-mod ts;
+pub(crate) mod ts;
 
 use crate::media::{Inspection, Signature};
 use anyhow::ensure;

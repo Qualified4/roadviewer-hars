@@ -440,7 +440,7 @@ impl Engine {
             _ => bail!("{ENGINE_SETTING} must be pure or ffmpeg"),
         }
     }
-    fn name(self) -> &'static str {
+    pub fn name(self) -> &'static str {
         match self {
             Self::Pure => "pure",
             Self::Ffmpeg => "ffmpeg",
@@ -719,7 +719,7 @@ async fn remux_inner(
     }
     let result = ffmpeg(source, kind, output, times, &clocks, inspection).await;
     if let Some(failure) = &fallback {
-        log_fallback(kind, failure, &result);
+        log_fallback("remux_fallback", kind, failure, &result);
     }
     let info = result?;
     count(1);
@@ -783,7 +783,12 @@ fn short_for_pure(source: &Path, output: &Path) -> Option<crate::pure_remux::Fai
 /// An unsupported input is routine; damaged input is a warning; an engine
 /// error or a file that did not read back is an error even when FFmpeg's
 /// checked copy was published.
-fn log_fallback(kind: &str, failure: &crate::pure_remux::Failure, result: &anyhow::Result<Value>) {
+fn log_fallback<T>(
+    event: &'static str,
+    kind: &str,
+    failure: &crate::pure_remux::Failure,
+    result: &anyhow::Result<T>,
+) {
     use crate::pure_remux::FailureClass as C;
     let (fallback_result, fallback_reason) = match result {
         Ok(_) => ("published", String::new()),
@@ -792,7 +797,7 @@ fn log_fallback(kind: &str, failure: &crate::pure_remux::Failure, result: &anyho
     macro_rules! log {
         ($level:ident) => {
             tracing::$level!(
-                event = "remux_fallback",
+                event,
                 from = "pure",
                 to = "ffmpeg",
                 engine = "pure",
@@ -1261,13 +1266,146 @@ pub async fn thumbnail(source: &Path, kind: &str, output: &Path) -> anyhow::Resu
     Ok(())
 }
 
+/// Python's original-format export (`media_export`) of a converted MP4, by the configured engine.
 pub async fn reverse(
     source: &Path,
     kind: &str,
     output: &Path,
     source_pts: f64,
 ) -> anyhow::Result<()> {
+    reverse_using(Engine::configured()?, source, kind, output, source_pts)
+        .await
+        .map(|_| ())
+}
+
+/// Returns the engine that wrote `output`. A pure engine failure falls back to the FFmpeg export
+/// once under the same policy as remuxing ([`falls_back`]).
+pub async fn reverse_using(
+    engine: Engine,
+    source: &Path,
+    kind: &str,
+    output: &Path,
+    source_pts: f64,
+) -> anyhow::Result<Engine> {
     anyhow::ensure!(source_pts.is_finite(), "invalid original timestamp offset");
+    anyhow::ensure!(
+        matches!(kind, "qcamera.ts" | "fcamera.hevc" | "ecamera.hevc"),
+        "unsupported camera original format"
+    );
+    let mut fallback = None;
+    if engine == Engine::Pure {
+        match pure_reverse(source, kind, output, source_pts).await {
+            Ok(()) => {
+                tracing::info!(event = "reverse_engine", engine = "pure", kind);
+                return Ok(Engine::Pure);
+            }
+            Err(failure) if !falls_back(failure.class) => {
+                tracing::warn!(
+                    event = "reverse_failure",
+                    engine = "pure",
+                    kind,
+                    failure_class = failure.class.name(),
+                    reason_code = failure.code,
+                    reason = failure.reason,
+                    fallback = false,
+                );
+                return Err(failure.into());
+            }
+            Err(failure) => fallback = Some(failure),
+        }
+    }
+    let result = reverse_ffmpeg(source, kind, output, source_pts).await;
+    if let Some(failure) = &fallback {
+        log_fallback("reverse_fallback", kind, failure, &result);
+    }
+    result?;
+    tracing::info!(
+        event = "reverse_engine",
+        engine = Engine::Ffmpeg.name(),
+        requested = engine.name(),
+        kind
+    );
+    Ok(Engine::Ffmpeg)
+}
+
+/// The pure export, in a worker process like the pure remux; its output is placed only after the
+/// worker's read-back agreed with its read of the MP4.
+async fn pure_reverse(
+    source: &Path,
+    kind: &str,
+    output: &Path,
+    source_pts: f64,
+) -> Result<(), crate::pure_remux::Failure> {
+    use crate::pure_remux::{Failure, FailureClass as C};
+    use crate::pure_reverse::{Job, Reply};
+    let job = Job {
+        kind: kind.to_owned(),
+        offset: if kind == "qcamera.ts" {
+            crate::pure_reverse::offset_ticks(source_pts)?
+        } else {
+            0
+        },
+    };
+    let temp = output.with_extension(format!("{}.tmp", crate::store::id()));
+    let _scratch = Scratch(vec![temp.clone()]);
+    let reply = if let Some(worker) = WORKER_EXECUTABLE.get() {
+        let mut command = Command::new(worker);
+        command
+            .arg("__pure-reverse")
+            .arg(source)
+            .arg(kind)
+            .arg(job.offset.to_string())
+            .arg(&temp);
+        let bytes = run(&mut command).await.map_err(|e| failure(&e))?;
+        serde_json::from_slice::<Reply>(&bytes)
+            .map_err(|e| Failure::new(C::Internal, "worker_reply", e))?
+    } else {
+        let permit = WORKERS
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|e| Failure::new(C::Internal, "worker_start", e))?;
+        let input = source.to_path_buf();
+        let target = temp.clone();
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                Reply::from(crate::pure_reverse::reverse(&input, &target, &job))
+            }))
+            .unwrap_or_else(|_| Reply::Failed(Failure::new(C::Internal, "panic", "panic")))
+        })
+        .await
+        .map_err(|e| Failure::new(C::Internal, "worker_start", e))?
+    };
+    let outcome = match reply {
+        Reply::Done(outcome) => outcome,
+        Reply::Failed(failure) => return Err(failure),
+    };
+    async {
+        anyhow::ensure!(
+            outcome.input == outcome.output && outcome.frames > 0,
+            "compressed pictures changed during export"
+        );
+        anyhow::ensure!(
+            tokio::fs::metadata(&temp).await?.len() == outcome.bytes,
+            "export changed after its read-back"
+        );
+        Ok(durable_rename(&temp, output).await?)
+    }
+    .await
+    .map_err(|e: anyhow::Error| match Failure::classify(&e) {
+        f if f.class == C::Resource => f,
+        _ => Failure::new(C::Verification, "verification", format!("{e:#}")),
+    })
+}
+
+/// The FFmpeg CLI export, the pure engine's fallback.
+async fn reverse_ffmpeg(
+    source: &Path,
+    kind: &str,
+    output: &Path,
+    source_pts: f64,
+) -> anyhow::Result<()> {
     let source_kind = match kind {
         "qcamera.ts" => "camera.mp4",
         "fcamera.hevc" => "fcamera.mp4",
