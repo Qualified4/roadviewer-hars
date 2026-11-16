@@ -42,6 +42,7 @@ impl Jobs {
                 .await
                 .map_err(|_| anyhow::anyhow!("invalid conversion record"))?;
             let journal = folder.join(".conversion.json");
+            let mut journaled = None;
             if journal.is_file() {
                 let work: Value = read_json(&journal).await?;
                 let generation = work["generation"]
@@ -49,12 +50,16 @@ impl Jobs {
                     .filter(|v| crate::store::valid_id(v))
                     .context("invalid conversion journal")?;
                 jobs.publish(&record, generation).await?;
+                journaled = Some(format!(".convert-{generation}"));
             }
-            // A conversion a killed process left behind: never published (a journaled one was, just
-            // above) and no conversion runs before this returns, so nothing reads it.
+            // A conversion a killed process left before it completed: no journal names it, so it was
+            // never published, and no conversion runs before this returns. A journaled generation
+            // is `publish`'s (a cancelled one keeps its staging).
             let mut entries = tokio::fs::read_dir(&folder).await?;
             while let Some(entry) = entries.next_entry().await? {
-                if entry.file_name().to_string_lossy().starts_with(".convert-")
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if name.starts_with(".convert-")
+                    && Some(&name) != journaled.as_ref()
                     && entry.file_type().await?.is_dir()
                     && tokio::fs::remove_dir_all(entry.path()).await.is_err()
                 {
