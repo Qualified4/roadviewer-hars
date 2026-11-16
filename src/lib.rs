@@ -19,6 +19,7 @@ pub mod native_video;
 pub mod network;
 pub mod parity;
 pub mod profile;
+pub mod recording_update;
 pub mod replay;
 pub mod storage;
 pub mod store;

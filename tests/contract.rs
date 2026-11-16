@@ -304,6 +304,26 @@ async fn streaming_upload_retry_finish_and_lost_response_receipt() {
             .0,
         StatusCode::UNPROCESSABLE_ENTITY
     );
+    // Python's `finish_upload` removes the session after a failed check (its `finally`), so the
+    // uploader's next begin of the same batch starts over instead of meeting the same bytes.
+    assert_eq!(
+        a.uploads
+            .finish(id, true, &headers, json!({"sha256":[sha(data)]}))
+            .await
+            .unwrap_err()
+            .1,
+        "session_not_found"
+    );
+    assert!(!temp.path().join(".uploads").join(id).exists());
+    let session = begin(&a, &creds, &batch).await;
+    assert_ne!(session["id"].as_str().unwrap(), id);
+    assert_eq!(session["files"][0]["received"], 0);
+    let id = session["id"].as_str().unwrap();
+    let headers = bearer(&session);
+    a.uploads
+        .chunk(id, 0, Some(0), data, true, &headers)
+        .await
+        .unwrap();
     let (status, result) = a
         .uploads
         .finish(id, true, &headers, json!({"sha256":[sha(data)]}))

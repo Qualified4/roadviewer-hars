@@ -1,4 +1,6 @@
-//! Chunk bodies are received before the handler runs, so a stalled sender cannot hold a transfer slot.
+//! Chunk bodies are received into memory before the handler runs, while their sender holds a
+//! transfer slot: the slots bound how many such bodies are buffered at once, so a stalled sender
+//! keeps its slot until the idle or total deadline below ends the request.
 use crate::error::{ApiError, bad};
 use axum::{
     body::{Body, Bytes, HttpBody},
@@ -26,7 +28,9 @@ pub async fn receive(mut body: Body, limits: &Limits) -> Result<Bytes, ApiError>
             std::future::poll_fn(|cx| Pin::new(&mut body).poll_frame(cx)),
         )
         .await
-        .map_err(|_| ApiError(StatusCode::REQUEST_TIMEOUT, "request_timeout"))?;
+        // The RV1 uploader retries only `client.TRANSIENT` codes (408 would end its job), and the
+        // browser retries any 5xx; nothing was stored, so the retry resumes at the same offset.
+        .map_err(|_| ApiError(StatusCode::SERVICE_UNAVAILABLE, "upload_busy"))?;
         match frame {
             None => return Ok(buffer.into()),
             Some(Err(_)) => return Err(bad("invalid_chunk")),

@@ -221,6 +221,25 @@ def main():
         imported_pins = {s.name: sorted(r['name'] for r in imported[s.name] if r['pinned']) for s in (py, rs)}
         rows.append({'case': 'pins after cross import', 'python': imported_pins['python'], 'hars': imported_pins['hars'], 'same_status': True,
                      'same_keys': imported_pins['python'] == imported_pins['hars']})
+        # A camera uploaded later for a registered segment is attached (register_files' update branch).
+        camera_log, camera_ts = b'camera-rlog-' + os.urandom(8), b'camera-ts-' + os.urandom(8)
+        added = {}
+        for s in (py, rs):
+            status, first, _ = chunked_upload(s, [('1a2b3c4d--0123456789--6--rlog.zst', camera_log)])
+            assert status == 201, (s.name, status, first)
+            status, result, _ = chunked_upload(s, [('1a2b3c4d--0123456789--6--rlog.zst', camera_log), ('1a2b3c4d--0123456789--6--qcamera.ts', camera_ts)])
+            row = (result.get('updated') or [{}])[0] if isinstance(result, dict) else {}
+            again = chunked_upload(s, [('1a2b3c4d--0123456789--6--rlog.zst', camera_log), ('1a2b3c4d--0123456789--6--qcamera.ts', camera_ts)])
+            added[s.name] = {'status': status, 'keys': keys(result), 'counts': [len(result.get(k, [])) for k in ('logs', 'duplicates', 'updated')],
+                             'same_id': row.get('id') == first['logs'][0]['id'], 'row_keys': sorted(row),
+                             'fields': {k: row.get(k) for k in ('status', 'video', 'conversion_revision', 'duration', 'warnings', 'error', 'files')},
+                             'qcamera_sha': (row.get('content_hashes') or {}).get('qcamera.ts', {}).get('sha256'),
+                             'again': [again[0], [{k: d[k] for k in ('name', 'video_differs')} for d in again[1].get('duplicates', [])], len(again[1].get('updated', []))]}
+        a, b = added['python'], added['hars']
+        rows.append({'case': 'camera added to registered segment', 'python': a, 'hars': b, 'same_status': a['status'] == b['status'],
+                     'same_keys': a['keys'] == b['keys'] and a['counts'] == b['counts'] and a['same_id'] and b['same_id']
+                     and a['fields'] == b['fields'] and a['qcamera_sha'] == b['qcamera_sha'] and a['again'] == b['again'],
+                     'row_keys_python_only': sorted(set(a['row_keys']) - set(b['row_keys'])), 'row_keys_hars_only': sorted(set(b['row_keys']) - set(a['row_keys']))})
         both('delete log', 'DELETE', lambda s: f'/api/logs/{rid(s)}')
         both('delete missing log', 'DELETE', lambda s: f'/api/logs/{rid(s)}')
         remaining = {s.name: sorted(r['name'] for r in s.request('GET', '/api/logs')[1]['logs']) for s in (py, rs)}

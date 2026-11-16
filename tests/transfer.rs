@@ -689,3 +689,46 @@ async fn zip_downloads_follow_python_names_and_are_valid_zip64() {
     );
     assert_eq!(headers["cache-control"], "no-cache");
 }
+
+#[tokio::test]
+async fn zip_members_are_opened_while_streaming_and_vanished_ones_are_left_out() {
+    let root = tempfile::tempdir().unwrap();
+    let a = app(root.path()).await;
+    // Larger than the response channel holds, so the stream is still inside this member.
+    let big = (0..8 * 1024 * 1024u32)
+        .map(|i| (i % 251) as u8)
+        .collect::<Vec<_>>();
+    let one = recording(&a, "a / 구간 3", &[("rlog.zst", &big)], json!({})).await;
+    let two = recording(&a, "b / 구간 4", &[("rlog.zst", b"log-b")], json!({})).await;
+    let request = Request::builder()
+        .uri(format!("/api/logs/download.zip?ids={one},{two}&parts=rlog"))
+        .body(Body::empty())
+        .unwrap();
+    let response = ingress(a.clone()).oneshot(request).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+    // Removed after the request was planned (Python `zip_stream`: "Removed since the request started").
+    std::fs::remove_file(root.path().join(&two).join("rlog.zst")).unwrap();
+    let bytes = to_bytes(response.into_body(), 64 * 1024 * 1024)
+        .await
+        .unwrap();
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("x.zip");
+    std::fs::write(&path, &bytes).unwrap();
+    let out = std::process::Command::new("python3")
+        .args(["-I", "-c", "import zipfile,sys,json,hashlib\nz=zipfile.ZipFile(sys.argv[1]);assert z.testzip() is None\nprint(json.dumps({i.filename:hashlib.sha256(z.read(i)).hexdigest() for i in z.infolist()}))"])
+        .arg(&path)
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    let files: Value = serde_json::from_slice(&out.stdout).unwrap();
+    assert_eq!(
+        files,
+        json!({"000003fe--d524dc1e0b--3--rlog.zst":sha(&big)}),
+        "a member opened up front would still have been sent"
+    );
+}

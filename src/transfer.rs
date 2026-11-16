@@ -41,6 +41,7 @@ const RECORD_SLACK: usize = 4096;
 const READ: usize = 1 << 20;
 const EXPORT_IDS: usize = 150;
 const IMPORT: &str = "import.json";
+const EXPORTS: &str = ".exports";
 const ENTRY_FIELDS: [(&str, &[&str]); 4] = [
     (
         "nas",
@@ -84,12 +85,13 @@ static FILE_ID: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^[A-Za-z0-9_-]{1,
 static CODE: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^[a-z0-9_]{1,64}$"));
 static ITEM_ID: LazyLock<regex::Regex> = LazyLock::new(|| re(r"^[A-Za-z0-9_-]{1,64}$"));
 
-/// Staging folders of interrupted imports and multipart uploads; never a registered recording.
+/// Staging folders of interrupted imports and multipart uploads, and original-format files of
+/// interrupted ZIP downloads; never a registered recording. Runs before any request is served.
 pub fn cleanup_staging(root: &FsPath) -> std::io::Result<()> {
     for entry in std::fs::read_dir(root)? {
         let entry = entry?;
         let name = entry.file_name().to_string_lossy().into_owned();
-        if (name.starts_with(".import-") || name.starts_with(".legacy-"))
+        if (name.starts_with(".import-") || name.starts_with(".legacy-") || name == EXPORTS)
             && entry.file_type()?.is_dir()
         {
             std::fs::remove_dir_all(entry.path())?;
@@ -1110,26 +1112,39 @@ impl Zip {
         b
     }
 }
+/// Opened only when its turn comes, so a request holds one descriptor however many members it has.
 struct Member {
-    file: tokio::fs::File,
+    path: PathBuf,
     name: String,
-    stamp: Option<f64>,
-    temporary: Option<PathBuf>,
+    /// Whether the member carries its file's modification time (Python `zip_stream`).
+    stamped: bool,
+    temporary: bool,
+}
+async fn remove_temporaries(members: &[Member]) {
+    for m in members.iter().filter(|m| m.temporary) {
+        let _ = tokio::fs::remove_file(&m.path).await;
+    }
 }
 async fn stream_zip(tx: Tx, members: Vec<Member>) {
     let mut zip = Zip::default();
-    let mut temporaries = vec![];
     let outcome = async {
-        for mut m in members {
-            if let Some(t) = m.temporary.take() {
-                temporaries.push(t);
-            }
-            send(&tx, zip.local(&m.name, dos(m.stamp))).await?;
+        for m in &members {
+            // Sizes and offsets are written after each member's data (data descriptors), so a file
+            // removed since the request was planned is left out, as Python's `zip_stream` does.
+            let Ok(mut file) = tokio::fs::File::open(&m.path).await else {
+                continue;
+            };
+            let stamp = if m.stamped {
+                file.metadata().await.map(|v| mtime(&v)).ok()
+            } else {
+                None
+            };
+            send(&tx, zip.local(&m.name, dos(stamp))).await?;
             let mut crc = crc32fast::Hasher::new();
             let mut size = 0u64;
             let mut buffer = vec![0u8; READ];
             loop {
-                match m.file.read(&mut buffer).await {
+                match file.read(&mut buffer).await {
                     Ok(0) => break,
                     Ok(n) => {
                         crc.update(&buffer[..n]);
@@ -1148,9 +1163,8 @@ async fn stream_zip(tx: Tx, members: Vec<Member>) {
     }
     .await;
     let _ = outcome;
-    for t in temporaries {
-        let _ = tokio::fs::remove_file(t).await;
-    }
+    // Every member's export goes, including those a disconnected client never reached.
+    remove_temporaries(&members).await;
 }
 fn zip_response(name_header: String, body: Body) -> Response {
     (
@@ -1203,20 +1217,19 @@ pub async fn download_zip(
         }
         for kind in kinds {
             let path = folder.join(&kind);
-            let Ok(file) = tokio::fs::File::open(&path).await else {
+            if !path.is_file() {
                 continue;
-            };
-            let stamp = file.metadata().await.map(|m| mtime(&m)).ok();
+            }
             let mut name = download_name(&meta, &kind);
             if names.contains(&name) {
                 name = format!("{}-{name}", &id[..8]);
             }
             names.insert(name.clone());
             members.push(Member {
-                file,
+                path,
                 name,
-                stamp,
-                temporary: None,
+                stamped: true,
+                temporary: false,
             });
         }
     }
@@ -1302,36 +1315,30 @@ async fn download_selected(
     }
     let mut members = vec![];
     let mut names = BTreeSet::new();
-    let exports = app.store.root.join(".exports");
+    let exports = app.store.root.join(EXPORTS);
     for (path, kind, export, meta) in plans {
-        let mut temporary = None;
-        let source = if let Some((original, offset)) = export {
-            tokio::fs::create_dir_all(&exports).await?;
+        let (path, temporary) = if let Some((original, offset)) = export {
             let ext = if original == "qcamera.ts" {
                 "ts"
             } else {
                 "hevc"
             };
             let output = exports.join(format!("{}.{ext}", crate::store::id()));
-            if crate::media::reverse(&path, original, &output, offset)
-                .await
-                .is_err()
-            {
+            let made = match tokio::fs::create_dir_all(&exports).await {
+                Ok(()) => crate::media::reverse(&path, original, &output, offset)
+                    .await
+                    .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "media_export_failed")),
+                Err(e) => Err(e.into()),
+            };
+            if let Err(e) = made {
                 let _ = tokio::fs::remove_file(&output).await;
-                for m in &members {
-                    let m: &Member = m;
-                    if let Some(t) = &m.temporary {
-                        let _ = tokio::fs::remove_file(t).await;
-                    }
-                }
-                return Err(ApiError(StatusCode::BAD_REQUEST, "media_export_failed").into());
+                remove_temporaries(&members).await;
+                return Err(e.into());
             }
-            temporary = Some(output.clone());
-            output
+            (output, true)
         } else {
-            path
+            (path, false)
         };
-        let file = tokio::fs::File::open(&source).await?;
         let id = meta["id"].as_str().unwrap_or("");
         let mut name = download_name(&meta, &kind);
         if names.contains(&name) {
@@ -1339,9 +1346,9 @@ async fn download_selected(
         }
         names.insert(name.clone());
         members.push(Member {
-            file,
+            path,
             name,
-            stamp: None,
+            stamped: false,
             temporary,
         });
     }
@@ -1432,6 +1439,8 @@ async fn legacy_in(
                 Err(_) => return Err(request()),
             }
         }
+        // tokio's sync_all records a failed background write instead of returning it; flush reports it.
+        out.flush().await?;
         out.sync_all().await?;
         files.push(UploadFile {
             name,
