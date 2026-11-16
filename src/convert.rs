@@ -49,6 +49,74 @@ fn input(src: &Path, kind: &str) -> PathBuf {
 /// Left in the staging directory by a conversion that stopped to keep the published result:
 /// `{"warning": ...}` for the record, which `jobs` returns to `ready`.
 pub const KEPT_PREVIOUS: &str = "kept-previous.json";
+/// Left in the staging directory by a conversion that carried cameras over from the published
+/// result: the MP4 names (`["camera.mp4"]`), which `jobs` moves into its publication journal so
+/// the publication neither moves those MP4s nor deletes their originals.
+pub const CARRIED_PREVIOUS: &str = "carried-previous.json";
+
+/// A camera of the published result taken into this conversion's result as it is: its summary
+/// entry, the published conversion's log start (its entry's `start` is relative to that), and
+/// the local MP4 the new result plays, if any (an archived one is played from the archive).
+struct Carried {
+    entry: Value,
+    log_start: f64,
+    local: Option<PathBuf>,
+}
+
+/// The published result's `camera` for a conversion whose remux of it fails the same way on every
+/// attempt. The MP4 in `prepared/` gets a second name in `dest` (a hard link, else a synced copy):
+/// the published file is never written, and until this result is installed the previous
+/// `prepared/` stays whole. A stored MP4 next to the originals or an archived one stays where it is.
+async fn carry_previous(
+    recording: &Path,
+    dest: &Path,
+    meta: &Value,
+    camera: &str,
+    mp4: &str,
+) -> anyhow::Result<Carried> {
+    let prepared = recording.join("prepared");
+    let summary: Value = store::read_json(&prepared.join("summary.json")).await?;
+    let entry = summary["videos"][camera].clone();
+    anyhow::ensure!(
+        entry["start"].as_f64().is_some_and(f64::is_finite)
+            && entry["duration"].as_f64().is_some_and(f64::is_finite),
+        "published video entry incomplete"
+    );
+    let data = prepared.join("data.json.gz");
+    let log_start = tokio::task::spawn_blocking(move || logs::read_gzip(&data)).await??["logStart"]
+        .as_f64()
+        .filter(|v| v.is_finite())
+        .context("published replay data incomplete")?;
+    let local = if prepared.join(mp4).is_file() {
+        let (from, to) = (prepared.join(mp4), dest.join(mp4));
+        tokio::task::spawn_blocking(move || -> std::io::Result<()> {
+            if std::fs::hard_link(&from, &to).is_err() {
+                std::fs::copy(&from, &to)?;
+                std::fs::File::open(&to)?.sync_all()?;
+            }
+            #[cfg(unix)]
+            std::fs::File::open(to.parent().unwrap_or(&to))?.sync_all()?;
+            Ok(())
+        })
+        .await??;
+        Some(dest.join(mp4))
+    } else if recording.join(mp4).is_file() {
+        Some(recording.join(mp4))
+    } else {
+        anyhow::ensure!(
+            crate::archive::index::is_archived_location(&crate::archive::index::location(
+                meta, mp4
+            )),
+            "published video missing"
+        );
+        None
+    };
+    Ok(Carried {
+        entry,
+        log_start,
+        local,
+    })
+}
 
 /// Whether the result published now plays `camera`: its summary lists the camera and the MP4 it
 /// plays is still there (in `prepared/`, stored next to the originals, or archived).
@@ -231,6 +299,7 @@ pub async fn prepare(
     );
     let mut warnings = vec![];
     let mut playable = BTreeMap::new();
+    let mut carried = Vec::new();
     for (index, (name, raw, mp4, topic)) in CAMERAS.iter().enumerate() {
         let a = input(&source, raw);
         let b = input(&source, mp4);
@@ -293,12 +362,39 @@ pub async fn prepare(
                 } else {
                     format!("{label} 영상 준비 실패: {error}")
                 };
-                // A camera the published result plays is not dropped for any failure: the same disk,
-                // memory or deadline may not fail the next attempt, and an input the engine cannot
-                // copy (which no other engine retries) may have been published by an earlier
-                // version. Only the files on disk say so: `meta.videos` outlives `clear_prepared`,
-                // as in Python.
+                // A camera the published result plays is not dropped for any failure. Only the
+                // files on disk say it plays: `meta.videos` outlives `clear_prepared`, as in Python.
                 if previous_plays(&recording, &meta, name, mp4).await {
+                    // An input the engine cannot copy (which an earlier version may have published)
+                    // fails the same way on every attempt: stopping would keep every other camera,
+                    // a new one included, unpublished for good. That camera is taken over as it is
+                    // published and the others convert.
+                    if failure.class != FailureClass::Resource {
+                        match carry_previous(&recording, &dest, &meta, name, mp4).await {
+                            Ok(previous) => {
+                                tracing::warn!(
+                                    event = "conversion_carried_previous",
+                                    kind = *raw,
+                                    failure_class = failure.class.name(),
+                                    reason_code = failure.code,
+                                    reason = failure.reason,
+                                );
+                                if let Some(path) = previous.local.clone() {
+                                    playable.insert(*name, (path, *mp4));
+                                }
+                                videos.insert(name.to_string(), previous.entry.clone());
+                                carried.push((*name, *mp4, previous));
+                                warnings.push(format!("{warning} (이전 변환 결과 유지)"));
+                                continue;
+                            }
+                            Err(error) => tracing::warn!(
+                                event = "conversion_carry_failed",
+                                kind = *raw,
+                                reason = %format!("{error:#}"),
+                            ),
+                        }
+                    }
+                    // The same disk, memory or deadline may not fail the next attempt.
                     tracing::error!(
                         event = "conversion_kept_previous",
                         kind = *raw,
@@ -320,6 +416,13 @@ pub async fn prepare(
     }
     if videos.is_empty() {
         warnings.push("재생 가능한 영상이 없어 도로 형태만 표시합니다.".to_owned());
+    }
+    if !carried.is_empty() {
+        store::atomic_json(
+            &dest.join(CARRIED_PREVIOUS),
+            &json!(carried.iter().map(|(_, mp4, _)| *mp4).collect::<Vec<_>>()),
+        )
+        .await?;
     }
     progress("video_verify", 100.);
     // Inspect cameras before allocating the frame tree. Native processes no
@@ -346,6 +449,14 @@ pub async fn prepare(
     .await??;
     progress("log_analysis", 100.);
 
+    // A carried entry's start counts from the published conversion's start, which its log start
+    // also counts from; that log start is the first frame of the same log as here.
+    let first_frame = frames[0]["t"].as_f64().unwrap();
+    for (name, _, previous) in &carried {
+        if let (Some(v), Some(start)) = (videos.get_mut(*name), previous.entry["start"].as_f64()) {
+            v["start"] = json!(start - previous.log_start + first_frame);
+        }
+    }
     let default_video = ["front", "qcamera", "wide"]
         .into_iter()
         .find(|v| videos.contains_key(*v));

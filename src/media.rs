@@ -485,6 +485,20 @@ pub fn relay_remux_event(record: &str, line: &str) {
             reason_code = text("reason_code"),
             reason = text("reason"),
         ),
+        Some("conversion_carried_previous") => tracing::warn!(
+            event = "conversion_carried_previous",
+            record,
+            kind = text("kind"),
+            failure_class = text("failure_class"),
+            reason_code = text("reason_code"),
+            reason = text("reason"),
+        ),
+        Some("conversion_carry_failed") => tracing::warn!(
+            event = "conversion_carry_failed",
+            record,
+            kind = text("kind"),
+            reason = text("reason"),
+        ),
         Some("remux_failure") => {
             let level = event["level"].as_str().unwrap_or("WARN");
             macro_rules! relay {
