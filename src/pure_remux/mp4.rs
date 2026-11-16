@@ -165,6 +165,9 @@ impl Writer {
             .map_err(mux_error)?;
         self.sample_start = self.position;
         self.index += 1;
+        if self.index == 1 {
+            crate::fault::point("pure_remux_sample");
+        }
         Ok(())
     }
     pub fn finish(mut self) -> anyhow::Result<()> {

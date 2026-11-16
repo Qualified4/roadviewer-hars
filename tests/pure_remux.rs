@@ -228,6 +228,166 @@ async fn b_frame_ts_falls_back_to_ffmpeg() {
     no_leftovers(temp.path(), &["qcamera.ts", "camera.mp4"]);
 }
 
+/// What the product path did with an input: the pure engine wrote it, or it
+/// refused/failed with a reason and FFmpeg then produced `Ok` or `Err`.
+#[derive(Debug, PartialEq)]
+enum Path2 {
+    Pure,
+    Fallback(String, bool),
+    Rejected,
+}
+async fn classify(source: &Path, kind: &str, times: &[f64]) -> Path2 {
+    let before = media::remux_counts();
+    let output = source.with_extension("out.mp4");
+    let result = media::remux_using(Engine::Pure, source, kind, &output, times, None).await;
+    let after = media::remux_counts();
+    let dir = source.parent().unwrap();
+    for entry in std::fs::read_dir(dir).unwrap() {
+        let name = entry.unwrap().file_name().into_string().unwrap();
+        assert!(!name.contains(".tmp"), "left behind {name}");
+    }
+    assert_eq!(output.exists(), result.is_ok());
+    if let Ok(done) = &result {
+        let (errors, frames) = decode_errors(&output);
+        assert!(frames > 0, "{errors}");
+        std::fs::remove_file(&output).unwrap();
+        if done.engine == Engine::Pure {
+            return Path2::Pure;
+        }
+        return Path2::Fallback(done.fallback.clone().unwrap(), true);
+    }
+    if after[2] > before[2] {
+        Path2::Fallback("failed".into(), false)
+    } else {
+        Path2::Rejected
+    }
+}
+
+#[tokio::test]
+async fn boundary_inputs_take_the_pure_engine_or_an_explicit_fallback() {
+    let temp = tempfile::tempdir().unwrap();
+    let ts = temp.path().join("qcamera.ts");
+    fixture(&ts, false, 0);
+    let hevc = temp.path().join("fcamera.hevc");
+    fixture(&hevc, true, 0);
+    let (times, _) = ts_clock(&ts).await;
+    let raw_ts = std::fs::read(&ts).unwrap();
+    let case = |name: &str, bytes: Vec<u8>| {
+        let path = temp.path().join(name);
+        std::fs::write(&path, bytes).unwrap();
+        path
+    };
+    let video_packets = |f: &mut dyn FnMut(usize, &mut [u8]) -> bool| {
+        let mut out = Vec::new();
+        let mut seen = 0;
+        for packet in raw_ts.chunks(188) {
+            let mut packet = packet.to_vec();
+            let pid = u16::from_be_bytes([packet[1] & 0x1f, packet[2]]);
+            let keep = pid != 0x100 || {
+                seen += 1;
+                f(seen, &mut packet)
+            };
+            if keep {
+                out.extend_from_slice(&packet);
+            }
+        }
+        out
+    };
+    assert_eq!(classify(&ts, "qcamera.ts", &times).await, Path2::Pure);
+    assert_eq!(classify(&hevc, "fcamera.hevc", &clock()).await, Path2::Pure);
+
+    // A lost TS packet: libavformat marks the packet corrupt, so the source
+    // scan rejects it before either engine (Python refuses corrupt packets too).
+    let lost = case("lost.ts", video_packets(&mut |n, _| n != 20));
+    assert_eq!(classify(&lost, "qcamera.ts", &times).await, Path2::Rejected);
+    // Scrambling flag on one video packet.
+    let scrambled = case(
+        "scrambled.ts",
+        video_packets(&mut |n, p| {
+            if n == 20 {
+                p[3] |= 0x80;
+            }
+            true
+        }),
+    );
+    // The pure engine refuses it; libavformat ignores the flag (the payload is
+    // clear here) and its copy passes every check.
+    assert_eq!(
+        classify(&scrambled, "qcamera.ts", &times).await,
+        Path2::Fallback("unsupported: scrambled MPEG-TS".into(), true)
+    );
+    // Transport error indicator on one video packet.
+    let errored = case(
+        "terror.ts",
+        video_packets(&mut |n, p| {
+            if n == 20 {
+                p[1] |= 0x80;
+            }
+            true
+        }),
+    );
+    // libavformat marks the packet corrupt: rejected by the source scan.
+    assert_eq!(
+        classify(&errored, "qcamera.ts", &times).await,
+        Path2::Rejected
+    );
+    // The first PES loses its PTS/DTS flags: rejected by the source scan
+    // before either engine, as the clock check needs every picture's PTS.
+    let no_pts = case(
+        "nopts.ts",
+        video_packets(&mut |n, p| {
+            if n == 1 && p[1] & 0x40 != 0 {
+                let at = if p[3] & 0x20 != 0 {
+                    5 + p[4] as usize
+                } else {
+                    4
+                };
+                p[at + 7] &= 0x3f;
+            }
+            true
+        }),
+    );
+    assert_eq!(
+        classify(&no_pts, "qcamera.ts", &times).await,
+        Path2::Rejected
+    );
+    // Parameter sets that change mid-stream: hvc1 keeps one set, so both
+    // engines refuse what would no longer be the same compressed stream.
+    let other = temp.path().join("other.hevc");
+    let mut cmd = Command::new("ffmpeg");
+    cmd.args([
+        "-v",
+        "error",
+        "-nostdin",
+        "-y",
+        "-f",
+        "lavfi",
+        "-i",
+        "testsrc2=size=176x96:rate=10",
+        "-t",
+        "1",
+        "-an",
+        "-c:v",
+        "libx265",
+        "-x265-params",
+        "pools=1:frame-threads=1:bframes=0:keyint=10:log-level=error",
+        "-f",
+        "hevc",
+    ])
+    .arg(&other)
+    .stdout(Stdio::null())
+    .stderr(Stdio::null());
+    assert!(cmd.status().unwrap().success());
+    let mut joined = std::fs::read(&hevc).unwrap();
+    joined.extend(std::fs::read(&other).unwrap());
+    let joined = case("joined.hevc", joined);
+    let twenty = (0..20).map(|i| i as f64 / 10.).collect::<Vec<_>>();
+    assert_eq!(
+        classify(&joined, "fcamera.hevc", &twenty).await,
+        Path2::Fallback("failed".into(), false)
+    );
+}
+
 fn units(bytes: &[u8]) -> Vec<&[u8]> {
     let mut out = Vec::new();
     let mut begin = None;
