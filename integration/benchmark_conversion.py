@@ -74,7 +74,7 @@ def main():
         else:command=[binaries[name],'convert-log',str(args.source),str(dest),'benchmark'];runenv=dict(env,HARS_REMUX_ENGINE=engines[name]) if name in engines else env
         data=measure(command,runenv,args.output/(label+'.log'))
         if golden is None:assert name=='python';golden=dest
-        compare(golden,dest,known,drive_summary)
+        compare(golden,dest,known if name!='python' else None,drive_summary)
         if name in engines:
             log=(args.output/(label+'.log')).read_text(errors='replace')
             assert f'"engine":"{engines[name]}"' in log and 'remux_fallback' not in log,f'{name} did not use {engines[name]}' 

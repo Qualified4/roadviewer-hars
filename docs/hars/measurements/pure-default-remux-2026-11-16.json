@@ -21,57 +21,57 @@
    "python": {
     "samples": 65,
     "verified": 65,
-    "elapsed_seconds_sum_of_segment_medians": 6.452,
+    "elapsed_seconds_sum_of_segment_medians": 6.642,
     "elapsed_seconds_round_total_range": [
-     6.448,
-     6.514
+     6.617,
+     6.679
     ],
-    "cpu_seconds_sum_of_segment_medians": 3.664,
+    "cpu_seconds_sum_of_segment_medians": 3.714,
     "cpu_seconds_round_total_range": [
-     3.665,
-     3.711
+     3.705,
+     3.733
     ],
-    "mean_rss_kib_median": 44053,
-    "peak_rss_kib_max": 50568,
-    "per_video_elapsed_median_seconds": 0.5046,
+    "mean_rss_kib_median": 43767,
+    "peak_rss_kib_max": 50412,
+    "per_video_elapsed_median_seconds": 0.512,
     "max_python_timestamp_difference_seconds": 0.0,
     "max_python_last_duration_difference_seconds": 0.0
    },
    "ffmpeg": {
     "samples": 65,
     "verified": 65,
-    "elapsed_seconds_sum_of_segment_medians": 7.659,
+    "elapsed_seconds_sum_of_segment_medians": 8.009,
     "elapsed_seconds_round_total_range": [
-     7.645,
-     7.731
+     7.947,
+     8.018
     ],
-    "cpu_seconds_sum_of_segment_medians": 4.737,
+    "cpu_seconds_sum_of_segment_medians": 4.899,
     "cpu_seconds_round_total_range": [
-     4.711,
-     4.784
+     4.874,
+     4.924
     ],
-    "mean_rss_kib_median": 80740,
-    "peak_rss_kib_max": 97264,
-    "per_video_elapsed_median_seconds": 0.5985,
+    "mean_rss_kib_median": 81583,
+    "peak_rss_kib_max": 96312,
+    "per_video_elapsed_median_seconds": 0.6137,
     "max_python_timestamp_difference_seconds": 0.0,
     "max_python_last_duration_difference_seconds": 3.1e-05
    },
    "pure": {
     "samples": 65,
     "verified": 65,
-    "elapsed_seconds_sum_of_segment_medians": 6.191,
+    "elapsed_seconds_sum_of_segment_medians": 4.7,
     "elapsed_seconds_round_total_range": [
-     6.167,
-     6.29
+     4.613,
+     4.721
     ],
-    "cpu_seconds_sum_of_segment_medians": 2.411,
+    "cpu_seconds_sum_of_segment_medians": 2.575,
     "cpu_seconds_round_total_range": [
-     2.401,
-     2.46
+     2.558,
+     2.587
     ],
-    "mean_rss_kib_median": 58884,
-    "peak_rss_kib_max": 67484,
-    "per_video_elapsed_median_seconds": 0.4805,
+    "mean_rss_kib_median": 71936,
+    "peak_rss_kib_max": 102768,
+    "per_video_elapsed_median_seconds": 0.3607,
     "max_python_timestamp_difference_seconds": 0.0,
     "max_python_last_duration_difference_seconds": 3.1e-05
    }
@@ -80,57 +80,57 @@
    "python": {
     "samples": 65,
     "verified": 65,
-    "elapsed_seconds_sum_of_segment_medians": 1.959,
+    "elapsed_seconds_sum_of_segment_medians": 2.0,
     "elapsed_seconds_round_total_range": [
-     1.956,
-     1.976
+     1.979,
+     2.034
     ],
-    "cpu_seconds_sum_of_segment_medians": 1.404,
+    "cpu_seconds_sum_of_segment_medians": 1.41,
     "cpu_seconds_round_total_range": [
-     1.408,
-     1.418
+     1.405,
+     1.438
     ],
-    "mean_rss_kib_median": 31503,
-    "peak_rss_kib_max": 50264,
-    "per_video_elapsed_median_seconds": 0.1527,
+    "mean_rss_kib_median": 31644,
+    "peak_rss_kib_max": 50232,
+    "per_video_elapsed_median_seconds": 0.154,
     "max_python_timestamp_difference_seconds": 0.0,
     "max_python_last_duration_difference_seconds": 0.0
    },
    "ffmpeg": {
     "samples": 65,
     "verified": 65,
-    "elapsed_seconds_sum_of_segment_medians": 2.121,
+    "elapsed_seconds_sum_of_segment_medians": 2.149,
     "elapsed_seconds_round_total_range": [
-     2.109,
-     2.141
+     2.113,
+     2.172
     ],
-    "cpu_seconds_sum_of_segment_medians": 1.596,
+    "cpu_seconds_sum_of_segment_medians": 1.607,
     "cpu_seconds_round_total_range": [
-     1.582,
-     1.625
+     1.588,
+     1.629
     ],
-    "mean_rss_kib_median": 44622,
-    "peak_rss_kib_max": 74620,
-    "per_video_elapsed_median_seconds": 0.1647,
+    "mean_rss_kib_median": 45000,
+    "peak_rss_kib_max": 73688,
+    "per_video_elapsed_median_seconds": 0.1651,
     "max_python_timestamp_difference_seconds": 0.0,
     "max_python_last_duration_difference_seconds": 0.0002
    },
    "pure": {
     "samples": 65,
     "verified": 65,
-    "elapsed_seconds_sum_of_segment_medians": 1.978,
+    "elapsed_seconds_sum_of_segment_medians": 1.809,
     "elapsed_seconds_round_total_range": [
-     1.961,
-     2.001
+     1.77,
+     1.846
     ],
-    "cpu_seconds_sum_of_segment_medians": 1.32,
+    "cpu_seconds_sum_of_segment_medians": 1.257,
     "cpu_seconds_round_total_range": [
-     1.313,
-     1.339
+     1.247,
+     1.3
     ],
-    "mean_rss_kib_median": 45221,
-    "peak_rss_kib_max": 71068,
-    "per_video_elapsed_median_seconds": 0.1536,
+    "mean_rss_kib_median": 40624,
+    "peak_rss_kib_max": 71048,
+    "per_video_elapsed_median_seconds": 0.1386,
     "max_python_timestamp_difference_seconds": 0.0,
     "max_python_last_duration_difference_seconds": 0.0002
    }
