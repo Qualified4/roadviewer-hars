@@ -31,6 +31,8 @@ hars_roots = set(re.findall(r'"([^/"]+)/', block(hars_text, "backup_exclude")))
 python_roots = set(re.findall(r'"([^/"]+)/', block(python_text, "backup_exclude")))
 assert hars_roots == {"roadviewer-hars"} and python_roots == {"roadviewer"}
 
+# The device network panel reads and writes this app's own port mapping through Supervisor.
+assert hars.get("hassio_api") == "true" and python.get("hassio_api") == "true"
 assert hars["boot"] == "manual", "HARS must not start on boot before cutover is approved"
 source = (ROOT / "src/main.rs").read_text(encoding="utf-8")
 assert '"/data/roadviewer-hars"' in source and '"/data/roadviewer"' not in source, "HARS default data root must be its own"
