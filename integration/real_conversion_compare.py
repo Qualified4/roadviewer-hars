@@ -1,7 +1,9 @@
 """Compare full conversion outputs against cached, unmodified Python outputs.
 
 The path/mtime cache key is intentionally implementation-specific. No other
-replay, telemetry, track or summary field is excluded. Thumbnail measurements
+replay, telemetry, track or summary field is excluded. Raw-video durations
+follow a documented rule that differs from Python; terminal_rule.py checks
+each side against its own independently computed value before comparing. Thumbnail measurements
 are reported separately because the Python wheel and native system FFmpeg use
 different codec/scaler versions; this script does not declare them equivalent.
 """
@@ -15,6 +17,12 @@ import subprocess
 import sys
 import time
 from real_replay_compare import differences
+import terminal_rule
+
+REFERENCE=Path(__file__).resolve().parents[1]/"reference/python/roadviewer"
+SCHEMA=REFERENCE/"schema/cereal/log.capnp"
+sys.path.insert(0,str(REFERENCE/"app"))
+from telemetry import drive_summary  # noqa: E402  (unmodified Python reference)
 
 
 def load(path):
@@ -58,6 +66,7 @@ def main():
             subprocess.run([str(args.binary),"convert-log",str(log),str(actual),f"segment-{segment}"],stdout=out,stderr=out,check=True,timeout=600)
         result={"segment":segment,"rust_conversion_seconds":round(time.monotonic()-started,3),"differences":{}}
         if python_seconds is not None:result["python_conversion_seconds"]=python_seconds
+        files={}
         for name in ("data.json.gz","telemetry.json.gz","summary.json","track.json.gz"):
             if not (expected/name).exists() and not (actual/name).exists():continue
             if not (expected/name).exists() or not (actual/name).exists():
@@ -67,6 +76,12 @@ def main():
                 a.pop("key");b.pop("key")
                 result["frames"]=len(b["frames"])
                 result["cameras"]=list(b["videos"])
+            files[name]=(a,b)
+        known=terminal_rule.model(log,{kind:log.with_name(log.name.replace("rlog.zst",kind)) for kind in ("qcamera.ts","fcamera.hevc","ecamera.hevc")},SCHEMA)
+        applied,mismatch=terminal_rule.reconcile(files,known,drive_summary)
+        if applied:result["known_rule_differences"]=applied
+        if mismatch:result["differences"]["known_rule_model"]=mismatch
+        for name,(a,b) in files.items():
             errors=differences(a,b)
             if errors:result["differences"][name]=dict(errors)
         result["thumbnail_metadata"]={"python":load(expected/"thumbnail.json"),"rust":load(actual/"thumbnail.json")}

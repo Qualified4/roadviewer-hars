@@ -1,7 +1,4 @@
-use crate::media::Signature;
 use anyhow::ensure;
-use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
 
 pub const NAL_LIMIT: usize = 32 * 1024 * 1024;
 
@@ -27,22 +24,36 @@ pub fn trim(mut unit: &[u8]) -> &[u8] {
     unit
 }
 
-/// Sample framing of FFmpeg's `ff_nal_parse_units`: only the `zero_byte` of a
-/// following 4-byte start code is dropped; padding at a buffer end is kept.
-/// Hashing always uses `trim`, so this affects stored bytes, never the SHA.
-fn framed(bytes: &[u8], begin: usize, at: usize) -> &[u8] {
-    let end = if at > begin && bytes[at - 1] == 0 {
-        at - 1
-    } else {
-        at
-    };
-    &bytes[begin..end]
+/// A unit as FFmpeg's `ff_nal_find_startcode` bounds it inside a buffer: the
+/// `zero_byte` of a following 4-byte start code is dropped, padding is kept.
+pub fn framed(raw: &[u8]) -> &[u8] {
+    match raw {
+        [rest @ .., 0] => rest,
+        _ => raw,
+    }
+}
+
+/// A unit of an Annex B buffer: `raw` ends where the next `00 00 01` begins
+/// (`ff_h2645_extract_rbsp`'s `raw_size`), or at the buffer end when `last`.
+pub struct Unit<'a> {
+    pub raw: &'a [u8],
+    pub last: bool,
+}
+impl Unit<'_> {
+    /// Sample bytes: `ff_nal_parse_units` framing within one packet.
+    pub fn sample(&self) -> &[u8] {
+        if self.last {
+            self.raw
+        } else {
+            framed(self.raw)
+        }
+    }
 }
 
 /// Calls `each` for every NAL unit of a complete Annex B buffer.
 pub fn for_each_nal(
     bytes: &[u8],
-    mut each: impl FnMut(&[u8]) -> anyhow::Result<()>,
+    mut each: impl FnMut(Unit<'_>) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
     let Some(first) = find_start(bytes, 0) else {
         ensure!(bytes.iter().all(|b| *b == 0), "non Annex B prefix");
@@ -51,13 +62,21 @@ pub fn for_each_nal(
     ensure!(bytes[..first].iter().all(|b| *b == 0), "non Annex B prefix");
     let mut begin = first + 3;
     while let Some(next) = find_start(bytes, begin) {
-        each(framed(bytes, begin, next))?;
+        each(Unit {
+            raw: &bytes[begin..next],
+            last: false,
+        })?;
         begin = next + 3;
     }
-    each(&bytes[begin..])
+    each(Unit {
+        raw: &bytes[begin..],
+        last: true,
+    })
 }
 
-/// Bounded streaming splitter for raw Annex B files.
+/// Bounded streaming splitter for raw Annex B files. Bytes before the first
+/// start code hold no NAL unit; they are skipped as libavformat's raw HEVC
+/// demuxer and MOV muxer skip them (`media::leading_bytes` reports them).
 pub struct Scanner {
     buffer: Vec<u8>,
     begin: Option<usize>,
@@ -74,24 +93,20 @@ impl Scanner {
     pub fn push(
         &mut self,
         data: &[u8],
-        mut each: impl FnMut(&[u8]) -> anyhow::Result<()>,
+        mut each: impl FnMut(Unit<'_>) -> anyhow::Result<()>,
     ) -> anyhow::Result<()> {
         self.buffer.extend_from_slice(data);
         let mut consumed = 0;
         while let Some(at) = find_start(&self.buffer, self.searched) {
-            match self.begin {
-                None => ensure!(
-                    self.buffer[..at].iter().all(|b| *b == 0),
-                    "non Annex B prefix"
-                ),
-                Some(begin) => each(framed(&self.buffer, begin, at))?,
+            if let Some(begin) = self.begin {
+                each(Unit {
+                    raw: &self.buffer[begin..at],
+                    last: false,
+                })?;
             }
             self.begin = Some(at + 3);
             self.searched = at + 3;
             consumed = at + 3;
-        }
-        if self.begin.is_none() {
-            ensure!(self.buffer.iter().all(|b| *b == 0), "non Annex B prefix");
         }
         self.buffer.drain(..consumed);
         self.begin = self.begin.map(|b| b - consumed);
@@ -106,22 +121,36 @@ impl Scanner {
         );
         Ok(())
     }
-    pub fn finish(self, mut each: impl FnMut(&[u8]) -> anyhow::Result<()>) -> anyhow::Result<()> {
+    pub fn finish(
+        self,
+        mut each: impl FnMut(Unit<'_>) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
         if let Some(begin) = self.begin {
-            each(&self.buffer[begin..])?;
+            each(Unit {
+                raw: &self.buffer[begin..],
+                last: true,
+            })?;
         }
         Ok(())
     }
 }
 
 pub fn kind(unit: &[u8], hevc: bool) -> anyhow::Result<u8> {
+    let unit = trim(unit);
     ensure!(unit.len() >= if hevc { 2 } else { 1 }, "truncated NAL unit");
-    ensure!(unit[0] & 0x80 == 0, "forbidden NAL header bit");
-    Ok(if hevc {
+    let kind = if hevc {
         (unit[0] >> 1) & 63
     } else {
         unit[0] & 31
-    })
+    };
+    // A flagged parameter set leaves no picture decodable (libavformat, and so
+    // Python, refuse it too); any other flagged unit is copied byte for byte as
+    // libavformat's packet copy does, so the file keeps every input picture.
+    ensure!(
+        unit[0] & 0x80 == 0 || !is_parameter_set(kind, hevc),
+        "forbidden NAL header bit"
+    );
+    Ok(kind)
 }
 
 pub fn is_parameter_set(kind: u8, hevc: bool) -> bool {
@@ -132,51 +161,17 @@ pub fn is_parameter_set(kind: u8, hevc: bool) -> bool {
     }
 }
 
-/// Same policy as `media::NalHasher`: ordered VCL SHA plus decoder header set.
-pub struct Pictures {
-    hevc: bool,
-    hash: Sha256,
-    headers: BTreeSet<(u8, String)>,
-    pictures: u64,
-}
-impl Pictures {
-    pub fn new(hevc: bool) -> Self {
-        Self {
-            hevc,
-            hash: Sha256::new(),
-            headers: BTreeSet::new(),
-            pictures: 0,
-        }
-    }
-    /// Accepts framed units; framing zeros never reach the hash.
-    pub fn add(&mut self, unit: &[u8]) -> anyhow::Result<u8> {
-        let unit = trim(unit);
-        let kind = kind(unit, self.hevc)?;
-        if is_parameter_set(kind, self.hevc) {
-            self.headers
-                .insert((kind, hex::encode(Sha256::digest(unit))));
-        }
-        if (self.hevc && kind < 32) || (!self.hevc && (1..=5).contains(&kind)) {
-            self.hash.update((unit.len() as u32).to_be_bytes());
-            self.hash.update(unit);
-            self.pictures += 1;
-        }
-        Ok(kind)
-    }
-    pub fn finish(self) -> anyhow::Result<Signature> {
-        let required: &[u8] = if self.hevc { &[32, 33, 34] } else { &[7, 8] };
-        ensure!(
-            self.pictures > 0
-                && required
-                    .iter()
-                    .all(|k| self.headers.iter().any(|(kind, _)| kind == k)),
-            "missing pictures or decoder configuration"
-        );
-        Ok(Signature {
-            pictures: hex::encode(self.hash.finalize()),
-            headers: self.headers,
-        })
-    }
+/// Decoder configuration bytes as libavformat derives them: the
+/// `extract_extradata` filter joins the first packet's raw parameter sets with
+/// 3-byte start codes, and the hvcC/avcC writer re-splits that buffer, so every
+/// set but the last loses one trailing zero and the last keeps its padding.
+pub fn configuration_sets(raw_in_order: &[(u8, &[u8])]) -> Vec<(u8, Vec<u8>)> {
+    let last = raw_in_order.len().saturating_sub(1);
+    raw_in_order
+        .iter()
+        .enumerate()
+        .map(|(i, (kind, raw))| (*kind, if i == last { *raw } else { framed(raw) }.to_vec()))
+        .collect()
 }
 
 /// RBSP reader for the few SPS fields the MP4 helpers do not expose.
@@ -229,5 +224,43 @@ impl Bits {
             ensure!(zeros < 32, "invalid Exp-Golomb code");
         }
         Ok((1u32 << zeros) - 1 + self.bits(zeros)?)
+    }
+    pub fn se(&mut self) -> anyhow::Result<i64> {
+        let v = i64::from(self.ue()?);
+        Ok(if v % 2 == 1 { (v + 1) / 2 } else { -v / 2 })
+    }
+}
+
+/// Parameter sets seen before the first picture, which become the decoder
+/// configuration. Bounded: a stream of sets alone never reaches a picture.
+#[derive(Default)]
+pub struct Sets {
+    raw: Vec<(u8, Vec<u8>)>,
+    bytes: usize,
+}
+pub const SETS_LIMIT: usize = 64;
+pub const SETS_BYTES: usize = 1024 * 1024;
+impl Sets {
+    pub fn add(&mut self, kind: u8, raw: &[u8]) -> anyhow::Result<()> {
+        self.bytes += raw.len();
+        ensure!(
+            self.raw.len() < SETS_LIMIT && self.bytes <= SETS_BYTES,
+            "too many parameter sets before the first picture"
+        );
+        self.raw.push((kind, raw.to_vec()));
+        Ok(())
+    }
+    pub fn contains(&self, kind: u8, raw: &[u8]) -> bool {
+        let raw = trim(raw);
+        self.raw.iter().any(|(k, v)| *k == kind && trim(v) == raw)
+    }
+    pub fn configuration(&self) -> Vec<(u8, Vec<u8>)> {
+        configuration_sets(
+            &self
+                .raw
+                .iter()
+                .map(|(k, v)| (*k, v.as_slice()))
+                .collect::<Vec<_>>(),
+        )
     }
 }

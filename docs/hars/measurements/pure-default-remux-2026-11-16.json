@@ -1,0 +1,139 @@
+{
+ "date": "2026-11-16",
+ "scope": "remux only (roadviewer-hars remux CLI / Python PyAV adapter), 13 qcamera.ts + 13 fcamera.hevc, validated mode",
+ "conditions": {
+  "host": "WSL2 Ubuntu 24.04 x86_64, 16 logical CPUs",
+  "input": "NTFS (drvfs) originals",
+  "output": "WSL ext4",
+  "warmups_per_variant": 1,
+  "runs_per_segment": 5,
+  "order": "rotated and reversed per round",
+  "cache": "warm, no global cache drop",
+  "rss": "20ms sampled process tree sum; shared pages may repeat",
+  "engines": {
+   "ffmpeg": "HARS_REMUX_ENGINE=ffmpeg",
+   "pure": "default (HARS_REMUX_ENGINE unset in product; pinned here)"
+  }
+ },
+ "note": "The remux CLI has no rlog, so HARS uses the median-interval terminal rule here; Python keeps its own. Durations are reported, not compared.",
+ "results": {
+  "fcamera.hevc": {
+   "python": {
+    "samples": 65,
+    "verified": 65,
+    "elapsed_seconds_sum_of_segment_medians": 6.642,
+    "elapsed_seconds_round_total_range": [
+     6.617,
+     6.679
+    ],
+    "cpu_seconds_sum_of_segment_medians": 3.714,
+    "cpu_seconds_round_total_range": [
+     3.705,
+     3.733
+    ],
+    "mean_rss_kib_median": 43767,
+    "peak_rss_kib_max": 50412,
+    "per_video_elapsed_median_seconds": 0.512,
+    "max_python_timestamp_difference_seconds": 0.0,
+    "max_python_last_duration_difference_seconds": 0.0
+   },
+   "ffmpeg": {
+    "samples": 65,
+    "verified": 65,
+    "elapsed_seconds_sum_of_segment_medians": 8.009,
+    "elapsed_seconds_round_total_range": [
+     7.947,
+     8.018
+    ],
+    "cpu_seconds_sum_of_segment_medians": 4.899,
+    "cpu_seconds_round_total_range": [
+     4.874,
+     4.924
+    ],
+    "mean_rss_kib_median": 81583,
+    "peak_rss_kib_max": 96312,
+    "per_video_elapsed_median_seconds": 0.6137,
+    "max_python_timestamp_difference_seconds": 0.0,
+    "max_python_last_duration_difference_seconds": 3.1e-05
+   },
+   "pure": {
+    "samples": 65,
+    "verified": 65,
+    "elapsed_seconds_sum_of_segment_medians": 4.7,
+    "elapsed_seconds_round_total_range": [
+     4.613,
+     4.721
+    ],
+    "cpu_seconds_sum_of_segment_medians": 2.575,
+    "cpu_seconds_round_total_range": [
+     2.558,
+     2.587
+    ],
+    "mean_rss_kib_median": 71936,
+    "peak_rss_kib_max": 102768,
+    "per_video_elapsed_median_seconds": 0.3607,
+    "max_python_timestamp_difference_seconds": 0.0,
+    "max_python_last_duration_difference_seconds": 3.1e-05
+   }
+  },
+  "qcamera.ts": {
+   "python": {
+    "samples": 65,
+    "verified": 65,
+    "elapsed_seconds_sum_of_segment_medians": 2.0,
+    "elapsed_seconds_round_total_range": [
+     1.979,
+     2.034
+    ],
+    "cpu_seconds_sum_of_segment_medians": 1.41,
+    "cpu_seconds_round_total_range": [
+     1.405,
+     1.438
+    ],
+    "mean_rss_kib_median": 31644,
+    "peak_rss_kib_max": 50232,
+    "per_video_elapsed_median_seconds": 0.154,
+    "max_python_timestamp_difference_seconds": 0.0,
+    "max_python_last_duration_difference_seconds": 0.0
+   },
+   "ffmpeg": {
+    "samples": 65,
+    "verified": 65,
+    "elapsed_seconds_sum_of_segment_medians": 2.149,
+    "elapsed_seconds_round_total_range": [
+     2.113,
+     2.172
+    ],
+    "cpu_seconds_sum_of_segment_medians": 1.607,
+    "cpu_seconds_round_total_range": [
+     1.588,
+     1.629
+    ],
+    "mean_rss_kib_median": 45000,
+    "peak_rss_kib_max": 73688,
+    "per_video_elapsed_median_seconds": 0.1651,
+    "max_python_timestamp_difference_seconds": 0.0,
+    "max_python_last_duration_difference_seconds": 0.0002
+   },
+   "pure": {
+    "samples": 65,
+    "verified": 65,
+    "elapsed_seconds_sum_of_segment_medians": 1.809,
+    "elapsed_seconds_round_total_range": [
+     1.77,
+     1.846
+    ],
+    "cpu_seconds_sum_of_segment_medians": 1.257,
+    "cpu_seconds_round_total_range": [
+     1.247,
+     1.3
+    ],
+    "mean_rss_kib_median": 40624,
+    "peak_rss_kib_max": 71048,
+    "per_video_elapsed_median_seconds": 0.1386,
+    "max_python_timestamp_difference_seconds": 0.0,
+    "max_python_last_duration_difference_seconds": 0.0002
+   }
+  }
+ }
+}

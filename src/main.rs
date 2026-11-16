@@ -7,23 +7,61 @@ use std::{net::SocketAddr, path::PathBuf};
 /// How long blocking work still running when the server stops may take. A share copy whose cycle is dropped stops at
 /// its next block and removes its part well within it; a call stuck on a hung mount must not hold the exit.
 const SHUTDOWN_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
+/// Commands whose standard output is their one JSON result, so their log goes to stderr. The server and
+/// `convert-log` keep logging to stdout: the conversion process's log lines are relayed by `jobs` from there.
+const RESULT_ON_STDOUT: [&str; 10] = [
+    "__inspect",
+    "__thumbnail",
+    "__native-hevc",
+    "__pure-remux",
+    "__native-ts",
+    "remux",
+    "track-log",
+    "analyze-log",
+    "import-auth",
+    "inspect-log",
+];
 
 fn main() -> anyhow::Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
+    // A media worker does one blocking job: one thread keeps its memory small and its limit meaningful.
+    let worker = std::env::args().nth(1).is_some_and(|v| v.starts_with("__"));
+    let runtime = if worker {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+    } else {
+        tokio::runtime::Runtime::new()?
+    };
     let result = runtime.block_on(run());
     runtime.shutdown_timeout(SHUTDOWN_LIMIT);
+    if worker
+        && let Err(error) = &result
+        && roadviewer_hars::native_video::resource_error(error)
+    {
+        eprintln!("Error: {error:?}");
+        std::process::exit(roadviewer_hars::media::RESOURCE_EXIT);
+    }
     result
 }
 
 async fn run() -> anyhow::Result<()> {
+    let args = std::env::args().collect::<Vec<_>>();
+    let writer = if args
+        .get(1)
+        .is_some_and(|v| RESULT_ON_STDOUT.contains(&v.as_str()))
+    {
+        tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stderr)
+    } else {
+        tracing_subscriber::fmt::writer::BoxMakeWriter::new(std::io::stdout)
+    };
     tracing_subscriber::fmt()
         .json()
+        .with_writer(writer)
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "roadviewer_hars=info".into()),
         )
         .init();
-    let args = std::env::args().collect::<Vec<_>>();
     if args.get(1).is_some_and(|v| v == "__inspect") {
         anyhow::ensure!(args.len() == 4, "invalid internal inspection job");
         let result =
@@ -43,46 +81,55 @@ async fn run() -> anyhow::Result<()> {
         return Ok(());
     }
     if args.get(1).is_some_and(|v| v == "__native-hevc") {
-        anyhow::ensure!(args.len() == 5, "invalid internal media job");
+        anyhow::ensure!(args.len() == 6, "invalid internal media job");
         let clock: Vec<f64> =
             roadviewer_hars::store::read_json(std::path::Path::new(&args[3])).await?;
         let signature = roadviewer_hars::native_video::remux_hevc(
             std::path::Path::new(&args[2]),
             std::path::Path::new(&args[4]),
             &clock,
+            args[5].parse()?,
         )?;
         println!("{}", serde_json::to_string(&signature)?);
         roadviewer_hars::profile::finish();
         return Ok(());
     }
-    #[cfg(feature = "pure-remux")]
     if args.get(1).is_some_and(|v| v == "__pure-remux") {
-        anyhow::ensure!(
-            args.len() == 6 || (args.len() == 7 && args[6] == "--no-verify"),
-            "usage: roadviewer-hars __pure-remux SOURCE KIND TIMES_JSON OUTPUT [--no-verify]"
-        );
-        let clock: Vec<f64> =
-            roadviewer_hars::store::read_json(std::path::Path::new(&args[4])).await?;
-        let report = roadviewer_hars::experimental::pure_remux::remux(
+        anyhow::ensure!(args.len() == 5, "invalid internal media job");
+        let job: roadviewer_hars::pure_remux::Job =
+            roadviewer_hars::store::read_json(std::path::Path::new(&args[3])).await?;
+        // A test setting, as the media deadline's: a release build always uses the budget the bounds need.
+        let budget = cfg!(debug_assertions)
+            .then(|| {
+                std::env::var("HARS_PURE_WORKER_MEMORY_MB")
+                    .ok()?
+                    .parse()
+                    .ok()
+            })
+            .flatten()
+            .unwrap_or(roadviewer_hars::pure_remux::MEMORY_BUDGET_MIB);
+        roadviewer_hars::pure_remux::limit_memory(budget)?;
+        let reply = roadviewer_hars::pure_remux::Reply::from(roadviewer_hars::pure_remux::remux(
             std::path::Path::new(&args[2]),
-            &args[3],
-            std::path::Path::new(&args[5]),
-            &clock,
-            args.len() == 6,
-        )?;
-        println!("{}", serde_json::to_string(&report)?);
+            std::path::Path::new(&args[4]),
+            &job,
+        ));
+        println!("{}", serde_json::to_string(&reply)?);
+        roadviewer_hars::profile::finish();
         return Ok(());
     }
     if args.get(1).is_some_and(|v| v == "__native-ts") {
-        anyhow::ensure!(args.len() == 5, "invalid internal media job");
+        anyhow::ensure!(args.len() == 6, "invalid internal media job");
         roadviewer_hars::native_video::remux_ts(
             std::path::Path::new(&args[2]),
             std::path::Path::new(&args[3]),
             args[4].parse()?,
+            args[5].parse()?,
         )?;
         roadviewer_hars::profile::finish();
         return Ok(());
     }
+    roadviewer_hars::media::Engine::configured()?;
     roadviewer_hars::media::set_worker_executable(std::env::current_exe()?)?;
     if args.get(1).is_some_and(|v| v == "convert-log") {
         anyhow::ensure!(

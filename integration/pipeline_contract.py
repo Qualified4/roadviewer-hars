@@ -15,6 +15,7 @@ import sys
 import tempfile
 import zstandard
 from real_replay_compare import differences
+import terminal_rule
 
 
 def strip_vui_timing(nal):
@@ -124,6 +125,7 @@ def main():
             subprocess.run([sys.executable,str(reference/"app/decoder.py"),str(source/"rlog.zst"),"synthetic"],env=env,stdout=output,stderr=output,check=True,timeout=60)
         with (work/"rust.log").open("wb") as output:
             subprocess.run([str(args.binary),"convert-log",str(source/"rlog.zst"),str(work/"rust"),"synthetic"],stdout=output,stderr=output,check=True,timeout=60)
+        files={}
         for name in ("data.json.gz","telemetry.json.gz","track.json.gz","summary.json"):
             def load(p):
                 with (gzip.open(p,"rt") if p.suffix==".gz" else p.open()) as f:return json.load(f)
@@ -132,10 +134,19 @@ def main():
                 a.pop("key");b.pop("key")
                 assert set(a["videos"])==set(b["videos"])=={"qcamera","front","wide"}
                 assert len(b["frames"])==120 and not b["warnings"]
+            files[name]=(a,b)
+        # The jittered qcamera clock moves Python's probe off 20 fps; HARS ends
+        # the clip at its median interval (no next camera frame is logged here).
+        known=terminal_rule.model(source/"rlog.zst",{kind:source/kind for kind in ("qcamera.ts","fcamera.hevc","ecamera.hevc")},reference/"schema/cereal/log.capnp")
+        assert known["qcamera"]["python"]!=known["qcamera"]["hars"],known
+        from telemetry import drive_summary
+        applied,mismatch=terminal_rule.reconcile(files,known,drive_summary)
+        assert not mismatch,mismatch
+        for name,(a,b) in files.items():
             error=differences(a,b)
             assert not error,{"file":name,"differences":dict(error)}
         assert (work/"rust/thumbnail.jpg").read_bytes().startswith(b"\xff\xd8")
-        print(json.dumps({"synthetic":True,"model_frames":120,"cameras":3,"full_json_equivalence":True,"lossless_native_remux":True}))
+        print(json.dumps({"synthetic":True,"model_frames":120,"cameras":3,"full_json_equivalence":True,"lossless_native_remux":True,"known_rule_differences":applied}))
 
 
 if __name__=="__main__":main()

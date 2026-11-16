@@ -1,5 +1,5 @@
 //! One isolated conversion worker. All outputs go to a caller-owned staging directory.
-use crate::{logs, media, replay, store, telemetry, track};
+use crate::{logs, media, pure_remux::FailureClass, replay, store, telemetry, track};
 use anyhow::Context;
 use serde_json::{Value, json};
 use std::{
@@ -65,15 +65,37 @@ fn timestamp(v: &Value, units: &Value) -> Option<f64> {
     (d != 0).then(|| (value as i128 * n as i128) as f64 / d as f64)
 }
 
+/// End of exposure of the camera frame right after the last encoded one. The
+/// encoder rotates segments between two frames, so the rlog still logs that
+/// next frame's camera state; it bounds how long the last frame was shown.
+fn next_camera_frame(decoded: &logs::Decoded, camera: &str, last: Option<&Value>) -> Option<u64> {
+    let topic = if camera == "wide" {
+        "wideRoadCameraState"
+    } else {
+        "roadCameraState"
+    };
+    let next = last?["frameId"].as_u64()?.checked_add(1)?;
+    let mut found = decoded
+        .streams
+        .get(topic)?
+        .iter()
+        .filter(|row| row.value["frameId"].as_u64() == Some(next))
+        .map(|row| row.value["timestampEof"].as_u64());
+    let eof = found.next()??;
+    // Two different records for one frame leave its time unknown.
+    found.all(|other| other == Some(eof)).then_some(eof)
+}
+
 async fn camera(
     source: &Path,
     kind: &str,
     out: &Path,
     rows: &[&Value],
     origin: f64,
-    qcamera: bool,
     source_pts: f64,
+    next_eof: Option<u64>,
 ) -> anyhow::Result<Value> {
+    let qcamera = matches!(kind, "qcamera.ts" | "camera.mp4");
     anyhow::ensure!(
         !rows.is_empty()
             && rows
@@ -135,7 +157,10 @@ async fn camera(
         };
         scanned = Some(inspection);
     }
-    let info = media::remux_probed(source, kind, out, &times, scanned).await?;
+    let next_frame_ns = next_eof
+        .and_then(|next| next.checked_sub(stamps[stamps.len() - 1]))
+        .filter(|gap| *gap > 0);
+    let info = media::remux_probed(source, kind, out, &times, next_frame_ns, scanned).await?;
     let stream = &info["streams"][0];
     let duration = timestamp(&stream["duration_ts"], &stream["time_base"])
         .or_else(|| seconds(&stream["duration"]))
@@ -161,7 +186,7 @@ pub async fn prepare(
     // Reserve a margin, and let every write surface ENOSPC. This does not delete
     // or move any input, nor claim that an estimate guarantees a complete job.
     anyhow::ensure!(
-        fs2::available_space(&dest)? > 100 * 1024 * 1024,
+        fs2::available_space(&dest)? > media::SPACE_MARGIN,
         "insufficient conversion disk space"
     );
     progress("log_read", 0.);
@@ -209,6 +234,7 @@ pub async fn prepare(
             .map(|r| r.iter().map(|r| &r.value).collect::<Vec<_>>())
             .unwrap_or_default();
         rows.sort_by_key(|r| r["segmentId"].as_u64().unwrap_or(u64::MAX));
+        let next_eof = next_camera_frame(&decoded, name, rows.last().copied());
         progress("video_read", index as f64 * 100. / 3.);
         match camera(
             &path,
@@ -216,8 +242,8 @@ pub async fn prepare(
             &dest.join(mp4),
             &rows,
             origin,
-            *name == "qcamera",
             meta["video_origins"][name].as_f64().unwrap_or(0.),
+            next_eof,
         )
         .await
         {
@@ -237,9 +263,32 @@ pub async fn prepare(
             }
             Err(error) => {
                 let _ = tokio::fs::remove_file(dest.join(mp4)).await;
+                let failure = media::failure(&error);
+                let label = if *name == "qcamera" { "qcamera" } else { raw };
+                if failure.class != FailureClass::Resource {
+                    warnings.push(format!("{label} 영상 준비 실패: {error}"));
+                    continue;
+                }
+                // The same disk, memory or deadline may not fail the next attempt, unlike an input or
+                // engine failure: a camera the published result plays is not dropped for it.
+                if meta["videos"][name].is_object()
+                    || recording.join("prepared").join(mp4).is_file()
+                {
+                    tracing::error!(
+                        event = "conversion_kept_previous",
+                        kind = *raw,
+                        failure_class = failure.class.name(),
+                        reason_code = failure.code,
+                        reason = failure.reason,
+                    );
+                    return Err(anyhow::Error::new(failure)
+                        .context(format!("{label}: previous conversion result kept")));
+                }
                 warnings.push(format!(
-                    "{} 영상 준비 실패: {error}",
-                    if *name == "qcamera" { "qcamera" } else { raw }
+                    "{label} 영상 준비 실패: {} ({}): {}",
+                    failure.class.name(),
+                    failure.code,
+                    failure.reason
                 ));
             }
         }

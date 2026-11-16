@@ -1,6 +1,8 @@
 """One Linux real-input conversion profile, including native descendants.
 
-RSS is a sampled process-tree sum (shared pages may be counted repeatedly).
+RSS is a sampled process-tree sum (shared pages may be counted repeatedly);
+peak_rss_process_kib is the exact peak of the largest single process (wait4).
+The log holds stdout and stderr (one-shot commands log to stderr).
 Per-stage CPU is a sampled lower bound: very short-lived children can escape a
 sample. Total CPU uses wait4/getrusage for the reaped child and its descendants.
 Stage names/granularity differ between implementations, so compare whole jobs.
@@ -34,7 +36,7 @@ def processes(pid):
 
 def measure(command,env,output):
     before=resource.getrusage(resource.RUSAGE_CHILDREN);started=time.monotonic()
-    process=subprocess.Popen(command,env=env,stdout=subprocess.PIPE,stderr=subprocess.DEVNULL,text=True)
+    process=subprocess.Popen(command,env=env,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True)
     stop=threading.Event();samples=[];stage='startup';stage_cpu=defaultdict(float);seen={}
     def monitor():
         while not stop.is_set():
@@ -55,14 +57,16 @@ def measure(command,env,output):
             try:event=json.loads(line)
             except ValueError:continue
             if isinstance(event,dict) and isinstance(event.get('stage'),str):stage=event['stage']
-    assert process.wait(timeout=600)==0,'profile conversion failed'
+    # wait4: the exact peak RSS of the largest single process (the child or a reaped descendant).
+    _,status,usage=os.wait4(process.pid,0);process.returncode=os.waitstatus_to_exitcode(status)
+    assert process.returncode==0,'profile conversion failed'
     stop.set();thread.join();elapsed=time.monotonic()-started
     after=resource.getrusage(resource.RUSAGE_CHILDREN)
     cpu=after.ru_utime+after.ru_stime-before.ru_utime-before.ru_stime
     integral=sum((b[0]-a[0])*a[1] for a,b in zip(samples,samples[1:]))
     return {'elapsed_seconds':elapsed,'total_cpu_seconds':cpu,'cpu_percent_one_core':100*cpu/elapsed,
             'rss_samples':len(samples),'rss_interval_seconds':.02,'mean_rss_tree_kib':integral/elapsed,
-            'peak_rss_tree_kib':max(v for _,v in samples),'sampled_stage_cpu_seconds_lower_bound':dict(stage_cpu)}
+            'peak_rss_tree_kib':max(v for _,v in samples),'peak_rss_process_kib':usage.ru_maxrss,'sampled_stage_cpu_seconds_lower_bound':dict(stage_cpu)}
 
 
 def main():
