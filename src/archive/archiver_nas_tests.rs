@@ -103,6 +103,40 @@ async fn an_unmounted_share_root_never_receives_a_move() {
     );
 }
 
+/// A copy already on the share (left by a crash before its index was written) is reused, not written: when the
+/// share then looks unmounted, that copy is not this call's to remove.
+#[tokio::test]
+async fn a_reused_copy_is_never_removed_by_its_confirmation() {
+    let tmp = tempfile::tempdir().unwrap();
+    let share = tmp.path().join("nas");
+    std::fs::create_dir_all(&share).unwrap();
+    let e = env(&share, tmp).await;
+    let (first, _) = record(&e, 'a', b"first file").await;
+    e.archive.run_cycle().await;
+    assert_eq!(
+        index::location(&e.app.store.meta(&first).await.unwrap(), "rlog.zst"),
+        "nas"
+    );
+    let ctx = e.archive.ctx();
+    assert!(e.archive.nas_available(ctx.nas().unwrap()).await);
+    let (second, meta) = record(&e, 'b', b"second file").await;
+    let orphan = share.join(&second).join("rlog.zst");
+    std::fs::create_dir_all(orphan.parent().unwrap()).unwrap();
+    std::fs::write(&orphan, b"second file").unwrap();
+    std::fs::remove_file(share.join(super::super::SENTINEL)).unwrap();
+    let outcome = e
+        .archive
+        .archive_file(&ctx, &second, &meta, "rlog.zst")
+        .await;
+    assert!(matches!(outcome, Outcome::Failed("storage_unavailable")));
+    assert_eq!(std::fs::read(&orphan).unwrap(), b"second file");
+    assert_eq!(
+        index::location(&e.app.store.meta(&second).await.unwrap(), "rlog.zst"),
+        "local"
+    );
+    assert!(e.app.store.root.join(&second).join("rlog.zst").is_file());
+}
+
 #[tokio::test]
 async fn a_missing_share_folder_is_never_recreated() {
     let tmp = tempfile::tempdir().unwrap();

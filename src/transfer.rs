@@ -1398,6 +1398,8 @@ async fn download_selected(
     let mut members = vec![];
     let mut names = BTreeSet::new();
     let exports = app.store.root.join(EXPORTS);
+    // The exports made so far go with this request if it is dropped before the ZIP stream takes them over.
+    let mut made = vec![];
     for (found, kind, export, meta, folder) in plans {
         let (path, remote, temporary) = match (export, found) {
             (Some((original, offset)), found) => {
@@ -1409,32 +1411,37 @@ async fn download_selected(
                 // One to export from a path is staged first, verified (Python `open_downloads`).
                 let (input, staged) = match found {
                     Source::Path(p) => (p, None),
-                    Source::Remote(r) => {
-                        match media_read::stage_remote(&app.archive, &folder, &r).await {
-                            Ok(p) => (p.clone(), Some(p)),
-                            Err(e) => {
-                                remove_temporaries(&members).await;
-                                return Ok(e.into_response());
-                            }
+                    Source::Remote(r) => match media_read::stage(&app.archive, &folder, &r).await {
+                        Ok(copy) => (copy.path().to_owned(), Some(copy)),
+                        Err(e) => {
+                            remove_temporaries(&members).await;
+                            return Ok(e.into_response());
                         }
-                    }
+                    },
                 };
                 let output = exports.join(format!("{}.{ext}", crate::store::id()));
-                let made = match tokio::fs::create_dir_all(&exports).await {
-                    Ok(()) => crate::media::reverse(&input, original, &output, offset)
-                        .await
-                        .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "media_export_failed")),
+                let exported = match tokio::fs::create_dir_all(&exports).await {
+                    Ok(()) => media_read::export_original(
+                        input,
+                        staged,
+                        original.to_owned(),
+                        output,
+                        offset,
+                    )
+                    .await
+                    .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "media_export_failed")),
                     Err(e) => Err(e.into()),
                 };
-                if let Some(p) = &staged {
-                    media_read::unstage(p).await;
-                }
-                if let Err(e) = made {
-                    let _ = tokio::fs::remove_file(&output).await;
-                    remove_temporaries(&members).await;
-                    return Err(e.into());
-                }
-                (output, None, true)
+                let output = match exported {
+                    Ok(output) => output,
+                    Err(e) => {
+                        remove_temporaries(&members).await;
+                        return Err(e.into());
+                    }
+                };
+                let path = output.path().to_owned();
+                made.push(output);
+                (path, None, true)
             }
             (None, Source::Path(p)) => (p, None, false),
             (None, Source::Remote(r)) => (PathBuf::new(), Some(r), false),
@@ -1455,6 +1462,10 @@ async fn download_selected(
     }
     let header = message_disposition(&format!("roadviewer-{}-segments-{format}.zip", ids.len()));
     let (tx, body) = channel();
+    // stream_zip removes every temporary member itself, whether or not the client stays.
+    for export in made {
+        export.keep();
+    }
     tokio::spawn(stream_zip(tx, members, app.archive.clone()));
     Ok(zip_response(header, body))
 }

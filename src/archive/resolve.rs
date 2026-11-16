@@ -139,10 +139,16 @@ impl Archive {
             local
         };
         // A share path is stat'ed off the runtime's workers: a hung mount must not hold one.
-        let stat_path = path.clone();
-        let stat = tokio::task::spawn_blocking(move || std::fs::metadata(stat_path))
-            .await
-            .unwrap_or_else(|_| Err(std::io::Error::other("join")));
+        let (stat_path, on_share) = (path.clone(), where_ == "nas");
+        let stat = tokio::task::spawn_blocking(move || {
+            if on_share {
+                super::nas::share_meta(&stat_path)
+            } else {
+                std::fs::metadata(stat_path)
+            }
+        })
+        .await
+        .unwrap_or_else(|_| Err(std::io::Error::other("join")));
         match stat {
             Ok(m) if m.is_file() => {}
             Ok(_) | Err(_) if where_ != "nas" => return (Resolved::Nothing, "missing"),

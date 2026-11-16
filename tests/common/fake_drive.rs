@@ -121,6 +121,10 @@ pub struct St {
     /// A pause before each 64 KiB of a full-file download (a slow link).
     pub media_delay: Option<std::time::Duration>,
     pub no_auth: bool,
+    /// A file whose content is answered only after this long (a slow Drive while a client gives up).
+    pub media_hold: HashMap<String, std::time::Duration>,
+    /// Content requests held by  so far.
+    pub media_held: u32,
     pub file_count: u32,
     pub session_count: u32,
     pub token_count: u32,
@@ -336,6 +340,18 @@ pub async fn handle(
             .unwrap_or_default()
             .to_owned()
     };
+    let delay = {
+        let mut st = fake.st();
+        let delay = path
+            .strip_prefix("/drive/v3/files/")
+            .filter(|_| query.get("alt").map(String::as_str) == Some("media"))
+            .and_then(|id| st.media_hold.get(id).copied());
+        st.media_held += u32::from(delay.is_some());
+        delay
+    };
+    if let Some(delay) = delay {
+        tokio::time::sleep(delay).await;
+    }
     let mut guard = fake.st();
     let st = &mut *guard;
     st.requests.push(Req {

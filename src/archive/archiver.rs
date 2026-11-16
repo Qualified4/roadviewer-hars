@@ -956,18 +956,16 @@ pub(crate) fn stat(path: &Path) -> std::io::Result<(u64, u64)> {
     Ok((m.len(), mtime))
 }
 
-/// A share path's metadata, read off the runtime's workers: a hung mount holds a blocking thread, not a worker.
+/// A share path's own metadata (a link is not followed), read off the runtime's workers: a hung mount holds a
+/// blocking thread, not a worker.
 pub(crate) async fn share_stat(path: &Path) -> std::io::Result<std::fs::Metadata> {
     let path = path.to_owned();
-    tokio::task::spawn_blocking(move || std::fs::metadata(path))
+    tokio::task::spawn_blocking(move || super::nas::share_meta(&path))
         .await
         .unwrap_or_else(|_| Err(std::io::Error::other("join")))
 }
 pub(crate) async fn share_remove(path: &Path) -> std::io::Result<()> {
-    let path = path.to_owned();
-    tokio::task::spawn_blocking(move || super::nas::remove_target(&path))
-        .await
-        .unwrap_or_else(|_| Err(std::io::Error::other("join")))
+    super::nas::remove_share_file(path).await
 }
 
 pub(crate) fn is_file(path: &Path) -> bool {
