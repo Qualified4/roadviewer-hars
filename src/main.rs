@@ -74,6 +74,7 @@ async fn run() -> anyhow::Result<()> {
     }
     if args.get(1).is_some_and(|v| v == "__thumbnail") {
         anyhow::ensure!(args.len() == 4, "invalid internal thumbnail job");
+        roadviewer_hars::pure_remux::limit_memory(roadviewer_hars::thumbnail::MEMORY_BUDGET_MIB)?;
         let result = roadviewer_hars::thumbnail::make(
             std::path::Path::new(&args[2]),
             std::path::Path::new(&args[3]),

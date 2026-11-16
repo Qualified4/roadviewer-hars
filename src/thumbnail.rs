@@ -1,33 +1,27 @@
-//! Bounded native pixel decoding; all selection and luma calculations are Rust.
+//! Bounded pixel decoding without FFmpeg (docs/hars/THUMBNAIL-DECODER.md); all selection and luma
+//! calculations are Rust.
+mod jpeg;
+mod scale;
+mod video;
+
 use anyhow::Context;
-use ffmpeg_next as av;
+use scale::Image;
 use serde_json::{Value, json};
 use std::path::Path;
 
-fn small(frame: &av::frame::Video) -> anyhow::Result<av::frame::Video> {
-    let height =
-        ((frame.height() as f64 * 320. / frame.width() as f64 / 2.).round_ties_even() as u32 * 2)
-            .max(2);
-    let mut scaler = av::software::scaling::Context::get(
-        frame.format(),
-        frame.width(),
-        frame.height(),
-        av::format::Pixel::YUVJ420P,
-        320,
-        height,
-        av::software::scaling::flag::Flags::BILINEAR,
-    )?;
-    let mut output = av::frame::Video::empty();
-    scaler.run(frame, &mut output)?;
-    Ok(output)
-}
-fn stats(frame: &av::frame::Video) -> (f64, f64, u8, u8) {
+const WIDTH: usize = 320;
+/// Python `MAX_PACKETS`: about 7 s at 20 fps.
+const MAX_PACKETS: usize = 140;
+/// Address space the `__thumbnail` worker may add to its own (`pure_remux::limit_memory`): the
+/// decoder's reference pictures at the largest accepted size (4096x2160) with room to spare.
+pub const MEMORY_BUDGET_MIB: u64 = 512;
+
+fn stats(image: &Image) -> (f64, f64, u8, u8) {
     let mut hist = [0u64; 256];
-    let plane = frame.data(0);
-    let stride = frame.stride(0);
-    for row in (0..frame.height() as usize).step_by(2) {
-        for col in (0..frame.width() as usize).step_by(2) {
-            hist[plane[row * stride + col] as usize] += 1;
+    let plane = &image.y;
+    for row in (0..plane.height).step_by(2) {
+        for col in (0..plane.width).step_by(2) {
+            hist[plane.data[row * plane.width + col] as usize] += 1;
         }
     }
     let n = hist.iter().sum::<u64>() as f64;
@@ -45,23 +39,26 @@ fn stats(frame: &av::frame::Video) -> (f64, f64, u8, u8) {
         / n)
         .sqrt();
     let mut count = 0;
-    let mut low = None;
-    let mut high = None;
+    let mut low = 0;
+    let mut high = 0;
+    let mut found = (false, false);
     for (i, c) in hist.iter().enumerate() {
         count += c;
-        if low.is_none() && count as f64 >= n * 0.01 {
-            low = Some(i as u8);
+        if !found.0 && count as f64 >= n * 0.01 {
+            low = i as u8;
+            found.0 = true;
         }
-        if high.is_none() && count as f64 >= n * 0.99 {
-            high = Some(i as u8);
+        if !found.1 && count as f64 >= n * 0.99 {
+            high = i as u8;
+            found.1 = true;
         }
     }
-    (mean, std, low.unwrap(), high.unwrap())
+    (mean, std, low, high)
 }
 fn score((mean, std, _, _): (f64, f64, u8, u8)) -> f64 {
     std * (mean / 60.).min(1.) * ((250. - mean).max(0.) / 60.).min(1.)
 }
-fn level(frame: &mut av::frame::Video, (mean, _, low, high): (f64, f64, u8, u8)) {
+fn level(image: &mut Image, (mean, _, low, high): (f64, f64, u8, u8)) {
     let gain = (235. / (high as f64 - low as f64).max(1.)).min(3.);
     let stretched = ((mean - low as f64) * gain).clamp(1., 255.);
     let gamma = if stretched >= 100. {
@@ -79,80 +76,29 @@ fn level(frame: &mut av::frame::Video, (mean, _, low, high): (f64, f64, u8, u8))
                 .min(255.) as u8
         })
         .collect();
-    for v in frame.data_mut(0) {
+    for v in &mut image.y.data {
         *v = lut[*v as usize];
     }
 }
 
 pub fn make(source: &Path, output: &Path) -> anyhow::Result<Value> {
     let _profile = crate::profile::Scope::new("thumbnail_native");
-    av::init()?;
-    av::log::set_level(av::log::Level::Quiet);
-    let mut options = av::Dictionary::new();
-    options.set("protocol_whitelist", "file,pipe");
-    options.set("format_whitelist", "mov,mpegts,hevc");
-    let mut input = av::format::input_with_dictionary(source, options)?;
-    let stream = input
-        .streams()
-        .best(av::media::Type::Video)
-        .context("missing thumbnail video stream")?;
-    let index = stream.index();
-    let tb = stream.time_base();
-    let mut context = av::codec::Context::from_parameters(stream.parameters())?;
-    let mut threads = av::codec::threading::Config::count(2);
-    threads.kind = av::codec::threading::Type::Frame;
-    context.set_threading(threads);
-    let mut decoder = context.decoder().video()?;
-    anyhow::ensure!(
-        decoder.width() > 0
-            && decoder.width() <= 4096
-            && decoder.height() > 0
-            && decoder.height() <= 2160,
-        "unsupported thumbnail dimensions"
-    );
-    let mut candidates: Vec<(u8, av::frame::Video)> = vec![];
+    let mut candidates: Vec<(u8, Image)> = vec![];
     let mut first = None;
     let mut start = None;
-    let mut receive = |decoder: &mut av::decoder::Video| -> anyhow::Result<bool> {
-        let mut frame = av::frame::Video::empty();
-        while decoder.receive_frame(&mut frame).is_ok() {
-            let t = frame
-                .pts()
-                .map(|p| p as f64 * tb.numerator() as f64 / tb.denominator() as f64)
-                .unwrap_or(0.);
-            if first.is_none() {
-                first = Some(small(&frame)?);
-                start = Some(t);
-            }
-            for second in 1..=5 {
-                if !candidates.iter().any(|v| v.0 == second) && t - start.unwrap() >= second as f64
-                {
-                    candidates.push((second, small(&frame)?));
-                }
+    video::decode(source, MAX_PACKETS, |frame| {
+        let t = frame.time;
+        let start = *start.get_or_insert(t);
+        if first.is_none() {
+            first = Some(scale::small(&frame.image, WIDTH, frame.full_range)?);
+        }
+        for second in 1..=5u8 {
+            if !candidates.iter().any(|v| v.0 == second) && t - start >= f64::from(second) {
+                candidates.push((second, scale::small(&frame.image, WIDTH, frame.full_range)?));
             }
         }
         Ok(candidates.len() == 5)
-    };
-    let mut count = 0;
-    loop {
-        let mut packet = av::Packet::empty();
-        if packet.read(&mut input).is_err() {
-            if count < 140 && decoder.send_eof().is_ok() {
-                receive(&mut decoder)?;
-            }
-            break;
-        }
-        if packet.stream() != index {
-            continue;
-        }
-        if count >= 140 {
-            break;
-        }
-        count += 1;
-        if decoder.send_packet(&packet).is_ok() && receive(&mut decoder)? {
-            break;
-        }
-    }
+    })?;
     if candidates.is_empty()
         && let Some(first) = first
     {
@@ -171,26 +117,7 @@ pub fn make(source: &Path, output: &Path) -> anyhow::Result<Value> {
     let (second, mut image) = candidates.swap_remove(index);
     let measured = stats(&image);
     level(&mut image, measured);
-    image.set_pts(Some(0));
-    let codec = av::encoder::find(av::codec::Id::MJPEG).context("missing JPEG encoder")?;
-    let mut encoder = av::codec::Context::new_with_codec(codec)
-        .encoder()
-        .video()?;
-    encoder.set_width(image.width());
-    encoder.set_height(image.height());
-    encoder.set_format(av::format::Pixel::YUVJ420P);
-    encoder.set_time_base((1, 25));
-    let mut options = av::Dictionary::new();
-    options.set("qmin", "4");
-    options.set("qmax", "4");
-    let mut encoder = encoder.open_with(options)?;
-    encoder.send_frame(&image)?;
-    encoder.send_eof()?;
-    let mut jpeg = vec![];
-    let mut packet = av::Packet::empty();
-    while encoder.receive_packet(&mut packet).is_ok() {
-        jpeg.extend_from_slice(packet.data().unwrap_or(&[]));
-    }
+    let jpeg = jpeg::encode(&image)?;
     anyhow::ensure!(jpeg.starts_with(&[0xff, 0xd8]), "JPEG encoding failed");
     let temp = output.with_extension("jpg.tmp");
     std::fs::write(&temp, jpeg)?;
@@ -202,3 +129,6 @@ pub fn make(source: &Path, output: &Path) -> anyhow::Result<Value> {
     std::fs::rename(temp, metadata)?;
     Ok(json!({"second":second,"score":meta["score"]}))
 }
+
+#[cfg(test)]
+mod tests;
