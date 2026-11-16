@@ -42,6 +42,7 @@ impl Jobs {
                 .await
                 .map_err(|_| anyhow::anyhow!("invalid conversion record"))?;
             let journal = folder.join(".conversion.json");
+            let mut journaled = None;
             if journal.is_file() {
                 let work: Value = read_json(&journal).await?;
                 let generation = work["generation"]
@@ -49,6 +50,21 @@ impl Jobs {
                     .filter(|v| crate::store::valid_id(v))
                     .context("invalid conversion journal")?;
                 jobs.publish(&record, generation).await?;
+                journaled = Some(format!(".convert-{generation}"));
+            }
+            // A conversion a killed process left before it completed: no journal names it, so it was
+            // never published, and no conversion runs before this returns. A journaled generation
+            // is `publish`'s (a cancelled one keeps its staging).
+            let mut entries = tokio::fs::read_dir(&folder).await?;
+            while let Some(entry) = entries.next_entry().await? {
+                let name = entry.file_name().to_string_lossy().into_owned();
+                if name.starts_with(".convert-")
+                    && Some(&name) != journaled.as_ref()
+                    && entry.file_type().await?.is_dir()
+                    && tokio::fs::remove_dir_all(entry.path()).await.is_err()
+                {
+                    tracing::warn!(record = %record, "conversion_staging_cleanup_failed");
+                }
             }
             let mut meta = jobs
                 .store
@@ -300,11 +316,25 @@ impl Jobs {
             .kill_on_drop(true)
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+        // Its media workers die with it (they also die with it on its own SIGKILL).
+        crate::media::die_with_parent(&mut command);
+        #[cfg(unix)]
+        command.process_group(0);
         let mut child = command
             .spawn()
             .context("conversion process could not start")?;
+        let group = child.id();
+        let stop = |child: &mut tokio::process::Child| {
+            #[cfg(unix)]
+            if let Some(pid) = group.and_then(|p| i32::try_from(p).ok()) {
+                // SAFETY: kill(2) on the process group this conversion leads.
+                unsafe { libc::kill(-pid, libc::SIGKILL) };
+            }
+            child.start_kill()
+        };
         let stdout = child.stdout.take().unwrap();
         let mut lines = BufReader::new(stdout).lines();
+        let reaped = std::sync::atomic::AtomicBool::new(false);
         let future = async {
             while let Some(line) = lines.next_line().await? {
                 if let Ok(v) = serde_json::from_str::<Value>(&line)
@@ -314,10 +344,14 @@ impl Jobs {
                         .is_some_and(|p| (0.0..=100.).contains(&p))
                 {
                     self.progress.write().await.insert(record.into(), v);
+                } else {
+                    crate::media::relay_remux_event(record, &line);
                 }
             }
+            let status = child.wait().await?;
+            reaped.store(true, std::sync::atomic::Ordering::Relaxed);
             anyhow::ensure!(
-                child.wait().await?.success(),
+                status.success(),
                 "conversion failed; original data preserved"
             );
             Ok::<_, anyhow::Error>(())
@@ -343,14 +377,29 @@ impl Jobs {
             }
         };
         tokio::select! {
-            result=tokio::time::timeout(std::time::Duration::from_secs(timeout),future)=>{result.context("conversion deadline exceeded; original data preserved")??;},
+            result=tokio::time::timeout(std::time::Duration::from_secs(timeout),future)=>{
+                if let Err(error)=result.context("conversion deadline exceeded; original data preserved").and_then(|r|r){
+                    // Nothing of this generation was published yet: its partial output goes with its
+                    // processes. A reaped leader's id may belong to another group by now; its media
+                    // workers die with it (PDEATHSIG).
+                    if !reaped.load(std::sync::atomic::Ordering::Relaxed) {
+                        let _=stop(&mut child);
+                        let _=child.wait().await;
+                    }
+                    let _=tokio::fs::remove_dir_all(&staging).await;
+                    return Err(error);
+                }
+            },
             _=superseded=>{
-                child.kill().await?;
+                stop(&mut child)?;
+                child.wait().await?;
                 let _=tokio::fs::remove_dir_all(&staging).await;
                 return Ok(());
             }
             _=cancel.notified()=>{
-                child.kill().await?;
+                stop(&mut child)?;
+                child.wait().await?;
+                let _=tokio::fs::remove_dir_all(&staging).await;
                 let lock=self.store.record_lock(record).await;let _guard=lock.lock().await;
                 let mut meta=self.store.meta(record).await.map_err(|_|anyhow::anyhow!("record unavailable"))?;
                 meta["status"]=json!("unconverted");meta["manual_conversion"]=json!(false);meta["auto_excluded"]=json!(true);meta["error"]=Value::Null;
@@ -424,6 +473,7 @@ impl Jobs {
                 tokio::fs::rename(&prepared, &backup).await?;
             }
             tokio::fs::rename(&staging, &prepared).await?;
+            sync_dirs(&[&folder]).await?;
         }
         let summary: Value = read_json(&prepared.join("summary.json")).await?;
         let keep = self.store.processing.read().await["keep_original_video"] != false;
@@ -444,7 +494,13 @@ impl Jobs {
             // An archived original stays the stored copy; its MP4 remains converted output in prepared/.
             let archived = index::location(&meta, raw) != "local"
                 || index::is_archived_location(&index::location(&meta, mp4));
-            if !keep && !archived && prepared.join(mp4).is_file() {
+            // A restart resuming this generation's publication finds an MP4 it already moved next to
+            // the original it was made from (a conversion reads a local original before a stored MP4).
+            let moved = installed
+                && !prepared.join(mp4).exists()
+                && folder.join(mp4).is_file()
+                && folder.join(raw).is_file();
+            if !keep && !archived && (moved || prepared.join(mp4).is_file()) {
                 // An MP4 removed by archive cleanup exists again, locally: the index must not hide it.
                 if index::location(&meta, mp4) == "removed"
                     && let Some(storage) = meta["storage"].as_object_mut()
@@ -453,7 +509,12 @@ impl Jobs {
                 }
                 // The conversion verified frame count, timestamps and compressed
                 // bitstream before reaching its durable publication journal.
-                tokio::fs::rename(prepared.join(mp4), folder.join(mp4)).await?;
+                if !moved {
+                    tokio::fs::rename(prepared.join(mp4), folder.join(mp4)).await?;
+                    crate::fault::point("publish_mp4_moved");
+                }
+                // The conversion synced the MP4 itself; its new name must be durable before the original goes.
+                sync_dirs(&[&folder, &prepared]).await?;
                 // The MP4 is new content: a copy of the previous one no longer describes it.
                 if index::drop_remote(&mut meta, mp4, None).is_some() {
                     tracing::info!(kind = mp4, "remote_copy_superseded_left_on_archive");
@@ -553,6 +614,19 @@ impl Jobs {
         }
         out
     }
+}
+async fn sync_dirs(dirs: &[&std::path::Path]) -> std::io::Result<()> {
+    let dirs = dirs.iter().map(|d| d.to_path_buf()).collect::<Vec<_>>();
+    tokio::task::spawn_blocking(move || {
+        #[cfg(unix)]
+        for dir in &dirs {
+            std::fs::File::open(dir)?.sync_all()?;
+        }
+        #[cfg(not(unix))]
+        let _ = dirs;
+        Ok(())
+    })
+    .await?
 }
 fn mtime_ns(stat: &std::fs::Metadata) -> u64 {
     #[cfg(unix)]

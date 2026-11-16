@@ -342,11 +342,14 @@ async fn nas_move_archives_oldest_first_videos_before_the_log() {
 #[tokio::test]
 async fn only_ready_idle_recordings_past_the_minimum_age_and_threshold_are_archived() {
     let e = nas_env().await;
+    // An hour old: inside the default 24 hours, past a zero minimum age even when the wall clock
+    // steps back a few seconds during the test (WSL resynchronizes it; uploaded "now" then lies in
+    // the future, which Python's `now - uploaded < min_age` skips too).
     let young = e
         .record(
             'a',
             &[("rlog.zst", data(100, 1))],
-            roadviewer_hars::store::now(),
+            roadviewer_hars::store::now() - 3600.,
         )
         .await;
     let queued = e.record('b', &[("rlog.zst", data(100, 2))], OLD).await;

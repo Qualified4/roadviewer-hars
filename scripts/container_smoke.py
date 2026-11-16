@@ -24,6 +24,7 @@ with tempfile.TemporaryDirectory(prefix="hars-tls-") as temp:
     os.chmod(root / "privkey.pem", 0o600)
     (root / "options.json").write_text(json.dumps({"max_upload_mb":512,"device_https_enabled":True}))
     (root / "clock.json").write_text(json.dumps([0,.1,.2,.31,.4,.5,.6,.7,.8,.9]))
+    (root / "ts-clock.json").write_text(json.dumps([i/10 for i in range(10)]))
     # Deterministic readiness regression: config checks remain immediate, while
     # the actual TLS daemon starts after a short scheduling delay.
     wrapper=root/"bin"
@@ -71,10 +72,24 @@ with tempfile.TemporaryDirectory(prefix="hars-tls-") as temp:
         assert request(tls + "/api/device/test")[0] == 200
         assert request(tls + "/api/logs")[0] == 404
         command("docker", "exec", name, "sh", "-c", "test ! -x /usr/bin/python3 && test ! -x /usr/local/bin/python")
+        def remux(source, kind, clock, output):
+            # stdout is the one JSON result; the log on stderr must show the pure engine, not a fallback.
+            done=subprocess.run(["docker","exec",name,"roadviewer-hars","remux",source,kind,clock,output],capture_output=True,text=True,check=True)
+            lines=done.stdout.splitlines()
+            assert len(lines)==1 and json.loads(lines[0])["validated"] is True, done.stdout
+            events=[]
+            for line in done.stderr.splitlines():
+                try:
+                    events.append(json.loads(line).get("fields",{}))
+                except ValueError:
+                    pass
+            engines=[e.get("engine") for e in events if e.get("event")=="remux_engine"]
+            assert engines==["pure"] and not any(e.get("event")=="remux_fallback" for e in events), engines
         command("docker","exec",name,"ffmpeg","-v","error","-nostdin","-y","-f","lavfi","-i","testsrc2=size=160x96:rate=10","-t","1","-an","-threads","1","-c:v","libx265","-x265-params","pools=1:frame-threads=1:bframes=0:log-level=error","-f","hevc","/tmp/fcamera.hevc",stderr=subprocess.DEVNULL)
-        result=command("docker","exec",name,"roadviewer-hars","remux","/tmp/fcamera.hevc","fcamera.hevc","/ssl/clock.json","/tmp/fcamera.mp4")
-        assert json.loads(result)["validated"] is True
-        print("Container boot, trusted TLS, API isolation, Python-free runtime, and native VFR HEVC: PASS")
+        remux("/tmp/fcamera.hevc","fcamera.hevc","/ssl/clock.json","/tmp/fcamera.mp4")
+        command("docker","exec",name,"ffmpeg","-v","error","-nostdin","-y","-f","lavfi","-i","testsrc2=size=160x96:rate=10","-t","1","-an","-threads","1","-c:v","libx264","-pix_fmt","yuv420p","-bf","0","-g","10","-f","mpegts","/tmp/qcamera.ts",stderr=subprocess.DEVNULL)
+        remux("/tmp/qcamera.ts","qcamera.ts","/ssl/ts-clock.json","/tmp/qcamera.mp4")
+        print("Container boot, trusted TLS, API isolation, Python-free runtime, and pure-engine VFR HEVC and H.264 TS: PASS")
     except Exception:
         if started:
             try:

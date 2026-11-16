@@ -59,12 +59,15 @@ def audit(path,times,reference,expected=None):
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('jobs',type=Path);p.add_argument('reference',type=Path);p.add_argument('output',type=Path)
-    p.add_argument('--binary',action='append',required=True);p.add_argument('--runs',type=int,default=3)
+    p.add_argument('--binary',action='append',required=True,help='name=path; name=path@pure or @ffmpeg sets HARS_REMUX_ENGINE')
+    p.add_argument('--runs',type=int,default=3)
     p.add_argument('--mode',choices=('validated','core'),default='validated')
     p.add_argument('--segments',type=int,nargs='*')
     args=p.parse_args();assert args.runs>=3;args.output.mkdir(parents=True,exist_ok=False)
     binaries=dict(s.split('=',1) for s in args.binary)
-    env={k:v for k,v in os.environ.items() if not k.startswith('HARS_PROFILE')}
+    engines={name:path.rsplit('@',1)[1] for name,path in binaries.items() if '@' in path}
+    binaries={name:path.rsplit('@',1)[0] for name,path in binaries.items()}
+    env={k:v for k,v in os.environ.items() if not k.startswith('HARS_PROFILE') and k!='HARS_REMUX_ENGINE'}
     data={'scope':args.mode,'warmups':1,'runs_per_segment':args.runs,'cache':'warm, no global cache drop','python_cyclic_gc':False,'rss':'20ms sampled process tree sum; shared pages may repeat','samples':[],'media':[]}
     helper=Path(__file__).with_name('python_video_job.py')
     for jobpath in sorted(args.jobs.glob('*.json')):
@@ -81,9 +84,13 @@ def main():
             output=args.output/f'{segment}-{kind}-{label}.mp4'
             if name=='python':command=[sys.executable,str(helper),str(args.reference),str(jobpath),str(output),'--mode',args.mode]
             elif args.mode=='validated':command=[binaries[name],'remux',str(source),kind,str(clock),str(output)]
-            elif kind.endswith('.hevc'):command=[binaries[name],'__native-hevc',str(source),str(clock),str(output)]
+            elif kind.endswith('.hevc'):command=[binaries[name],'__native-hevc',str(source),str(clock),str(output),'50000']
             else:command=['ffmpeg','-v','error','-nostdin','-n','-protocol_whitelist','file,pipe','-f','mpegts','-i',str(source),'-map','0:v:0','-an','-c:v','copy','-map_metadata','-1','-movflags','+faststart','-f','mp4',str(output)]
-            metrics=measure(command,env,output.with_suffix('.log'))
+            variant_env=dict(env,HARS_REMUX_ENGINE=engines[name]) if name in engines else env
+            metrics=measure(command,variant_env,output.with_suffix('.log'))
+            if name in engines and args.mode=='validated':
+                log=output.with_suffix('.log').read_text(errors='replace')
+                assert f'"engine":"{engines[name]}"' in log and 'remux_fallback' not in log,f'{name} did not use {engines[name]}'
             metadata,_,packets=audit(output,times,args.reference,signature)
             if golden is None:assert name=='python';golden=packets;golden_metadata=metadata
             assert len(packets)==len(golden)

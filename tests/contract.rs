@@ -144,6 +144,35 @@ async fn startup_fills_download_metadata_without_reconverting_existing_output() 
         b"retained-wide"
     );
 }
+#[tokio::test]
+async fn startup_removes_the_staging_of_a_conversion_a_killed_server_left() {
+    let temp = tempfile::tempdir().unwrap();
+    let record = roadviewer_hars::store::id();
+    let folder = temp.path().join(&record);
+    let staging = folder.join(format!(".convert-{}", roadviewer_hars::store::id()));
+    tokio::fs::create_dir_all(staging.join("prepared"))
+        .await
+        .unwrap();
+    tokio::fs::write(staging.join("prepared/fcamera.mp4"), b"partial")
+        .await
+        .unwrap();
+    tokio::fs::write(folder.join("rlog.zst"), b"original")
+        .await
+        .unwrap();
+    atomic_json(
+        &folder.join("meta.json"),
+        &json!({"id":record,"name":"killed","status":"processing","conversion_id":"x"}),
+    )
+    .await
+    .unwrap();
+    let a = app(temp.path()).await;
+    assert_eq!(a.store.meta(&record).await.unwrap()["status"], "queued");
+    assert!(!staging.exists());
+    assert_eq!(
+        tokio::fs::read(folder.join("rlog.zst")).await.unwrap(),
+        b"original"
+    );
+}
 fn manifest(data: &[u8], streaming: bool) -> Value {
     json!({"batch_id":"test_batch_123456789","segments":[{"route":"2026-11-15--12-00-00","segment":0,"files":[{"kind":"rlog.zst","size":data.len(),"sha256":if streaming {Value::Null}else{json!(sha(data))}}]}]})
 }
@@ -587,6 +616,35 @@ async fn same_data_directory_cannot_have_two_writers() {
             .await
             .is_err()
     );
+}
+#[cfg(unix)]
+#[tokio::test]
+async fn data_directory_lock_ends_with_its_app_while_a_child_is_starting() {
+    use std::{io::Read, os::fd::AsRawFd, os::unix::process::CommandExt};
+    let temp = tempfile::tempdir().unwrap();
+    let a = app(temp.path()).await;
+    let (mut started, signal) = std::io::pipe().unwrap();
+    let signal_fd = signal.as_raw_fd();
+    // A child between fork and exec holds a copy of every descriptor of this process, the lock's among them.
+    let child = std::thread::spawn(move || {
+        let mut command = std::process::Command::new("true");
+        // SAFETY: write(2) and nanosleep(2) are async-signal-safe; the closure only reads the copied descriptor.
+        unsafe {
+            command.pre_exec(move || {
+                libc::write(signal_fd, b"x".as_ptr().cast(), 1);
+                std::thread::sleep(Duration::from_millis(800));
+                Ok(())
+            });
+        }
+        let status = command.status();
+        drop(signal);
+        status
+    });
+    started.read_exact(&mut [0]).unwrap();
+    drop(a);
+    let reopened = App::open(temp.path().to_path_buf(), web(), false, 512).await;
+    assert!(child.join().unwrap().unwrap().success());
+    reopened.unwrap();
 }
 #[test]
 fn root_secret_derivation_matches_python_hmac() {

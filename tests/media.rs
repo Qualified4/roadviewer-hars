@@ -186,7 +186,8 @@ async fn native_inspection_and_mux_hash_match_independent_ffmpeg_extraction() {
             }
             let direct = temp.path().join("direct.mp4");
             assert_eq!(
-                roadviewer_hars::native_video::remux_hevc(&source, &direct, &times).unwrap(),
+                roadviewer_hars::native_video::remux_hevc(&source, &direct, &times, 100_000)
+                    .unwrap(),
                 raw.signature
             );
         }

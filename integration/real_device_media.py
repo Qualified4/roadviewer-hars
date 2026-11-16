@@ -29,7 +29,8 @@ async def main(args):
     files=[next(args.corpus.glob(f'*--{args.segment}--{kind}')) for kind in ('rlog.zst','qcamera.ts','fcamera.hevc','ecamera.hevc') if list(args.corpus.glob(f'*--{args.segment}--{kind}'))]
     assert len(files)>=3 and files[0].name.endswith('rlog.zst')
     route=files[0].name.rsplit('--',2)[0]
-    ui='http://127.0.0.1:'+str(port());device='http://127.0.0.1:'+str(port())
+    ui_port,device_port=args.ports or (port(),port())
+    ui='http://127.0.0.1:'+str(ui_port);device='http://127.0.0.1:'+str(device_port)
     env=dict(os.environ,HARS_DATA=str(args.output/'data'),HARS_INGRESS_ONLY='0',HARS_BIND=ui.removeprefix('http://'),HARS_DEVICE_BIND=device.removeprefix('http://'),HARS_WEB=str(ROOT/'reference/python/roadviewer/app/web'))
     phases={'upload':{'rss':[],'api_ms':[]},'conversion':{'rss':[],'api_ms':[]}};phase='upload';done=False;chunks=[];monitor_errors=[]
     with (args.output/'server.log').open('wb') as log:
@@ -131,4 +132,5 @@ if __name__=='__main__':
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('corpus',type=Path);p.add_argument('binary',type=Path);p.add_argument('jobs',type=Path);p.add_argument('reference',type=Path);p.add_argument('output',type=Path)
     p.add_argument('--segment',type=int,default=3);p.add_argument('--reverse',action='store_true')
+    p.add_argument('--ports',type=int,nargs=2,help='UI and device loopback ports (default: free ports)')
     asyncio.run(main(p.parse_args()))

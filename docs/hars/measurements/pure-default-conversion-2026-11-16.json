@@ -1,0 +1,291 @@
+{
+ "date": "2026-11-16",
+ "scope": "full conversion (log decode, analysis, telemetry, remux, verification, thumbnail) of original raw segments",
+ "variants": {
+  "python": "preserved Python decoder.py (PyAV 16.1 / FFmpeg 8.0.1)",
+  "baseline": "HARS, HARS_REMUX_ENGINE=ffmpeg",
+  "pure": "HARS default pure Rust remux"
+ },
+ "conditions": {
+  "kernel": "6.18.33.2-microsoft-standard-WSL2",
+  "python": "3.12.3",
+  "logical_cpus": 16,
+  "warmups_per_variant": 1,
+  "runs": 5,
+  "cache": "warm, no global drop_caches",
+  "input_filesystem": "caller path; same input for all variants",
+  "compression_level": 9,
+  "diagnostics": false
+ },
+ "segments": {
+  "3": {
+   "python": {
+    "samples": 5,
+    "equivalent_to_python": 5,
+    "elapsed_seconds_median": 3.583,
+    "elapsed_seconds_range": [
+     3.37,
+     3.875
+    ],
+    "cpu_seconds_median": 3.308,
+    "cpu_seconds_range": [
+     3.3,
+     3.395
+    ],
+    "mean_rss_kib_median": 247199,
+    "peak_rss_kib_max": 346944,
+    "stage_cpu_seconds_median": {
+     "startup": 0.07,
+     "log_prepare": 0.01,
+     "log_decompress": 0.07,
+     "log_read": 0.99,
+     "log_analysis": 0.27,
+     "video_read": 0.02,
+     "video_convert": 0.17,
+     "video_verify": 0.15,
+     "telemetry_build": 0.13,
+     "telemetry_encode": 0.02,
+     "telemetry_compress": 0.08,
+     "replay_compact": 0.63,
+     "replay_encode": 0.19,
+     "replay_compress": 0.38,
+     "summary_save": 0.1
+    }
+   },
+   "baseline": {
+    "samples": 5,
+    "equivalent_to_python": 5,
+    "elapsed_seconds_median": 2.66,
+    "elapsed_seconds_range": [
+     2.546,
+     2.754
+    ],
+    "cpu_seconds_median": 2.465,
+    "cpu_seconds_range": [
+     2.422,
+     2.479
+    ],
+    "mean_rss_kib_median": 253535,
+    "peak_rss_kib_max": 397768,
+    "stage_cpu_seconds_median": {
+     "startup": 0.01,
+     "log_read": 0.54,
+     "video_read": 0.36,
+     "log_analysis": 0.4,
+     "telemetry_build": 0.89,
+     "telemetry_compress": 0.07,
+     "summary_save": 0.01
+    }
+   },
+   "pure": {
+    "samples": 5,
+    "equivalent_to_python": 5,
+    "elapsed_seconds_median": 2.511,
+    "elapsed_seconds_range": [
+     2.323,
+     2.756
+    ],
+    "cpu_seconds_median": 2.272,
+    "cpu_seconds_range": [
+     2.249,
+     2.293
+    ],
+    "mean_rss_kib_median": 253425,
+    "peak_rss_kib_max": 381048,
+    "stage_cpu_seconds_median": {
+     "startup": 0.01,
+     "log_read": 0.55,
+     "video_read": 0.2,
+     "log_analysis": 0.4,
+     "telemetry_build": 0.91,
+     "telemetry_compress": 0.07,
+     "summary_save": 0.01
+    }
+   }
+  },
+  "7": {
+   "python": {
+    "samples": 5,
+    "equivalent_to_python": 5,
+    "elapsed_seconds_median": 3.971,
+    "elapsed_seconds_range": [
+     3.69,
+     4.073
+    ],
+    "cpu_seconds_median": 3.391,
+    "cpu_seconds_range": [
+     3.364,
+     3.468
+    ],
+    "mean_rss_kib_median": 251043,
+    "peak_rss_kib_max": 354304,
+    "stage_cpu_seconds_median": {
+     "startup": 0.07,
+     "log_prepare": 0.01,
+     "log_decompress": 0.08,
+     "log_read": 1.0,
+     "log_analysis": 0.29,
+     "video_read": 0.03,
+     "video_convert": 0.17,
+     "video_verify": 0.13,
+     "telemetry_build": 0.16,
+     "telemetry_encode": 0.03,
+     "telemetry_compress": 0.1,
+     "replay_compact": 0.65,
+     "replay_encode": 0.18,
+     "replay_compress": 0.39,
+     "summary_save": 0.11
+    }
+   },
+   "baseline": {
+    "samples": 5,
+    "equivalent_to_python": 5,
+    "elapsed_seconds_median": 3.044,
+    "elapsed_seconds_range": [
+     2.863,
+     3.118
+    ],
+    "cpu_seconds_median": 2.553,
+    "cpu_seconds_range": [
+     2.484,
+     2.591
+    ],
+    "mean_rss_kib_median": 261342,
+    "peak_rss_kib_max": 394960,
+    "stage_cpu_seconds_median": {
+     "startup": 0.01,
+     "log_read": 0.57,
+     "video_read": 0.37,
+     "log_analysis": 0.42,
+     "telemetry_build": 0.93,
+     "telemetry_compress": 0.07,
+     "summary_save": 0.01
+    }
+   },
+   "pure": {
+    "samples": 5,
+    "equivalent_to_python": 5,
+    "elapsed_seconds_median": 2.665,
+    "elapsed_seconds_range": [
+     2.632,
+     2.867
+    ],
+    "cpu_seconds_median": 2.348,
+    "cpu_seconds_range": [
+     2.319,
+     2.4
+    ],
+    "mean_rss_kib_median": 260956,
+    "peak_rss_kib_max": 390368,
+    "stage_cpu_seconds_median": {
+     "startup": 0.01,
+     "log_read": 0.56,
+     "video_read": 0.2,
+     "log_analysis": 0.41,
+     "telemetry_build": 0.96,
+     "telemetry_compress": 0.07,
+     "summary_save": 0.01
+    }
+   }
+  },
+  "9": {
+   "python": {
+    "samples": 5,
+    "equivalent_to_python": 5,
+    "elapsed_seconds_median": 3.885,
+    "elapsed_seconds_range": [
+     3.737,
+     3.947
+    ],
+    "cpu_seconds_median": 3.315,
+    "cpu_seconds_range": [
+     3.308,
+     3.371
+    ],
+    "mean_rss_kib_median": 244360,
+    "peak_rss_kib_max": 347696,
+    "stage_cpu_seconds_median": {
+     "startup": 0.07,
+     "log_prepare": 0.02,
+     "log_decompress": 0.06,
+     "log_read": 0.99,
+     "log_analysis": 0.28,
+     "video_read": 0.02,
+     "video_convert": 0.17,
+     "video_verify": 0.13,
+     "telemetry_build": 0.17,
+     "telemetry_encode": 0.02,
+     "telemetry_compress": 0.08,
+     "replay_compact": 0.63,
+     "replay_encode": 0.18,
+     "replay_compress": 0.39,
+     "summary_save": 0.1
+    }
+   },
+   "baseline": {
+    "samples": 5,
+    "equivalent_to_python": 5,
+    "elapsed_seconds_median": 3.005,
+    "elapsed_seconds_range": [
+     2.995,
+     3.01
+    ],
+    "cpu_seconds_median": 2.483,
+    "cpu_seconds_range": [
+     2.466,
+     2.485
+    ],
+    "mean_rss_kib_median": 254282,
+    "peak_rss_kib_max": 380140,
+    "stage_cpu_seconds_median": {
+     "startup": 0.01,
+     "log_read": 0.54,
+     "video_read": 0.38,
+     "log_analysis": 0.41,
+     "telemetry_build": 0.91,
+     "telemetry_compress": 0.06,
+     "summary_save": 0.02
+    }
+   },
+   "pure": {
+    "samples": 5,
+    "equivalent_to_python": 5,
+    "elapsed_seconds_median": 2.707,
+    "elapsed_seconds_range": [
+     2.616,
+     2.775
+    ],
+    "cpu_seconds_median": 2.265,
+    "cpu_seconds_range": [
+     2.261,
+     2.324
+    ],
+    "mean_rss_kib_median": 254640,
+    "peak_rss_kib_max": 377868,
+    "stage_cpu_seconds_median": {
+     "startup": 0.01,
+     "log_read": 0.55,
+     "video_read": 0.2,
+     "log_analysis": 0.39,
+     "telemetry_build": 0.91,
+     "telemetry_compress": 0.08,
+     "summary_save": 0.01
+    }
+   }
+  }
+ },
+ "totals": {
+  "python": {
+   "elapsed_seconds_median": 11.439,
+   "cpu_seconds_median": 10.014
+  },
+  "baseline": {
+   "elapsed_seconds_median": 8.709,
+   "cpu_seconds_median": 7.501
+  },
+  "pure": {
+   "elapsed_seconds_median": 7.883,
+   "cpu_seconds_median": 6.885
+  }
+ }
+}
