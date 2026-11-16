@@ -386,7 +386,11 @@ impl Jobs {
                         let _=stop(&mut child);
                         let _=child.wait().await;
                     }
+                    let kept=read_json::<Value>(&staging.join(crate::convert::KEPT_PREVIOUS)).await.ok();
                     let _=tokio::fs::remove_dir_all(&staging).await;
+                    if let Some(kept)=kept && self.keep_previous(record,generation,&kept["warning"]).await? {
+                        return Ok(());
+                    }
                     return Err(error);
                 }
             },
@@ -544,26 +548,7 @@ impl Jobs {
         meta["video_codecs"] = json!(codecs);
         meta["video_origins"] = json!(origins);
         meta["video_downloads"] = download_entries(&folder).await?;
-        for key in [
-            "duration",
-            "warnings",
-            "model_frames",
-            "videos",
-            "drive_summary",
-            "replay_v",
-            "started_at",
-            "start_source",
-            "first_mono",
-            "gps_offset",
-            "clock_offset",
-            "start_v",
-            "has_track",
-        ] {
-            if let Some(v) = summary.get(key) {
-                meta[key] = v.clone();
-            }
-        }
-        meta["video"] = json!(summary["video"].is_object());
+        apply_summary(&mut meta, &summary);
         meta["status"] = json!("ready");
         meta["error"] = Value::Null;
         meta["manual_conversion"] = json!(false);
@@ -582,7 +567,67 @@ impl Jobs {
     }
 }
 
+fn apply_summary(meta: &mut Value, summary: &Value) {
+    for key in [
+        "duration",
+        "warnings",
+        "model_frames",
+        "videos",
+        "drive_summary",
+        "replay_v",
+        "started_at",
+        "start_source",
+        "first_mono",
+        "gps_offset",
+        "clock_offset",
+        "start_v",
+        "has_track",
+    ] {
+        if let Some(v) = summary.get(key) {
+            meta[key] = v.clone();
+        }
+    }
+    meta["video"] = json!(summary["video"].is_object());
+}
+
 impl Jobs {
+    /// A conversion that stopped for a resource failure rather than drop a camera the published
+    /// result plays: the record is that result again, `ready`, with the failure among its warnings,
+    /// so its videos stay playable. False when that result is gone or another generation owns the record.
+    async fn keep_previous(
+        &self,
+        record: &str,
+        generation: &str,
+        warning: &Value,
+    ) -> anyhow::Result<bool> {
+        let lock = self.store.record_lock(record).await;
+        let _guard = lock.lock().await;
+        let (Ok(folder), Ok(mut meta)) = (
+            self.store.folder(record).await,
+            self.store.meta(record).await,
+        ) else {
+            return Ok(false);
+        };
+        let Ok(summary) = read_json::<Value>(&folder.join("prepared/summary.json")).await else {
+            return Ok(false);
+        };
+        if meta["conversion_id"] != generation {
+            return Ok(false);
+        }
+        apply_summary(&mut meta, &summary);
+        let mut warnings = summary["warnings"].as_array().cloned().unwrap_or_default();
+        warnings.push(warning.clone());
+        meta["warnings"] = json!(warnings);
+        meta["video_downloads"] = download_entries(&folder).await?;
+        meta["status"] = json!("ready");
+        meta["error"] = Value::Null;
+        meta["manual_conversion"] = json!(false);
+        self.store
+            .save_meta(meta)
+            .await
+            .map_err(|_| anyhow::anyhow!("save kept conversion result failed"))?;
+        Ok(true)
+    }
     /// Python `local_content`, before the publication lock: (size, mtime, sha256) of each local original with a
     /// remote copy the publication may delete, so an identical copy can stand in for it (`promote_remote`).
     async fn original_contents(&self, record: &str) -> BTreeMap<&'static str, (u64, u64, String)> {

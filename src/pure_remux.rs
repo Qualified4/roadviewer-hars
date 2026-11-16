@@ -81,7 +81,11 @@ impl std::fmt::Display for Failure {
 }
 impl std::error::Error for Failure {}
 
-/// OS errors that mean the machine, not the input or the engine, failed.
+/// OS errors that mean the machine, not the input or the engine, failed: conditions that clear
+/// (space, quota, file size limit, memory). Every other errno (EIO from a bad sector, EACCES,
+/// ENOENT, a dropped mount) fails the same way on every attempt, so it is the input's or the
+/// engine's by the `Stage` it came from, and the camera ends with a warning instead of keeping
+/// a conversion failing (docs/hars/PURE-REMUX.md).
 #[cfg(unix)]
 pub fn resource_code(error: &std::io::Error) -> Option<&'static str> {
     Some(match error.raw_os_error()? {
@@ -89,13 +93,19 @@ pub fn resource_code(error: &std::io::Error) -> Option<&'static str> {
         libc::EFBIG => "file_too_large",
         libc::EDQUOT => "quota",
         libc::ENOMEM => "out_of_memory",
-        libc::EINTR | libc::EAGAIN => return None,
-        _ => "io_error",
+        _ => return None,
     })
 }
 #[cfg(not(unix))]
 pub fn resource_code(error: &std::io::Error) -> Option<&'static str> {
-    error.raw_os_error().map(|_| "io_error")
+    use std::io::ErrorKind as K;
+    Some(match error.kind() {
+        K::StorageFull => "no_space",
+        K::FileTooLarge => "file_too_large",
+        K::QuotaExceeded => "quota",
+        K::OutOfMemory => "out_of_memory",
+        _ => return None,
+    })
 }
 
 impl Failure {

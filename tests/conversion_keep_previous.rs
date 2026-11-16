@@ -1,14 +1,16 @@
 //! A camera remux that fails for the machine (a killed worker, the write limit, the deadline) on the real
-//! server: a camera the published result plays is never dropped for it. The conversion fails, the
-//! previous result stays byte for byte and the staging goes; a later conversion completes. Without a
-//! previous video of that camera it ends as Python's `prepare_video` failure does, ready with a warning
-//! naming the resource class, and the original stays whatever `keep_original_video` says.
+//! server: a camera the result published on disk plays is never dropped for it. The attempt stops, the
+//! previous result stays byte for byte and plays, the record is `ready` again with the failure among its
+//! warnings, and the staging goes; a later conversion completes. Without a published video of that
+//! camera (a reconversion clears `prepared/` first) it ends as Python's `prepare_video` failure does,
+//! ready with a warning naming the resource class, and the original stays whatever
+//! `keep_original_video` says. No failure, repeated or deterministic, leaves the record in `error`.
 //! Real executable, synthetic media and log.
 #![cfg(unix)]
 mod common;
 #[path = "common/recording.rs"]
 mod recording;
-use common::{csrf, http, web};
+use common::{csrf, http, parse_response, read_all, request_bytes, web};
 use recording::{FRAMES, rlog};
 use serde_json::{Value, json};
 use std::{
@@ -151,6 +153,41 @@ impl Server {
     }
     fn log(&self) -> String {
         std::fs::read_to_string(&self.log).unwrap_or_default()
+    }
+    /// The product's reconversion: remove the converted data (a ready record is not converted
+    /// again otherwise), then convert.
+    async fn reconvert(&self, id: &str) {
+        let (status, _) = self.delete(&format!("/api/logs/{id}/prepared")).await;
+        assert_eq!(status, 200);
+        let (status, body) = self.post(&format!("/api/logs/{id}/convert")).await;
+        assert_eq!((status, body), (200, json!({"status":"queued"})));
+    }
+    /// The first bytes of a camera's video, as a player asks for them.
+    async fn range(&self, id: &str, source: &str) -> (u16, Vec<u8>) {
+        use tokio::io::AsyncWriteExt;
+        let mut stream = tokio::net::TcpStream::connect(self.ui).await.unwrap();
+        let path = format!("/api/logs/{id}/video?source={source}");
+        stream
+            .write_all(&request_bytes(
+                "GET",
+                &path,
+                &[("Range", "bytes=0-99".into())],
+                b"",
+            ))
+            .await
+            .unwrap();
+        let raw = read_all(&mut stream).await;
+        let body = raw
+            .windows(4)
+            .position(|w| w == b"\r\n\r\n")
+            .map(|i| raw[i + 4..].to_vec())
+            .unwrap_or_default();
+        (parse_response(&raw).0, body)
+    }
+    async fn plays(&self, id: &str, source: &str, file: &Path) {
+        let (status, body) = self.range(id, source).await;
+        assert_eq!(status, 206, "{source}");
+        assert_eq!(body, std::fs::read(file).unwrap()[..100], "{source}");
     }
     /// Kills the pure worker once it is parked at its crash point.
     fn kill_worker(&self) {
@@ -374,8 +411,7 @@ impl Recording {
     }
     async fn convert_again(&self) {
         let server = start(&self.root, Fault::None, 0).await;
-        let (status, body) = server.post(&format!("/api/logs/{}/convert", self.id)).await;
-        assert_eq!((status, body), (200, json!({"status":"queued"})));
+        server.reconvert(&self.id).await;
         let m = wait_status(&self.folder, "ready");
         assert_eq!(m["videos"]["front"]["frames"], FRAMES, "{m}");
         assert_eq!(m["videos"]["qcamera"]["frames"], FRAMES, "{m}");
@@ -429,10 +465,17 @@ async fn a_resource_failure_keeps_the_published_result_and_a_later_conversion_co
         assert!(prepared.contains_key("fcamera.mp4") && prepared.contains_key("camera.mp4"));
         r.requeue();
         let server = faulted(&r, fault, 1).await;
-        let m = wait_status(&r.folder, "error");
+        let m = wait_status(&r.folder, "ready");
         assert_eq!(files(&r.folder.join("prepared")), prepared, "{fault:?}");
-        for key in ["videos", "video", "duration", "warnings", "video_downloads"] {
+        for key in ["videos", "video", "duration", "video_downloads"] {
             assert_eq!(m[key], ready[key], "{fault:?} {key}");
+        }
+        assert_eq!(m["error"], Value::Null, "{fault:?}");
+        kept_warning(&ready, &m);
+        for (source, mp4) in [("front", "fcamera.mp4"), ("qcamera", "camera.mp4")] {
+            server
+                .plays(&r.id, source, &r.folder.join("prepared").join(mp4))
+                .await;
         }
         no_attempts(&r.folder);
         r.originals_kept();
@@ -447,9 +490,25 @@ async fn a_resource_failure_keeps_the_published_result_and_a_later_conversion_co
     }
 }
 
-/// Retention off: the stored MP4s are the only video copies and the conversion inputs.
+/// The previous warnings and one more: which camera failed, for which resource, and that the
+/// previous result stays.
+fn kept_warning(ready: &Value, m: &Value) {
+    let before = ready["warnings"].as_array().unwrap();
+    let after = m["warnings"].as_array().unwrap();
+    assert_eq!(after.len(), before.len() + 1, "{m}");
+    assert_eq!(&after[..before.len()], &before[..], "{m}");
+    let added = after.last().unwrap().as_str().unwrap();
+    assert!(
+        added.contains("영상 준비 실패: resource (") && added.ends_with("(이전 변환 결과 유지)"),
+        "{added}"
+    );
+}
+
+/// Retention off: the stored MP4s are the only video copies and the conversion inputs. With the
+/// converted data removed there is no published result to keep: the record is ready without the
+/// cameras, as in Python, and the stored MP4s stay untouched and playable.
 #[tokio::test(flavor = "multi_thread")]
-async fn a_resource_failure_keeps_the_stored_videos_when_originals_are_not_retained() {
+async fn a_resource_failure_without_a_published_result_keeps_the_stored_videos_playable() {
     let r = recording(false);
     r.converted().await;
     let stored = ["camera.mp4", "fcamera.mp4"].map(|k| std::fs::read(r.folder.join(k)).unwrap());
@@ -459,17 +518,21 @@ async fn a_resource_failure_keeps_the_stored_videos_when_originals_are_not_retai
     assert_eq!(status, 200);
     let (status, body) = server.post(&format!("/api/logs/{}/convert", r.id)).await;
     assert_eq!((status, body), (200, json!({"status":"queued"})));
-    wait_status(&r.folder, "error");
+    let m = wait_status(&r.folder, "ready");
+    assert!(m["videos"].as_object().unwrap().is_empty(), "{m}");
+    resource_warnings(&m, &["qcamera", "fcamera.hevc"]);
     assert_eq!(
         ["camera.mp4", "fcamera.mp4"].map(|k| std::fs::read(r.folder.join(k)).unwrap()),
         stored
     );
+    for (source, mp4) in [("front", "fcamera.mp4"), ("qcamera", "camera.mp4")] {
+        server.plays(&r.id, source, &r.folder.join(mp4)).await;
+    }
     no_attempts(&r.folder);
-    assert!(server.log().contains("conversion_kept_previous"));
+    assert!(!server.log().contains("conversion_kept_previous"));
     drop(server);
     let server = start(&r.root, Fault::None, 0).await;
-    let (status, _) = server.post(&format!("/api/logs/{}/convert", r.id)).await;
-    assert_eq!(status, 200);
+    server.reconvert(&r.id).await;
     let m = wait_status(&r.folder, "ready");
     assert_eq!(m["videos"]["front"]["frames"], FRAMES, "{m}");
     assert_eq!(m["videos"]["qcamera"]["frames"], FRAMES, "{m}");
@@ -573,4 +636,139 @@ async fn retention_off_deletes_an_original_only_after_its_mp4_is_durable() {
     );
     no_attempts(&r.folder);
     drop(server);
+}
+
+/// A warning naming the resource class for each camera label.
+fn resource_warnings(m: &Value, cameras: &[&str]) {
+    let warnings = m["warnings"].as_array().unwrap();
+    for camera in cameras {
+        assert!(
+            warnings.iter().any(|w| w
+                .as_str()
+                .unwrap()
+                .starts_with(&format!("{camera} 영상 준비 실패: resource ("))),
+            "{camera}: {warnings:?}"
+        );
+    }
+}
+
+/// A server whose fault applies to the conversion requested after it starts.
+async fn reconvert_faulted(r: &Recording, fault: Fault) -> Server {
+    let limit = if matches!(fault, Fault::WriteLimit) {
+        write_limit(r)
+    } else {
+        0
+    };
+    let server = start(&r.root, fault, limit).await;
+    server.reconvert(&r.id).await;
+    if matches!(fault, Fault::Kill) {
+        server.kill_worker();
+        server.kill_worker();
+    }
+    server
+}
+
+/// A requested reconversion clears `prepared/` first and leaves `meta.videos` of the old result:
+/// that stale entry once made a resource failure end the conversion in `error` (with nothing kept to
+/// play), and every retry the same. It ends as a first conversion does.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_reconversion_failing_for_resources_is_ready_with_a_warning_not_an_error() {
+    for fault in [Fault::Kill, Fault::WriteLimit, Fault::Deadline] {
+        let r = recording(true);
+        r.converted().await;
+        let server = reconvert_faulted(&r, fault).await;
+        let m = wait_status(&r.folder, "ready");
+        assert!(m["videos"].as_object().unwrap().is_empty(), "{fault:?} {m}");
+        assert_eq!(m["error"], Value::Null, "{fault:?}");
+        resource_warnings(&m, &["qcamera", "fcamera.hevc"]);
+        for mp4 in ["camera.mp4", "fcamera.mp4"] {
+            assert!(!r.folder.join("prepared").join(mp4).exists(), "{fault:?}");
+        }
+        r.originals_kept();
+        no_attempts(&r.folder);
+        if !matches!(fault, Fault::WriteLimit) {
+            assert!(
+                !server.log().contains("conversion_kept_previous"),
+                "{fault:?}"
+            );
+        }
+        drop(server);
+        r.convert_again().await;
+        r.originals_kept();
+    }
+}
+
+/// A camera original the server cannot read (permission denied, as for a bad sector: every attempt
+/// fails the same way) is the input's failure, not the machine's: the camera is left out with a
+/// warning, on the first conversion and on each reconversion, and nothing is kept failing.
+#[tokio::test(flavor = "multi_thread")]
+async fn an_unreadable_camera_original_ends_ready_without_that_camera() {
+    use std::os::unix::fs::PermissionsExt;
+    // SAFETY: geteuid(2) has no preconditions.
+    if unsafe { libc::geteuid() } == 0 {
+        eprintln!("skipped: root reads a file of mode 000");
+        return;
+    }
+    let r = recording(true);
+    let unreadable = |mode| {
+        std::fs::set_permissions(
+            r.folder.join("fcamera.hevc"),
+            std::fs::Permissions::from_mode(mode),
+        )
+        .unwrap()
+    };
+    let check = |m: &Value| {
+        assert_eq!(m["error"], Value::Null, "{m}");
+        assert_eq!(m["videos"]["qcamera"]["frames"], FRAMES, "{m}");
+        assert!(m["videos"].get("front").is_none(), "{m}");
+        let warnings = m["warnings"].as_array().unwrap();
+        assert!(
+            warnings.iter().any(|w| {
+                let w = w.as_str().unwrap();
+                w.starts_with("fcamera.hevc 영상 준비 실패: ") && !w.contains("resource (")
+            }),
+            "{warnings:?}"
+        );
+    };
+    unreadable(0o000);
+    let server = start(&r.root, Fault::None, 0).await;
+    check(&wait_status(&r.folder, "ready"));
+    for _ in 0..2 {
+        server.reconvert(&r.id).await;
+        check(&wait_status(&r.folder, "ready"));
+        no_attempts(&r.folder);
+    }
+    drop(server);
+    unreadable(0o644);
+    r.originals_kept();
+    r.convert_again().await;
+}
+
+/// The same record failing for resources again and again, with and without a published result in
+/// place, is ready after every attempt, and a conversion on a sound machine completes it.
+#[tokio::test(flavor = "multi_thread")]
+async fn repeated_resource_failures_on_one_record_stay_ready() {
+    let r = recording(true);
+    let ready = r.converted().await;
+    r.requeue();
+    let server = faulted(&r, Fault::WriteLimit, 0).await;
+    let m = wait_status(&r.folder, "ready");
+    kept_warning(&ready, &m);
+    drop(server);
+    for _ in 0..2 {
+        let server = reconvert_faulted(&r, Fault::WriteLimit).await;
+        let m = wait_status(&r.folder, "ready");
+        assert!(m["videos"].as_object().unwrap().is_empty(), "{m}");
+        resource_warnings(&m, &["qcamera", "fcamera.hevc"]);
+        no_attempts(&r.folder);
+        r.originals_kept();
+        drop(server);
+    }
+    r.requeue();
+    let server = faulted(&r, Fault::WriteLimit, 0).await;
+    let m = wait_status(&r.folder, "ready");
+    resource_warnings(&m, &["qcamera", "fcamera.hevc"]);
+    drop(server);
+    r.convert_again().await;
+    r.originals_kept();
 }

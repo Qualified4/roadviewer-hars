@@ -46,6 +46,24 @@ fn input(src: &Path, kind: &str) -> PathBuf {
         src.with_file_name(kind)
     }
 }
+/// Left in the staging directory by a conversion that stopped to keep the published result:
+/// `{"warning": ...}` for the record, which `jobs` returns to `ready`.
+pub const KEPT_PREVIOUS: &str = "kept-previous.json";
+
+/// Whether the result published now plays `camera`: its summary lists the camera and the MP4 it
+/// plays is still there (in `prepared/`, stored next to the originals, or archived).
+async fn previous_plays(recording: &Path, meta: &Value, camera: &str, mp4: &str) -> bool {
+    let Ok(summary) = store::read_json::<Value>(&recording.join("prepared/summary.json")).await
+    else {
+        return false;
+    };
+    summary["videos"][camera].is_object()
+        && (recording.join("prepared").join(mp4).is_file()
+            || recording.join(mp4).is_file()
+            || crate::archive::index::is_archived_location(&crate::archive::index::location(
+                meta, mp4,
+            )))
+}
 fn seconds(v: &Value) -> Option<f64> {
     v.as_str()
         .and_then(|v| v.parse().ok())
@@ -269,11 +287,16 @@ pub async fn prepare(
                     warnings.push(format!("{label} 영상 준비 실패: {error}"));
                     continue;
                 }
+                let warning = format!(
+                    "{label} 영상 준비 실패: {} ({}): {}",
+                    failure.class.name(),
+                    failure.code,
+                    failure.reason
+                );
                 // The same disk, memory or deadline may not fail the next attempt, unlike an input or
-                // engine failure: a camera the published result plays is not dropped for it.
-                if meta["videos"][name].is_object()
-                    || recording.join("prepared").join(mp4).is_file()
-                {
+                // engine failure: a camera the published result plays is not dropped for it. Only the
+                // files on disk say so: `meta.videos` outlives `clear_prepared`, as in Python.
+                if previous_plays(&recording, &meta, name, mp4).await {
                     tracing::error!(
                         event = "conversion_kept_previous",
                         kind = *raw,
@@ -281,15 +304,15 @@ pub async fn prepare(
                         reason_code = failure.code,
                         reason = failure.reason,
                     );
+                    store::atomic_json(
+                        &dest.join(KEPT_PREVIOUS),
+                        &json!({"warning": format!("{warning} (이전 변환 결과 유지)")}),
+                    )
+                    .await?;
                     return Err(anyhow::Error::new(failure)
                         .context(format!("{label}: previous conversion result kept")));
                 }
-                warnings.push(format!(
-                    "{label} 영상 준비 실패: {} ({}): {}",
-                    failure.class.name(),
-                    failure.code,
-                    failure.reason
-                ));
+                warnings.push(warning);
             }
         }
     }

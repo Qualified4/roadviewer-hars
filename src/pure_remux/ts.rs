@@ -369,16 +369,27 @@ mod tests {
         (failure.class, failure.code)
     }
 
-    /// A failing disk is the machine (no FFmpeg retry of the same read), a damaged file the input.
+    /// Memory is the machine (no FFmpeg retry of the same read); a bad sector, a denied read or a
+    /// damaged file fails every attempt, so it is the input's.
     #[test]
-    fn a_read_error_stays_an_os_error_and_garbage_stays_invalid() {
-        struct Failing;
+    fn only_clearing_os_errors_are_resource_failures_and_garbage_stays_invalid() {
+        struct Failing(i32);
         impl std::io::Read for Failing {
             fn read(&mut self, _: &mut [u8]) -> std::io::Result<usize> {
-                Err(std::io::Error::from_raw_os_error(libc::EIO))
+                Err(std::io::Error::from_raw_os_error(self.0))
             }
         }
-        assert_eq!(class(Failing), (FailureClass::Resource, "io_error".into()));
+        assert_eq!(
+            class(Failing(libc::ENOMEM)),
+            (FailureClass::Resource, "out_of_memory".into())
+        );
+        for errno in [libc::EIO, libc::EACCES, libc::ENOENT, libc::ESTALE] {
+            assert_eq!(
+                class(Failing(errno)),
+                (FailureClass::Invalid, "invalid_input".into()),
+                "{errno}"
+            );
+        }
         assert_eq!(
             class(&[0u8; 188 * 2][..]),
             (FailureClass::Invalid, "invalid_input".into())
