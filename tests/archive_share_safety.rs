@@ -283,3 +283,74 @@ async fn a_link_on_the_share_is_not_followed_when_writing() {
     );
     assert_eq!(sha(&std::fs::read(s.target()).unwrap()), sha(&data));
 }
+
+/// HARS's copy is on its root and the probe answered connected; within the probe's cache window the same path
+/// becomes a Python Road Viewer folder (a swapped folder, a remount) holding the same `<id>/<kind>`. Returns
+/// Python's bytes there.
+async fn swapped_for_python(s: &Share, b: &NasBackend) -> Vec<u8> {
+    b.activate().await;
+    let data = content(4096, 5);
+    let local = s.tmp.path().join("local");
+    std::fs::write(&local, &data).unwrap();
+    upload(b, &local, &data).await.unwrap();
+    assert_eq!(
+        b.probe(false).await.state,
+        roadviewer_hars::archive::State::Connected
+    );
+    let mine = s.storage_id();
+    let python = content(4096, 6);
+    std::fs::write(
+        s.nas.join(SENTINEL),
+        json!({"storage_id": mine, "owner": "roadviewer"}).to_string(),
+    )
+    .unwrap();
+    std::fs::write(s.target(), &python).unwrap();
+    python
+}
+
+/// Deleting a recording's copy reads the sentinel again right before the unlink, not the cached probe.
+#[tokio::test]
+async fn a_deletion_within_the_probe_cache_never_removes_from_a_root_that_became_python_s() {
+    let s = Share::new();
+    let b = share(&s.root, &s.nas);
+    let python = swapped_for_python(&s, &b).await;
+    let deleted = b.delete(&reference()).await;
+    assert!(
+        deleted.as_ref().is_err_and(|e| e.is_foreign()),
+        "{deleted:?}"
+    );
+    assert_eq!(sha(&std::fs::read(s.target()).unwrap()), sha(&python));
+    assert!(s.nas.join(ID).is_dir());
+}
+
+/// The deletions a removed recording leaves (`PendingDeletes`) wait rather than reach a root that became Python's.
+#[tokio::test]
+async fn pending_deletions_within_the_probe_cache_never_remove_from_a_root_that_became_python_s() {
+    let s = Share::new();
+    let b = share(&s.root, &s.nas);
+    let pending = roadviewer_hars::archive::pending::PendingDeletes::new(&s.root);
+    let python = swapped_for_python(&s, &b).await;
+    pending
+        .add(ID, &[KIND.to_owned()], &[], false)
+        .await
+        .unwrap();
+    assert_eq!(pending.process_nas(&b).await.unwrap(), 0);
+    assert_eq!(sha(&std::fs::read(s.target()).unwrap()), sha(&python));
+    assert_eq!(pending.count().await.unwrap(), 1, "the row waits");
+}
+
+/// The same with HARS's own sentinel back: the deletion goes through (the check refuses only another's root).
+#[tokio::test]
+async fn a_deletion_on_this_root_still_removes_the_copy_and_its_empty_folder() {
+    let s = Share::new();
+    let b = share(&s.root, &s.nas);
+    swapped_for_python(&s, &b).await;
+    let mine = s.storage_id();
+    std::fs::write(
+        s.nas.join(SENTINEL),
+        json!({"storage_id": mine, "owner": "roadviewer-hars"}).to_string(),
+    )
+    .unwrap();
+    assert!(b.delete(&reference()).await.unwrap());
+    assert!(!s.target().exists() && !s.nas.join(ID).exists());
+}

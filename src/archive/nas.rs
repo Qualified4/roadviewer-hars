@@ -400,11 +400,51 @@ fn writer(target: &Path) -> Arc<Mutex<()>> {
     w
 }
 
-/// Blocking: removes a share target with no copy of it in progress, unless `cancel` is set. A removal runs on a
-/// blocking thread that outlives its caller; once the caller has gone (a timeout, an aborted cycle) a later cycle may
-/// have written and indexed this very file, so the flag is read under the target's writer guard, right before the
-/// unlink. A recording folder that is a link is refused rather than removed through.
-pub(crate) fn remove_target(target: &Path, cancel: &AtomicBool) -> std::io::Result<()> {
+/// The HARS root a destructive operation may touch: its sentinel, read when asked, must still carry HARS's owner
+/// mark and this data root's storage id. A probe result is cached for seconds; in that time the same path can become
+/// another root (a swapped folder, a remount) that holds the same `<id>/<kind>`, so every unlink, rmdir and part
+/// cleanup on a share reads it again under the target's writer guard ([`guarded`]).
+#[derive(Clone)]
+pub(crate) struct Ownership {
+    root: Option<PathBuf>,
+    storage_id: Option<String>,
+}
+impl Ownership {
+    fn probe(&self) -> Probe {
+        probe_sync(
+            self.root.as_deref(),
+            self.storage_id.clone(),
+            Some(OWNER_VALUE),
+        )
+    }
+    pub(crate) fn holds(&self) -> bool {
+        self.probe().state == State::Connected
+    }
+    /// The root is not a share at all (no sentinel, no folder): what a copy written below an unmounted mount
+    /// point finds. A root another owner marks is never this.
+    fn unmounted(&self) -> bool {
+        matches!(
+            self.probe().reason.as_deref(),
+            Some("sentinel_missing" | "path_missing")
+        )
+    }
+}
+
+fn refused(reason: &'static str) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::PermissionDenied, reason)
+}
+
+/// Blocking: the one gate of every unlink and rmdir HARS does on a NAS write root. `op` runs under the target's
+/// writer guard (no copy of it in progress), unless `cancel` is set, after `allowed` (the sentinel, read now) and with
+/// a recording folder that is not a link. A removal runs on a blocking thread that outlives its caller; once the
+/// caller has gone (a timeout, an aborted cycle) a later cycle may have written and indexed this very file, so the
+/// flag is read under the guard, right before the operation.
+fn guarded<T>(
+    target: &Path,
+    allowed: &dyn Fn() -> bool,
+    cancel: &AtomicBool,
+    op: impl FnOnce() -> std::io::Result<T>,
+) -> std::io::Result<T> {
     let w = writer(target);
     let _g = lock(&w);
     if cancel.load(Ordering::SeqCst) {
@@ -413,33 +453,46 @@ pub(crate) fn remove_target(target: &Path, cancel: &AtomicBool) -> std::io::Resu
             "cancelled",
         ));
     }
-    if linked_folder(target) {
-        return Err(std::io::Error::new(
-            std::io::ErrorKind::PermissionDenied,
-            "share_link",
-        ));
+    if !allowed() {
+        return Err(refused("not_owned"));
     }
-    std::fs::remove_file(target)
+    if linked_folder(target) {
+        return Err(refused("share_link"));
+    }
+    op()
 }
 
-/// [`remove_target`] off the runtime's workers, cancelled when the caller goes.
-pub(crate) async fn remove_share_file(path: &Path) -> std::io::Result<()> {
-    let (path, flag) = (path.to_owned(), Arc::new(AtomicBool::new(false)));
-    let _cancel = CancelOnDrop(flag.clone());
-    tokio::task::spawn_blocking(move || remove_target(&path, &flag))
-        .await
-        .unwrap_or_else(|_| Err(std::io::Error::other("join")))
+/// Blocking: unlinks a share target (see [`guarded`]).
+fn remove_target(
+    target: &Path,
+    allowed: &dyn Fn() -> bool,
+    cancel: &AtomicBool,
+) -> std::io::Result<()> {
+    guarded(target, allowed, cancel, || std::fs::remove_file(target))
+}
+
+/// Blocking: the target's recording folder, once empty; anything else left there is kept rather than guessed at.
+fn remove_empty_folder(target: &Path, allowed: &dyn Fn() -> bool, cancel: &AtomicBool) {
+    if let Some(folder) = target.parent() {
+        let _ = guarded(target, allowed, cancel, || std::fs::remove_dir(folder));
+    }
 }
 
 /// Blocking: a `<kind>.part` left behind is removed unless a copy of this process still owns it (that copy removes
-/// or renames it itself). True when it was removed.
-pub(crate) fn remove_stale_part(part: &Path) -> std::io::Result<bool> {
+/// or renames it itself) or the root is no longer this HARS root. True when it was removed.
+pub(crate) fn remove_stale_part(part: &Path, owner: &Ownership) -> std::io::Result<bool> {
     let name = part.file_name().unwrap_or_default().to_string_lossy();
     let target = part.with_file_name(name.strip_suffix(".part").unwrap_or(&name));
     let w = writer(&target);
     let Ok(_g) = w.try_lock() else {
         return Ok(false);
     };
+    if !owner.holds() {
+        return Err(refused("not_owned"));
+    }
+    if linked_folder(&target) {
+        return Err(refused("share_link"));
+    }
     match std::fs::remove_file(part) {
         // Renamed or removed by its copy since it was listed.
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
@@ -564,8 +617,18 @@ fn copy_to_share(
         std::fs::rename(&part, target).map_err(io)?;
         fsutil::sync_dir(target).map_err(io)
     })();
+    // A root that became someone else's since may hold its own `<kind>.part` at this path; ours, if any, is on
+    // the root that went, and recovery removes it once that root is back.
     if written.is_err() {
-        let _ = std::fs::remove_file(&part);
+        let probe = ours();
+        if probe.state == State::Connected
+            || matches!(
+                probe.reason.as_deref(),
+                Some("sentinel_missing" | "path_missing")
+            )
+        {
+            let _ = std::fs::remove_file(&part);
+        }
     }
     written.map(|()| Copied::Written)
 }
@@ -633,6 +696,7 @@ impl NasBackend {
             return false;
         };
         let (local, owner) = ((self.core.local)(), self.core.owner);
+        let ownership = self.ownership();
         let flag = Arc::new(AtomicBool::new(false));
         let _cancel = CancelOnDrop(flag.clone());
         let check = tokio::task::spawn_blocking(move || {
@@ -642,8 +706,13 @@ impl NasBackend {
                 probe.reason.as_deref(),
                 Some("sentinel_missing" | "path_missing")
             );
-            if written && held && unmounted && remove_target(&target, &flag).is_ok() {
-                let _ = target.parent().map(std::fs::remove_dir);
+            let still_unmounted = || ownership.unmounted();
+            if written
+                && held
+                && unmounted
+                && remove_target(&target, &still_unmounted, &flag).is_ok()
+            {
+                remove_empty_folder(&target, &still_unmounted, &flag);
             }
             probe.state == State::Connected && held
         });
@@ -672,9 +741,9 @@ impl NasBackend {
         let cancel = CancelOnDrop(flag.clone());
         let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
         let (local, want) = (local.to_owned(), sha256.map(str::to_owned));
-        let (root, storage_id) = (self.core.settings.path.clone(), (self.core.local)());
+        let ownership = self.ownership();
         let copy = tokio::task::spawn_blocking(move || {
-            let ours = || probe_sync(root.as_deref(), storage_id.clone(), Some(OWNER_VALUE));
+            let ours = || ownership.probe();
             copy_to_share(&local, &target, want.as_deref(), size, &ours, &flag, &tx)
         });
         while let Some(count) = rx.recv().await {
@@ -693,6 +762,28 @@ impl NasBackend {
             on_progress(size, &UploadResume::default())?;
         }
         Ok(copied)
+    }
+
+    /// This root's ownership as a destructive operation reads it, from the sentinel at the time of the call.
+    pub(crate) fn ownership(&self) -> Ownership {
+        Ownership {
+            root: self.core.settings.path.clone(),
+            storage_id: (self.core.local)(),
+        }
+    }
+
+    /// Unlinks this root's `<id>/<kind>` once its sentinel, read again under the target's writer guard, still says
+    /// it is this HARS root; cancelled when the caller goes. A refused root is `PermissionDenied`.
+    pub(crate) async fn remove_copy(&self, id: &str, kind: &str) -> std::io::Result<()> {
+        let path = self
+            .core
+            .path_for(id, kind)
+            .map_err(|_| std::io::Error::other("bad_ref"))?;
+        let (ownership, flag) = (self.ownership(), Arc::new(AtomicBool::new(false)));
+        let _cancel = CancelOnDrop(flag.clone());
+        tokio::task::spawn_blocking(move || remove_target(&path, &|| ownership.holds(), &flag))
+            .await
+            .unwrap_or_else(|_| Err(std::io::Error::other("join")))
     }
 
     /// Writes need the root connected and HARS-owned; a root marked by anyone else is refused as foreign.
@@ -826,28 +917,42 @@ impl ArchiveWrite for NasBackend {
 
     async fn delete(&self, r: &RemoteRef) -> Result<bool> {
         let (id, kind) = parse_ref(r)?;
-        let root = match self.writable().await {
-            Ok(root) => root,
+        match self.writable().await {
+            Ok(_) => {}
             Err(e) if e.is_foreign() => return Err(e),
             Err(_) => return Ok(false),
-        };
+        }
         let path = self.core.path_for(&id, &kind)?;
-        let flag = Arc::new(AtomicBool::new(false));
+        let (ownership, flag) = (self.ownership(), Arc::new(AtomicBool::new(false)));
         let _cancel = CancelOnDrop(flag.clone());
         let removed = tokio::task::spawn_blocking(move || {
-            if std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file())
-                && remove_target(&path, &flag).is_err()
-            {
-                return false;
+            let ours = || ownership.holds();
+            let present = std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file());
+            let refused = match present {
+                true => match remove_target(&path, &ours, &flag) {
+                    Ok(()) => false,
+                    Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => true,
+                    Err(_) => return Ok(false),
+                },
+                false => !ours(),
+            };
+            if refused {
+                return Err(ownership.probe());
             }
-            // The recording's folder, once empty; anything else left there is kept rather than guessed at.
-            let _ = std::fs::remove_dir(root.join(&id));
-            true
+            remove_empty_folder(&path, &ours, &flag);
+            Ok(true)
         })
         .await
-        .unwrap_or(false);
+        .unwrap_or(Ok(false));
         self.core.invalidate();
-        Ok(removed)
+        match removed {
+            Ok(removed) => Ok(removed),
+            // The root became another's since the cached probe: nothing on it was touched.
+            Err(probe) if probe.reason.as_deref() == Some("not_owned") => {
+                Err(BackendError::foreign())
+            }
+            Err(_) => Ok(false),
+        }
     }
 }
 
