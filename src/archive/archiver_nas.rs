@@ -2,12 +2,13 @@
 //! Every write goes through the HARS write root: a share is only touched while its probe answers connected, and
 //! the probe requires the sentinel's `owner: "roadviewer-hars"`.
 use super::{
-    ArchiveWrite, ErrorCode, NasBackend, UploadResume,
+    ErrorCode, NasBackend,
     archiver::{
         Archive, Ctx, CycleResult, Outcome, file_sha256, is_file, kind_static, lock, share_remove,
         share_stat, stat,
     },
     index::{self, ARCHIVE_ORDER, VIDEO_KINDS},
+    nas::Copied,
 };
 use crate::store::now;
 use serde_json::{Value, json};
@@ -24,6 +25,7 @@ enum Step {
         size: u64,
         mtime: u64,
         sha256: String,
+        written: bool,
     },
     Committed,
 }
@@ -145,22 +147,14 @@ impl Archive {
                 } => {
                     // A copy left by a crash before its index was written is reused when it is identical.
                     let copied = nas
-                        .upload(
-                            &source,
-                            id,
-                            kind,
-                            Some(&sha256),
-                            None,
-                            size,
-                            &mut UploadResume::default(),
-                            &mut |_, _| Ok(()),
-                        )
+                        .copy_file(&source, id, kind, Some(&sha256), size, &mut |_, _| Ok(()))
                         .await;
                     match copied {
-                        Ok(_) => Step::Copied {
+                        Ok(how) => Step::Copied {
                             size,
                             mtime,
                             sha256,
+                            written: how == Copied::Written,
                         },
                         Err(e) => {
                             let reason = match e.code {
@@ -179,8 +173,9 @@ impl Archive {
                     size,
                     mtime,
                     sha256,
+                    written,
                 } => {
-                    if !nas.confirm(id, kind, size, true).await {
+                    if !nas.confirm(id, kind, size, written).await {
                         return self.fail_nas(nas, "storage_unavailable");
                     }
                     let l = self.host.store.record_lock(id).await;

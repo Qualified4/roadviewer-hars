@@ -180,7 +180,11 @@ impl NasCore {
 
     async fn stat(&self, r: &RemoteRef) -> Result<Option<RemoteStat>> {
         let path = self.path(r).await?;
-        match tokio::fs::metadata(&path).await {
+        let meta = tokio::task::spawn_blocking(move || share_meta(&path))
+            .await
+            .map_err(|_| BackendError::new(ErrorCode::Io, "join"))?;
+        match meta {
+            Ok(m) if !m.is_file() => Ok(None),
             Ok(m) => Ok(Some(RemoteStat {
                 exists: true,
                 bytes: m.len(),
@@ -205,7 +209,7 @@ impl NasCore {
     async fn open(&self, r: &RemoteRef, start: u64, end: Option<u64>) -> Result<ChunkReader> {
         let path = self.path(r).await?;
         let opened = tokio::task::spawn_blocking(move || {
-            let mut file = std::fs::File::open(&path)?;
+            let mut file = open_share_file(&path)?;
             file.seek(SeekFrom::Start(start))?;
             Ok::<_, std::io::Error>(file)
         })
@@ -304,6 +308,51 @@ fn tree_size(path: &Path) -> std::io::Result<u64> {
     Ok(total)
 }
 
+fn not_found(what: &str) -> std::io::Error {
+    std::io::Error::new(std::io::ErrorKind::NotFound, what)
+}
+
+fn linked_folder(path: &Path) -> bool {
+    path.parent()
+        .and_then(|d| std::fs::symlink_metadata(d).ok())
+        .is_some_and(|m| m.file_type().is_symlink())
+}
+
+/// A share entry's own metadata, never a link's target. A recording folder that is a link reads as missing: a link
+/// on the share (whoever can write there can plant one) must not reach a file outside it.
+pub(crate) fn share_meta(path: &Path) -> std::io::Result<std::fs::Metadata> {
+    if linked_folder(path) {
+        return Err(not_found("share_link"));
+    }
+    std::fs::symlink_metadata(path)
+}
+
+/// A regular file on the share, opened without following a link. It is checked before the open as well: a FIFO
+/// there would hang the open.
+fn open_share_file(path: &Path) -> std::io::Result<std::fs::File> {
+    if !share_meta(path)?.is_file() {
+        return Err(not_found("not_a_file"));
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW);
+    }
+    let file = options.open(path).map_err(|e| {
+        #[cfg(unix)]
+        if e.raw_os_error() == Some(libc::ELOOP) {
+            return not_found("share_link");
+        }
+        e
+    })?;
+    if !file.metadata()?.is_file() {
+        return Err(not_found("not_a_file"));
+    }
+    Ok(file)
+}
+
 fn mounted(path: &Path, allow_any_path: bool) -> bool {
     if allow_any_path {
         return true;
@@ -351,11 +400,35 @@ fn writer(target: &Path) -> Arc<Mutex<()>> {
     w
 }
 
-/// Blocking: removes a share target with no copy of it in progress.
-pub(crate) fn remove_target(target: &Path) -> std::io::Result<()> {
+/// Blocking: removes a share target with no copy of it in progress, unless `cancel` is set. A removal runs on a
+/// blocking thread that outlives its caller; once the caller has gone (a timeout, an aborted cycle) a later cycle may
+/// have written and indexed this very file, so the flag is read under the target's writer guard, right before the
+/// unlink. A recording folder that is a link is refused rather than removed through.
+pub(crate) fn remove_target(target: &Path, cancel: &AtomicBool) -> std::io::Result<()> {
     let w = writer(target);
     let _g = lock(&w);
+    if cancel.load(Ordering::SeqCst) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::Interrupted,
+            "cancelled",
+        ));
+    }
+    if linked_folder(target) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::PermissionDenied,
+            "share_link",
+        ));
+    }
     std::fs::remove_file(target)
+}
+
+/// [`remove_target`] off the runtime's workers, cancelled when the caller goes.
+pub(crate) async fn remove_share_file(path: &Path) -> std::io::Result<()> {
+    let (path, flag) = (path.to_owned(), Arc::new(AtomicBool::new(false)));
+    let _cancel = CancelOnDrop(flag.clone());
+    tokio::task::spawn_blocking(move || remove_target(&path, &flag))
+        .await
+        .unwrap_or_else(|_| Err(std::io::Error::other("join")))
 }
 
 /// Blocking: a `<kind>.part` left behind is removed unless a copy of this process still owns it (that copy removes
@@ -367,10 +440,15 @@ pub(crate) fn remove_stale_part(part: &Path) -> std::io::Result<bool> {
     let Ok(_g) = w.try_lock() else {
         return Ok(false);
     };
-    std::fs::remove_file(part).map(|()| true)
+    match std::fs::remove_file(part) {
+        // Renamed or removed by its copy since it was listed.
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        r => r.map(|()| true),
+    }
 }
 
-/// Set when the future waiting for a copy is gone; the copy stops before its next block and before the rename.
+/// Set when the future waiting for a blocking share operation is gone: a copy stops before its next block and
+/// before the rename, a removal before its unlink.
 struct CancelOnDrop(Arc<AtomicBool>);
 impl Drop for CancelOnDrop {
     fn drop(&mut self) {
@@ -378,7 +456,10 @@ impl Drop for CancelOnDrop {
     }
 }
 
-enum Copied {
+/// How [`NasBackend::copy_file`] put the file on the share.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Copied {
+    /// An identical copy was already there (left by a crash before its index was written).
     Reused,
     Written,
 }
@@ -389,11 +470,14 @@ fn cancelled() -> BackendError {
 
 /// Python `archive_file`'s copy, whole on one blocking thread holding the target's writer guard: reuse an identical
 /// target, else `<kind>.part`, fsync, read back and compare, rename. Any failure or cancellation removes the part.
+/// `ours` reads the root's sentinel now: the caller's probe may be cached, and the root must still be this HARS root
+/// (not a Python share, not an empty mount point) when the copy starts and when it replaces the target.
 fn copy_to_share(
     local: &Path,
     target: &Path,
     sha256: Option<&str>,
     size: u64,
+    ours: &dyn Fn() -> Probe,
     cancel: &AtomicBool,
     progress: &tokio::sync::mpsc::UnboundedSender<u64>,
 ) -> Result<Copied> {
@@ -402,6 +486,15 @@ fn copy_to_share(
     if cancel.load(Ordering::SeqCst) {
         return Err(cancelled());
     }
+    let still_ours = || {
+        let probe = ours();
+        match probe.reason.as_deref() {
+            _ if probe.state == State::Connected => Ok(()),
+            Some("not_owned") => Err(BackendError::foreign()),
+            _ => Err(BackendError::new(ErrorCode::Unavailable, "share")),
+        }
+    };
+    still_ours()?;
     let io = |e: std::io::Error| BackendError::from_io(&e);
     // One level only (Python): a share folder missing because the share went away must not be recreated on the
     // local disk below its mount point.
@@ -410,8 +503,11 @@ fn copy_to_share(
         Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => return Err(io(e)),
         _ => {}
     }
+    if !std::fs::symlink_metadata(parent).map_err(io)?.is_dir() {
+        return Err(BackendError::new(ErrorCode::Io, "share_link"));
+    }
     // A copy left by a crash before its index was written is reused when it is identical.
-    let same_size = std::fs::metadata(target).is_ok_and(|m| m.is_file() && m.len() == size);
+    let same_size = std::fs::symlink_metadata(target).is_ok_and(|m| m.is_file() && m.len() == size);
     if same_size && sha256.is_some_and(|w| file_sha256(target).is_ok_and(|h| h == w)) {
         return Ok(Copied::Reused);
     }
@@ -419,9 +515,18 @@ fn copy_to_share(
         return Err(BackendError::new(ErrorCode::QuotaExceeded, "nas_full"));
     }
     let part = fsutil::with_suffix(target, ".part");
+    // A part left behind, or planted as a link, is replaced rather than written through.
+    match std::fs::remove_file(&part) {
+        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(io(e)),
+        _ => {}
+    }
     let written = (|| {
         let mut src = std::fs::File::open(local).map_err(io)?;
-        let mut dst = std::fs::File::create(&part).map_err(io)?;
+        let mut dst = std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&part)
+            .map_err(io)?;
         let (mut h, mut count, mut buf) = (Sha256::new(), 0u64, vec![0; CHUNK]);
         loop {
             if cancel.load(Ordering::SeqCst) {
@@ -455,6 +560,7 @@ fn copy_to_share(
         if cancel.load(Ordering::SeqCst) {
             return Err(cancelled());
         }
+        still_ours()?;
         std::fs::rename(&part, target).map_err(io)?;
         fsutil::sync_dir(target).map_err(io)
     })();
@@ -514,8 +620,11 @@ impl NasBackend {
 
     /// The share is still this HARS root and holds the copy just written, read now rather than from the probe
     /// cache: a share unmounted between files leaves an empty mount point on the local disk, where a copy and its
-    /// read-back also succeed. With `clean`, a copy found anywhere but on this root is removed.
-    pub async fn confirm(&self, id: &str, kind: &str, size: u64, clean: bool) -> bool {
+    /// read-back also succeed. With `written` (this call's copy was [`Copied::Written`], not reused) that copy is
+    /// removed when the root has lost its sentinel or its folder, i.e. it landed on the local mount point. A root
+    /// another owner marks (`not_owned`, `storage_id_mismatch`) is never cleaned: its `<id>/<kind>` may be theirs.
+    /// Nothing is removed once the caller has stopped waiting.
+    pub async fn confirm(&self, id: &str, kind: &str, size: u64, written: bool) -> bool {
         self.core.invalidate();
         let (Some(root), Ok(target)) = (
             self.core.settings.path.clone(),
@@ -524,11 +633,16 @@ impl NasBackend {
             return false;
         };
         let (local, owner) = ((self.core.local)(), self.core.owner);
+        let flag = Arc::new(AtomicBool::new(false));
+        let _cancel = CancelOnDrop(flag.clone());
         let check = tokio::task::spawn_blocking(move || {
             let probe = probe_sync(Some(&root), local, owner);
-            let held = std::fs::metadata(&target).is_ok_and(|m| m.is_file() && m.len() == size);
-            if clean && probe.state != State::Connected && held {
-                let _ = remove_target(&target);
+            let held = share_meta(&target).is_ok_and(|m| m.is_file() && m.len() == size);
+            let unmounted = matches!(
+                probe.reason.as_deref(),
+                Some("sentinel_missing" | "path_missing")
+            );
+            if written && held && unmounted && remove_target(&target, &flag).is_ok() {
                 let _ = target.parent().map(std::fs::remove_dir);
             }
             probe.state == State::Connected && held
@@ -540,6 +654,45 @@ impl NasBackend {
             self.core.invalidate();
         }
         ok
+    }
+
+    /// [`ArchiveWrite::upload`]'s copy, telling a copy found identical on the share from one written now.
+    pub async fn copy_file(
+        &self,
+        local: &Path,
+        id: &str,
+        kind: &str,
+        sha256: Option<&str>,
+        size: u64,
+        on_progress: Progress<'_>,
+    ) -> Result<Copied> {
+        self.writable().await?;
+        let target = self.core.path_for(id, kind)?;
+        let flag = Arc::new(AtomicBool::new(false));
+        let cancel = CancelOnDrop(flag.clone());
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (local, want) = (local.to_owned(), sha256.map(str::to_owned));
+        let (root, storage_id) = (self.core.settings.path.clone(), (self.core.local)());
+        let copy = tokio::task::spawn_blocking(move || {
+            let ours = || probe_sync(root.as_deref(), storage_id.clone(), Some(OWNER_VALUE));
+            copy_to_share(&local, &target, want.as_deref(), size, &ours, &flag, &tx)
+        });
+        while let Some(count) = rx.recv().await {
+            if let Err(e) = on_progress(count, &UploadResume::default()) {
+                // The copy is stopped and its part gone before the caller hears of it.
+                drop(cancel);
+                let _ = copy.await;
+                return Err(e);
+            }
+        }
+        let copied = copy
+            .await
+            .map_err(|_| BackendError::new(ErrorCode::Io, "join"))??;
+        drop(cancel);
+        if matches!(copied, Copied::Reused) {
+            on_progress(size, &UploadResume::default())?;
+        }
+        Ok(copied)
     }
 
     /// Writes need the root connected and HARS-owned; a root marked by anyone else is refused as foreign.
@@ -656,38 +809,15 @@ impl ArchiveWrite for NasBackend {
         _resume: &mut UploadResume,
         on_progress: Progress<'_>,
     ) -> Result<RemoteRef> {
-        self.writable().await?;
-        let target = self.core.path_for(id, kind)?;
-        let r = RemoteRef::new(
+        self.copy_file(local, id, kind, sha256, size, on_progress)
+            .await?;
+        Ok(RemoteRef::new(
             BackendKind::Smb,
             format!("{id}/{kind}"),
             size,
             sha256.map(str::to_owned),
             md5.map(str::to_owned),
-        );
-        let flag = Arc::new(AtomicBool::new(false));
-        let cancel = CancelOnDrop(flag.clone());
-        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
-        let (local, want) = (local.to_owned(), sha256.map(str::to_owned));
-        let copy = tokio::task::spawn_blocking(move || {
-            copy_to_share(&local, &target, want.as_deref(), size, &flag, &tx)
-        });
-        while let Some(count) = rx.recv().await {
-            if let Err(e) = on_progress(count, &UploadResume::default()) {
-                // The copy is stopped and its part gone before the caller hears of it.
-                drop(cancel);
-                let _ = copy.await;
-                return Err(e);
-            }
-        }
-        let copied = copy
-            .await
-            .map_err(|_| BackendError::new(ErrorCode::Io, "join"))??;
-        drop(cancel);
-        if matches!(copied, Copied::Reused) {
-            on_progress(size, &UploadResume::default())?;
-        }
-        Ok(r)
+        ))
     }
 
     async fn session_status(&self, _resume: &UploadResume) -> Result<SessionState> {
@@ -702,9 +832,11 @@ impl ArchiveWrite for NasBackend {
             Err(_) => return Ok(false),
         };
         let path = self.core.path_for(&id, &kind)?;
+        let flag = Arc::new(AtomicBool::new(false));
+        let _cancel = CancelOnDrop(flag.clone());
         let removed = tokio::task::spawn_blocking(move || {
             if std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file())
-                && remove_target(&path).is_err()
+                && remove_target(&path, &flag).is_err()
             {
                 return false;
             }
