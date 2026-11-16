@@ -141,3 +141,32 @@ CI는 기존 `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS re
 - `scripts/check_coexistence.py`가 slug, 이미지, 패널명, 데이터 루트, 미게시 호스트 포트, `boot: manual`, Supervisor API 권한을 Python 앱 구성과 대조한다. CI에서 실행한다.
 - 컨테이너 기동 검사는 같은 이미지의 nginx로 Supervisor의 포트 응답을 흉내 낸다. TLS 프록시는 Python처럼 Supervisor가 알려 준 포트가 있을 때만 뜬다.
 - 실제 HAOS에서의 설치·시작·종료·업데이트·재시작·Ingress는 검증하지 않았다.
+
+### 순수 Rust 리먹싱 엔진(기본 경로)
+
+- 원본 13구간 26영상: 패킷 수 1,200, PTS/DTS, 키프레임, sample payload SHA, decoder configuration 바이트, 정규화 전체 NAL SHA(원본 대비), 디코딩 프레임 MD5(Python 대비)가 모두 같다. 순수 엔진과 FFmpeg 엔진의 출력 스트림은 26개 모두 같고, 기본 실행에서 대체는 0회였다.
+- 실패는 `unsupported`, `invalid`, `internal`, `verification`, `resource`로 구분한다. `resource`(디스크 부족, 쓰기 한도, 180초 초과, 강제 종료, 메모리 상한)는 FFmpeg으로 대체하지 않는다. 나머지는 카메라 파일당 최대 1회 대체하고, 대체 출력도 입력 서명 검증과 독립 판독 검사를 통과해야 게시된다. 분류별 주입 테스트가 로그 이벤트와 최종 디스크 상태를 단언한다(`tests/pure_remux_faults.rs`, `tests/conversion_resource.rs`).
+- 게시된 결과에 그 카메라의 영상이 이미 있으면 `resource` 실패는 변환을 실패로 끝내고 이전 결과를 그대로 둔다. 실제 서버 실행 파일로 worker 강제 종료, 쓰기 한도, 시간 초과를 주입해 `prepared` 바이트와 메타가 그대로임을 확인한다(`tests/conversion_keep_previous.rs`).
+- MP4와 폴더를 fsync한 뒤 게시하고, 원본 비보존 설정에서는 그 뒤에만 원본을 지운다. MP4를 옮긴 직후 서버를 죽이면 원본이 남아 있음을 테스트한다. 정전 자체는 모의하지 못했다.
+- 손상 입력: forbidden bit가 선 slice·SEI는 Python처럼 바이트 그대로 게시한다. 첫 start code 앞의 junk는 버리고 경고 이벤트를 남긴다. TS 마지막 패킷이 영상 payload 안에서 잘린 입력은 거부한다. Python은 그 payload를 버린 채 게시한다. 패킷 경계에서 잘린 입력은 버려지는 바이트가 없어 게시한다.
+- 합성 경계 입력: 무작위 변형 320건(패닉 0, 시간 상한 안에 종료), B-frame TS(FFmpeg 대체 후 게시), 파라미터 세트만 100 MB(34.7 MiB에서 거부), 33 MiB NAL, 0프레임, EOS/EOB 경계. 실주행 B-frame·interlaced TS는 코퍼스에 없어 합성 입력으로만 확인했다. 실제 PAFF 파일은 만들지 못해 규칙 단위 테스트만 있다.
+- 실제 서버 실행 파일: 브라우저 업로드와 RV1 장치 업로드에서 자동 변환, Range 재생, 원본 보존 모드의 SHA 일치, 비보존 모드의 역변환 NAL·TS PTS 일치, `/api/logs/<id>/cancel` 취소, worker·변환 프로세스·서버 SIGKILL 뒤 재시작, 쓰기 한도와 메모리 상한, 동시 업로드 4개의 변환 대기, B-frame TS 대체 뒤 재생, `HARS_REMUX_ENGINE=ffmpeg` 서버.
+- 실제 재생 페이지(`/view/<id>/`)를 격리된 headless Edge로 구동했다. 카메라 전환, 재생·일시정지, 중간·말미 시킹, 오버레이 캔버스, 지도 요소, 차량 그래프의 9개 항목이 3회 모두 통과했다. 화질과 오버레이 정합의 눈 확인, 지도 타일 로드, 키보드·터치는 자동화하지 못했다.
+- 사용자 권한 tmpfs에서 실제 ENOSPC를 확인했다(`integration/low_space_tmpfs.sh`). 여유가 입력의 1.5배이면 FFmpeg 엔진이 선택되어 성공하고, 0.5배이면 `resource`로 끝난다.
+- 컨테이너 기동 검사(bookworm, FFmpeg 5.1)가 amd64와 aarch64에서 HEVC와 H.264 TS를 순수 엔진으로 대체 없이 변환하는지 확인한다.
+
+### 최종 커밋 검증
+
+코드 기준 `3e2338d`(PR #14, 이후 커밋은 문서만 변경)의 release 실행 파일로 캐시된 Python 기준 결과와 비교했다. 영상 길이 필드는 [TERMINAL-DURATION.md](TERMINAL-DURATION.md)의 방식대로 양쪽 값을 각각 계산해 대조하고, 나머지 필드는 1e-6 절대오차다.
+
+| 코퍼스 | 구간 | 동등 | 모델 프레임 |
+|---|---:|---:|---:|
+| 원본 형식 | 13 | 13 | 15,600 |
+| 기존 14구간 | 14 | 14 | 16,350 |
+| 기존 47구간 | 47 | 47 | 56,399 |
+
+기존 61구간·72,749프레임이 유지된다. PR #13 최종 커밋에서 전체 테스트 271개가 3회 연속 통과했고, 컨테이너 검사와 `integration/pipeline_contract.py`가 통과했다.
+
+### 미검증 요약
+
+실제 HAOS(설치, Ingress, 재시작, 포트 승계, aarch64 실기기 재생), 실제 Google Drive와 SMB 마운트, 실제 Supervisor, 실제 차량 장치의 장시간·동시 업로드, 전원 차단과 OS 크래시, Safari·Firefox, 실주행 B-frame·interlaced 영상, 4 GiB 초과 ZIP.
