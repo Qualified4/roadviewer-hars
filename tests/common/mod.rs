@@ -296,7 +296,7 @@ pub async fn invariants(
         hidden.is_empty(),
         "hidden deletions left behind: {hidden:?}"
     );
-    // Without an archive nothing may queue a remote deletion (Python  stays absent or empty).
+    // Without an archive nothing may queue a remote deletion (Python `PendingDeletes` stays absent or empty).
     let pending = root.join(roadviewer_hars::archive::pending::PENDING_DELETES);
     if let Ok(bytes) = std::fs::read(&pending) {
         let rows: Value = serde_json::from_slice(&bytes).expect("pending deletes must parse");

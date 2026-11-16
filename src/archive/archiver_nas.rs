@@ -177,6 +177,9 @@ impl Archive {
                     mtime,
                     sha256,
                 } => {
+                    if !nas.confirm(id, kind, size, true).await {
+                        return self.fail_nas(nas, "storage_unavailable");
+                    }
                     let l = self.host.store.record_lock(id).await;
                     let _g = l.lock().await;
                     let current = self.host.meta(id).await;
@@ -194,7 +197,8 @@ impl Archive {
                         }
                         return Outcome::Changed;
                     }
-                    let mut current = current.expect("checked");
+                    let before = current.expect("checked");
+                    let mut current = before.clone();
                     index::set_location(
                         &mut current,
                         kind,
@@ -204,6 +208,14 @@ impl Archive {
                     if self.host.save(current).await.is_err() {
                         // The copy on the share is an orphan, reused next time.
                         return self.fail_nas(nas, "os_error");
+                    }
+                    // The only other copy must still be on the share when the local one goes.
+                    if !nas.confirm(id, kind, size, false).await {
+                        if self.host.save(before).await.is_err() {
+                            tracing::warn!(kind, "archive_index_not_restored");
+                            lock(&self.st).recovered = false;
+                        }
+                        return self.fail_nas(nas, "storage_unavailable");
                     }
                     if std::fs::remove_file(&source).is_err() {
                         tracing::warn!(kind, "archived_file_stays_local_until_recovery");
@@ -852,3 +864,7 @@ pub(crate) fn derived(kind: &str) -> Option<&'static str> {
         _ => None,
     }
 }
+
+#[cfg(test)]
+#[path = "archiver_nas_tests.rs"]
+mod tests;

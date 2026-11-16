@@ -2,7 +2,7 @@
 //! a root whose sentinel names HARS as its owner; [`NasLegacy`] reads a Python share and cannot write.
 use super::{
     Availability, CACHE_SECONDS, CHUNK, Clock, MEDIA_KINDS, NAS_RESERVE, OWNER_VALUE,
-    PYTHON_NAS_OWNER, SENTINEL, backend::*, fsutil,
+    PROBE_WAIT_SECONDS, PYTHON_NAS_OWNER, SENTINEL, backend::*, fsutil,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
@@ -11,6 +11,7 @@ use std::{
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
     sync::{Arc, Mutex},
+    time::Duration,
 };
 
 /// The data root's `.archive.json` key for the share's storage id.
@@ -402,6 +403,36 @@ impl NasBackend {
             .is_some_and(|p| mounted(p, self.core.settings.allow_any_path))
     }
 
+    /// The share is still this HARS root and holds the copy just written, read now rather than from the probe
+    /// cache: a share unmounted between files leaves an empty mount point on the local disk, where a copy and its
+    /// read-back also succeed. With `clean`, a copy found anywhere but on this root is removed.
+    pub async fn confirm(&self, id: &str, kind: &str, size: u64, clean: bool) -> bool {
+        self.core.invalidate();
+        let (Some(root), Ok(target)) = (
+            self.core.settings.path.clone(),
+            self.core.path_for(id, kind),
+        ) else {
+            return false;
+        };
+        let (local, owner) = ((self.core.local)(), self.core.owner);
+        let check = tokio::task::spawn_blocking(move || {
+            let probe = probe_sync(Some(&root), local, owner);
+            let held = std::fs::metadata(&target).is_ok_and(|m| m.is_file() && m.len() == size);
+            if clean && probe.state != State::Connected && held {
+                let _ = std::fs::remove_file(&target);
+                let _ = target.parent().map(std::fs::remove_dir);
+            }
+            probe.state == State::Connected && held
+        });
+        let ok = tokio::time::timeout(Duration::from_secs_f64(PROBE_WAIT_SECONDS), check)
+            .await
+            .is_ok_and(|r| r.unwrap_or(false));
+        if !ok {
+            self.core.invalidate();
+        }
+        ok
+    }
+
     /// Writes need the root connected and HARS-owned; a root marked by anyone else is refused as foreign.
     async fn writable(&self) -> Result<PathBuf> {
         let probe = self.core.probe(false).await;
@@ -530,7 +561,12 @@ impl ArchiveWrite for NasBackend {
         let (t, want) = (target.clone(), sha256.map(str::to_owned));
         // A copy left by a crash before its index was written is reused when it is identical.
         let reused = tokio::task::spawn_blocking(move || -> std::io::Result<bool> {
-            std::fs::create_dir_all(t.parent().unwrap_or(Path::new("/")))?;
+            // One level only (Python ): a share folder missing because the share went away
+            // must not be recreated on the local disk below its mount point.
+            match std::fs::create_dir(t.parent().unwrap_or(Path::new("/"))) {
+                Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => return Err(e),
+                _ => {}
+            }
             let same_size = std::fs::metadata(&t).is_ok_and(|m| m.is_file() && m.len() == size);
             Ok(same_size && want.is_some_and(|w| file_sha256(&t).is_ok_and(|h| h == w)))
         })
