@@ -189,6 +189,11 @@ impl DriveClient {
     }
 
     pub async fn list(&self, query: &str, fields: &str) -> Result<Vec<Value>> {
+        self.list_upto(query, fields, super::MAX_LISTED_FILES).await
+    }
+
+    /// [`Self::list`], refused (`too_many_files`) once more than `limit` files have come back.
+    pub async fn list_upto(&self, query: &str, fields: &str, limit: usize) -> Result<Vec<Value>> {
         let (mut found, mut token) = (Vec::new(), None::<String>);
         let fields = format!("nextPageToken,{fields}");
         loop {
@@ -210,6 +215,9 @@ impl DriveClient {
             let body = r.json().unwrap_or_else(|| json!({}));
             if let Some(files) = body.get("files").and_then(Value::as_array) {
                 found.extend(files.iter().filter(|f| f.is_object()).cloned());
+            }
+            if found.len() > limit {
+                return Err(super::too_many_files());
             }
             token = text(&body, "nextPageToken").map(str::to_owned);
             if token.is_none() {

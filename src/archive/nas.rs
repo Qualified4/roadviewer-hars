@@ -1038,40 +1038,50 @@ impl NasLegacy {
             return Err(BackendError::new(ErrorCode::Unavailable, "share"));
         }
         let root = self.core.settings.path.clone().unwrap_or_default();
-        tokio::task::spawn_blocking(move || -> std::io::Result<Vec<LegacyFile>> {
-            let mut out = Vec::new();
-            for entry in std::fs::read_dir(&root)? {
-                let entry = entry?;
-                let id = entry.file_name().to_string_lossy().into_owned();
-                if id.starts_with('.') || !entry.file_type()?.is_dir() {
-                    continue;
-                }
-                for kind in MEDIA_KINDS {
-                    match std::fs::symlink_metadata(entry.path().join(kind)) {
-                        Ok(m) if m.is_file() => out.push(LegacyFile {
-                            id: id.clone(),
-                            kind: kind.to_owned(),
-                            marked_sha256: None,
-                            remote: RemoteRef::new(
-                                BackendKind::Smb,
-                                format!("{id}/{kind}"),
-                                m.len(),
-                                None,
-                                None,
-                            ),
-                        }),
-                        Ok(_) => {}
-                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
-                        Err(e) => return Err(e),
-                    }
-                }
-            }
-            Ok(out)
-        })
-        .await
-        .map_err(|_| BackendError::new(ErrorCode::Io, "join"))?
-        .map_err(|e| unavailable(&e))
+        tokio::task::spawn_blocking(move || media_files(&root, MAX_LISTED_FILES))
+            .await
+            .map_err(|_| BackendError::new(ErrorCode::Io, "join"))?
     }
+}
+
+/// The `<id>/<kind>` regular files under `root`, refused (`too_many_files`) once more than `limit` top-level
+/// entries or files are seen: the listing is held in memory and every file of it is checked against the index.
+fn media_files(root: &Path, limit: usize) -> Result<Vec<LegacyFile>> {
+    let io = |e: std::io::Error| unavailable(&e);
+    let mut out = Vec::new();
+    for (seen, entry) in std::fs::read_dir(root).map_err(io)?.enumerate() {
+        let entry = entry.map_err(io)?;
+        if seen >= limit || out.len() > limit {
+            return Err(too_many_files());
+        }
+        let id = entry.file_name().to_string_lossy().into_owned();
+        if id.starts_with('.') || !entry.file_type().map_err(io)?.is_dir() {
+            continue;
+        }
+        for kind in MEDIA_KINDS {
+            match std::fs::symlink_metadata(entry.path().join(kind)) {
+                Ok(m) if m.is_file() => out.push(LegacyFile {
+                    id: id.clone(),
+                    kind: kind.to_owned(),
+                    marked_sha256: None,
+                    remote: RemoteRef::new(
+                        BackendKind::Smb,
+                        format!("{id}/{kind}"),
+                        m.len(),
+                        None,
+                        None,
+                    ),
+                }),
+                Ok(_) => {}
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                Err(e) => return Err(io(e)),
+            }
+        }
+    }
+    if out.len() > limit {
+        return Err(too_many_files());
+    }
+    Ok(out)
 }
 
 impl ArchiveRead for NasLegacy {
@@ -1113,5 +1123,24 @@ impl ArchiveRead for NasLegacy {
     }
     async fn usage(&self) -> Result<Usage> {
         Ok(self.core.usage().await)
+    }
+}
+
+#[cfg(test)]
+mod media_files_tests {
+    #[test]
+    fn a_share_listing_past_its_bound_is_refused_not_cut() {
+        let tmp = tempfile::tempdir().unwrap();
+        for n in 0..4 {
+            let folder = tmp.path().join(format!("{n:032}"));
+            std::fs::create_dir(&folder).unwrap();
+            std::fs::write(folder.join("rlog.zst"), b"x").unwrap();
+            std::fs::write(folder.join("qcamera.ts"), b"x").unwrap();
+        }
+        assert_eq!(super::media_files(tmp.path(), 8).unwrap().len(), 8);
+        for limit in [3, 7] {
+            let refused = super::media_files(tmp.path(), limit).unwrap_err();
+            assert_eq!(refused.reason(), Some("too_many_files"), "{limit}");
+        }
     }
 }
