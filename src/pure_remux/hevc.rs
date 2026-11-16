@@ -1,8 +1,7 @@
 use super::{
-    Unsupported,
-    annexb::NAL_LIMIT,
-    annexb::{Bits, Scanner, Unit, configuration_sets, is_parameter_set, kind},
-    mp4::{Kept, Plan, SAMPLE_LIMIT, Writer},
+    Stage, Unsupported,
+    annexb::{Bits, Scanner, Sets, Unit, is_parameter_set, kind},
+    mp4::{Payload, Plan},
 };
 use crate::media::{NalHasher, Signature};
 use anyhow::{Context, ensure};
@@ -66,26 +65,18 @@ struct Access {
     key: bool,
 }
 
-trait Sink {
-    fn nal(&mut self, kind: u8, unit: &Unit<'_>) -> anyhow::Result<()>;
-    /// Ends an access unit; `key` is its IRAP flag.
-    fn close(&mut self, key: bool) -> anyhow::Result<()>;
-}
-
-/// Access units of a raw HEVC file, split as FFmpeg's HEVC parser does:
-/// VPS/SPS/PPS/AUD/prefix SEI/41..44/48..55 or a first slice segment start a
-/// new unit once the current one has a picture.
-fn walk(
-    source: &Path,
-    mut raw: Option<&mut NalHasher>,
-    sink: &mut impl Sink,
-) -> anyhow::Result<()> {
+/// Access units of a raw HEVC file, split as FFmpeg's HEVC parser
+/// (`hevc_find_frame_end`) does: VPS..EOB, prefix SEI, 41..44 and 48..55 end
+/// a picture, and so does the first slice segment of a picture of a type the
+/// parser treats as a slice (TRAIL..RASL, BLA..CRA).
+fn walk(source: &Path, raw: &mut NalHasher, sink: &mut Sizing) -> anyhow::Result<()> {
     let mut unit = Access::default();
     let mut on = |u: Unit<'_>| -> anyhow::Result<()> {
         let kind = kind(u.raw, true)?;
         let body = super::annexb::trim(u.raw);
-        let starts = matches!(kind, 32..=35 | 39 | 41..=44 | 48..=55)
-            || (kind < 32 && body.len() > 2 && body[2] & 0x80 != 0);
+        let slice = kind <= 9 || (16..=21).contains(&kind);
+        let starts = matches!(kind, 32..=37 | 39 | 41..=44 | 48..=55)
+            || (slice && body.len() > 2 && body[2] & 0x80 != 0);
         if starts && unit.vcl {
             sink.close(unit.key)?;
             unit = Access::default();
@@ -108,9 +99,7 @@ fn walk(
         if n == 0 {
             break;
         }
-        if let Some(hash) = raw.as_deref_mut() {
-            hash.feed(&chunk[..n])?;
-        }
+        raw.feed(&chunk[..n])?;
         scanner.push(&chunk[..n], &mut on)?;
     }
     scanner.finish(&mut on)?;
@@ -124,30 +113,23 @@ fn walk(
 struct Sizing {
     limit: usize,
     sizes: Vec<(u64, bool)>,
-    size: u64,
-    first: Vec<(u8, Vec<u8>)>,
-    kept: Kept,
+    sets: Sets,
+    payload: Payload,
 }
-impl Sink for Sizing {
+impl Sizing {
     fn nal(&mut self, kind: u8, unit: &Unit<'_>) -> anyhow::Result<()> {
         if is_parameter_set(kind, true) {
             if self.sizes.is_empty() {
-                self.first.push((kind, unit.raw.to_vec()));
+                self.sets.add(kind, unit.raw)?;
+            } else if !self.sets.contains(kind, unit.raw) {
+                // hvc1 keeps one configuration out of band; a new set would
+                // be lost from the samples.
+                return Err(Unsupported("HEVC parameter sets change mid-stream").into());
             }
+            Ok(())
         } else {
-            let sample = unit.sample();
-            ensure!(
-                !sample.is_empty() && sample.len() <= NAL_LIMIT,
-                "NAL unit exceeds bounded memory limit"
-            );
-            self.size += 4 + sample.len() as u64;
-            ensure!(
-                self.size <= SAMPLE_LIMIT,
-                "invalid video packet or inspection limit"
-            );
-            self.kept.nal(sample);
+            self.payload.nal(unit.sample())
         }
-        Ok(())
     }
     fn close(&mut self, key: bool) -> anyhow::Result<()> {
         ensure!(
@@ -158,20 +140,8 @@ impl Sink for Sizing {
             !self.sizes.is_empty() || key,
             "first HEVC picture is not a keyframe"
         );
-        self.sizes.push((std::mem::take(&mut self.size), key));
+        self.sizes.push((self.payload.end_sample(), key));
         Ok(())
-    }
-}
-
-impl Sink for Writer {
-    fn nal(&mut self, kind: u8, unit: &Unit<'_>) -> anyhow::Result<()> {
-        if is_parameter_set(kind, true) {
-            return Ok(());
-        }
-        self.write_nal(unit.sample())
-    }
-    fn close(&mut self, _: bool) -> anyhow::Result<()> {
-        self.end_sample()
     }
 }
 
@@ -205,9 +175,8 @@ fn entry(sets: &[(u8, Vec<u8>)]) -> anyhow::Result<SampleEntry> {
     Ok(SampleEntry::Hvc1(entry))
 }
 
-/// The first read of the Annex B input hashes it with the independent
-/// `NalHasher` splitter, sizes every sample and keeps the sample bytes when
-/// they fit `BUFFER_LIMIT`; otherwise a second read writes them.
+/// One read of the Annex B input hashes it with the independent `NalHasher`
+/// splitter, sizes every sample and stages the sample bytes (`Payload`).
 pub fn remux(
     source: &Path,
     output: &Path,
@@ -227,52 +196,45 @@ pub fn remux(
     if stamps.first() != Some(&0) {
         return Err(Unsupported("HEVC clock does not start at zero").into());
     }
-    let mut hash = NalHasher::new(true);
-    let mut sizing = Sizing {
-        limit: stamps.len(),
-        sizes: Vec::with_capacity(stamps.len()),
-        size: 0,
-        first: Vec::new(),
-        kept: Kept::new(),
-    };
-    walk(source, Some(&mut hash), &mut sizing)?;
-    let signature = hash.finish()?;
-    ensure!(
-        sizing.sizes.len() == stamps.len(),
-        "HEVC frame count differs from logged clock"
-    );
-    let raw = sizing
-        .first
-        .iter()
-        .map(|(k, v)| (*k, v.as_slice()))
-        .collect::<Vec<_>>();
-    let entry = entry(&configuration_sets(&raw))?;
-    let samples = sizing
-        .sizes
-        .iter()
-        .enumerate()
-        .map(|(i, &(size, key))| {
-            let duration = match stamps.get(i + 1) {
-                Some(next) => {
-                    u32::try_from(next - stamps[i]).context("HEVC sample duration overflow")?
-                }
-                None => terminal,
-            };
-            Ok((size, duration, key))
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    let mut writer = Writer::create(
-        output,
-        Plan {
+    let (plan, signature, payload) = (|| {
+        let _profile = crate::profile::Scope::new("pure_hevc_read");
+        let mut hash = NalHasher::new(true);
+        let mut sizing = Sizing {
+            limit: stamps.len(),
+            sizes: Vec::with_capacity(stamps.len()),
+            sets: Sets::default(),
+            payload: Payload::create(output)?,
+        };
+        walk(source, &mut hash, &mut sizing)?;
+        let signature = hash.finish()?;
+        ensure!(
+            sizing.sizes.len() == stamps.len(),
+            "HEVC frame count differs from logged clock"
+        );
+        let entry = entry(&sizing.sets.configuration())?;
+        let samples = sizing
+            .sizes
+            .iter()
+            .enumerate()
+            .map(|(i, &(size, key))| {
+                let duration = match stamps.get(i + 1) {
+                    Some(next) => {
+                        u32::try_from(next - stamps[i]).context("HEVC sample duration overflow")?
+                    }
+                    None => terminal,
+                };
+                Ok((size, duration, key))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let plan = Plan {
             entry,
             timescale: TIMESCALE,
             samples,
-        },
-    )?;
-    match sizing.kept.take() {
-        Some(data) => writer.write_samples(&data)?,
-        None => walk(source, None, &mut writer)?,
-    }
-    writer.finish()?;
+        };
+        anyhow::Ok((plan, signature, sizing.payload))
+    })()
+    .context(Stage::Read)?;
+    let _profile = crate::profile::Scope::new("pure_hevc_write");
+    super::mp4::write(output, &plan, payload).context(Stage::Write)?;
     Ok(signature)
 }

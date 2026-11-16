@@ -13,37 +13,51 @@ use std::{
 };
 
 pub const SAMPLE_LIMIT: u64 = 32 * 1024 * 1024;
-/// Sample bytes kept in memory by the first read; a larger input is read a
-/// second time instead (an archive share would otherwise be read twice).
-pub const BUFFER_LIMIT: usize = 64 * 1024 * 1024;
 
-/// Length-prefixed sample bytes gathered during the first read, if they fit.
-pub struct Kept(Option<Vec<u8>>, usize);
-impl Kept {
-    pub fn new() -> Self {
-        // Debug builds only: tests force the second-read path on small inputs.
-        let limit = if cfg!(debug_assertions) {
-            std::env::var("HARS_PURE_REMUX_BUFFER_LIMIT")
-                .ok()
-                .and_then(|v| v.parse().ok())
-                .unwrap_or(BUFFER_LIMIT)
-        } else {
-            BUFFER_LIMIT
-        };
-        Self(Some(Vec::new()), limit)
+/// Length-prefixed sample bytes, written once while the input is read into an
+/// unnamed file next to the output, then copied behind the exact head. The
+/// engine's memory therefore stays bounded whatever the input size, the input
+/// (possibly on a share) is read once, and no staging file outlives the process.
+pub struct Payload {
+    file: BufWriter<File>,
+    len: u64,
+    sample_start: u64,
+}
+impl Payload {
+    pub fn create(output: &Path) -> anyhow::Result<Self> {
+        let dir = output
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or(Path::new("."));
+        Ok(Self {
+            file: BufWriter::with_capacity(1024 * 1024, tempfile::tempfile_in(dir)?),
+            len: 0,
+            sample_start: 0,
+        })
     }
-    pub fn nal(&mut self, unit: &[u8]) {
-        if let Some(data) = &mut self.0 {
-            if data.len() + 4 + unit.len() > self.1 {
-                self.0 = None;
-            } else {
-                data.extend_from_slice(&(unit.len() as u32).to_be_bytes());
-                data.extend_from_slice(unit);
-            }
-        }
+    pub fn nal(&mut self, unit: &[u8]) -> anyhow::Result<()> {
+        ensure!(
+            !unit.is_empty() && unit.len() <= NAL_LIMIT,
+            "NAL unit exceeds bounded memory limit"
+        );
+        self.file.write_all(&(unit.len() as u32).to_be_bytes())?;
+        self.file.write_all(unit)?;
+        self.len += 4 + unit.len() as u64;
+        ensure!(
+            self.len - self.sample_start <= SAMPLE_LIMIT,
+            "invalid video packet or inspection limit"
+        );
+        Ok(())
     }
-    pub fn take(self) -> Option<Vec<u8>> {
-        self.0
+    /// Size of the bytes written since the previous sample ended.
+    pub fn pending(&self) -> u64 {
+        self.len - self.sample_start
+    }
+    /// Ends the current sample and returns its size.
+    pub fn end_sample(&mut self) -> u64 {
+        let size = self.pending();
+        self.sample_start = self.len;
+        size
     }
 }
 // stco offsets that straddle 4 GiB would switch the table to co64 between the
@@ -122,126 +136,49 @@ fn exact_reservation(plan: &Plan) -> anyhow::Result<usize> {
         .context("MP4 head smaller than its reservation")
 }
 
-/// Streams length-prefixed samples straight into `mdat` behind a head sized
-/// exactly for the final `moov`.
-pub struct Writer {
-    file: BufWriter<File>,
-    muxer: Mp4FileMuxer,
-    head: usize,
-    plan: Plan,
-    position: u64,
-    sample_start: u64,
-    index: usize,
-}
-impl Writer {
-    pub fn create(path: &Path, plan: Plan) -> anyhow::Result<Self> {
-        let total = plan.samples.iter().map(|s| s.0).sum::<u64>();
-        ensure!(total < FILE_LIMIT, "unsupported: output beyond 3 GiB");
-        let reserved = exact_reservation(&plan)?;
-        let muxer = Mp4FileMuxer::with_options(Mp4FileMuxerOptions {
-            reserved_moov_box_size: reserved,
-            ..Default::default()
-        })
-        .map_err(mux_error)?;
-        let mut file = BufWriter::with_capacity(
-            1024 * 1024,
-            File::options().write(true).create_new(true).open(path)?,
-        );
-        let initial = muxer.initial_boxes_bytes();
-        file.write_all(initial)?;
-        let position = initial.len() as u64;
-        Ok(Self {
-            file,
-            head: initial.len() - 16,
-            muxer,
-            plan,
-            position,
-            sample_start: position,
-            index: 0,
-        })
-    }
-    pub fn write_nal(&mut self, unit: &[u8]) -> anyhow::Result<()> {
-        ensure!(
-            !unit.is_empty() && unit.len() <= NAL_LIMIT,
-            "NAL unit exceeds bounded memory limit"
-        );
-        self.file.write_all(&(unit.len() as u32).to_be_bytes())?;
-        self.file.write_all(unit)?;
-        self.position += 4 + unit.len() as u64;
-        ensure!(
-            self.position - self.sample_start <= SAMPLE_LIMIT,
-            "invalid video packet or inspection limit"
-        );
-        Ok(())
-    }
-    /// Closes the bytes written since the previous call as the next planned
-    /// sample; a second read that disagrees with the first one is an error.
-    pub fn end_sample(&mut self) -> anyhow::Result<()> {
-        let size = self.position - self.sample_start;
-        let &(planned, duration, keyframe) = self
-            .plan
-            .samples
-            .get(self.index)
-            .context("input changed between reads")?;
-        ensure!(size == planned && size > 0, "input changed between reads");
-        self.muxer
-            .append_sample(&Sample {
-                track_kind: TrackKind::Video,
-                sample_entry: (self.index == 0).then(|| self.plan.entry.clone()),
-                keyframe,
-                timescale: NonZeroU32::new(self.plan.timescale).context("invalid timescale")?,
-                duration,
-                composition_time_offset: None,
-                data_offset: self.sample_start,
-                data_size: usize::try_from(size)?,
-            })
-            .map_err(mux_error)?;
-        self.sample_start = self.position;
-        self.index += 1;
-        if self.index == 1 {
-            crate::fault::point("pure_remux_sample");
+/// Writes `path` (new) as `ftyp`, a `moov` sized exactly for `plan`, and an
+/// `mdat` holding `payload`, so the file is faststart with no padding `free`.
+pub fn write(path: &Path, plan: &Plan, payload: Payload) -> anyhow::Result<()> {
+    let total = plan.samples.iter().map(|s| s.0).sum::<u64>();
+    ensure!(
+        total == payload.len && payload.pending() == 0,
+        "sample table disagrees with its payload"
+    );
+    ensure!(total < FILE_LIMIT, "unsupported: output beyond 3 GiB");
+    let reserved = exact_reservation(plan)?;
+    let mut muxer = Mp4FileMuxer::with_options(Mp4FileMuxerOptions {
+        reserved_moov_box_size: reserved,
+        ..Default::default()
+    })
+    .map_err(mux_error)?;
+    let mut file = File::options().write(true).create_new(true).open(path)?;
+    let initial = muxer.initial_boxes_bytes().to_vec();
+    file.write_all(&initial)?;
+    let head = initial.len() - 16;
+    table(&mut muxer, plan, initial.len() as u64)?;
+    crate::fault::point("pure_remux_sample");
+    let mut data = payload.file.into_inner().map_err(|e| e.into_error())?;
+    data.seek(SeekFrom::Start(0))?;
+    // File to file: the kernel copies (copy_file_range), no user-space buffer.
+    let copied = std::io::copy(&mut data, &mut file)?;
+    ensure!(copied == total, "sample table disagrees with its payload");
+    let boxes = muxer.finalize().map_err(mux_error)?;
+    ensure!(
+        boxes.is_faststart_enabled(),
+        "MP4 moov exceeds reserved head"
+    );
+    let moov = boxes.moov_box_size();
+    for (offset, bytes) in boxes.offset_and_bytes_pairs() {
+        if offset == 0 {
+            let ftyp = u32::from_be_bytes(bytes[..4].try_into()?) as usize;
+            ensure!(
+                bytes.len() == head && ftyp + moov == head,
+                "MP4 head is not exact"
+            );
         }
-        Ok(())
+        file.seek(SeekFrom::Start(offset))?;
+        file.write_all(bytes)?;
     }
-    /// Writes every planned sample from length-prefixed bytes kept by the
-    /// first read, so the input is read only once.
-    pub fn write_samples(&mut self, mut data: &[u8]) -> anyhow::Result<()> {
-        while self.index < self.plan.samples.len() {
-            let size = usize::try_from(self.plan.samples[self.index].0)?;
-            ensure!(size <= data.len(), "input changed between reads");
-            let (sample, rest) = data.split_at(size);
-            self.file.write_all(sample)?;
-            self.position += size as u64;
-            self.end_sample()?;
-            data = rest;
-        }
-        ensure!(data.is_empty(), "input changed between reads");
-        Ok(())
-    }
-    pub fn finish(mut self) -> anyhow::Result<()> {
-        ensure!(
-            self.index == self.plan.samples.len(),
-            "input changed between reads"
-        );
-        let boxes = self.muxer.finalize().map_err(mux_error)?;
-        ensure!(
-            boxes.is_faststart_enabled(),
-            "MP4 moov exceeds reserved head"
-        );
-        let moov = boxes.moov_box_size();
-        let mut file = self.file.into_inner().map_err(|e| e.into_error())?;
-        for (offset, bytes) in boxes.offset_and_bytes_pairs() {
-            if offset == 0 {
-                let ftyp = u32::from_be_bytes(bytes[..4].try_into()?) as usize;
-                ensure!(
-                    bytes.len() == self.head && ftyp + moov == self.head,
-                    "MP4 head is not exact"
-                );
-            }
-            file.seek(SeekFrom::Start(offset))?;
-            file.write_all(bytes)?;
-        }
-        file.flush()?;
-        Ok(())
-    }
+    file.flush()?;
+    Ok(())
 }

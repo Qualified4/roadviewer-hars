@@ -23,7 +23,15 @@ const RESULT_ON_STDOUT: [&str; 10] = [
 ];
 
 fn main() -> anyhow::Result<()> {
-    let runtime = tokio::runtime::Runtime::new()?;
+    // A media worker does one blocking job: one thread keeps its memory small and its limit meaningful.
+    let worker = std::env::args().nth(1).is_some_and(|v| v.starts_with("__"));
+    let runtime = if worker {
+        tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()?
+    } else {
+        tokio::runtime::Runtime::new()?
+    };
     let result = runtime.block_on(run());
     runtime.shutdown_timeout(SHUTDOWN_LIMIT);
     result

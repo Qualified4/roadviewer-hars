@@ -1,7 +1,4 @@
-use crate::media::Signature;
 use anyhow::ensure;
-use sha2::{Digest, Sha256};
-use std::collections::BTreeSet;
 
 pub const NAL_LIMIT: usize = 32 * 1024 * 1024;
 
@@ -175,53 +172,6 @@ pub fn configuration_sets(raw_in_order: &[(u8, &[u8])]) -> Vec<(u8, Vec<u8>)> {
         .collect()
 }
 
-/// Same policy as `media::NalHasher`: ordered VCL SHA plus decoder header set.
-pub struct Pictures {
-    hevc: bool,
-    hash: Sha256,
-    headers: BTreeSet<(u8, String)>,
-    pictures: u64,
-}
-impl Pictures {
-    pub fn new(hevc: bool) -> Self {
-        Self {
-            hevc,
-            hash: Sha256::new(),
-            headers: BTreeSet::new(),
-            pictures: 0,
-        }
-    }
-    /// Accepts framed units; framing zeros never reach the hash.
-    pub fn add(&mut self, unit: &[u8]) -> anyhow::Result<u8> {
-        let unit = trim(unit);
-        let kind = kind(unit, self.hevc)?;
-        if is_parameter_set(kind, self.hevc) {
-            self.headers
-                .insert((kind, hex::encode(Sha256::digest(unit))));
-        }
-        if (self.hevc && kind < 32) || (!self.hevc && (1..=5).contains(&kind)) {
-            self.hash.update((unit.len() as u32).to_be_bytes());
-            self.hash.update(unit);
-            self.pictures += 1;
-        }
-        Ok(kind)
-    }
-    pub fn finish(self) -> anyhow::Result<Signature> {
-        let required: &[u8] = if self.hevc { &[32, 33, 34] } else { &[7, 8] };
-        ensure!(
-            self.pictures > 0
-                && required
-                    .iter()
-                    .all(|k| self.headers.iter().any(|(kind, _)| kind == k)),
-            "missing pictures or decoder configuration"
-        );
-        Ok(Signature {
-            pictures: hex::encode(self.hash.finalize()),
-            headers: self.headers,
-        })
-    }
-}
-
 /// RBSP reader for the few SPS fields the MP4 helpers do not expose.
 pub struct Bits {
     rbsp: Vec<u8>,
@@ -276,5 +226,39 @@ impl Bits {
     pub fn se(&mut self) -> anyhow::Result<i64> {
         let v = i64::from(self.ue()?);
         Ok(if v % 2 == 1 { (v + 1) / 2 } else { -v / 2 })
+    }
+}
+
+/// Parameter sets seen before the first picture, which become the decoder
+/// configuration. Bounded: a stream of sets alone never reaches a picture.
+#[derive(Default)]
+pub struct Sets {
+    raw: Vec<(u8, Vec<u8>)>,
+    bytes: usize,
+}
+pub const SETS_LIMIT: usize = 64;
+pub const SETS_BYTES: usize = 1024 * 1024;
+impl Sets {
+    pub fn add(&mut self, kind: u8, raw: &[u8]) -> anyhow::Result<()> {
+        self.bytes += raw.len();
+        ensure!(
+            self.raw.len() < SETS_LIMIT && self.bytes <= SETS_BYTES,
+            "too many parameter sets before the first picture"
+        );
+        self.raw.push((kind, raw.to_vec()));
+        Ok(())
+    }
+    pub fn contains(&self, kind: u8, raw: &[u8]) -> bool {
+        let raw = trim(raw);
+        self.raw.iter().any(|(k, v)| *k == kind && trim(v) == raw)
+    }
+    pub fn configuration(&self) -> Vec<(u8, Vec<u8>)> {
+        configuration_sets(
+            &self
+                .raw
+                .iter()
+                .map(|(k, v)| (*k, v.as_slice()))
+                .collect::<Vec<_>>(),
+        )
     }
 }

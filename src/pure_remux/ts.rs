@@ -1,8 +1,7 @@
 use super::{
-    Unsupported,
-    annexb::NAL_LIMIT,
-    annexb::{Bits, configuration_sets, for_each_nal, is_parameter_set, kind},
-    mp4::{Kept, Plan, SAMPLE_LIMIT, Writer},
+    Stage, Unsupported,
+    annexb::{Bits, Sets, for_each_nal, is_parameter_set, kind},
+    mp4::{Payload, Plan},
 };
 use crate::media::{NalHasher, Signature};
 use anyhow::{Context, bail, ensure};
@@ -90,7 +89,7 @@ fn demux(source: &Path, mut each: impl FnMut(Pes) -> anyhow::Result<()>) -> anyh
         .map_err(|e| anyhow::anyhow!("invalid MPEG-TS packet: {e}"))?
     {
         if packet.header.transport_error_indicator {
-            return Err(Unsupported("MPEG-TS transport error").into());
+            bail!("MPEG-TS transport error");
         }
         let pid = packet.header.pid.as_u16();
         let payload = match packet.payload {
@@ -122,7 +121,7 @@ fn demux(source: &Path, mut each: impl FnMut(Pes) -> anyhow::Result<()>) -> anyh
             .as_ref()
             .is_some_and(|a| a.discontinuity_indicator);
         if !(resync || continuity.is_none_or(|c| (c + 1) & 15 == counter)) {
-            return Err(Unsupported("MPEG-TS continuity error (missing packet)").into());
+            bail!("MPEG-TS continuity error (missing packet)");
         }
         continuity = Some(counter);
         match payload {
@@ -131,7 +130,7 @@ fn demux(source: &Path, mut each: impl FnMut(Pes) -> anyhow::Result<()>) -> anyh
                     finish(done)?;
                 }
                 let Some(pts) = start.header.pts else {
-                    return Err(Unsupported("PES without PTS").into());
+                    bail!("PES without PTS");
                 };
                 let pts = pts.as_u64();
                 let dts = start.header.dts.map_or(pts, |d| d.as_u64());
@@ -217,9 +216,9 @@ struct Frame {
     keyframe: bool,
 }
 
-/// The first read of the TS input hashes the elementary stream with the
-/// independent `NalHasher` splitter, sizes every sample and keeps the sample
-/// bytes when they fit `BUFFER_LIMIT`; otherwise a second read writes them. Output clocks are DTS minus `offset`, the first (smallest) PTS.
+/// One read of the TS input hashes the elementary stream with the independent
+/// `NalHasher` splitter, sizes every sample and stages the sample bytes
+/// (`Payload`). Output clocks are DTS minus `offset`, the first (smallest) PTS.
 pub fn remux(
     source: &Path,
     output: &Path,
@@ -227,119 +226,103 @@ pub fn remux(
     offset: i64,
     terminal: u32,
 ) -> anyhow::Result<Signature> {
-    let mut hash = NalHasher::new(false);
-    let mut clock = Clock::default();
-    let mut frames: Vec<Frame> = Vec::new();
-    let mut first: Vec<(u8, Vec<u8>)> = Vec::new();
-    let mut kept = Kept::new();
-    demux(source, |pes| {
-        ensure!(
-            frames.len() < PACKET_LIMIT,
-            "invalid video packet or inspection limit"
-        );
-        hash.feed(&pes.data)?;
-        let dts = clock.unwrap(pes.dts);
-        if pes.pts != pes.dts {
-            return Err(Unsupported("H.264 picture reordering in TS").into());
-        }
-        if let Some(last) = frames.last() {
-            ensure!(dts > last.dts, "invalid PTS/DTS");
-        } else if i64::try_from(pes.pts)? != offset {
-            return Err(Unsupported("first TS picture is not the earliest").into());
-        }
-        let (mut size, mut keyframe, mut delimiters, mut pictures) = (0u64, false, 0, 0);
-        for_each_nal(&pes.data, |unit| {
-            let kind = kind(unit.raw, false)?;
-            keyframe |= kind == 5;
-            delimiters += usize::from(kind == 9);
-            pictures += usize::from((1..=5).contains(&kind));
-            if frames.is_empty() && is_parameter_set(kind, false) {
-                first.push((kind, unit.raw.to_vec()));
-            }
-            let sample = unit.sample();
+    let (plan, signature, payload) = (|| {
+        let _profile = crate::profile::Scope::new("pure_ts_read");
+        let mut hash = NalHasher::new(false);
+        let mut clock = Clock::default();
+        let mut frames: Vec<Frame> = Vec::new();
+        let mut sets = Sets::default();
+        let mut payload = Payload::create(output)?;
+        demux(source, |pes| {
             ensure!(
-                !sample.is_empty() && sample.len() <= NAL_LIMIT,
-                "NAL unit exceeds bounded memory limit"
+                frames.len() < PACKET_LIMIT,
+                "invalid video packet or inspection limit"
             );
-            size += 4 + sample.len() as u64;
-            kept.nal(sample);
+            hash.feed(&pes.data)?;
+            let dts = clock.unwrap(pes.dts);
+            if pes.pts != pes.dts {
+                return Err(Unsupported("H.264 picture reordering in TS").into());
+            }
+            if let Some(last) = frames.last() {
+                ensure!(dts > last.dts, "invalid PTS/DTS");
+            } else if i64::try_from(pes.pts)? != offset {
+                return Err(Unsupported("first TS picture is not the earliest").into());
+            }
+            let (mut keyframe, mut delimiters, mut starts) = (false, 0, 0);
+            for_each_nal(&pes.data, |unit| {
+                let kind = kind(unit.raw, false)?;
+                keyframe |= kind == 5;
+                delimiters += usize::from(kind == 9);
+                if matches!(kind, 1 | 2 | 5) {
+                    let body = super::annexb::trim(unit.raw);
+                    // first_mb_in_slice == 0 starts a picture.
+                    starts += usize::from(body.get(1).is_some_and(|b| b & 0x80 != 0));
+                }
+                if frames.is_empty() && is_parameter_set(kind, false) {
+                    sets.add(kind, unit.raw)?;
+                }
+                payload.nal(unit.sample())
+            })?;
+            if delimiters > 1 || starts != 1 {
+                return Err(Unsupported("TS packet is not one access unit").into());
+            }
+            frames.push(Frame {
+                dts,
+                size: payload.end_sample(),
+                keyframe,
+            });
             Ok(())
         })?;
+        let signature = hash.finish()?;
         ensure!(
-            size <= SAMPLE_LIMIT,
-            "invalid video packet or inspection limit"
+            frames.len() == frames_expected,
+            "video frame count or timestamps disagree with log"
         );
-        if delimiters > 1 || pictures == 0 {
-            return Err(Unsupported("TS packet is not one access unit").into());
+        let sets = sets.configuration();
+        let pick = |k: u8| {
+            sets.iter()
+                .filter(|(kind, _)| *kind == k)
+                .map(|(_, v)| v.clone())
+                .collect::<Vec<_>>()
+        };
+        let (sps, pps) = (pick(7), pick(8));
+        ensure!(
+            !sps.is_empty() && !pps.is_empty(),
+            "missing pictures or decoder configuration"
+        );
+        ensure!(frames[0].keyframe, "first H.264 picture is not a keyframe");
+        if !progressive(&sps[0])? {
+            return Err(Unsupported("interlaced H.264").into());
         }
-        frames.push(Frame {
-            dts,
-            size,
-            keyframe,
-        });
-        Ok(())
-    })?;
-    let signature = hash.finish()?;
-    ensure!(
-        frames.len() == frames_expected,
-        "video frame count or timestamps disagree with log"
-    );
-    let sets = configuration_sets(
-        &first
+        let entry = build_avc1_box(
+            &sps,
+            &pps,
+            &H264SampleEntryConfig {
+                length_size: LengthSize::FourBytes,
+            },
+        )
+        .map_err(|e| anyhow::anyhow!("invalid H.264 decoder configuration: {e}"))?;
+        super::mp4::check_dimensions(entry.visual.width, entry.visual.height)?;
+        let samples = frames
             .iter()
-            .map(|(k, v)| (*k, v.as_slice()))
-            .collect::<Vec<_>>(),
-    );
-    let pick = |k: u8| {
-        sets.iter()
-            .filter(|(kind, _)| *kind == k)
-            .map(|(_, v)| v.clone())
-            .collect::<Vec<_>>()
-    };
-    let (sps, pps) = (pick(7), pick(8));
-    ensure!(
-        !sps.is_empty() && !pps.is_empty(),
-        "missing pictures or decoder configuration"
-    );
-    ensure!(frames[0].keyframe, "first H.264 picture is not a keyframe");
-    if !progressive(&sps[0])? {
-        return Err(Unsupported("interlaced H.264").into());
-    }
-    let entry = build_avc1_box(
-        &sps,
-        &pps,
-        &H264SampleEntryConfig {
-            length_size: LengthSize::FourBytes,
-        },
-    )
-    .map_err(|e| anyhow::anyhow!("invalid H.264 decoder configuration: {e}"))?;
-    super::mp4::check_dimensions(entry.visual.width, entry.visual.height)?;
-    let samples = frames
-        .iter()
-        .enumerate()
-        .map(|(i, f)| {
-            let duration = match frames.get(i + 1) {
-                Some(next) => u32::try_from(next.dts - f.dts).context("invalid PTS/DTS")?,
-                None => terminal,
-            };
-            Ok((f.size, duration, f.keyframe))
-        })
-        .collect::<anyhow::Result<Vec<_>>>()?;
-    let mut writer = Writer::create(
-        output,
-        Plan {
+            .enumerate()
+            .map(|(i, f)| {
+                let duration = match frames.get(i + 1) {
+                    Some(next) => u32::try_from(next.dts - f.dts).context("invalid PTS/DTS")?,
+                    None => terminal,
+                };
+                Ok((f.size, duration, f.keyframe))
+            })
+            .collect::<anyhow::Result<Vec<_>>>()?;
+        let plan = Plan {
             entry: SampleEntry::Avc1(entry),
             timescale: TIMESCALE,
             samples,
-        },
-    )?;
-    match kept.take() {
-        Some(data) => writer.write_samples(&data)?,
-        None => demux(source, |pes| {
-            for_each_nal(&pes.data, |unit| writer.write_nal(unit.sample()))?;
-            writer.end_sample()
-        })?,
-    }
-    writer.finish()?;
+        };
+        anyhow::Ok((plan, signature, payload))
+    })()
+    .context(Stage::Read)?;
+    let _profile = crate::profile::Scope::new("pure_ts_write");
+    super::mp4::write(output, &plan, payload).context(Stage::Write)?;
     Ok(signature)
 }

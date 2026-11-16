@@ -113,7 +113,10 @@ async fn both(source: &Path, kind: &str, times: &[f64], next: Option<u64>) -> (i
         let done = media::remux_using(engine, source, kind, &output, times, next)
             .await
             .unwrap();
-        assert_eq!((done.engine, done.fallback.as_deref()), (engine, None));
+        assert_eq!(
+            (done.engine, done.fallback.as_ref().map(|f| f.code.as_str())),
+            (engine, None)
+        );
         basis = done.terminal.map(|t| t.basis);
         let c = clip(&output, &done.info);
         assert_eq!(c.duration_ts - c.pts.last().unwrap().1, c.last_duration);

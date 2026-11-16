@@ -1,8 +1,9 @@
-//! Independent read-back of a finished MP4. It parses the box tree and sample
-//! tables itself and shares no code with the writer or `shiguredo_mp4`, so a
-//! writer bug cannot be confirmed by the same code that made it.
-use super::annexb::{Pictures, is_parameter_set};
-use crate::media::Inspection;
+//! Read-back of a finished MP4, for either engine's output. It parses the box
+//! tree and sample tables itself, without `shiguredo_mp4` (which wrote them)
+//! or the writer's Annex B splitting, and hashes the samples with
+//! `media::NalHasher`, the splitter that also hashed the input. Shared with
+//! the writer: only `mp4::check_dimensions` (the same size rule both apply).
+use crate::media::{Inspection, NalHasher};
 use anyhow::{Context, bail, ensure};
 use serde_json::json;
 use std::{
@@ -166,6 +167,73 @@ fn sets_hvcc(payload: &[u8]) -> anyhow::Result<(u8, Vec<Vec<u8>>)> {
         }
     }
     Ok((length, sets))
+}
+
+/// One sample's pictures as their slice headers state them, so a sample
+/// boundary moved by the writer or a wrong sync mark is caught even when the
+/// ordered picture hash is unchanged.
+#[derive(Default)]
+struct Access {
+    vcl: usize,
+    starts: usize,
+    first_starts: bool,
+    irap: bool,
+    intra: bool,
+}
+impl Access {
+    fn add(&mut self, hevc: bool, kind: u8, nal: &[u8]) -> anyhow::Result<()> {
+        if !(if hevc {
+            kind < 32
+        } else {
+            (1..=5).contains(&kind)
+        }) {
+            return Ok(());
+        }
+        // first_slice_segment_in_pic_flag (HEVC); first_mb_in_slice == 0, a
+        // single 1 bit in Exp-Golomb (H.264).
+        // H.264 data partitions B and C carry no slice header.
+        let header = if hevc { 2 } else { 1 };
+        ensure!(nal.len() > header, "truncated slice header");
+        let starts = (hevc || matches!(kind, 1 | 2 | 5)) && nal[header] & 0x80 != 0;
+        if self.vcl == 0 {
+            self.first_starts = starts;
+            self.intra = !hevc && starts && h264_intra(&nal[1..]);
+        }
+        self.vcl += 1;
+        self.starts += usize::from(starts);
+        self.irap |= if hevc {
+            (16..=23).contains(&kind)
+        } else {
+            kind == 5
+        };
+        Ok(())
+    }
+    /// HEVC sync samples are exactly the IRAP pictures. H.264 IDR pictures
+    /// must be sync samples; libavformat also marks I pictures with a
+    /// recovery point, so a non-IDR sync sample must at least be intra.
+    fn check(&self, sync: bool) -> anyhow::Result<()> {
+        ensure!(
+            self.vcl > 0 && self.first_starts && self.starts == 1,
+            "MP4 sample is not one picture"
+        );
+        ensure!(
+            sync == self.irap || (sync && self.intra),
+            "MP4 sync samples disagree with the pictures"
+        );
+        Ok(())
+    }
+}
+
+/// slice_type I or SI after first_mb_in_slice == 0; both fit the first two
+/// bytes, before any emulation prevention byte can occur.
+fn h264_intra(body: &[u8]) -> bool {
+    let bits = u16::from_be_bytes([body[0], body.get(1).copied().unwrap_or(0)]) << 1;
+    let zeros = bits.leading_zeros();
+    if zeros > 7 {
+        return false;
+    }
+    let value = (bits >> (15 - 2 * zeros)) - 1;
+    matches!(value % 5, 2 | 4)
 }
 
 fn counted(count: u32) -> anyhow::Result<usize> {
@@ -431,10 +499,14 @@ pub fn inspect(path: &Path, hevc: bool) -> anyhow::Result<(Inspection, Layout)> 
         "first sample is not a keyframe"
     );
 
-    let mut pictures = Pictures::new(hevc);
+    let mut pictures = NalHasher::new(hevc);
     for unit in &sets {
-        pictures.add(unit)?;
+        pictures.unit(unit)?;
     }
+    let sync = keyframes
+        .iter()
+        .copied()
+        .collect::<std::collections::BTreeSet<_>>();
     let unit = 1f64 / f64::from(timescale);
     let time = |s: i64| (s as f64 * unit).to_string();
     let mut packets = Vec::with_capacity(count);
@@ -446,24 +518,31 @@ pub fn inspect(path: &Path, hevc: bool) -> anyhow::Result<(Inspection, Layout)> 
             size > 0
                 && size <= SAMPLE_LIMIT
                 && position >= data_start
-                && position + size <= data_end,
+                && position
+                    .checked_add(size)
+                    .is_some_and(|end| end <= data_end),
             "invalid video packet or inspection limit"
         );
         sample.resize(usize::try_from(size)?, 0);
         file.seek(SeekFrom::Start(position))?;
         file.read_exact(&mut sample)?;
         let mut rest = &sample[..];
+        let mut access = Access::default();
         while !rest.is_empty() {
             ensure!(rest.len() >= 4, "truncated MP4 sample");
             let n = u32::from_be_bytes(rest[..4].try_into()?) as usize;
             ensure!(n > 0 && n <= rest.len() - 4, "truncated MP4 sample");
-            let kind = pictures.add(&rest[4..4 + n])?;
+            let nal = &rest[4..4 + n];
+            ensure!(nal[0] & 0x80 == 0, "forbidden NAL header bit");
+            let kind = pictures.unit(nal)?;
             ensure!(
-                !(hevc && is_parameter_set(kind, true)),
+                !(hevc && matches!(kind, 32..=34)),
                 "hvc1 parameter sets must be out of band"
             );
+            access.add(hevc, kind, nal)?;
             rest = &rest[4 + n..];
         }
+        access.check(sync.contains(&i))?;
         let decode = i64::try_from(dts)?;
         let presentation = decode
             .checked_add(t.offsets[i])

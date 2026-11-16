@@ -422,7 +422,10 @@ async fn product_terminal_duration_without_next_frame_is_median_interval() {
         let done = media::remux_using(engine, &ts, "qcamera.ts", &mp4, &times, None)
             .await
             .unwrap();
-        assert_eq!((done.engine, done.fallback.as_deref()), (engine, None));
+        assert_eq!(
+            (done.engine, done.fallback.as_ref().map(|f| f.code.as_str())),
+            (engine, None)
+        );
         let info = done.info;
         assert_eq!(info["streams"][0]["time_base"], "1/90000");
         assert_eq!(info["streams"][0]["duration_ts"], last + median);

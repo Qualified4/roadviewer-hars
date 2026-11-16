@@ -300,9 +300,22 @@ impl Jobs {
             .kill_on_drop(true)
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
+        // Its media workers die with it (they also die with it on its own SIGKILL).
+        crate::media::die_with_parent(&mut command);
+        #[cfg(unix)]
+        command.process_group(0);
         let mut child = command
             .spawn()
             .context("conversion process could not start")?;
+        let group = child.id();
+        let stop = |child: &mut tokio::process::Child| {
+            #[cfg(unix)]
+            if let Some(pid) = group.and_then(|p| i32::try_from(p).ok()) {
+                // SAFETY: kill(2) on the process group this conversion leads.
+                unsafe { libc::kill(-pid, libc::SIGKILL) };
+            }
+            child.start_kill()
+        };
         let stdout = child.stdout.take().unwrap();
         let mut lines = BufReader::new(stdout).lines();
         let future = async {
@@ -345,14 +358,26 @@ impl Jobs {
             }
         };
         tokio::select! {
-            result=tokio::time::timeout(std::time::Duration::from_secs(timeout),future)=>{result.context("conversion deadline exceeded; original data preserved")??;},
+            result=tokio::time::timeout(std::time::Duration::from_secs(timeout),future)=>{
+                if let Err(error)=result.context("conversion deadline exceeded; original data preserved").and_then(|r|r){
+                    // Nothing of this generation was published yet: its partial output goes with its
+                    // processes (the child may have exited already, so a failed kill is expected).
+                    let _=stop(&mut child);
+                    let _=child.wait().await;
+                    let _=tokio::fs::remove_dir_all(&staging).await;
+                    return Err(error);
+                }
+            },
             _=superseded=>{
-                child.kill().await?;
+                stop(&mut child)?;
+                child.wait().await?;
                 let _=tokio::fs::remove_dir_all(&staging).await;
                 return Ok(());
             }
             _=cancel.notified()=>{
-                child.kill().await?;
+                stop(&mut child)?;
+                child.wait().await?;
+                let _=tokio::fs::remove_dir_all(&staging).await;
                 let lock=self.store.record_lock(record).await;let _guard=lock.lock().await;
                 let mut meta=self.store.meta(record).await.map_err(|_|anyhow::anyhow!("record unavailable"))?;
                 meta["status"]=json!("unconverted");meta["manual_conversion"]=json!(false);meta["auto_excluded"]=json!(true);meta["error"]=Value::Null;

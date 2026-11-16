@@ -18,6 +18,63 @@ pub fn set_worker_executable(path: PathBuf) -> anyhow::Result<()> {
         .map_err(|_| anyhow::anyhow!("media worker already configured"))
 }
 const OUTPUT_LIMIT: u64 = 64 * 1024 * 1024;
+/// A media worker that ended without success; how it ended tells a crash or
+/// a kill (the kernel's OOM killer, a shutdown) from a reported error.
+#[derive(Debug)]
+pub struct WorkerExit(pub std::process::ExitStatus);
+impl std::fmt::Display for WorkerExit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "native media validation failed ({})", self.0)
+    }
+}
+impl std::error::Error for WorkerExit {}
+#[derive(Debug)]
+pub struct Deadline;
+impl std::fmt::Display for Deadline {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("media processing deadline exceeded")
+    }
+}
+impl std::error::Error for Deadline {}
+
+/// The child is killed when the process that started it dies, even by
+/// SIGKILL, so no orphaned worker keeps writing into a staging folder.
+pub fn die_with_parent(command: &mut Command) {
+    #[cfg(target_os = "linux")]
+    {
+        // SAFETY: getpid/prctl/getppid are async-signal-safe and touch no
+        // memory of the parent; the closure only copies `parent`.
+        unsafe {
+            let parent = libc::getpid();
+            command.pre_exec(move || {
+                if libc::prctl(libc::PR_SET_PDEATHSIG, libc::SIGKILL) != 0 {
+                    return Err(std::io::Error::last_os_error());
+                }
+                // The parent died before prctl took effect.
+                if libc::getppid() != parent {
+                    return Err(std::io::Error::from_raw_os_error(libc::ESRCH));
+                }
+                Ok(())
+            });
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = command;
+}
+
+/// 180 s per worker; debug builds let tests shorten it.
+fn deadline() -> Duration {
+    let debug = cfg!(debug_assertions)
+        .then(|| {
+            std::env::var("HARS_MEDIA_DEADLINE_SECONDS")
+                .ok()?
+                .parse()
+                .ok()
+        })
+        .flatten();
+    Duration::from_secs(debug.unwrap_or(180))
+}
+
 async fn run(command: &mut Command) -> anyhow::Result<Vec<u8>> {
     let _profile = crate::profile::Scope::new("native_process_ipc");
     use std::process::Stdio;
@@ -26,6 +83,7 @@ async fn run(command: &mut Command) -> anyhow::Result<Vec<u8>> {
         .kill_on_drop(true)
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
+    die_with_parent(command);
     let mut child = command.spawn().context("start native media tool")?;
     let mut stdout = child.stdout.take().unwrap();
     let work = async {
@@ -38,15 +96,15 @@ async fn run(command: &mut Command) -> anyhow::Result<Vec<u8>> {
             child.kill().await?;
             bail!("media output limit exceeded");
         }
-        anyhow::ensure!(
-            child.wait().await?.success(),
-            "native media validation failed"
-        );
+        let status = child.wait().await?;
+        if !status.success() {
+            return Err(WorkerExit(status).into());
+        }
         Ok(bytes)
     };
-    tokio::time::timeout(Duration::from_secs(180), work)
+    tokio::time::timeout(deadline(), work)
         .await
-        .context("media processing deadline exceeded")?
+        .map_err(|_| anyhow::Error::new(Deadline))?
 }
 fn input_format(kind: &str) -> &'static str {
     if kind.ends_with(".mp4") {
@@ -107,10 +165,14 @@ fn validate_info(info: &Value, kind: &str) -> anyhow::Result<()> {
     Ok(())
 }
 
+/// What a lossless remux must preserve: the ordered VCL units (`pictures`), the
+/// set of decoder parameter sets (`headers`, in band or in avcC/hvcC) and the
+/// ordered other units such as SEI, AUD and end of sequence (`others`).
 #[derive(Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct Signature {
     pub pictures: String,
     pub headers: BTreeSet<(u8, String)>,
+    pub others: String,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
@@ -143,11 +205,49 @@ pub fn annex_b_signature(bytes: &[u8], hevc: bool) -> anyhow::Result<Signature> 
 }
 pub struct NalHasher {
     buffer: Vec<u8>,
+    searched: usize,
+    units: Units,
+}
+/// Distinct parameter sets a camera stream may carry; a hostile file of unique
+/// sets would otherwise grow the header set with the file size.
+pub const HEADER_LIMIT: usize = 64;
+struct Units {
     hevc: bool,
     hash: Sha256,
+    others: Sha256,
     headers: BTreeSet<(u8, String)>,
     pictures: u64,
-    searched: usize,
+}
+impl Units {
+    fn add(&mut self, mut unit: &[u8]) -> anyhow::Result<u8> {
+        let hevc = self.hevc;
+        while unit.last() == Some(&0) {
+            unit = &unit[..unit.len() - 1];
+        }
+        anyhow::ensure!(unit.len() >= if hevc { 2 } else { 1 }, "truncated NAL unit");
+        let kind = if hevc {
+            (unit[0] >> 1) & 63
+        } else {
+            unit[0] & 31
+        };
+        if (hevc && matches!(kind, 32..=34)) || (!hevc && matches!(kind, 7 | 8)) {
+            self.headers
+                .insert((kind, hex::encode(Sha256::digest(unit))));
+            anyhow::ensure!(
+                self.headers.len() <= HEADER_LIMIT,
+                "too many distinct parameter sets"
+            );
+        } else if (hevc && kind < 32) || (!hevc && (1..=5).contains(&kind)) {
+            self.hash.update((unit.len() as u32).to_be_bytes());
+            self.hash.update(unit);
+            self.pictures += 1;
+        } else {
+            self.others.update([kind]);
+            self.others.update((unit.len() as u32).to_be_bytes());
+            self.others.update(unit);
+        }
+        Ok(kind)
+    }
 }
 fn start_code(bytes: &[u8], from: usize) -> Option<(usize, usize)> {
     for i in from..bytes.len().saturating_sub(2) {
@@ -164,65 +264,51 @@ impl NalHasher {
     pub fn new(hevc: bool) -> Self {
         Self {
             buffer: Vec::new(),
-            hevc,
-            hash: Sha256::new(),
-            headers: BTreeSet::new(),
-            pictures: 0,
             searched: 0,
+            units: Units {
+                hevc,
+                hash: Sha256::new(),
+                others: Sha256::new(),
+                headers: BTreeSet::new(),
+                pictures: 0,
+            },
         }
     }
+    /// Linear in the fed bytes however small the units are: the consumed
+    /// prefix is dropped once per call, not once per unit.
     pub fn feed(&mut self, bytes: &[u8]) -> anyhow::Result<()> {
         self.buffer.extend_from_slice(bytes);
-        while let Some((prefix, begin)) = start_code(&self.buffer, 0) {
-            anyhow::ensure!(
-                self.buffer[..prefix].iter().all(|b| *b == 0),
-                "non Annex B prefix"
-            );
+        let mut consumed = 0;
+        let mut result = Ok(());
+        while let Some((prefix, begin)) = start_code(&self.buffer, consumed) {
+            if !self.buffer[consumed..prefix].iter().all(|b| *b == 0) {
+                result = Err(anyhow::anyhow!("non Annex B prefix"));
+                break;
+            }
             let Some((end, _)) = start_code(&self.buffer, begin.max(self.searched)) else {
                 self.searched = self.buffer.len().saturating_sub(3).max(begin);
                 break;
             };
-            Self::add(
-                self.hevc,
-                &mut self.hash,
-                &mut self.headers,
-                &mut self.pictures,
-                &self.buffer[begin..end],
-            )?;
-            self.buffer.drain(..end);
+            if let Err(e) = self.units.add(&self.buffer[begin..end]) {
+                result = Err(e);
+                break;
+            }
+            consumed = end;
             self.searched = 0;
         }
+        self.buffer.drain(..consumed);
+        self.searched = self.searched.saturating_sub(consumed);
+        result?;
         anyhow::ensure!(
             self.buffer.len() <= 32 * 1024 * 1024,
             "NAL unit exceeds bounded memory limit"
         );
         Ok(())
     }
-    fn add(
-        hevc: bool,
-        hash: &mut Sha256,
-        headers: &mut BTreeSet<(u8, String)>,
-        pictures: &mut u64,
-        mut unit: &[u8],
-    ) -> anyhow::Result<()> {
-        while unit.last() == Some(&0) {
-            unit = &unit[..unit.len() - 1];
-        }
-        anyhow::ensure!(unit.len() >= if hevc { 2 } else { 1 }, "truncated NAL unit");
-        let kind = if hevc {
-            (unit[0] >> 1) & 63
-        } else {
-            unit[0] & 31
-        };
-        if (hevc && matches!(kind, 32..=34)) || (!hevc && matches!(kind, 7 | 8)) {
-            headers.insert((kind, hex::encode(Sha256::digest(unit))));
-        }
-        if (hevc && kind < 32) || (!hevc && (1..=5).contains(&kind)) {
-            hash.update((unit.len() as u32).to_be_bytes());
-            hash.update(unit);
-            *pictures += 1;
-        }
-        Ok(())
+    /// Adds one NAL unit given without its start code (trailing zeros are
+    /// framing) and returns its type; for units already split, as in MP4.
+    pub fn unit(&mut self, unit: &[u8]) -> anyhow::Result<u8> {
+        self.units.add(unit)
     }
     pub fn finish(mut self) -> anyhow::Result<Signature> {
         if let Some((prefix, begin)) = start_code(&self.buffer, 0) {
@@ -230,25 +316,21 @@ impl NalHasher {
                 self.buffer[..prefix].iter().all(|b| *b == 0),
                 "non Annex B prefix"
             );
-            Self::add(
-                self.hevc,
-                &mut self.hash,
-                &mut self.headers,
-                &mut self.pictures,
-                &self.buffer[begin..],
-            )?;
+            self.units.add(&self.buffer[begin..])?;
         }
-        let required: &[u8] = if self.hevc { &[32, 33, 34] } else { &[7, 8] };
+        let units = self.units;
+        let required: &[u8] = if units.hevc { &[32, 33, 34] } else { &[7, 8] };
         anyhow::ensure!(
-            self.pictures > 0
+            units.pictures > 0
                 && required
                     .iter()
-                    .all(|k| self.headers.iter().any(|(kind, _)| kind == k)),
+                    .all(|k| units.headers.iter().any(|(kind, _)| kind == k)),
             "missing pictures or decoder configuration"
         );
         Ok(Signature {
-            pictures: hex::encode(self.hash.finalize()),
-            headers: self.headers,
+            pictures: hex::encode(units.hash.finalize()),
+            headers: units.headers,
+            others: hex::encode(units.others.finalize()),
         })
     }
 }
@@ -372,7 +454,7 @@ impl Engine {
 
 static REMUXED: [std::sync::atomic::AtomicU64; 3] =
     [const { std::sync::atomic::AtomicU64::new(0) }; 3];
-/// Process-wide (pure, ffmpeg, fallbacks) remux counts, for diagnostics.
+/// Process-wide (pure, ffmpeg, pure failures) remux counts, for diagnostics.
 pub fn remux_counts() -> [u64; 3] {
     REMUXED
         .each_ref()
@@ -383,7 +465,8 @@ fn count(index: usize) {
 }
 
 /// The server runs conversions in a child process; its remux events are
-/// logged again here with only their known fields, so fallbacks stay visible.
+/// logged again here with only their known fields and the record id, at the
+/// level the child chose, so fallbacks and failures stay visible and countable.
 pub fn relay_remux_event(record: &str, line: &str) {
     let Ok(event) = serde_json::from_str::<Value>(line) else {
         return;
@@ -392,7 +475,7 @@ pub fn relay_remux_event(record: &str, line: &str) {
     let text = |key: &str| {
         fields[key]
             .as_str()
-            .map(|s| s.chars().take(200).collect::<String>())
+            .map(|s| s.chars().take(300).collect::<String>())
             .unwrap_or_default()
     };
     match fields["event"].as_str() {
@@ -404,12 +487,30 @@ pub fn relay_remux_event(record: &str, line: &str) {
             terminal_ticks = fields["terminal_ticks"].as_u64(),
             terminal_basis = text("terminal_basis"),
         ),
-        Some("remux_fallback") => tracing::warn!(
-            event = "remux_fallback",
-            record,
-            kind = text("kind"),
-            reason = text("reason"),
-        ),
+        Some(name @ ("remux_fallback" | "remux_failure")) => {
+            let level = event["level"].as_str().unwrap_or("WARN");
+            macro_rules! relay {
+                ($level:ident) => {
+                    tracing::$level!(
+                        event = name,
+                        record,
+                        engine = text("engine"),
+                        kind = text("kind"),
+                        failure_class = text("failure_class"),
+                        reason_code = text("reason_code"),
+                        reason = text("reason"),
+                        fallback = fields["fallback"].as_bool(),
+                        fallback_result = text("fallback_result"),
+                        fallback_reason = text("fallback_reason"),
+                    )
+                };
+            }
+            match level {
+                "ERROR" => relay!(error),
+                "INFO" => relay!(info),
+                _ => relay!(warn),
+            }
+        }
         _ => {}
     }
 }
@@ -420,7 +521,7 @@ pub struct Remuxed {
     pub info: Value,
     pub engine: Engine,
     /// Why the pure engine's attempt was discarded, when FFmpeg wrote the file.
-    pub fallback: Option<String>,
+    pub fallback: Option<crate::pure_remux::Failure>,
     pub terminal: Option<crate::terminal_duration::Terminal>,
 }
 
@@ -472,6 +573,18 @@ struct Clocks {
     source: Option<Vec<(i64, i64)>>,
     offset: i64,
     terminal: crate::terminal_duration::Terminal,
+}
+
+/// Whether a pure engine failure may be retried by the FFmpeg engine, once.
+/// Resource failures are not: the same disk, memory or deadline would fail
+/// again, and a killed worker may have been the shutdown or the OOM killer.
+/// A retried input passes the same checks and limits as the pure output.
+pub fn falls_back(class: crate::pure_remux::FailureClass) -> bool {
+    use crate::pure_remux::FailureClass as C;
+    match class {
+        C::Unsupported | C::Invalid | C::Internal | C::Verification => true,
+        C::Resource => false,
+    }
 }
 
 async fn remux_inner(
@@ -533,14 +646,29 @@ async fn remux_inner(
                     terminal: Some(clocks.terminal),
                 });
             }
-            Err(reason) => {
+            Err(failure) => {
                 count(2);
-                tracing::warn!(event = "remux_fallback", from = "pure", to = "ffmpeg", kind, reason = %reason);
-                fallback = Some(reason);
+                if !falls_back(failure.class) {
+                    tracing::warn!(
+                        event = "remux_failure",
+                        engine = "pure",
+                        kind,
+                        failure_class = failure.class.name(),
+                        reason_code = failure.code,
+                        reason = failure.reason,
+                        fallback = false,
+                    );
+                    return Err(failure.into());
+                }
+                fallback = Some(failure);
             }
         }
     }
-    let info = ffmpeg(source, kind, output, times, &clocks, inspection).await?;
+    let result = ffmpeg(source, kind, output, times, &clocks, inspection).await;
+    if let Some(failure) = &fallback {
+        log_fallback(kind, failure, &result);
+    }
+    let info = result?;
     count(1);
     tracing::info!(
         event = "remux_engine",
@@ -556,6 +684,39 @@ async fn remux_inner(
         fallback,
         terminal: Some(clocks.terminal),
     })
+}
+
+/// An unsupported input is routine; damaged input is a warning; an engine
+/// error or a file that did not read back is an error even when FFmpeg's
+/// checked copy was published.
+fn log_fallback(kind: &str, failure: &crate::pure_remux::Failure, result: &anyhow::Result<Value>) {
+    use crate::pure_remux::FailureClass as C;
+    let (fallback_result, fallback_reason) = match result {
+        Ok(_) => ("published", String::new()),
+        Err(e) => ("failed", format!("{e:#}").chars().take(300).collect()),
+    };
+    macro_rules! log {
+        ($level:ident) => {
+            tracing::$level!(
+                event = "remux_fallback",
+                from = "pure",
+                to = "ffmpeg",
+                engine = "pure",
+                kind,
+                failure_class = failure.class.name(),
+                reason_code = failure.code,
+                reason = failure.reason,
+                fallback = true,
+                fallback_result,
+                fallback_reason,
+            )
+        };
+    }
+    match failure.class {
+        C::Unsupported => log!(info),
+        C::Invalid | C::Resource => log!(warn),
+        C::Internal | C::Verification => log!(error),
+    }
 }
 
 /// Output clocks both engines must produce, decided once before either runs.
@@ -609,8 +770,48 @@ fn temp_for(output: &Path) -> PathBuf {
     output.with_extension(format!("{}.tmp.mp4", crate::store::id()))
 }
 
-/// The pure engine's attempt. Any refusal, crash or failed check is returned
-/// as a reason; its output is removed and FFmpeg then handles the input.
+/// Removes its paths when dropped: on failure, and also when the remux future
+/// is dropped by a cancellation, a deadline or a superseded conversion. After
+/// a successful rename the temporary path no longer exists.
+struct Scratch(Vec<PathBuf>);
+impl Drop for Scratch {
+    fn drop(&mut self) {
+        for path in &self.0 {
+            let _ = std::fs::remove_file(path);
+        }
+    }
+}
+
+/// How a worker process ended, as a failure class.
+fn worker_failure(error: &anyhow::Error) -> crate::pure_remux::Failure {
+    use crate::pure_remux::{Failure, FailureClass as C};
+    if error.downcast_ref::<Deadline>().is_some() {
+        return Failure::new(C::Resource, "deadline", format!("{error:#}"));
+    }
+    if let Some(WorkerExit(status)) = error.downcast_ref::<WorkerExit>() {
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::ExitStatusExt;
+            let (class, code) = match status.signal() {
+                // The kernel's OOM killer, a service stop or an operator.
+                Some(libc::SIGKILL) => (C::Resource, "worker_killed"),
+                // Rust aborts when an allocation fails (the worker memory limit).
+                Some(libc::SIGABRT) => (C::Resource, "out_of_memory"),
+                Some(_) => (C::Internal, "worker_crash"),
+                // An unwinding panic exits with 101.
+                None if status.code() == Some(101) => (C::Internal, "panic"),
+                None => (C::Internal, "worker_error"),
+            };
+            return Failure::new(class, code, format!("{error:#}"));
+        }
+        #[cfg(not(unix))]
+        return Failure::new(C::Internal, "worker_error", format!("{error:#} {status}"));
+    }
+    Failure::classify(error)
+}
+
+/// The pure engine's attempt. Any failure is returned classified; its output
+/// is removed and `remux_inner` decides whether FFmpeg tries the input.
 async fn pure(
     source: &Path,
     kind: &str,
@@ -618,9 +819,11 @@ async fn pure(
     times: &[f64],
     clocks: &Clocks,
     inspection: Option<&Inspection>,
-) -> Result<Value, String> {
-    use crate::pure_remux::{Job, Reply};
+) -> Result<Value, crate::pure_remux::Failure> {
+    use crate::pure_remux::{Failure, FailureClass as C, Job, Reply};
     let temp = temp_for(output);
+    let job_path = temp.with_extension("job.json");
+    let _scratch = Scratch(vec![temp.clone(), job_path.clone()]);
     let job = Job {
         kind: kind.to_owned(),
         times: times.to_vec(),
@@ -628,69 +831,88 @@ async fn pure(
         offset: clocks.offset,
     };
     let reply = if let Some(worker) = WORKER_EXECUTABLE.get() {
-        let job_path = temp.with_extension("job.json");
-        let result = async {
-            crate::store::atomic_json(&job_path, &job).await?;
-            let mut command = Command::new(worker);
-            command
-                .arg("__pure-remux")
-                .arg(source)
-                .arg(&job_path)
-                .arg(&temp);
-            anyhow::Ok(serde_json::from_slice::<Reply>(&run(&mut command).await?)?)
-        }
-        .await;
-        let _ = tokio::fs::remove_file(&job_path).await;
-        result.map_err(|e| format!("worker: {e:#}"))
+        crate::store::atomic_json(&job_path, &job)
+            .await
+            .map_err(|e| Failure::classify(&anyhow::Error::from(e)))?;
+        let mut command = Command::new(worker);
+        command
+            .arg("__pure-remux")
+            .arg(source)
+            .arg(&job_path)
+            .arg(&temp);
+        let bytes = run(&mut command).await.map_err(|e| worker_failure(&e))?;
+        serde_json::from_slice::<Reply>(&bytes)
+            .map_err(|e| Failure::new(C::Internal, "worker_reply", e))?
     } else {
         // Library embedding/tests: a panic must not take the caller down.
-        match WORKERS.clone().acquire_owned().await {
-            Ok(permit) => {
-                let input = source.to_path_buf();
-                let target = temp.clone();
-                tokio::task::spawn_blocking(move || {
-                    let _permit = permit;
-                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                        Reply::from(crate::pure_remux::remux(&input, &target, &job))
-                    }))
-                    .unwrap_or_else(|_| Reply::Failed {
-                        reason: "panic".into(),
-                    })
-                })
-                .await
-                .map_err(|e| format!("worker: {e}"))
-            }
-            Err(e) => Err(format!("worker: {e}")),
-        }
-    };
-    let result = async {
-        let outcome = match reply? {
-            Reply::Done(outcome) => outcome,
-            Reply::Unsupported { reason } => return Err(format!("unsupported: {reason}")),
-            Reply::Failed { reason } => return Err(format!("failed: {reason}")),
-        };
-        if let Some(input) = inspection
-            && input.signature != outcome.input
-        {
-            return Err("verification: input signatures disagree".into());
-        }
-        verify_and_place(
-            &temp,
-            output,
-            kind,
-            times,
-            clocks,
-            &outcome.input,
-            outcome.output,
-        )
+        let permit = WORKERS
+            .clone()
+            .acquire_owned()
+            .await
+            .map_err(|e| Failure::new(C::Internal, "worker_start", e))?;
+        let input = source.to_path_buf();
+        let target = temp.clone();
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                Reply::from(crate::pure_remux::remux(&input, &target, &job))
+            }))
+            .unwrap_or_else(|_| Reply::Failed(Failure::new(C::Internal, "panic", "panic")))
+        })
         .await
-        .map_err(|e| format!("verification: {e:#}"))
+        .map_err(|e| Failure::new(C::Internal, "worker_start", e))?
+    };
+    let outcome = match reply {
+        Reply::Done(outcome) => outcome,
+        Reply::Failed(failure) => return Err(failure),
+    };
+    if let Some(input) = inspection
+        && input.signature != outcome.input
+    {
+        return Err(Failure::new(
+            C::Verification,
+            "input_signature",
+            "input signatures disagree",
+        ));
     }
-    .await;
-    if result.is_err() {
-        let _ = tokio::fs::remove_file(&temp).await;
-    }
-    result
+    verify_and_place(
+        &temp,
+        output,
+        kind,
+        times,
+        clocks,
+        &outcome.input,
+        outcome.output,
+    )
+    .await
+    .map_err(|e| match Failure::classify(&e) {
+        f if f.class == C::Resource => f,
+        _ => Failure::new(C::Verification, "verification", format!("{e:#}")),
+    })
+}
+
+/// The raw file's signature from `NalHasher` alone, independent of
+/// libavformat's parser: an FFmpeg copy of raw HEVC must match it, so a
+/// damaged input the parser tolerates cannot lose bytes silently.
+async fn raw_signature(source: &Path, hevc: bool) -> anyhow::Result<Signature> {
+    let _profile = crate::profile::Scope::new("raw_input_signature");
+    let source = source.to_path_buf();
+    tokio::task::spawn_blocking(move || {
+        use std::io::Read;
+        let mut file = std::fs::File::open(source)?;
+        let mut hash = NalHasher::new(hevc);
+        let mut chunk = vec![0u8; 1024 * 1024];
+        loop {
+            let n = file.read(&mut chunk)?;
+            if n == 0 {
+                break;
+            }
+            hash.feed(&chunk[..n])?;
+        }
+        hash.finish()
+    })
+    .await?
+    .context("camera original fails the input checks")
 }
 
 async fn ffmpeg(
@@ -702,68 +924,76 @@ async fn ffmpeg(
     inspection: Option<Inspection>,
 ) -> anyhow::Result<Value> {
     let temp = temp_for(output);
+    let clock_path = temp.with_extension("clock.json");
+    let _scratch = Scratch(vec![temp.clone(), clock_path.clone()]);
     let terminal = i64::try_from(clocks.terminal.ticks)?;
-    let result = async {
-        let before = if kind.ends_with(".hevc") {
-            if let Some(worker) = WORKER_EXECUTABLE.get() {
-                let clock_path = temp.with_extension("clock.json");
-                crate::store::atomic_json(&clock_path, &times).await?;
-                let mut command = Command::new(worker);
-                command
-                    .arg("__native-hevc")
-                    .arg(source)
-                    .arg(&clock_path)
-                    .arg(&temp)
-                    .arg(terminal.to_string());
-                let result = run(&mut command).await;
-                let _ = tokio::fs::remove_file(&clock_path).await;
-                serde_json::from_slice::<Signature>(&result?)?
-            } else {
-                // Library embedding/tests: keep the permit in the blocking job even if its caller cancels.
-                let permit = WORKERS.clone().acquire_owned().await?;
-                let input = source.to_path_buf();
-                let output = temp.clone();
-                let clock = times.to_vec();
-                tokio::task::spawn_blocking(move || {
-                    let _permit = permit;
-                    crate::native_video::remux_hevc(&input, &output, &clock, terminal)
-                })
-                .await??
-            }
+    let hevc = kind.ends_with(".hevc");
+    let before = if hevc {
+        let raw = raw_signature(source, true).await?;
+        let copied = if let Some(worker) = WORKER_EXECUTABLE.get() {
+            crate::store::atomic_json(&clock_path, &times).await?;
+            let mut command = Command::new(worker);
+            command
+                .arg("__native-hevc")
+                .arg(source)
+                .arg(&clock_path)
+                .arg(&temp)
+                .arg(terminal.to_string());
+            serde_json::from_slice::<Signature>(&run(&mut command).await?)?
         } else {
-            let input = inspection.context("missing source inspection")?;
-            let offset = clocks.offset;
-            if let Some(worker) = WORKER_EXECUTABLE.get() {
-                let mut command = Command::new(worker);
-                command
-                    .arg("__native-ts")
-                    .arg(source)
-                    .arg(&temp)
-                    .arg(offset.to_string())
-                    .arg(terminal.to_string());
-                run(&mut command).await?;
-            } else {
-                let permit = WORKERS.clone().acquire_owned().await?;
-                let input = source.to_path_buf();
-                let output = temp.clone();
-                tokio::task::spawn_blocking(move || {
-                    let _permit = permit;
-                    crate::native_video::remux_ts(&input, &output, offset, terminal)
-                })
-                .await??;
-            }
-            input.signature
+            // Library embedding/tests: keep the permit in the blocking job even if its caller cancels.
+            let permit = WORKERS.clone().acquire_owned().await?;
+            let input = source.to_path_buf();
+            let output = temp.clone();
+            let clock = times.to_vec();
+            tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                crate::native_video::remux_hevc(&input, &output, &clock, terminal)
+            })
+            .await??
         };
-        let checked = inspect(&temp, target_kind(kind)).await?;
-        verify_and_place(&temp, output, kind, times, clocks, &before, checked).await
+        anyhow::ensure!(copied == raw, "compressed pictures changed during remux");
+        raw
+    } else {
+        let input = inspection.context("missing source inspection")?;
+        let offset = clocks.offset;
+        if let Some(worker) = WORKER_EXECUTABLE.get() {
+            let mut command = Command::new(worker);
+            command
+                .arg("__native-ts")
+                .arg(source)
+                .arg(&temp)
+                .arg(offset.to_string())
+                .arg(terminal.to_string());
+            run(&mut command).await?;
+        } else {
+            let permit = WORKERS.clone().acquire_owned().await?;
+            let input = source.to_path_buf();
+            let output = temp.clone();
+            tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                crate::native_video::remux_ts(&input, &output, offset, terminal)
+            })
+            .await??;
+        }
+        input.signature
+    };
+    if crate::fault::injected("ffmpeg_remux_corrupt") {
+        crate::fault::flip_last_byte(&temp)?;
     }
-    .await;
-    if result.is_err() {
-        let _ = tokio::fs::remove_file(&temp).await;
-    }
-    result
+    let checked = inspect(&temp, target_kind(kind)).await?;
+    // The pure engine's read-back also checks this copy: sync samples against
+    // the pictures, one picture per sample and the same signature.
+    let file = temp.clone();
+    let (read, _) =
+        tokio::task::spawn_blocking(move || crate::pure_remux::readback::inspect(&file, hevc))
+            .await??;
+    anyhow::ensure!(
+        read.signature == before,
+        "compressed pictures changed during remux"
+    );
+    verify_and_place(&temp, output, kind, times, clocks, &before, checked).await
 }
-
 fn target_kind(kind: &str) -> &'static str {
     if kind == "qcamera.ts" {
         "camera.mp4"
