@@ -270,6 +270,9 @@ impl Session {
         Ok(self.progressed_ms.load(Ordering::Acquire) as f64 / 1000.)
     }
 }
+/// Archived recordings an upload re-sends, by id, with the states of their archived files.
+type ArchivedMatches = BTreeMap<String, BTreeMap<String, String>>;
+
 pub struct Uploads {
     pub store: Arc<Store>,
     pub auth: Arc<Auth>,
@@ -836,11 +839,13 @@ impl Uploads {
                 Ok(v) => v,
                 Err(e) => return Err(self.discard(name, &s, e).await),
             };
+            // The archive is probed before any lock, and only for re-uploads of archived recordings.
+            let archived = self.archived_matches(&digests).await;
             // Registration never holds a shared UI/authentication lock. Hashing already completed.
             registration = self.store.registration.lock().await;
             let planned = async {
                 self.check_session(&s, device, headers).await?;
-                let plan = self.plan(&s, &digests).await?;
+                let plan = self.plan(&s, &digests, &archived).await?;
                 if ["records", "updates"]
                     .iter()
                     .any(|k| plan[k].as_array().is_some_and(|v| !v.is_empty()))
@@ -961,7 +966,46 @@ impl Uploads {
         }
         Ok(recovered)
     }
-    async fn plan(&self, s: &Session, digests: &[String]) -> Result<Value> {
+    /// Python `archived_matches`: archived recordings whose log has one of these hashes, with the
+    /// states of their archived files (resolved here, outside every lock).
+    async fn archived_matches(&self, digests: &[String]) -> ArchivedMatches {
+        let mut out = ArchivedMatches::new();
+        let Some(archive) = self.store.archive() else {
+            return out;
+        };
+        let metas = self
+            .store
+            .records
+            .read()
+            .await
+            .values()
+            .cloned()
+            .collect::<Vec<_>>();
+        for meta in metas.iter().filter(|m| crate::storage::archived(m)) {
+            let entry = crate::archive::index::entry(meta, "rlog.zst");
+            let digest = if crate::archive::index::is_archived_location(
+                entry["location"].as_str().unwrap_or("local"),
+            ) {
+                entry["sha256"].as_str()
+            } else {
+                meta["content_hashes"]["rlog.zst"]["sha256"].as_str()
+            };
+            if digest.is_some_and(|d| digests.iter().any(|x| x == d)) {
+                let id = meta["id"].as_str().unwrap_or_default().to_owned();
+                out.insert(
+                    id,
+                    crate::recording_update::archived_states(&archive, meta).await,
+                );
+            }
+        }
+        out
+    }
+    async fn plan(
+        &self,
+        s: &Session,
+        digests: &[String],
+        archived: &ArchivedMatches,
+    ) -> Result<Value> {
         let mut groups: BTreeMap<String, Vec<(usize, String, String)>> = BTreeMap::new();
         for (i, f) in s.files.iter().enumerate() {
             let (group, kind, label) = split_name(&f.name)?;
@@ -1053,7 +1097,13 @@ impl Uploads {
                         .push(json!({"id":old["id"],"name":log.2,"video_differs":video_differs}));
                     continue;
                 }
-                if let Some(refused) = crate::recording_update::refusal(old) {
+                // Admission and this check read the archive state without probing (last_state).
+                let reachable = self
+                    .store
+                    .archive()
+                    .is_some_and(|a| a.last_state() == Some(crate::archive::State::Connected));
+                let states = archived.get(&old_id);
+                if let Some(refused) = crate::recording_update::refusal(old, reachable, states) {
                     return Err(refused);
                 }
                 let restored =
@@ -1068,7 +1118,12 @@ impl Uploads {
                     planned.insert(kind.clone());
                     rows.push((*i, kind.clone(), name, digests[*i].clone()));
                 }
-                updates.push(crate::recording_update::entry(old, restored, &rows));
+                updates.push(crate::recording_update::entry(
+                    old,
+                    restored,
+                    &rows,
+                    &crate::recording_update::available_originals(states),
+                ));
                 continue;
             }
             let record = id();

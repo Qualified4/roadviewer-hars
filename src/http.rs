@@ -57,6 +57,7 @@ impl App {
         let store = Store::open(root).await?;
         crate::storage::open(&store).await?;
         crate::transfer::cleanup_staging(&store.root)?;
+        crate::media_read::cleanup_staging(&store.root)?;
         let auth = Arc::new(Auth::open(&store.root).await?);
         let uploads =
             Uploads::open(store.clone(), auth.clone(), max_upload_mb * 1024 * 1024).await?;
@@ -780,7 +781,10 @@ async fn processing(
     }
     Ok(Json(app.store.processing.read().await.clone()))
 }
-async fn convert(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Value>> {
+async fn convert(State(app): State<App>, Path(id): Path<String>) -> Result<Response> {
+    // Outside the lock: archived files may wait on the share.
+    let states =
+        crate::recording_update::archived_states(&app.archive, &app.store.meta(&id).await?).await;
     let lock = app.store.record_lock(&id).await;
     let _guard = lock.lock().await;
     let folder = app.store.folder(&id).await?;
@@ -789,10 +793,56 @@ async fn convert(State(app): State<App>, Path(id): Path<String>) -> Result<Json<
         meta["status"].as_str(),
         Some("ready" | "queued" | "processing")
     ) {
-        return Ok(Json(json!({"status":meta["status"]})));
+        return Ok(Json(json!({"status":meta["status"]})).into_response());
     }
-    if !folder.join("rlog.zst").is_file() {
+    // Python `convert`: local files are checked here; an archived one not resolved beforehand counts as
+    // unreachable. A conversion needs every archived input, videos included.
+    let state = |kind: &str| -> &str {
+        match crate::listing::location(&meta, kind) {
+            "nas" | "gdrive" => states
+                .get(kind)
+                .map_or("storage_unavailable", String::as_str),
+            "removed" => "missing",
+            _ if folder.join(kind).is_file() => {
+                let error = &meta["storage"][kind]["error"];
+                if error.is_null() || error == "remote_mismatch" {
+                    "available"
+                } else {
+                    "corrupt"
+                }
+            }
+            _ if meta["storage"][kind]["remote"].is_object() => "storage_unavailable",
+            _ => "missing",
+        }
+    };
+    let kinds = crate::parity::STORED_KINDS;
+    if kinds
+        .iter()
+        .any(|k| matches!(state(k), "storage_unavailable" | "checking"))
+    {
+        return Ok((
+            StatusCode::CONFLICT,
+            Json(
+                json!({"error":"storage_unavailable","message":"저장소 연결 후 다시 시도하세요."}),
+            ),
+        )
+            .into_response());
+    }
+    // An unreadable archived camera could not be converted again: its MP4 in prepared/ is the only playable copy.
+    if kinds.iter().any(|k| state(k) == "corrupt") {
+        return Ok(crate::media_read::MediaError::new("media_corrupt", false).into_response());
+    }
+    let log = crate::listing::location(&meta, "rlog.zst");
+    let reconvertible =
+        log == "local" || matches!(log, "nas" | "gdrive") && state("rlog.zst") == "available";
+    if state("rlog.zst") == "missing" || !reconvertible {
         return Err(crate::error::conflict("원본 로그가 없습니다."));
+    }
+    let revision = meta["conversion_revision"].as_u64().unwrap_or(0) + 1;
+    let archived = crate::recording_update::available_originals(Some(&states));
+    crate::recording_update::clear_prepared(&folder, &mut meta, revision, &archived).await?;
+    if let Some(m) = meta.as_object_mut() {
+        m.remove("deferred");
     }
     meta["status"] = json!("queued");
     meta["manual_conversion"] = json!(true);
@@ -800,7 +850,7 @@ async fn convert(State(app): State<App>, Path(id): Path<String>) -> Result<Json<
     meta["queued_at"] = json!(crate::store::now());
     meta["error"] = Value::Null;
     app.store.save_meta(meta).await?;
-    Ok(Json(json!({"status":"queued"})))
+    Ok(Json(json!({"status":"queued"})).into_response())
 }
 async fn remove_prepared(
     State(app): State<App>,

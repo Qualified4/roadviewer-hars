@@ -13,7 +13,25 @@ const CAMERAS: [(&str, &str, &str, &str); 3] = [
     ("wide", "ecamera.hevc", "ecamera.mp4", "wideRoadEncodeIdx"),
 ];
 
+/// Python `RV_MEDIA_PATHS` / `RV_RECORDING_DIR`: where the server found each video (the archive, a staged copy) and
+/// the recording folder, when the log is not read from it.
+pub const MEDIA_PATHS: &str = "HARS_MEDIA_PATHS";
+pub const RECORDING_DIR: &str = "HARS_RECORDING_DIR";
+pub const VIDEO_INPUTS: [&str; 6] = [
+    "qcamera.ts",
+    "fcamera.hevc",
+    "ecamera.hevc",
+    "camera.mp4",
+    "fcamera.mp4",
+    "ecamera.mp4",
+];
 fn input(src: &Path, kind: &str) -> PathBuf {
+    if let Some(paths) = std::env::var(MEDIA_PATHS)
+        .ok()
+        .and_then(|v| serde_json::from_str::<BTreeMap<String, PathBuf>>(&v).ok())
+    {
+        return paths.get(kind).cloned().unwrap_or_default();
+    }
     let filename = src.file_name().unwrap().to_string_lossy();
     if let Some(prefix) = filename.strip_suffix("--rlog.zst") {
         src.with_file_name(format!(
@@ -155,7 +173,10 @@ pub async fn prepare(
     })
     .await??;
     progress("log_read", 100.);
-    let meta: Value = store::read_json(&source.with_file_name("meta.json"))
+    let recording = std::env::var_os(RECORDING_DIR)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| source.parent().map(Path::to_path_buf).unwrap_or_default());
+    let meta: Value = store::read_json(&recording.join("meta.json"))
         .await
         .unwrap_or(json!({}));
     let mut videos = BTreeMap::<String, Value>::new();

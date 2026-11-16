@@ -1,5 +1,6 @@
 //! Durable conversion scheduling. Native/CPU work runs in a disposable child.
 use crate::{
+    archive::index,
     store::{Store, atomic_json, id, now, read_json},
     upload::Uploads,
 };
@@ -160,6 +161,9 @@ impl Jobs {
                 .lock()
                 .await
                 .insert(record.into(), cancel.clone());
+            if let Some(m) = meta.as_object_mut() {
+                m.remove("deferred");
+            }
             meta["status"] = json!("processing");
             meta["conversion_id"] = json!(generation);
             meta["error"] = Value::Null;
@@ -200,14 +204,73 @@ impl Jobs {
             .await
             .map_err(|_| anyhow::anyhow!("record unavailable"))?;
         let staging = folder.join(format!(".convert-{generation}"));
-        let label = self
+        let meta = self
             .store
             .meta(record)
             .await
-            .map_err(|_| anyhow::anyhow!("record unavailable"))?["name"]
-            .as_str()
-            .unwrap_or("recording")
-            .to_owned();
+            .map_err(|_| anyhow::anyhow!("record unavailable"))?;
+        let label = meta["name"].as_str().unwrap_or("recording").to_owned();
+        // Python `run_job`: archived inputs are read where they are, Drive-only ones from staged verified copies.
+        let inputs = match self.store.archive() {
+            Some(archive) => {
+                Some(crate::media_read::conversion_inputs(&archive, &folder, record, &meta).await)
+            }
+            None => None,
+        };
+        let result = self
+            .convert(
+                record,
+                generation,
+                cancel,
+                &folder,
+                &staging,
+                label,
+                inputs.as_ref(),
+            )
+            .await;
+        for path in inputs.iter().flat_map(|i| &i.staged) {
+            crate::media_read::unstage(path).await;
+        }
+        result
+    }
+    #[allow(clippy::too_many_arguments)]
+    async fn convert(
+        &self,
+        record: &str,
+        generation: &str,
+        cancel: Arc<Notify>,
+        folder: &std::path::Path,
+        staging: &std::path::Path,
+        label: String,
+        inputs: Option<&crate::media_read::Inputs>,
+    ) -> anyhow::Result<()> {
+        if let Some(message) = inputs.and_then(|i| i.deferred) {
+            // Converting without the archived files would replace a good result with one lacking its videos;
+            // `deferred` marks it for requeueing once the archive answers (the archiver's requeue_deferred).
+            let lock = self.store.record_lock(record).await;
+            let _guard = lock.lock().await;
+            if let Ok(mut meta) = self.store.meta(record).await
+                && meta["conversion_id"] == generation
+            {
+                meta["status"] = json!("unconverted");
+                meta["error"] = json!(message);
+                meta["deferred"] = json!("storage");
+                self.store
+                    .save_meta(meta)
+                    .await
+                    .map_err(|_| anyhow::anyhow!("save conversion deferral failed"))?;
+            }
+            return Ok(());
+        }
+        let input = |kind: &str| {
+            inputs
+                .and_then(|i| i.paths.get(kind).cloned())
+                .unwrap_or_else(|| folder.join(kind))
+        };
+        let available = |kind: &str| match inputs {
+            Some(i) => i.states.get(kind) == Some(&"available"),
+            None => folder.join(kind).is_file(),
+        };
         let worker = std::env::current_exe()?;
         #[cfg(unix)]
         let mut command = {
@@ -220,11 +283,20 @@ impl Jobs {
         };
         #[cfg(not(unix))]
         let mut command = Command::new(worker);
+        let media = crate::convert::VIDEO_INPUTS
+            .iter()
+            .map(|k| ((*k).to_owned(), json!(input(k))))
+            .collect::<serde_json::Map<_, _>>();
         command
             .arg("convert-log")
-            .arg(folder.join("rlog.zst"))
-            .arg(&staging)
+            .arg(input("rlog.zst"))
+            .arg(staging)
             .arg(label)
+            .env(
+                crate::convert::MEDIA_PATHS,
+                Value::Object(media).to_string(),
+            )
+            .env(crate::convert::RECORDING_DIR, folder)
             .kill_on_drop(true)
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
@@ -250,12 +322,11 @@ impl Jobs {
             );
             Ok::<_, anyhow::Error>(())
         };
-        let timeout =
-            if folder.join("fcamera.hevc").is_file() || folder.join("ecamera.hevc").is_file() {
-                1800
-            } else {
-                600
-            };
+        let timeout = if available("fcamera.hevc") || available("ecamera.hevc") {
+            1800
+        } else {
+            600
+        };
         // A camera added to the recording (Python terminates its process) gives the record another
         // generation; this output would lack the new camera, so it is dropped without a status.
         let superseded = async {
@@ -299,6 +370,7 @@ impl Jobs {
         self.publish(record, generation).await
     }
     async fn publish(&self, record: &str, generation: &str) -> anyhow::Result<()> {
+        let contents = self.original_contents(record).await;
         let lock = self.store.record_lock(record).await;
         let _guard = lock.lock().await;
         let folder = self
@@ -369,10 +441,40 @@ impl Jobs {
             if let Some(origin) = summary["videos"][camera].get("sourcePts") {
                 origins.insert(camera.into(), origin.clone());
             }
-            if !keep && prepared.join(mp4).is_file() {
+            // An archived original stays the stored copy; its MP4 remains converted output in prepared/.
+            let archived = index::location(&meta, raw) != "local"
+                || index::is_archived_location(&index::location(&meta, mp4));
+            if !keep && !archived && prepared.join(mp4).is_file() {
+                // An MP4 removed by archive cleanup exists again, locally: the index must not hide it.
+                if index::location(&meta, mp4) == "removed"
+                    && let Some(storage) = meta["storage"].as_object_mut()
+                {
+                    storage.remove(mp4);
+                }
                 // The conversion verified frame count, timestamps and compressed
                 // bitstream before reaching its durable publication journal.
                 tokio::fs::rename(prepared.join(mp4), folder.join(mp4)).await?;
+                // The MP4 is new content: a copy of the previous one no longer describes it.
+                if index::drop_remote(&mut meta, mp4, None).is_some() {
+                    tracing::info!(kind = mp4, "remote_copy_superseded_left_on_archive");
+                }
+                if index::remote(&meta, raw).is_some() {
+                    // The original goes: its copy becomes the stored file if it is the same content.
+                    let content = std::fs::metadata(folder.join(raw)).ok().map(|stat| {
+                        let known = contents
+                            .get(raw)
+                            .filter(|(size, mtime, _)| {
+                                (*size, *mtime) == (stat.len(), mtime_ns(&stat))
+                            })
+                            .map(|(_, _, sha)| sha.clone())
+                            .unwrap_or_default();
+                        (stat.len(), known)
+                    });
+                    let content = content.as_ref().map(|(s, h)| (*s, h.as_str()));
+                    if !index::promote_remote(&mut meta, raw, content, now()) {
+                        tracing::info!(kind = raw, "remote_copy_mismatch_left_on_archive");
+                    }
+                }
                 if folder.join(raw).is_file() {
                     tokio::fs::remove_file(folder.join(raw)).await?;
                 }
@@ -416,6 +518,54 @@ impl Jobs {
             tokio::fs::remove_dir_all(backup).await?;
         }
         Ok(())
+    }
+}
+
+impl Jobs {
+    /// Python `local_content`, before the publication lock: (size, mtime, sha256) of each local original with a
+    /// remote copy the publication may delete, so an identical copy can stand in for it (`promote_remote`).
+    async fn original_contents(&self, record: &str) -> BTreeMap<&'static str, (u64, u64, String)> {
+        let mut out = BTreeMap::new();
+        let (Ok(meta), Ok(folder)) = (
+            self.store.meta(record).await,
+            self.store.folder(record).await,
+        ) else {
+            return out;
+        };
+        for raw in ["qcamera.ts", "fcamera.hevc", "ecamera.hevc"] {
+            if index::remote(&meta, raw).is_none() {
+                continue;
+            }
+            let path = folder.join(raw);
+            let Ok(stat) = tokio::fs::metadata(&path).await else {
+                continue;
+            };
+            let (size, mtime) = (stat.len(), mtime_ns(&stat));
+            let sha = match index::fresh_hash(&meta, raw, size, mtime) {
+                Some(sha) => sha,
+                None => match crate::upload::file_hash(&path).await {
+                    Ok(sha) => sha,
+                    // Unverifiable: the copy is not promoted; the conversion itself goes on.
+                    Err(_) => continue,
+                },
+            };
+            out.insert(raw, (size, mtime, sha));
+        }
+        out
+    }
+}
+fn mtime_ns(stat: &std::fs::Metadata) -> u64 {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::MetadataExt;
+        stat.mtime() as u64 * 1_000_000_000 + stat.mtime_nsec() as u64
+    }
+    #[cfg(not(unix))]
+    {
+        stat.modified()
+            .ok()
+            .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
+            .map_or(0, |d| d.as_nanos() as u64)
     }
 }
 

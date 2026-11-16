@@ -199,6 +199,108 @@ pub async fn remote_body(
     Ok(Body::from_stream(stream))
 }
 
+/// A conversion's inputs (Python `run_job` before its lock): every stored kind resolved, Drive-only files staged
+/// as verified local copies, and whether the job must wait for the archive instead of running without them.
+pub struct Inputs {
+    /// Where the converter reads each kind (its local path when it is not available anywhere).
+    pub paths: std::collections::BTreeMap<&'static str, PathBuf>,
+    pub states: std::collections::BTreeMap<&'static str, &'static str>,
+    /// Staged copies the caller removes with [`unstage`] when the job ends.
+    pub staged: Vec<PathBuf>,
+    /// Python's deferral message (`deferred: "storage"`); None when the job can run.
+    pub deferred: Option<&'static str>,
+}
+
+pub async fn conversion_inputs(archive: &Archive, folder: &Path, id: &str, meta: &Value) -> Inputs {
+    let mut found = std::collections::BTreeMap::new();
+    for kind in crate::parity::STORED_KINDS {
+        found.insert(kind, archive.resolve(id, meta, kind).await);
+    }
+    let remote: Vec<&'static str> = found
+        .iter()
+        .filter(|(_, (r, s))| matches!(r, Resolved::Remote(_)) && *s == "available")
+        .map(|(k, _)| *k)
+        .collect();
+    let size = |k: &str| match &found[k].0 {
+        Resolved::Remote(r) => r.size,
+        _ => 0,
+    };
+    let mut short = false;
+    let mut staged = Vec::new();
+    // Room for every copy is checked before the first download: a job deferred for space must not download part of
+    // its inputs again at each retry.
+    let needed = remote.iter().map(|k| size(k)).sum::<u64>() + STAGING_MARGIN;
+    if !remote.is_empty() && fs2::available_space(&archive.root).unwrap_or(0) < needed {
+        short = true;
+        for kind in &remote {
+            found.insert(kind, (Resolved::Nothing, "storage_unavailable"));
+        }
+    } else {
+        for kind in &remote {
+            let Resolved::Remote(file) = found[kind].0.clone() else {
+                continue;
+            };
+            let result = match stage_remote(archive, folder, &file).await {
+                Ok(path) => {
+                    staged.push(path.clone());
+                    (Resolved::Local(path), "available")
+                }
+                Err(e) if e.code == "insufficient_disk_space" => {
+                    short = true;
+                    (Resolved::Nothing, "storage_unavailable")
+                }
+                Err(e) => (
+                    Resolved::Nothing,
+                    match e.code {
+                        "media_corrupt" => "corrupt",
+                        "not_found" => "missing",
+                        _ => "storage_unavailable",
+                    },
+                ),
+            };
+            found.insert(kind, result);
+        }
+    }
+    let wait = found.values().any(|(r, s)| {
+        matches!(*s, "storage_unavailable" | "checking") || matches!(r, Resolved::Remote(_))
+    });
+    let deferred = wait.then_some(if short {
+        "디스크 공간이 부족해 변환을 미뤘습니다."
+    } else {
+        "저장소에 연결할 수 없어 변환을 미뤘습니다."
+    });
+    let paths = found
+        .iter()
+        .map(|(k, (r, s))| {
+            let path = match r {
+                Resolved::Local(p) if *s == "available" => p.clone(),
+                _ => folder.join(k),
+            };
+            (*k, path)
+        })
+        .collect();
+    let states = found.iter().map(|(k, (_, s))| (*k, *s)).collect();
+    Inputs {
+        paths,
+        states,
+        staged,
+        deferred,
+    }
+}
+
+/// Python `cleanup_uploads(startup=True)`: copies of remote files left by an interrupted download or conversion.
+pub fn cleanup_staging(root: &Path) -> std::io::Result<()> {
+    for entry in std::fs::read_dir(root)? {
+        let entry = entry?;
+        let name = entry.file_name().to_string_lossy().into_owned();
+        let staging = entry.path().join(STAGING);
+        if crate::store::valid_id(&name) && staging.is_dir() {
+            std::fs::remove_dir_all(staging)?;
+        }
+    }
+    Ok(())
+}
+
 /// A `Range` header Python answers with 416.
 #[derive(Debug, PartialEq, Eq)]
 pub struct Unsatisfiable;
