@@ -60,7 +60,7 @@ async fn slow_drive_video(e: &Env) -> String {
     let (file_id, _) = e.drive_file(&id, "fcamera.mp4").unwrap();
     e.fake
         .st()
-        .media_delay
+        .media_hold
         .insert(file_id, Duration::from_secs(60));
     id
 }

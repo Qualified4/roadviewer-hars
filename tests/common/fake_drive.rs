@@ -122,7 +122,7 @@ pub struct St {
     pub media_delay: Option<std::time::Duration>,
     pub no_auth: bool,
     /// A file whose content is answered only after this long (a slow Drive while a client gives up).
-    pub media_delay: HashMap<String, std::time::Duration>,
+    pub media_hold: HashMap<String, std::time::Duration>,
     /// Content requests held by  so far.
     pub media_held: u32,
     pub file_count: u32,
@@ -345,7 +345,7 @@ pub async fn handle(
         let delay = path
             .strip_prefix("/drive/v3/files/")
             .filter(|_| query.get("alt").map(String::as_str) == Some("media"))
-            .and_then(|id| st.media_delay.get(id).copied());
+            .and_then(|id| st.media_hold.get(id).copied());
         st.media_held += u32::from(delay.is_some());
         delay
     };
