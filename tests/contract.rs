@@ -144,6 +144,35 @@ async fn startup_fills_download_metadata_without_reconverting_existing_output() 
         b"retained-wide"
     );
 }
+#[tokio::test]
+async fn startup_removes_the_staging_of_a_conversion_a_killed_server_left() {
+    let temp = tempfile::tempdir().unwrap();
+    let record = roadviewer_hars::store::id();
+    let folder = temp.path().join(&record);
+    let staging = folder.join(format!(".convert-{}", roadviewer_hars::store::id()));
+    tokio::fs::create_dir_all(staging.join("prepared"))
+        .await
+        .unwrap();
+    tokio::fs::write(staging.join("prepared/fcamera.mp4"), b"partial")
+        .await
+        .unwrap();
+    tokio::fs::write(folder.join("rlog.zst"), b"original")
+        .await
+        .unwrap();
+    atomic_json(
+        &folder.join("meta.json"),
+        &json!({"id":record,"name":"killed","status":"processing","conversion_id":"x"}),
+    )
+    .await
+    .unwrap();
+    let a = app(temp.path()).await;
+    assert_eq!(a.store.meta(&record).await.unwrap()["status"], "queued");
+    assert!(!staging.exists());
+    assert_eq!(
+        tokio::fs::read(folder.join("rlog.zst")).await.unwrap(),
+        b"original"
+    );
+}
 fn manifest(data: &[u8], streaming: bool) -> Value {
     json!({"batch_id":"test_batch_123456789","segments":[{"route":"2026-11-15--12-00-00","segment":0,"files":[{"kind":"rlog.zst","size":data.len(),"sha256":if streaming {Value::Null}else{json!(sha(data))}}]}]})
 }

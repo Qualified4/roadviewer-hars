@@ -50,6 +50,17 @@ impl Jobs {
                     .context("invalid conversion journal")?;
                 jobs.publish(&record, generation).await?;
             }
+            // A conversion a killed process left behind: never published (a journaled one was, just
+            // above) and no conversion runs before this returns, so nothing reads it.
+            let mut entries = tokio::fs::read_dir(&folder).await?;
+            while let Some(entry) = entries.next_entry().await? {
+                if entry.file_name().to_string_lossy().starts_with(".convert-")
+                    && entry.file_type().await?.is_dir()
+                    && tokio::fs::remove_dir_all(entry.path()).await.is_err()
+                {
+                    tracing::warn!(record = %record, "conversion_staging_cleanup_failed");
+                }
+            }
             let mut meta = jobs
                 .store
                 .meta(&record)
