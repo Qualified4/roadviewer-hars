@@ -66,7 +66,7 @@ HEVC(`fcamera.hevc`, µs): 실제 46,248~51,155 µs. Python의 0.05초 고정은
 
 반올림: ns → tick은 `(ns × timescale + 5e8) / 1e9`(정수, 반올림). TS는 90 kHz, HEVC는 1 MHz다. 부동소수 연산이 없어 아키텍처에 따라 달라지지 않는다.
 
-적용 위치: `convert.rs`가 rlog에서 다음 프레임 시각을 찾아 `media::remux_probed`에 넘긴다. `media`가 규칙을 한 번 계산하고, 순수 엔진(`pure_remux::Job.terminal`)과 FFmpeg 엔진(`native_video::remux_ts`/`remux_hevc`의 마지막 패킷 duration)에 같은 값을 준다. 출력 검사는 두 엔진 모두 `duration_ts − (마지막 DTS − 첫 DTS)`가 그 값인지 확인한다. 로그 없이 부르는 `remux` CLI는 1번 정보가 없어 2번을 쓴다. 기존 MP4(`camera.mp4`, `fcamera.mp4`)를 재사용하는 경로는 바꾸지 않는다.
+적용 위치: `convert.rs`가 rlog에서 다음 프레임 시각을 찾아 `media::remux_probed`에 넘긴다. `media`가 규칙을 한 번 계산하고, 순수 엔진(`pure_remux::Job.terminal`)과 FFmpeg 엔진(`native_video::remux_ts`/`remux_hevc`의 마지막 패킷 duration)에 같은 값을 준다. 출력 검사는 composition offset이 없는 출력(순수 엔진, B-frame 없는 FFmpeg 사본)에서 `duration_ts − (마지막 DTS − 첫 DTS)`가 그 값인지 확인한다. B-frame FFmpeg 사본은 libavformat이 edit list를 따른 `duration_ts`를 보고해 이 식이 성립하지 않으므로(흔들리는 카메라 시각에서 첫·마지막 composition offset이 다르다), 독립 판독기(`pure_remux::readback`)가 읽은 stts의 마지막 값이 그 값인지 확인한다. 순수 엔진은 자기 출력의 stts 마지막 값도 같은 방식으로 확인한다. 로그 없이 부르는 `remux` CLI는 1번 정보가 없어 2번을 쓴다. 기존 MP4(`camera.mp4`, `fcamera.mp4`)를 재사용하는 경로는 바꾸지 않는다.
 
 ## 영상 길이와 주행 길이
 
