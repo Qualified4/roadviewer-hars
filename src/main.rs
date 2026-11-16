@@ -9,8 +9,9 @@ use std::{net::SocketAddr, path::PathBuf};
 const SHUTDOWN_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
 /// Commands whose standard output is their one JSON result, so their log goes to stderr. The server and
 /// `convert-log` keep logging to stdout: the conversion process's log lines are relayed by `jobs` from there.
-const RESULT_ON_STDOUT: [&str; 10] = [
+const RESULT_ON_STDOUT: [&str; 11] = [
     "__inspect",
+    "__probe",
     "__thumbnail",
     "__pure-remux",
     "__pure-reverse",
@@ -66,6 +67,14 @@ async fn run() -> anyhow::Result<()> {
         anyhow::ensure!(args.len() == 4, "invalid internal inspection job");
         let result =
             roadviewer_hars::media::inspect_file(std::path::Path::new(&args[2]), &args[3])?;
+        println!("{}", serde_json::to_string(&result)?);
+        roadviewer_hars::profile::finish();
+        return Ok(());
+    }
+    if args.get(1).is_some_and(|v| v == "__probe") {
+        anyhow::ensure!(args.len() == 4, "invalid internal probe job");
+        roadviewer_hars::pure_remux::limit_memory(worker_budget())?;
+        let result = roadviewer_hars::media::probe_file(std::path::Path::new(&args[2]), &args[3])?;
         println!("{}", serde_json::to_string(&result)?);
         roadviewer_hars::profile::finish();
         return Ok(());

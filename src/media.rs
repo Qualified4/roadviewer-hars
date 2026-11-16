@@ -122,6 +122,7 @@ fn hevc_kind(kind: &str) -> Option<bool> {
 /// the whole `moov` of an MP4 (`pure_remux::{ts, hevc, readback}::probe`).
 pub fn probe_file(path: &Path, kind: &str) -> anyhow::Result<Value> {
     let _profile = crate::profile::Scope::new("video_probe");
+    crate::fault::point("native_probe");
     hevc_kind(kind).context("unsupported inspection kind")?;
     if kind.ends_with(".mp4") {
         crate::pure_remux::readback::probe(path)
@@ -133,16 +134,24 @@ pub fn probe_file(path: &Path, kind: &str) -> anyhow::Result<Value> {
 }
 
 /// The upload and import check of a camera video: one video stream of the kind's codec and a
-/// supported size. Bounded reads in a blocking task; a panic is a refusal, not a crash.
+/// supported size. In the `__probe` worker (memory limit, deadline, killed with its parent), as
+/// ffprobe was, so an abort on hostile input ends the check, not the server: any failure of the
+/// worker is a refusal. Without a worker executable (library use), a blocking task.
 pub async fn validate_upload(path: &Path, kind: &str) -> anyhow::Result<Value> {
-    let permit = WORKERS.clone().acquire_owned().await?;
-    let (source, owned) = (path.to_path_buf(), kind.to_owned());
-    let info = tokio::task::spawn_blocking(move || {
-        let _permit = permit;
-        std::panic::catch_unwind(|| probe_file(&source, &owned))
-            .unwrap_or_else(|_| Err(anyhow::anyhow!("media probe panicked")))
-    })
-    .await??;
+    let info = if let Some(worker) = WORKER_EXECUTABLE.get() {
+        let mut command = Command::new(worker);
+        command.arg("__probe").arg(path).arg(kind);
+        serde_json::from_slice(&run(&mut command).await?)?
+    } else {
+        let permit = WORKERS.clone().acquire_owned().await?;
+        let (source, owned) = (path.to_path_buf(), kind.to_owned());
+        tokio::task::spawn_blocking(move || {
+            let _permit = permit;
+            std::panic::catch_unwind(|| probe_file(&source, &owned))
+                .unwrap_or_else(|_| Err(anyhow::anyhow!("media probe panicked")))
+        })
+        .await??
+    };
     validate_info(&info, kind)?;
     Ok(info)
 }
