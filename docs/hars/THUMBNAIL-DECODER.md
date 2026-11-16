@@ -230,11 +230,12 @@ list's `thumbnail`, `thumbnail_score`, `thumbnail_version` fields were equal to 
   address-space limit and deadline bound the rest.
 - B-frame H.264 with edit lists or more than 16 reordered pictures is not covered by any test.
 - `tests/conversion_keep_previous.rs`
-  `a_resource_failure_keeps_the_published_result_and_a_later_conversion_completes` failed in the
-  full run and in 1 of 2 reruns of that file (`409` instead of `206` on a range request for the
-  front video right after the record is ready) and passed in the other. Whether it is
-  intermittent on `d846fc6` as well, or made more likely by the slower thumbnail, is not
-  established.
+  `a_resource_failure_keeps_the_published_result_and_a_later_conversion_completes` is
+  intermittent: it failed in 2 of 4 runs (`409` instead of `206` on a range request for the front
+  video right after the record is ready) and passed in the other 2, including the last full
+  `cargo test --locked --all-targets --no-fail-fast` (35 test binaries, 289 passed, 0 failed).
+  Whether it is intermittent on `d846fc6` as well, or made more likely by the slower thumbnail,
+  is not established.
 - `media::thumbnail` still calls `validate_upload` (`ffprobe`) before the worker; step 3 replaces
   it, after which the thumbnail path runs without any FFmpeg program or library.
 - The production image still installs the FFmpeg runtime (step 3), so the image is not smaller
