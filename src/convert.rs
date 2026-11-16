@@ -283,19 +283,21 @@ pub async fn prepare(
                 let _ = tokio::fs::remove_file(dest.join(mp4)).await;
                 let failure = media::failure(&error);
                 let label = if *name == "qcamera" { "qcamera" } else { raw };
-                if failure.class != FailureClass::Resource {
-                    warnings.push(format!("{label} 영상 준비 실패: {error}"));
-                    continue;
-                }
-                let warning = format!(
-                    "{label} 영상 준비 실패: {} ({}): {}",
-                    failure.class.name(),
-                    failure.code,
-                    failure.reason
-                );
-                // The same disk, memory or deadline may not fail the next attempt, unlike an input or
-                // engine failure: a camera the published result plays is not dropped for it. Only the
-                // files on disk say so: `meta.videos` outlives `clear_prepared`, as in Python.
+                let warning = if failure.class == FailureClass::Resource {
+                    format!(
+                        "{label} 영상 준비 실패: {} ({}): {}",
+                        failure.class.name(),
+                        failure.code,
+                        failure.reason
+                    )
+                } else {
+                    format!("{label} 영상 준비 실패: {error}")
+                };
+                // A camera the published result plays is not dropped for any failure: the same disk,
+                // memory or deadline may not fail the next attempt, and an input the engine cannot
+                // copy (which no other engine retries) may have been published by an earlier
+                // version. Only the files on disk say so: `meta.videos` outlives `clear_prepared`,
+                // as in Python.
                 if previous_plays(&recording, &meta, name, mp4).await {
                     tracing::error!(
                         event = "conversion_kept_previous",

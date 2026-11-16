@@ -1,7 +1,7 @@
 //! The real executable's pure remux worker under faults (synthetic media),
-//! one test per failure class: what the policy does (fallback or not), the
-//! log event it records, and the disk afterwards (original intact, no partial
-//! output, a retry completes normally).
+//! one test per failure class: the log event it records (no other engine
+//! retries any class), and the disk afterwards (original intact, no partial
+//! output, a previous result kept, a retry completes normally).
 #![cfg(unix)]
 use serde_json::Value;
 use std::{
@@ -130,31 +130,24 @@ fn engines(log: &str) -> Vec<String> {
         .collect()
 }
 
-/// The pure failure was recorded with this class and code and FFmpeg's checked
-/// copy was published (`fallback_result`), at `level`.
-fn fell_back(log: &str, class: &str, code: &str, level: &str) {
-    let (got, fields) = event(log, "remux_fallback").unwrap_or_else(|| panic!("{log}"));
+/// The pure failure was recorded with this class and code at `level`, and no
+/// other engine retried the input.
+fn failed_with(log: &str, class: &str, code: &str, level: &str) {
+    let (got, fields) = event(log, "remux_failure").unwrap_or_else(|| panic!("{log}"));
     assert_eq!(
         (
             got.as_str(),
             fields["failure_class"].as_str(),
             fields["reason_code"].as_str(),
             fields["fallback"].as_bool(),
-            fields["fallback_result"].as_str(),
         ),
-        (
-            level,
-            Some(class),
-            Some(code),
-            Some(true),
-            Some("published")
-        ),
+        (level, Some(class), Some(code), Some(false)),
         "{log}"
     );
-    assert_eq!(engines(log), ["ffmpeg"], "{log}");
+    assert!(event(log, "remux_fallback").is_none(), "{log}");
+    assert!(engines(log).is_empty(), "{log}");
 }
 
-/// The pure failure ended the remux with no FFmpeg attempt.
 fn no_fallback(log: &str, code: &str) {
     let (_, fields) = event(log, "remux_failure").unwrap_or_else(|| panic!("{log}"));
     assert_eq!(
@@ -205,8 +198,8 @@ fn alive(pid: i32) -> bool {
     })
 }
 
-/// A killed worker (the OOM killer, a shutdown) is a resource failure: FFmpeg
-/// does not repeat the work, and nothing of the attempt remains.
+/// A killed worker (the OOM killer, a shutdown) is a resource failure, and
+/// nothing of the attempt remains.
 #[test]
 fn killed_pure_worker_fails_without_fallback_and_leaves_no_partial_output() {
     let c = case();
@@ -315,7 +308,7 @@ fn write_limit_fails_without_fallback_and_a_retry_completes() {
 }
 
 /// The worker deadline is a resource failure: the parked worker is killed and
-/// FFmpeg is not started on the same input.
+/// nothing else is started on the same input.
 #[test]
 fn deadline_fails_without_fallback_and_removes_the_attempt() {
     let c = case();
@@ -334,59 +327,51 @@ fn deadline_fails_without_fallback_and_removes_the_attempt() {
     c.retry("out.mp4");
 }
 
-/// Engine bugs are not hidden: FFmpeg's copy is published only after the same
-/// checks, and the event is an error carrying the class and code.
+/// Engine bugs are not hidden: the attempt fails, nothing is published, and the
+/// event is an error carrying the class and code.
 #[test]
-fn engine_errors_and_panics_fall_back_once_as_error_events() {
+fn engine_errors_and_panics_fail_as_error_events_and_publish_nothing() {
     let c = case();
     for (fault, code) in [
         ("pure_remux_error", "engine_error"),
         ("pure_remux_panic", "panic"),
     ] {
         let name = format!("{fault}.mp4");
-        let log = result(
+        let log = failed(
             &c.command(&c.root.join(&name))
                 .env("HARS_FAULT", fault)
                 .output()
                 .unwrap(),
         );
-        fell_back(&log, "internal", code, "ERROR");
-        c.clean(&[&name]);
-        std::fs::remove_file(c.root.join(&name)).unwrap();
+        failed_with(&log, "internal", code, "ERROR");
+        c.clean(&[]);
     }
     c.retry("out.mp4");
 }
 
 #[test]
-fn a_file_that_does_not_read_back_falls_back_or_fails_with_both_kept_safe() {
+fn a_file_that_does_not_read_back_fails_and_the_previous_result_stays() {
     let c = case();
-    let log = result(
+    let log = failed(
+        &c.command(&c.root.join("new.mp4"))
+            .env("HARS_FAULT", "pure_remux_corrupt")
+            .output()
+            .unwrap(),
+    );
+    failed_with(&log, "verification", "readback_mismatch", "ERROR");
+    c.clean(&[]);
+    // A previous result is never replaced by an attempt that fails its checks.
+    c.retry("out.mp4");
+    let previous = std::fs::read(c.root.join("out.mp4")).unwrap();
+    let log = failed(
         &c.command(&c.root.join("out.mp4"))
             .env("HARS_FAULT", "pure_remux_corrupt")
             .output()
             .unwrap(),
     );
-    fell_back(&log, "verification", "readback_mismatch", "ERROR");
+    failed_with(&log, "verification", "readback_mismatch", "ERROR");
+    assert_eq!(std::fs::read(c.root.join("out.mp4")).unwrap(), previous);
     c.clean(&["out.mp4"]);
-    // A previous result is never replaced by an attempt that fails its checks.
-    let previous = std::fs::read(c.root.join("out.mp4")).unwrap();
-    let other = c.root.join("other.mp4");
-    std::fs::write(&other, &previous).unwrap();
-    let log = failed(
-        &c.command(&c.root.join("new.mp4"))
-            .env("HARS_FAULT", "pure_remux_corrupt,ffmpeg_remux_corrupt")
-            .output()
-            .unwrap(),
-    );
-    let (level, fields) = event(&log, "remux_fallback").unwrap();
-    assert_eq!(
-        (level.as_str(), fields["fallback_result"].as_str()),
-        ("ERROR", Some("failed")),
-        "{log}"
-    );
-    assert!(engines(&log).is_empty(), "{log}");
-    assert_eq!(std::fs::read(&other).unwrap(), previous);
-    c.clean(&["out.mp4", "other.mp4"]);
 }
 
 /// The worker's memory limit is a resource failure, and the default limit
@@ -408,15 +393,7 @@ fn memory_limit_fails_without_fallback_and_the_default_fits_the_bounds() {
     huge.resize(huge.len() + 33 * 1024 * 1024, 0x55);
     std::fs::write(&c.source, &huge).unwrap();
     let log = failed(&c.command(&c.root.join("huge.mp4")).output().unwrap());
-    let (_, fields) = event(&log, "remux_fallback").unwrap_or_else(|| panic!("{log}"));
-    assert_eq!(
-        (
-            fields["failure_class"].as_str(),
-            fields["fallback_result"].as_str()
-        ),
-        (Some("invalid"), Some("failed")),
-        "{log}"
-    );
+    failed_with(&log, "invalid", "invalid_input", "WARN");
     assert!(log.contains("bounded memory limit"), "{log}");
     std::fs::write(&c.source, &c.original).unwrap();
     c.clean(&[]);
@@ -424,9 +401,9 @@ fn memory_limit_fails_without_fallback_and_the_default_fits_the_bounds() {
 }
 
 /// The pure engine needs about twice the input free (its payload and the MP4 coexist); with less,
-/// FFmpeg writes the single copy instead, recorded as a routine (unsupported) fallback.
+/// the remux stops before writing as a resource failure, and with enough it completes.
 #[test]
-fn low_space_selects_the_single_copy_engine() {
+fn low_space_is_a_resource_failure_before_any_write() {
     use roadviewer_hars::media::{SPACE_MARGIN, pure_fits};
     let input = 700 * 1024 * 1024;
     assert!(pure_fits(input, 2 * input + SPACE_MARGIN));
@@ -435,14 +412,15 @@ fn low_space_selects_the_single_copy_engine() {
     assert!(!pure_fits(u64::MAX, u64::MAX));
     let c = case();
     let available = (2 * c.original.len() as u64 + SPACE_MARGIN - 1).to_string();
-    let log = result(
+    let log = failed(
         &c.command(&c.root.join("out.mp4"))
             .env("HARS_AVAILABLE_SPACE_BYTES", &available)
             .output()
             .unwrap(),
     );
-    fell_back(&log, "unsupported", "low_space", "INFO");
-    c.clean(&["out.mp4"]);
+    failed_with(&log, "resource", "low_space", "WARN");
+    no_fallback(&log, "low_space");
+    c.clean(&[]);
     let enough = (2 * c.original.len() as u64 + SPACE_MARGIN).to_string();
     let log = result(
         &c.command(&c.root.join("pure.mp4"))
@@ -451,5 +429,5 @@ fn low_space_selects_the_single_copy_engine() {
             .unwrap(),
     );
     assert_eq!(engines(&log), ["pure"], "{log}");
-    c.clean(&["out.mp4", "pure.mp4"]);
+    c.clean(&["pure.mp4"]);
 }

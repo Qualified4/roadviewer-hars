@@ -1,4 +1,5 @@
-//! Lossless FFmpeg stream copy orchestrated by Rust; no Python runtime.
+//! Lossless stream copy of camera originals into MP4 and back, by the pure Rust engines
+//! (`pure_remux`, `pure_reverse`) in bounded worker processes; no external media tool.
 use anyhow::{Context, bail};
 use serde_json::Value;
 use sha2::{Digest, Sha256};
@@ -108,36 +109,40 @@ async fn run(command: &mut Command) -> anyhow::Result<Vec<u8>> {
         .await
         .map_err(|_| anyhow::Error::new(Deadline))?
 }
-fn input_format(kind: &str) -> &'static str {
-    if kind.ends_with(".mp4") {
-        "mov"
-    } else if kind.ends_with(".hevc") {
-        "hevc"
-    } else {
-        "mpegts"
+/// Whether a camera kind holds HEVC (otherwise H.264); `None` for a kind that is no camera video.
+fn hevc_kind(kind: &str) -> Option<bool> {
+    match kind {
+        "fcamera.hevc" | "ecamera.hevc" | "fcamera.mp4" | "ecamera.mp4" => Some(true),
+        "qcamera.ts" | "camera.mp4" | "qcamera.mp4" => Some(false),
+        _ => None,
     }
 }
-pub async fn probe(path: &Path, kind: &str, packets: bool) -> anyhow::Result<Value> {
+
+/// The stream table of a camera video as an upload check reads it: the start of a raw original,
+/// the whole `moov` of an MP4 (`pure_remux::{ts, hevc, readback}::probe`).
+pub fn probe_file(path: &Path, kind: &str) -> anyhow::Result<Value> {
     let _profile = crate::profile::Scope::new("video_probe");
-    let mut cmd = Command::new("ffprobe");
-    cmd.args([
-        "-v",
-        "error",
-        "-protocol_whitelist",
-        "file,pipe",
-        "-f",
-        input_format(kind),
-        "-show_streams",
-        "-show_format",
-    ]);
-    if packets {
-        cmd.arg("-show_packets");
+    hevc_kind(kind).context("unsupported inspection kind")?;
+    if kind.ends_with(".mp4") {
+        crate::pure_remux::readback::probe(path)
+    } else if kind.ends_with(".hevc") {
+        crate::pure_remux::hevc::probe(path)
+    } else {
+        crate::pure_remux::ts::probe(path)
     }
-    cmd.args(["-of", "json"]).arg(path);
-    Ok(serde_json::from_slice(&run(&mut cmd).await?)?)
 }
+
+/// The upload and import check of a camera video: one video stream of the kind's codec and a
+/// supported size. Bounded reads in a blocking task; a panic is a refusal, not a crash.
 pub async fn validate_upload(path: &Path, kind: &str) -> anyhow::Result<Value> {
-    let info = probe(path, kind, false).await?;
+    let permit = WORKERS.clone().acquire_owned().await?;
+    let (source, owned) = (path.to_path_buf(), kind.to_owned());
+    let info = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        std::panic::catch_unwind(|| probe_file(&source, &owned))
+            .unwrap_or_else(|_| Err(anyhow::anyhow!("media probe panicked")))
+    })
+    .await??;
     validate_info(&info, kind)?;
     Ok(info)
 }
@@ -195,9 +200,55 @@ pub async fn inspect(path: &Path, kind: &str) -> anyhow::Result<Inspection> {
         let kind = kind.to_owned();
         tokio::task::spawn_blocking(move || {
             let _permit = permit;
-            crate::native_video::inspect(&source, &kind)
+            inspect_file(&source, &kind)
         })
         .await?
+    }
+}
+
+/// One read of a camera video for the conversion: its stream, every packet clock and its signature.
+/// A TS original by the engine's demuxer (`pure_remux::ts::inspect`), an MP4 by the independent
+/// read-back (`readback::inspect_copy`), a raw HEVC original by `NalHasher` (no packet clocks:
+/// the log sets them).
+pub fn inspect_file(source: &Path, kind: &str) -> anyhow::Result<Inspection> {
+    let _profile = crate::profile::Scope::new("native_inspection");
+    crate::fault::point("native_inspect");
+    let hevc = hevc_kind(kind).context("unsupported inspection kind")?;
+    read_input(source, kind, hevc).context(crate::pure_remux::Stage::Read)
+}
+
+fn read_input(source: &Path, kind: &str, hevc: bool) -> anyhow::Result<Inspection> {
+    if kind.ends_with(".mp4") {
+        let (inspection, layout) = crate::pure_remux::readback::inspect_copy(source, hevc)?;
+        // An edit list that starts the media later moves every presentation time; this read
+        // does not apply it, so such a file is refused rather than played out of sync.
+        anyhow::ensure!(
+            layout.edit_list.iter().all(|(_, start)| *start == 0) && layout.edit_list.len() <= 1,
+            crate::pure_remux::Unsupported("MP4 edit list that shifts the media")
+        );
+        Ok(inspection)
+    } else if hevc {
+        let info = crate::pure_remux::hevc::probe(source)?;
+        let signature = {
+            use std::io::Read;
+            let mut file = std::fs::File::open(source)?;
+            let mut hash = NalHasher::new(true);
+            let mut chunk = vec![0u8; 1024 * 1024];
+            loop {
+                let n = file.read(&mut chunk)?;
+                if n == 0 {
+                    break;
+                }
+                hash.feed(&chunk[..n])?;
+            }
+            hash.finish()?
+        };
+        Ok(Inspection {
+            info: serde_json::json!({"streams":info["streams"],"packets":[]}),
+            signature,
+        })
+    } else {
+        crate::pure_remux::ts::inspect(source)
     }
 }
 pub fn annex_b_signature(bytes: &[u8], hevc: bool) -> anyhow::Result<Signature> {
@@ -330,65 +381,6 @@ impl NalHasher {
         })
     }
 }
-async fn signature(path: &Path, kind: &str) -> anyhow::Result<Signature> {
-    let _profile = crate::profile::Scope::new("video_bitstream_hash");
-    let hevc = kind != "qcamera.ts" && kind != "camera.mp4" && kind != "qcamera.mp4";
-    let mut cmd = Command::new("ffmpeg");
-    cmd.args([
-        "-v",
-        "error",
-        "-nostdin",
-        "-protocol_whitelist",
-        "file,pipe",
-        "-f",
-        input_format(kind),
-        "-i",
-    ])
-    .arg(path)
-    .args([
-        "-map",
-        "0:v:0",
-        "-an",
-        "-c:v",
-        "copy",
-        "-bsf:v",
-        if hevc {
-            "hevc_mp4toannexb"
-        } else {
-            "h264_mp4toannexb"
-        },
-        "-f",
-        if hevc { "hevc" } else { "h264" },
-        "pipe:1",
-    ]);
-    use std::process::Stdio;
-    let _permit = WORKERS.acquire().await?;
-    let mut child = cmd
-        .kill_on_drop(true)
-        .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .spawn()?;
-    let mut stdout = child.stdout.take().unwrap();
-    let work = async {
-        let mut hash = NalHasher::new(hevc);
-        let mut buffer = vec![0u8; 128 * 1024];
-        loop {
-            let n = stdout.read(&mut buffer).await?;
-            if n == 0 {
-                break;
-            }
-            hash.feed(&buffer[..n])?;
-        }
-        anyhow::ensure!(
-            child.wait().await?.success(),
-            "native bitstream extraction failed"
-        );
-        hash.finish()
-    };
-    tokio::time::timeout(Duration::from_secs(180), work)
-        .await
-        .context("bitstream inspection deadline exceeded")?
-}
 pub fn validate_times(info: &Value, times: &[f64]) -> anyhow::Result<()> {
     let packets = info["packets"]
         .as_array()
@@ -423,46 +415,37 @@ pub fn validate_times(info: &Value, times: &[f64]) -> anyhow::Result<()> {
     );
     Ok(())
 }
-/// Which engine copies raw camera originals into MP4. Internal setting only:
-/// outputs, file names and API responses do not depend on it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Engine {
-    Pure,
-    Ffmpeg,
-}
+/// Internal setting that once chose the remux engine. Only `pure` remains; `ffmpeg`, the value
+/// earlier versions also took, now starts with a warning and the pure engine, so a server with
+/// an old environment keeps running. Any other value stops the start, as before.
 pub const ENGINE_SETTING: &str = "HARS_REMUX_ENGINE";
-impl Engine {
-    pub fn configured() -> anyhow::Result<Self> {
-        match std::env::var(ENGINE_SETTING) {
-            Err(std::env::VarError::NotPresent) => Ok(Self::Pure),
-            Ok(v) if v == "pure" => Ok(Self::Pure),
-            Ok(v) if v == "ffmpeg" => Ok(Self::Ffmpeg),
-            _ => bail!("{ENGINE_SETTING} must be pure or ffmpeg"),
+pub fn check_engine_setting() -> anyhow::Result<()> {
+    match std::env::var(ENGINE_SETTING) {
+        Err(std::env::VarError::NotPresent) => Ok(()),
+        Ok(v) if v == "pure" => Ok(()),
+        Ok(v) if v == "ffmpeg" => {
+            tracing::warn!(
+                event = "remux_engine_setting",
+                setting = ENGINE_SETTING,
+                value = "ffmpeg",
+                engine = "pure",
+                "the FFmpeg engine was removed; the pure engine converts and exports"
+            );
+            Ok(())
         }
-    }
-    pub fn name(self) -> &'static str {
-        match self {
-            Self::Pure => "pure",
-            Self::Ffmpeg => "ffmpeg",
-        }
+        _ => bail!("{ENGINE_SETTING} must be pure (or unset)"),
     }
 }
 
-static REMUXED: [std::sync::atomic::AtomicU64; 3] =
-    [const { std::sync::atomic::AtomicU64::new(0) }; 3];
-/// Process-wide (pure, ffmpeg, pure failures) remux counts, for diagnostics.
-pub fn remux_counts() -> [u64; 3] {
-    REMUXED
-        .each_ref()
-        .map(|c| c.load(std::sync::atomic::Ordering::Relaxed))
-}
-fn count(index: usize) {
-    REMUXED[index].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+/// Whether a worker's error is the machine's (storage, memory) rather than its input's, so that
+/// its exit status says so (`RESOURCE_EXIT`).
+pub fn resource_error(error: &anyhow::Error) -> bool {
+    crate::pure_remux::Failure::classify(error).class == crate::pure_remux::FailureClass::Resource
 }
 
 /// The server runs conversions in a child process; its remux events are
 /// logged again here with only their known fields and the record id, at the
-/// level the child chose, so fallbacks and failures stay visible and countable.
+/// level the child chose, so failures stay visible and countable.
 pub fn relay_remux_event(record: &str, line: &str) {
     let Ok(event) = serde_json::from_str::<Value>(line) else {
         return;
@@ -497,12 +480,12 @@ pub fn relay_remux_event(record: &str, line: &str) {
             reason_code = text("reason_code"),
             reason = text("reason"),
         ),
-        Some(name @ ("remux_fallback" | "remux_failure")) => {
+        Some("remux_failure") => {
             let level = event["level"].as_str().unwrap_or("WARN");
             macro_rules! relay {
                 ($level:ident) => {
                     tracing::$level!(
-                        event = name,
+                        event = "remux_failure",
                         record,
                         engine = text("engine"),
                         kind = text("kind"),
@@ -510,8 +493,6 @@ pub fn relay_remux_event(record: &str, line: &str) {
                         reason_code = text("reason_code"),
                         reason = text("reason"),
                         fallback = fields["fallback"].as_bool(),
-                        fallback_result = text("fallback_result"),
-                        fallback_reason = text("fallback_reason"),
                     )
                 };
             }
@@ -527,9 +508,9 @@ pub fn relay_remux_event(record: &str, line: &str) {
 
 /// Bytes before a raw Annex B file's first start code, up to the last one that
 /// is not zero padding (`leading_zero_8bits`, `zero_byte`), or 0: no NAL unit
-/// holds them, so every engine and the input signature leave them out, as
-/// libavformat does. Reading stops past the NAL limit, where the engines
-/// refuse the file anyway.
+/// holds them, so the engine and the input signature leave them out, as the
+/// Python reference's demuxer does. Reading stops past the NAL limit, where the
+/// engine refuses the file anyway.
 pub fn leading_bytes(source: &Path) -> std::io::Result<u64> {
     use std::io::Read;
     let mut file = std::fs::File::open(source)?;
@@ -560,9 +541,6 @@ pub fn leading_bytes(source: &Path) -> std::io::Result<u64> {
 #[derive(Debug)]
 pub struct Remuxed {
     pub info: Value,
-    pub engine: Engine,
-    /// Why the pure engine's attempt was discarded, when FFmpeg wrote the file.
-    pub fallback: Option<crate::pure_remux::Failure>,
     pub terminal: Option<crate::terminal_duration::Terminal>,
 }
 
@@ -572,23 +550,18 @@ pub async fn remux(
     output: &Path,
     times: &[f64],
 ) -> anyhow::Result<Value> {
-    Ok(
-        remux_using(Engine::configured()?, source, kind, output, times, None)
-            .await?
-            .info,
-    )
+    Ok(remux_using(source, kind, output, times, None).await?.info)
 }
 
 /// `next_frame_ns`: logged gap from the last frame to the next camera frame.
 pub async fn remux_using(
-    engine: Engine,
     source: &Path,
     kind: &str,
     output: &Path,
     times: &[f64],
     next_frame_ns: Option<u64>,
 ) -> anyhow::Result<Remuxed> {
-    remux_inner(engine, source, kind, output, times, next_frame_ns, None).await
+    remux_inner(source, kind, output, times, next_frame_ns, None).await
 }
 
 // A scan may be shared only inside the same conversion, never across jobs or requests.
@@ -600,9 +573,8 @@ pub(crate) async fn remux_probed(
     next_frame_ns: Option<u64>,
     provided: Option<Inspection>,
 ) -> anyhow::Result<Value> {
-    let engine = Engine::configured()?;
     Ok(
-        remux_inner(engine, source, kind, output, times, next_frame_ns, provided)
+        remux_inner(source, kind, output, times, next_frame_ns, provided)
             .await?
             .info,
     )
@@ -616,20 +588,7 @@ struct Clocks {
     terminal: crate::terminal_duration::Terminal,
 }
 
-/// Whether a pure engine failure may be retried by the FFmpeg engine, once.
-/// Resource failures are not: the same disk, memory or deadline would fail
-/// again, and a killed worker may have been the shutdown or the OOM killer.
-/// A retried input passes the same checks and limits as the pure output.
-pub fn falls_back(class: crate::pure_remux::FailureClass) -> bool {
-    use crate::pure_remux::FailureClass as C;
-    match class {
-        C::Unsupported | C::Invalid | C::Internal | C::Verification => true,
-        C::Resource => false,
-    }
-}
-
 async fn remux_inner(
-    engine: Engine,
     source: &Path,
     kind: &str,
     output: &Path,
@@ -662,8 +621,6 @@ async fn remux_inner(
         validate_times(&input.info, times)?;
         return Ok(Remuxed {
             info: input.info,
-            engine,
-            fallback: None,
             terminal: None,
         });
     }
@@ -676,74 +633,36 @@ async fn remux_inner(
             tracing::warn!(event = "remux_input_prefix", kind, bytes);
         }
     }
-    let mut fallback = None;
-    if engine == Engine::Pure
-        && let Some(short) = short_for_pure(source, output)
-    {
-        fallback = Some(short);
-    } else if engine == Engine::Pure {
-        match pure(source, kind, output, times, &clocks, inspection.as_ref()).await {
-            Ok(info) => {
-                count(0);
-                tracing::info!(
-                    event = "remux_engine",
-                    engine = "pure",
-                    kind,
-                    terminal_ticks = clocks.terminal.ticks,
-                    terminal_basis = ?clocks.terminal.basis,
-                );
-                return Ok(Remuxed {
-                    info,
-                    engine,
-                    fallback: None,
-                    terminal: Some(clocks.terminal),
-                });
-            }
-            Err(failure) => {
-                count(2);
-                if !falls_back(failure.class) {
-                    tracing::warn!(
-                        event = "remux_failure",
-                        engine = "pure",
-                        kind,
-                        failure_class = failure.class.name(),
-                        reason_code = failure.code,
-                        reason = failure.reason,
-                        fallback = false,
-                    );
-                    return Err(failure.into());
-                }
-                fallback = Some(failure);
-            }
+    let result = match short_of_space(source, output) {
+        Some(short) => Err(short),
+        None => pure(source, kind, output, times, &clocks, inspection.as_ref()).await,
+    };
+    match result {
+        Ok(info) => {
+            tracing::info!(
+                event = "remux_engine",
+                engine = "pure",
+                kind,
+                terminal_ticks = clocks.terminal.ticks,
+                terminal_basis = ?clocks.terminal.basis,
+            );
+            Ok(Remuxed {
+                info,
+                terminal: Some(clocks.terminal),
+            })
+        }
+        Err(failure) => {
+            log_failure("remux_failure", kind, &failure);
+            Err(failure.into())
         }
     }
-    let result = ffmpeg(source, kind, output, times, &clocks, inspection).await;
-    if let Some(failure) = &fallback {
-        log_fallback("remux_fallback", kind, failure, &result);
-    }
-    let info = result?;
-    count(1);
-    tracing::info!(
-        event = "remux_engine",
-        engine = Engine::Ffmpeg.name(),
-        requested = engine.name(),
-        kind,
-        terminal_ticks = clocks.terminal.ticks,
-        terminal_basis = ?clocks.terminal.basis,
-    );
-    Ok(Remuxed {
-        info,
-        engine: Engine::Ffmpeg,
-        fallback,
-        terminal: Some(clocks.terminal),
-    })
 }
 
-/// Room kept free beyond what an engine writes, as the conversion's own floor (`convert`).
+/// Room kept free beyond what the engine writes, as the conversion's own floor (`convert`).
 pub const SPACE_MARGIN: u64 = 100 * 1024 * 1024;
 
 /// The pure engine holds its payload next to the MP4 it is copied into, so it needs about twice
-/// the input; FFmpeg writes the MP4 alone.
+/// the input.
 pub fn pure_fits(input: u64, available: u64) -> bool {
     input
         .checked_mul(2)
@@ -751,9 +670,10 @@ pub fn pure_fits(input: u64, available: u64) -> bool {
         .is_some_and(|needed| available >= needed)
 }
 
-/// Why the pure engine is skipped for lack of space, if it is. The FFmpeg engine then writes the
-/// single copy. Debug builds let tests state the free space.
-fn short_for_pure(source: &Path, output: &Path) -> Option<crate::pure_remux::Failure> {
+/// A resource failure when the output's file system cannot take the engine's two copies and the
+/// margin: the conversion stops before writing instead of filling the disk the recordings share
+/// (a later attempt, with room, converts). Debug builds let tests state the free space.
+fn short_of_space(source: &Path, output: &Path) -> Option<crate::pure_remux::Failure> {
     let input = std::fs::metadata(source).ok()?.len();
     let dir = output
         .parent()
@@ -773,52 +693,41 @@ fn short_for_pure(source: &Path, output: &Path) -> Option<crate::pure_remux::Fai
     };
     (!pure_fits(input, available)).then(|| {
         crate::pure_remux::Failure::new(
-            crate::pure_remux::FailureClass::Unsupported,
+            crate::pure_remux::FailureClass::Resource,
             "low_space",
-            format!("{available} bytes free for a {input} byte input: one copy only"),
+            format!(
+                "{available} bytes free for a {input} byte input: the conversion needs {} bytes",
+                input.saturating_mul(2).saturating_add(SPACE_MARGIN)
+            ),
         )
     })
 }
 
-/// An unsupported input is routine; damaged input is a warning; an engine
-/// error or a file that did not read back is an error even when FFmpeg's
-/// checked copy was published.
-fn log_fallback<T>(
-    event: &'static str,
-    kind: &str,
-    failure: &crate::pure_remux::Failure,
-    result: &anyhow::Result<T>,
-) {
+/// A failure the machine may clear (resource) or an input outside the engine's range is a
+/// warning; an engine error or a file that did not read back is an error. No other engine
+/// retries the input (`fallback` stays false in the event for log readers).
+fn log_failure(event: &'static str, kind: &str, failure: &crate::pure_remux::Failure) {
     use crate::pure_remux::FailureClass as C;
-    let (fallback_result, fallback_reason) = match result {
-        Ok(_) => ("published", String::new()),
-        Err(e) => ("failed", format!("{e:#}").chars().take(300).collect()),
-    };
     macro_rules! log {
         ($level:ident) => {
             tracing::$level!(
                 event,
-                from = "pure",
-                to = "ffmpeg",
                 engine = "pure",
                 kind,
                 failure_class = failure.class.name(),
                 reason_code = failure.code,
                 reason = failure.reason,
-                fallback = true,
-                fallback_result,
-                fallback_reason,
+                fallback = false,
             )
         };
     }
     match failure.class {
-        C::Unsupported => log!(info),
-        C::Invalid | C::Resource => log!(warn),
+        C::Unsupported | C::Invalid | C::Resource => log!(warn),
         C::Internal | C::Verification => log!(error),
     }
 }
 
-/// Output clocks both engines must produce, decided once before either runs.
+/// Output clocks the engine must produce, decided before it runs.
 fn clocks(
     kind: &str,
     times: &[f64],
@@ -908,15 +817,11 @@ pub fn failure(error: &anyhow::Error) -> crate::pure_remux::Failure {
         #[cfg(not(unix))]
         return Failure::new(C::Internal, "worker_error", format!("{error:#} {status}"));
     }
-    let f = Failure::classify(error);
-    match crate::native_video::ffmpeg_resource_code(error) {
-        Some(code) if f.class != C::Resource => Failure::new(C::Resource, code, f.reason),
-        _ => f,
-    }
+    Failure::classify(error)
 }
 
-/// The pure engine's attempt. Any failure is returned classified; its output
-/// is removed and `remux_inner` decides whether FFmpeg tries the input.
+/// The pure engine's attempt. Any failure is returned classified and its
+/// output removed; no other engine tries the input.
 async fn pure(
     source: &Path,
     kind: &str,
@@ -996,114 +901,6 @@ async fn pure(
     })
 }
 
-/// The raw file's signature from `NalHasher` alone, independent of
-/// libavformat's parser: an FFmpeg copy of raw HEVC must match it, so a
-/// damaged input the parser tolerates cannot lose bytes silently.
-async fn raw_signature(source: &Path, hevc: bool) -> anyhow::Result<Signature> {
-    let _profile = crate::profile::Scope::new("raw_input_signature");
-    let source = source.to_path_buf();
-    tokio::task::spawn_blocking(move || {
-        use std::io::Read;
-        let mut file = std::fs::File::open(source)?;
-        let mut hash = NalHasher::new(hevc);
-        let mut chunk = vec![0u8; 1024 * 1024];
-        loop {
-            let n = file.read(&mut chunk)?;
-            if n == 0 {
-                break;
-            }
-            hash.feed(&chunk[..n])?;
-        }
-        hash.finish()
-    })
-    .await?
-    .context("camera original fails the input checks")
-}
-
-async fn ffmpeg(
-    source: &Path,
-    kind: &str,
-    output: &Path,
-    times: &[f64],
-    clocks: &Clocks,
-    inspection: Option<Inspection>,
-) -> anyhow::Result<Value> {
-    let temp = temp_for(output);
-    let clock_path = temp.with_extension("clock.json");
-    let _scratch = Scratch(vec![temp.clone(), clock_path.clone()]);
-    let terminal = i64::try_from(clocks.terminal.ticks)?;
-    let hevc = kind.ends_with(".hevc");
-    let before = if hevc {
-        let raw = raw_signature(source, true).await?;
-        let copied = if let Some(worker) = WORKER_EXECUTABLE.get() {
-            crate::store::atomic_json(&clock_path, &times).await?;
-            let mut command = Command::new(worker);
-            command
-                .arg("__native-hevc")
-                .arg(source)
-                .arg(&clock_path)
-                .arg(&temp)
-                .arg(terminal.to_string());
-            serde_json::from_slice::<Signature>(&run(&mut command).await?)?
-        } else {
-            // Library embedding/tests: keep the permit in the blocking job even if its caller cancels.
-            let permit = WORKERS.clone().acquire_owned().await?;
-            let input = source.to_path_buf();
-            let output = temp.clone();
-            let clock = times.to_vec();
-            tokio::task::spawn_blocking(move || {
-                let _permit = permit;
-                crate::native_video::remux_hevc(&input, &output, &clock, terminal)
-            })
-            .await??
-        };
-        anyhow::ensure!(copied == raw, "compressed pictures changed during remux");
-        raw
-    } else {
-        let input = inspection.context("missing source inspection")?;
-        let offset = clocks.offset;
-        if let Some(worker) = WORKER_EXECUTABLE.get() {
-            let mut command = Command::new(worker);
-            command
-                .arg("__native-ts")
-                .arg(source)
-                .arg(&temp)
-                .arg(offset.to_string())
-                .arg(terminal.to_string());
-            run(&mut command).await?;
-        } else {
-            let permit = WORKERS.clone().acquire_owned().await?;
-            let input = source.to_path_buf();
-            let output = temp.clone();
-            tokio::task::spawn_blocking(move || {
-                let _permit = permit;
-                crate::native_video::remux_ts(&input, &output, offset, terminal)
-            })
-            .await??;
-        }
-        input.signature
-    };
-    if crate::fault::injected("ffmpeg_remux_corrupt") {
-        crate::fault::flip_last_byte(&temp)?;
-    }
-    start_writeback(&std::fs::File::open(&temp)?);
-    let checked = inspect(&temp, target_kind(kind)).await?;
-    // The pure engine's read-back also checks this copy: sync samples against
-    // the pictures, one picture per sample and the same signature.
-    let file = temp.clone();
-    let (read, layout) =
-        tokio::task::spawn_blocking(move || crate::pure_remux::readback::inspect_copy(&file, hevc))
-            .await??;
-    anyhow::ensure!(
-        read.signature == before,
-        "compressed pictures changed during remux"
-    );
-    anyhow::ensure!(
-        layout.durations.last() == Some(&clocks.terminal.ticks),
-        "last sample duration changed during remux"
-    );
-    verify_and_place(&temp, output, kind, times, clocks, &before, checked).await
-}
 fn target_kind(kind: &str) -> &'static str {
     if kind == "qcamera.ts" {
         "camera.mp4"
@@ -1112,7 +909,7 @@ fn target_kind(kind: &str) -> &'static str {
     }
 }
 
-/// Checks every engine's output the same way before the atomic rename.
+/// Checks the engine's output, as read back, before the atomic rename.
 async fn verify_and_place(
     temp: &Path,
     output: &Path,
@@ -1148,9 +945,7 @@ async fn verify_and_place(
         .last()
         .map(|p| p.1)
         .zip(packets.first().map(|p| p.1));
-    // Without composition offsets libavformat's stream duration is the decode span plus the last sample.
-    // FFmpeg's copy of B-frames reports one that follows its edit list instead; `ffmpeg` checks that
-    // copy's last sample in its sample table.
+    // Without composition offsets the media duration is the decode span plus the last sample.
     anyhow::ensure!(
         packets.iter().any(|(pts, dts)| pts != dts)
             || span
@@ -1266,66 +1061,30 @@ pub async fn thumbnail(source: &Path, kind: &str, output: &Path) -> anyhow::Resu
     Ok(())
 }
 
-/// Python's original-format export (`media_export`) of a converted MP4, by the configured engine.
+/// Python's original-format export (`media_export`) of a converted MP4. A failure of any class is
+/// returned as it is: the export writes a new temporary file only, so the MP4 and every stored
+/// original stay as they were.
 pub async fn reverse(
     source: &Path,
     kind: &str,
     output: &Path,
     source_pts: f64,
 ) -> anyhow::Result<()> {
-    reverse_using(Engine::configured()?, source, kind, output, source_pts)
-        .await
-        .map(|_| ())
-}
-
-/// Returns the engine that wrote `output`. A pure engine failure falls back to the FFmpeg export
-/// once under the same policy as remuxing ([`falls_back`]).
-pub async fn reverse_using(
-    engine: Engine,
-    source: &Path,
-    kind: &str,
-    output: &Path,
-    source_pts: f64,
-) -> anyhow::Result<Engine> {
     anyhow::ensure!(source_pts.is_finite(), "invalid original timestamp offset");
     anyhow::ensure!(
         matches!(kind, "qcamera.ts" | "fcamera.hevc" | "ecamera.hevc"),
         "unsupported camera original format"
     );
-    let mut fallback = None;
-    if engine == Engine::Pure {
-        match pure_reverse(source, kind, output, source_pts).await {
-            Ok(()) => {
-                tracing::info!(event = "reverse_engine", engine = "pure", kind);
-                return Ok(Engine::Pure);
-            }
-            Err(failure) if !falls_back(failure.class) => {
-                tracing::warn!(
-                    event = "reverse_failure",
-                    engine = "pure",
-                    kind,
-                    failure_class = failure.class.name(),
-                    reason_code = failure.code,
-                    reason = failure.reason,
-                    fallback = false,
-                );
-                return Err(failure.into());
-            }
-            Err(failure) => fallback = Some(failure),
+    match pure_reverse(source, kind, output, source_pts).await {
+        Ok(()) => {
+            tracing::info!(event = "reverse_engine", engine = "pure", kind);
+            Ok(())
+        }
+        Err(failure) => {
+            log_failure("reverse_failure", kind, &failure);
+            Err(failure.into())
         }
     }
-    let result = reverse_ffmpeg(source, kind, output, source_pts).await;
-    if let Some(failure) = &fallback {
-        log_fallback("reverse_fallback", kind, failure, &result);
-    }
-    result?;
-    tracing::info!(
-        event = "reverse_engine",
-        engine = Engine::Ffmpeg.name(),
-        requested = engine.name(),
-        kind
-    );
-    Ok(Engine::Ffmpeg)
 }
 
 /// The pure export, in a worker process like the pure remux; its output is placed only after the
@@ -1397,102 +1156,4 @@ async fn pure_reverse(
         f if f.class == C::Resource => f,
         _ => Failure::new(C::Verification, "verification", format!("{e:#}")),
     })
-}
-
-/// The FFmpeg CLI export, the pure engine's fallback.
-async fn reverse_ffmpeg(
-    source: &Path,
-    kind: &str,
-    output: &Path,
-    source_pts: f64,
-) -> anyhow::Result<()> {
-    let source_kind = match kind {
-        "qcamera.ts" => "camera.mp4",
-        "fcamera.hevc" => "fcamera.mp4",
-        "ecamera.hevc" => "ecamera.mp4",
-        _ => anyhow::bail!("unsupported camera original format"),
-    };
-    validate_upload(source, source_kind).await?;
-    let before = signature(source, source_kind).await?;
-    let temp = output.with_extension(format!("{}.tmp", crate::store::id()));
-    let result = async {
-        let mut cmd = Command::new("ffmpeg");
-        cmd.args([
-            "-v",
-            "error",
-            "-nostdin",
-            "-n",
-            "-protocol_whitelist",
-            "file,pipe",
-            "-f",
-            "mov",
-            "-copyts",
-            "-i",
-        ])
-        .arg(source)
-        .args([
-            "-map",
-            "0:v:0",
-            "-an",
-            "-c:v",
-            "copy",
-            "-bsf:v",
-            if kind == "qcamera.ts" {
-                "h264_mp4toannexb"
-            } else {
-                "hevc_mp4toannexb"
-            },
-        ]);
-        if kind == "qcamera.ts" {
-            cmd.args([
-                "-mpegts_copyts",
-                "1",
-                "-muxdelay",
-                "0",
-                "-output_ts_offset",
-                &source_pts.to_string(),
-            ]);
-        }
-        cmd.args([
-            "-f",
-            if kind == "qcamera.ts" {
-                "mpegts"
-            } else {
-                "hevc"
-            },
-        ])
-        .arg(&temp);
-        run(&mut cmd).await?;
-        anyhow::ensure!(
-            before == signature(&temp, kind).await?,
-            "compressed pictures changed during reverse export"
-        );
-        if kind == "qcamera.ts" {
-            let original = probe(source, source_kind, true).await?;
-            let restored = probe(&temp, kind, true).await?;
-            let mut times = original["packets"]
-                .as_array()
-                .context("missing MP4 packets")?
-                .iter()
-                .filter(|p| p["codec_type"] == "video")
-                .map(|p| {
-                    p["pts_time"]
-                        .as_str()
-                        .context("missing MP4 PTS")?
-                        .parse::<f64>()
-                        .map(|p| p + source_pts)
-                        .map_err(anyhow::Error::from)
-                })
-                .collect::<anyhow::Result<Vec<_>>>()?;
-            times.sort_by(f64::total_cmp);
-            validate_times(&restored, &times)?;
-        }
-        tokio::fs::rename(&temp, output).await?;
-        Ok(())
-    }
-    .await;
-    if result.is_err() {
-        let _ = tokio::fs::remove_file(&temp).await;
-    }
-    result
 }

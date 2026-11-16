@@ -1,7 +1,8 @@
 //! Last-sample duration rule (docs/hars/TERMINAL-DURATION.md) on synthetic
-//! clocks: both engines must end every clip at the same, rule-given time.
+//! clocks: the engine ends every clip at the rule-given time, as the host's
+//! development `ffprobe` reads the MP4.
 use roadviewer_hars::{
-    media::{self, Engine},
+    media,
     terminal_duration::{Basis, decide},
 };
 use std::{
@@ -81,12 +82,25 @@ struct Clip {
     duration_ts: i64,
 }
 
+/// Packet durations as the host's `ffprobe` reads them.
+fn probed_durations(path: &Path) -> Vec<i64> {
+    let out = Command::new("ffprobe")
+        .args(["-v", "error", "-show_packets", "-of", "json"])
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let info: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    info["packets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| p["duration"].as_i64().unwrap())
+        .collect()
+}
+
 fn clip(path: &Path, info: &serde_json::Value) -> Clip {
-    let mut input = ffmpeg_next::format::input(path).unwrap();
-    let durations = input
-        .packets()
-        .map(|(_, p)| p.duration())
-        .collect::<Vec<_>>();
+    let durations = probed_durations(path);
     Clip {
         pts: info["packets"]
             .as_array()
@@ -99,33 +113,22 @@ fn clip(path: &Path, info: &serde_json::Value) -> Clip {
     }
 }
 
-/// Runs both engines, asserts identical clocks and returns the shared last duration.
-async fn both(source: &Path, kind: &str, times: &[f64], next: Option<u64>) -> (i64, Basis) {
+/// Runs the engine and returns the last duration as the host's `ffprobe` reads
+/// it, after checking the stream duration ends with that sample.
+async fn end(source: &Path, kind: &str, times: &[f64], next: Option<u64>) -> (i64, Basis) {
     let dir = source.parent().unwrap();
-    let mut clips = Vec::new();
-    let mut basis = None;
-    for engine in [Engine::Pure, Engine::Ffmpeg] {
-        let output = dir.join(format!(
-            "{}-{engine:?}-{}.mp4",
-            source.file_stem().unwrap().to_string_lossy(),
-            next.unwrap_or(0)
-        ));
-        let done = media::remux_using(engine, source, kind, &output, times, next)
-            .await
-            .unwrap();
-        assert_eq!(
-            (done.engine, done.fallback.as_ref().map(|f| f.code.as_str())),
-            (engine, None)
-        );
-        basis = done.terminal.map(|t| t.basis);
-        let c = clip(&output, &done.info);
-        assert_eq!(c.duration_ts - c.pts.last().unwrap().1, c.last_duration);
-        clips.push(c);
-    }
-    assert_eq!(clips[0].pts, clips[1].pts);
-    assert_eq!(clips[0].last_duration, clips[1].last_duration);
-    assert_eq!(clips[0].duration_ts, clips[1].duration_ts);
-    (clips[0].last_duration, basis.unwrap())
+    let output = dir.join(format!(
+        "{}-pure-{}.mp4",
+        source.file_stem().unwrap().to_string_lossy(),
+        next.unwrap_or(0)
+    ));
+    let done = media::remux_using(source, kind, &output, times, next)
+        .await
+        .unwrap();
+    let c = clip(&output, &done.info);
+    assert_eq!(c.duration_ts - c.pts.last().unwrap().1, c.last_duration);
+    assert_eq!(c.pts.len(), times.len());
+    (c.last_duration, done.terminal.unwrap().basis)
 }
 
 fn seconds(stamps: &[i64], scale: f64) -> Vec<f64> {
@@ -143,20 +146,20 @@ async fn hevc_clocks_end_at_the_logged_next_frame_or_the_median_interval() {
     let constant = (0..30).map(|i| i * 50_000).collect::<Vec<i64>>();
     let times = seconds(&constant, 1e6);
     assert_eq!(
-        both(&source, "fcamera.hevc", &times, None).await,
+        end(&source, "fcamera.hevc", &times, None).await,
         (50_000, Basis::MedianInterval)
     );
     assert_eq!(
-        both(&source, "fcamera.hevc", &times, Some(47_541_184)).await,
+        end(&source, "fcamera.hevc", &times, Some(47_541_184)).await,
         (47_541, Basis::NextFrame)
     );
     // A stall after the last frame is not one frame's length.
     assert_eq!(
-        both(&source, "fcamera.hevc", &times, Some(100_600_000)).await,
+        end(&source, "fcamera.hevc", &times, Some(100_600_000)).await,
         (50_000, Basis::MedianInterval)
     );
     assert_eq!(
-        both(&source, "fcamera.hevc", &times, Some(100_000_000)).await,
+        end(&source, "fcamera.hevc", &times, Some(100_000_000)).await,
         (100_000, Basis::NextFrame)
     );
     // Initial jitter (21 intervals of 50.12 ms, then 8 of 50 ms: the median is
@@ -165,7 +168,7 @@ async fn hevc_clocks_end_at_the_logged_next_frame_or_the_median_interval() {
         .map(|i| i * 50_000 + if i < 21 { i * 120 } else { 2520 })
         .collect::<Vec<i64>>();
     assert_eq!(
-        both(&source, "fcamera.hevc", &seconds(&jitter, 1e6), None)
+        end(&source, "fcamera.hevc", &seconds(&jitter, 1e6), None)
             .await
             .0,
         50_120
@@ -180,7 +183,7 @@ async fn hevc_clocks_end_at_the_logged_next_frame_or_the_median_interval() {
         })
         .collect::<Vec<i64>>();
     assert_eq!(
-        both(&source, "fcamera.hevc", &seconds(&change, 1e6), None)
+        end(&source, "fcamera.hevc", &seconds(&change, 1e6), None)
             .await
             .0,
         33_333
@@ -188,7 +191,7 @@ async fn hevc_clocks_end_at_the_logged_next_frame_or_the_median_interval() {
     let mut outlier = constant.clone();
     outlier[29] += 400_000;
     assert_eq!(
-        both(&source, "fcamera.hevc", &seconds(&outlier, 1e6), None)
+        end(&source, "fcamera.hevc", &seconds(&outlier, 1e6), None)
             .await
             .0,
         50_000
@@ -201,23 +204,23 @@ async fn hevc_short_clips_use_median_then_nominal() {
     let two = temp.path().join("two.hevc");
     hevc(&two, 2);
     assert_eq!(
-        both(&two, "fcamera.hevc", &[0., 0.04], None).await,
+        end(&two, "fcamera.hevc", &[0., 0.04], None).await,
         (40_000, Basis::MedianInterval)
     );
     let one = temp.path().join("one.hevc");
     hevc(&one, 1);
     assert_eq!(
-        both(&one, "fcamera.hevc", &[0.], None).await,
+        end(&one, "fcamera.hevc", &[0.], None).await,
         (50_000, Basis::Nominal)
     );
     assert_eq!(
-        both(&one, "fcamera.hevc", &[0.], Some(46_248_266)).await,
+        end(&one, "fcamera.hevc", &[0.], Some(46_248_266)).await,
         (46_248, Basis::NextFrame)
     );
 }
 
 #[tokio::test]
-async fn ts_clocks_follow_the_same_rule_in_both_engines() {
+async fn ts_clocks_follow_the_rule() {
     let temp = tempfile::tempdir().unwrap();
     let base = 900_000;
     type Case = (&'static str, Vec<i64>, Option<u64>, (i64, Basis));
@@ -281,7 +284,7 @@ async fn ts_clocks_follow_the_same_rule_in_both_engines() {
     for (name, ticks, next, expected) in cases {
         let source = ts(temp.path(), name, &ticks);
         let times = seconds(&ticks, 90_000.);
-        let got = both(&source, "qcamera.ts", &times, next).await;
+        let got = end(&source, "qcamera.ts", &times, next).await;
         assert_eq!(got, expected, "{name}");
         assert_eq!(
             decide(&ticks, 90_000, next).unwrap().ticks,
@@ -307,7 +310,20 @@ async fn python_shaped_mp4_is_reused_unchanged() {
         .args(["-map", "0:v:0", "-c:v", "copy", "-movflags", "+faststart"])
         .arg(&mp4));
     let before = std::fs::read(&mp4).unwrap();
-    let probe = media::probe(&mp4, "camera.mp4", true).await.unwrap();
+    let probe = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_streams",
+            "-show_packets",
+            "-of",
+            "json",
+        ])
+        .arg(&mp4)
+        .output()
+        .unwrap();
+    assert!(probe.status.success());
+    let probe: serde_json::Value = serde_json::from_slice(&probe.stdout).unwrap();
     let mut times = probe["packets"]
         .as_array()
         .unwrap()

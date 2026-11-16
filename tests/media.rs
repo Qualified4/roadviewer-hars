@@ -3,6 +3,40 @@ use std::{
     path::Path,
     process::{Command, Stdio},
 };
+/// The host's development `ffprobe`, an independent reader of the product's MP4s.
+fn ffprobe(path: &Path) -> serde_json::Value {
+    let out = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-show_streams",
+            "-show_packets",
+            "-of",
+            "json",
+        ])
+        .arg(path)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    serde_json::from_slice(&out.stdout).unwrap()
+}
+/// Sample payloads as `shiguredo_mp4`'s demuxer reads them.
+fn samples(path: &Path) -> Vec<Vec<u8>> {
+    use shiguredo_mp4::demux::{Input, Mp4FileDemuxer};
+    let data = std::fs::read(path).unwrap();
+    let mut demuxer = Mp4FileDemuxer::new();
+    demuxer.handle_input(Input {
+        position: 0,
+        data: &data,
+    });
+    demuxer.tracks().unwrap();
+    let mut out = Vec::new();
+    while let Some(s) = demuxer.next_sample().unwrap() {
+        let at = s.data_offset as usize;
+        out.push(data[at..at + s.data_size].to_vec());
+    }
+    out
+}
 fn fixture(path: &Path, hevc: bool) {
     let mut cmd = Command::new("ffmpeg");
     cmd.args([
@@ -53,7 +87,7 @@ async fn h264_stream_copy_preserves_pictures_and_is_faststart() {
     let times = (0..10).map(|i| i as f64 / 10.).collect::<Vec<_>>();
     let info = media::remux(&ts, "qcamera.ts", &mp4, &times).await.unwrap();
     assert_eq!(info["streams"][0]["codec_name"], "h264");
-    let info = media::probe(&mp4, "camera.mp4", true).await.unwrap();
+    let info = ffprobe(&mp4);
     media::validate_times(&info, &times).unwrap();
     let restored = temp.path().join("restored.ts");
     media::reverse(&mp4, "qcamera.ts", &restored, 1.4)
@@ -84,7 +118,7 @@ async fn hevc_stream_copy_uses_hvc1_and_checks_logged_clock() {
     media::remux(&hevc, "fcamera.hevc", &variable, &wrong)
         .await
         .unwrap();
-    let info = media::probe(&variable, "fcamera.mp4", true).await.unwrap();
+    let info = ffprobe(&variable);
     media::validate_times(&info, &wrong).unwrap();
     assert!(
         media::validate_times(&info, &(0..10).map(|i| i as f64 / 10.).collect::<Vec<_>>()).is_err()
@@ -108,7 +142,7 @@ async fn camera_codec_mismatch_and_malformed_media_are_rejected() {
 }
 
 #[tokio::test]
-async fn native_inspection_and_mux_hash_match_independent_ffmpeg_extraction() {
+async fn inspection_and_mux_hash_match_independent_ffmpeg_extraction() {
     for hevc in [false, true] {
         let temp = tempfile::tempdir().unwrap();
         let (kind, format, filter) = if hevc {
@@ -139,13 +173,7 @@ async fn native_inspection_and_mux_hash_match_independent_ffmpeg_extraction() {
             .await
             .unwrap();
         assert_eq!(raw.signature, checked.signature);
-        let probe = media::probe(
-            &output,
-            if hevc { "fcamera.mp4" } else { "camera.mp4" },
-            true,
-        )
-        .await
-        .unwrap();
+        let probe = ffprobe(&output);
         for field in [
             "codec_name",
             "codec_tag_string",
@@ -168,9 +196,7 @@ async fn native_inspection_and_mux_hash_match_independent_ffmpeg_extraction() {
             assert_eq!(a["dts"], b["dts"]);
         }
         if hevc {
-            let mut container = ffmpeg_next::format::input(&output).unwrap();
-            for (_, packet) in container.packets() {
-                let bytes = packet.data().unwrap();
+            for bytes in samples(&output) {
                 let mut offset = 0;
                 while offset < bytes.len() {
                     let size =
@@ -185,9 +211,16 @@ async fn native_inspection_and_mux_hash_match_independent_ffmpeg_extraction() {
                 }
             }
             let direct = temp.path().join("direct.mp4");
+            let job = roadviewer_hars::pure_remux::Job {
+                kind: kind.into(),
+                times: times.clone(),
+                terminal: 100_000,
+                offset: 0,
+            };
             assert_eq!(
-                roadviewer_hars::native_video::remux_hevc(&source, &direct, &times, 100_000)
-                    .unwrap(),
+                roadviewer_hars::pure_remux::remux(&source, &direct, &job)
+                    .unwrap()
+                    .input,
                 raw.signature
             );
         }

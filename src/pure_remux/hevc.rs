@@ -175,6 +175,71 @@ fn entry(sets: &[(u8, Vec<u8>)]) -> anyhow::Result<SampleEntry> {
     Ok(SampleEntry::Hvc1(entry))
 }
 
+/// The upload check of a raw HEVC original: the size its first SPS states, from the parameter
+/// sets before its first picture. Reads no further than that picture, within the NAL bound.
+pub fn probe(source: &Path) -> anyhow::Result<serde_json::Value> {
+    let mut sets = Sets::default();
+    let picture = std::cell::Cell::new(false);
+    let mut on = |u: Unit<'_>| -> anyhow::Result<()> {
+        if picture.get() {
+            return Ok(());
+        }
+        let kind = kind(u.raw, true)?;
+        if is_parameter_set(kind, true) {
+            sets.add(kind, u.raw)?;
+        } else if kind < 32 {
+            picture.set(true);
+        }
+        Ok(())
+    };
+    let mut file = std::fs::File::open(source)?;
+    let mut scanner = Scanner::new();
+    let mut chunk = vec![0u8; READ_CHUNK];
+    let mut read = 0;
+    while !picture.get() {
+        let n = file.read(&mut chunk)?;
+        if n == 0 {
+            break;
+        }
+        read += n;
+        ensure!(
+            read <= super::annexb::NAL_LIMIT + READ_CHUNK,
+            "no HEVC picture within the NAL bound"
+        );
+        scanner.push(&chunk[..n], &mut on)?;
+    }
+    if !picture.get() {
+        scanner.finish(&mut on)?;
+    }
+    ensure!(picture.get(), "missing pictures or decoder configuration");
+    let sets = sets.configuration();
+    let pick = |k: u8| {
+        sets.iter()
+            .filter(|(kind, _)| *kind == k)
+            .map(|(_, v)| v.clone())
+            .collect::<Vec<_>>()
+    };
+    let (vps, sps, pps) = (pick(32), pick(33), pick(34));
+    ensure!(
+        !vps.is_empty() && !sps.is_empty() && !pps.is_empty(),
+        "missing pictures or decoder configuration"
+    );
+    let entry = build_hvc1_box(
+        &vps,
+        &sps,
+        &pps,
+        &H265SampleEntryConfig {
+            length_size: LengthSize::FourBytes,
+            avg_frame_rate: H265SampleEntryConfig::AVG_FRAME_RATE_UNSPECIFIED,
+            constant_frame_rate: H265ConstantFrameRate::Unknown,
+        },
+    )
+    .map_err(|e| anyhow::anyhow!("invalid HEVC decoder configuration: {e}"))?;
+    Ok(
+        serde_json::json!({"streams":[{"codec_type":"video","codec_name":"hevc","width":entry.visual.width,"height":entry.visual.height}]}),
+    )
+}
+
 /// One read of the Annex B input hashes it with the independent `NalHasher`
 /// splitter, sizes every sample and stages the sample bytes (`Payload`).
 pub fn remux(

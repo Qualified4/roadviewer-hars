@@ -9,13 +9,11 @@ use std::{net::SocketAddr, path::PathBuf};
 const SHUTDOWN_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
 /// Commands whose standard output is their one JSON result, so their log goes to stderr. The server and
 /// `convert-log` keep logging to stdout: the conversion process's log lines are relayed by `jobs` from there.
-const RESULT_ON_STDOUT: [&str; 12] = [
+const RESULT_ON_STDOUT: [&str; 10] = [
     "__inspect",
     "__thumbnail",
-    "__native-hevc",
     "__pure-remux",
     "__pure-reverse",
-    "__native-ts",
     "remux",
     "reverse",
     "track-log",
@@ -38,7 +36,7 @@ fn main() -> anyhow::Result<()> {
     runtime.shutdown_timeout(SHUTDOWN_LIMIT);
     if worker
         && let Err(error) = &result
-        && roadviewer_hars::native_video::resource_error(error)
+        && roadviewer_hars::media::resource_error(error)
     {
         eprintln!("Error: {error:?}");
         std::process::exit(roadviewer_hars::media::RESOURCE_EXIT);
@@ -67,7 +65,7 @@ async fn run() -> anyhow::Result<()> {
     if args.get(1).is_some_and(|v| v == "__inspect") {
         anyhow::ensure!(args.len() == 4, "invalid internal inspection job");
         let result =
-            roadviewer_hars::native_video::inspect(std::path::Path::new(&args[2]), &args[3])?;
+            roadviewer_hars::media::inspect_file(std::path::Path::new(&args[2]), &args[3])?;
         println!("{}", serde_json::to_string(&result)?);
         roadviewer_hars::profile::finish();
         return Ok(());
@@ -80,20 +78,6 @@ async fn run() -> anyhow::Result<()> {
             std::path::Path::new(&args[3]),
         )?;
         println!("{result}");
-        roadviewer_hars::profile::finish();
-        return Ok(());
-    }
-    if args.get(1).is_some_and(|v| v == "__native-hevc") {
-        anyhow::ensure!(args.len() == 6, "invalid internal media job");
-        let clock: Vec<f64> =
-            roadviewer_hars::store::read_json(std::path::Path::new(&args[3])).await?;
-        let signature = roadviewer_hars::native_video::remux_hevc(
-            std::path::Path::new(&args[2]),
-            std::path::Path::new(&args[4]),
-            &clock,
-            args[5].parse()?,
-        )?;
-        println!("{}", serde_json::to_string(&signature)?);
         roadviewer_hars::profile::finish();
         return Ok(());
     }
@@ -128,18 +112,7 @@ async fn run() -> anyhow::Result<()> {
         roadviewer_hars::profile::finish();
         return Ok(());
     }
-    if args.get(1).is_some_and(|v| v == "__native-ts") {
-        anyhow::ensure!(args.len() == 6, "invalid internal media job");
-        roadviewer_hars::native_video::remux_ts(
-            std::path::Path::new(&args[2]),
-            std::path::Path::new(&args[3]),
-            args[4].parse()?,
-            args[5].parse()?,
-        )?;
-        roadviewer_hars::profile::finish();
-        return Ok(());
-    }
-    roadviewer_hars::media::Engine::configured()?;
+    roadviewer_hars::media::check_engine_setting()?;
     roadviewer_hars::media::set_worker_executable(std::env::current_exe()?)?;
     if args.get(1).is_some_and(|v| v == "convert-log") {
         anyhow::ensure!(
@@ -222,8 +195,7 @@ async fn run() -> anyhow::Result<()> {
             args.len() == 6,
             "usage: roadviewer-hars reverse MP4 ORIGINAL_KIND NEW_OUTPUT SOURCE_PTS"
         );
-        let engine = roadviewer_hars::media::reverse_using(
-            roadviewer_hars::media::Engine::configured()?,
+        roadviewer_hars::media::reverse(
             std::path::Path::new(&args[2]),
             &args[3],
             std::path::Path::new(&args[4]),
@@ -232,7 +204,7 @@ async fn run() -> anyhow::Result<()> {
         .await?;
         println!(
             "{}",
-            serde_json::json!({"exported":true,"engine":engine.name(),"reencoded":false})
+            serde_json::json!({"exported":true,"engine":"pure","reencoded":false})
         );
         return Ok(());
     }

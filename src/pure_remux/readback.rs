@@ -371,6 +371,74 @@ fn tables(stbl: &[([u8; 4], &[u8])]) -> anyhow::Result<Tables> {
     })
 }
 
+/// The upload check of an MP4: its stream table as a probe reads it. The `moov` box must be whole
+/// and its sample tables consistent; the media data may be cut short (a later read of the samples
+/// decides), other tracks may sit beside the one video track, and `moov` may follow `mdat`.
+pub fn probe(path: &Path) -> anyhow::Result<serde_json::Value> {
+    let mut file = File::open(path)?;
+    let len = file.metadata()?.len();
+    let mut at = 0;
+    let mut moov = None;
+    while at < len && len - at >= 8 {
+        file.seek(SeekFrom::Start(at))?;
+        let mut header = [0u8; 16];
+        file.read_exact(&mut header[..8])?;
+        let small = u32::from_be_bytes(header[..4].try_into()?);
+        let (size, prefix) = match small {
+            1 => {
+                ensure!(len - at >= 16, "truncated MP4 box");
+                file.read_exact(&mut header[8..])?;
+                (u64::from_be_bytes(header[8..].try_into()?), 16)
+            }
+            0 => (len - at, 8),
+            n => (u64::from(n), 8),
+        };
+        ensure!(size >= prefix, "invalid MP4 box size");
+        if &header[4..8] == b"moov" {
+            ensure!(
+                moov.is_none() && size <= MOOV_LIMIT && size <= len - at,
+                "MP4 metadata exceeds limit"
+            );
+            moov = Some((at + prefix, size - prefix));
+        }
+        at = at.saturating_add(size);
+    }
+    let (moov_at, moov_len) = moov.context("missing MP4 moov box")?;
+    let mut bytes = vec![0u8; usize::try_from(moov_len)?];
+    file.seek(SeekFrom::Start(moov_at))?;
+    file.read_exact(&mut bytes)?;
+    let moov = children(&bytes)?;
+    header_clock(one(&moov, b"mvhd")?)?;
+    let mut streams = Vec::new();
+    for (_, trak) in moov.iter().filter(|(k, _)| k == b"trak") {
+        let trak = children(trak)?;
+        let mdia = children(one(&trak, b"mdia")?)?;
+        let hdlr = full(one(&mdia, b"hdlr")?)?.1;
+        if hdlr.get(4..8) != Some(b"vide") {
+            streams.push(json!({"codec_type":"other"}));
+            continue;
+        }
+        let (timescale, _) = header_clock(one(&mdia, b"mdhd")?)?;
+        ensure!(timescale > 0, "invalid stream time base");
+        let stbl = children(one(&children(one(&mdia, b"minf")?)?, b"stbl")?)?;
+        let mut r = Reader::new(full(one(&stbl, b"stsd")?)?.1);
+        ensure!(r.u32()? >= 1, "missing MP4 sample entry");
+        let entries = children(r.rest())?;
+        let (tag, entry) = *entries.first().context("missing MP4 sample entry")?;
+        let mut r = Reader::new(entry);
+        r.take(24)?;
+        let (width, height) = (r.u16()?, r.u16()?);
+        tables(&stbl)?;
+        let codec = match &tag {
+            b"avc1" | b"avc3" => "h264",
+            b"hvc1" | b"hev1" => "hevc",
+            _ => "other",
+        };
+        streams.push(json!({"codec_type":"video","codec_name":codec,"codec_tag_string":String::from_utf8_lossy(&tag),"width":width,"height":height,"time_base":format!("1/{timescale}")}));
+    }
+    Ok(json!({"streams":streams}))
+}
+
 /// Reads `path` as the converted camera MP4 of `hevc` or H.264 and returns
 /// the same `Inspection` shape the FFmpeg inspector produces, plus layout.
 pub fn inspect(path: &Path, hevc: bool) -> anyhow::Result<(Inspection, Layout)> {

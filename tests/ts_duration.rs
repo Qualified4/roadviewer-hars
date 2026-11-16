@@ -322,8 +322,9 @@ fn probe_rate(dts: &[i64]) -> (i64, i64) {
 
 /// The Python reference (PyAV) ends a qcamera.ts at 1/r_frame_rate of the
 /// library probe. This keeps a model of that estimate (used by
-/// integration/terminal_rule.py) honest against libavformat itself; HARS no
-/// longer copies it (docs/hars/TERMINAL-DURATION.md).
+/// integration/terminal_rule.py) honest against the host's development
+/// `ffprobe` run with the library default; HARS no longer copies it
+/// (docs/hars/TERMINAL-DURATION.md).
 #[tokio::test]
 async fn python_terminal_estimate_reproduces_library_rate_probe() {
     let temp = tempfile::tempdir().unwrap();
@@ -362,32 +363,45 @@ async fn python_terminal_estimate_reproduces_library_rate_probe() {
         Some("20/1"),
         "the CLI probe (scan_all_pmts=1) reads ~5 s and settles on 20 fps"
     );
-    let library = ffmpeg_next::format::input(&ts).unwrap();
-    let probed = library
-        .streams()
-        .best(ffmpeg_next::media::Type::Video)
+    // The library default (what PyAV opens with): the same CLI with `scan_all_pmts` left off.
+    let library = Command::new("ffprobe")
+        .args([
+            "-v",
+            "error",
+            "-scan_all_pmts",
+            "0",
+            "-select_streams",
+            "v:0",
+        ])
+        .args(["-show_streams", "-show_packets", "-of", "json"])
+        .arg(&ts)
+        .output()
+        .unwrap();
+    assert!(library.status.success());
+    let library: serde_json::Value = serde_json::from_slice(&library.stdout).unwrap();
+    let (num, den) = library["streams"][0]["r_frame_rate"]
+        .as_str()
+        .unwrap()
+        .split_once('/')
         .unwrap();
     assert_eq!(
-        (
-            i64::from(probed.rate().numerator()),
-            i64::from(probed.rate().denominator())
-        ),
+        (num.parse::<i64>().unwrap(), den.parse::<i64>().unwrap()),
         rate
     );
-    drop(library);
     // What a plain PyAV demux + MP4 mux (the Python loop) stores as the last duration.
-    let mut demuxed = ffmpeg_next::format::input(&ts).unwrap();
-    let python_last = demuxed
-        .packets()
-        .filter(|(_, p)| p.size() > 0)
+    let python_last = library["packets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|p| p["size"].as_str().is_none_or(|s| s != "0"))
         .last()
-        .map(|(_, p)| p.duration())
+        .map(|p| p["duration"].as_i64().unwrap())
         .unwrap();
     assert_eq!(python_last, terminal);
 }
 
 /// The product rule on the same jittered clock, without a logged next frame:
-/// both engines end the last sample at the median frame interval.
+/// the engine ends the last sample at the median frame interval.
 #[tokio::test]
 async fn product_terminal_duration_without_next_frame_is_median_interval() {
     let temp = tempfile::tempdir().unwrap();
@@ -417,27 +431,30 @@ async fn product_terminal_duration_without_next_frame_is_median_interval() {
         .map(|p| (p - pts[0]) as f64 / 90000.)
         .collect::<Vec<_>>();
     let last = pts[pts.len() - 1] - pts[0];
-    for engine in [media::Engine::Pure, media::Engine::Ffmpeg] {
-        let mp4 = temp.path().join(format!("{engine:?}.mp4"));
-        let done = media::remux_using(engine, &ts, "qcamera.ts", &mp4, &times, None)
-            .await
-            .unwrap();
-        assert_eq!(
-            (done.engine, done.fallback.as_ref().map(|f| f.code.as_str())),
-            (engine, None)
-        );
-        let info = done.info;
-        assert_eq!(info["streams"][0]["time_base"], "1/90000");
-        assert_eq!(info["streams"][0]["duration_ts"], last + median);
-        let mut output = ffmpeg_next::format::input(&mp4).unwrap();
-        let durations = output
-            .packets()
-            .map(|(_, p)| (p.pts().unwrap(), p.duration()))
-            .collect::<Vec<_>>();
-        assert_eq!(durations.len(), pts.len());
-        assert_eq!(*durations.last().unwrap(), (last, median));
-        let checked = media::inspect(&mp4, "camera.mp4").await.unwrap();
-        assert_eq!(checked.signature, source.signature);
-        assert_eq!(checked.info["streams"][0]["codec_tag_string"], "avc1");
-    }
+    let mp4 = temp.path().join("pure.mp4");
+    let done = media::remux_using(&ts, "qcamera.ts", &mp4, &times, None)
+        .await
+        .unwrap();
+    let info = done.info;
+    assert_eq!(info["streams"][0]["time_base"], "1/90000");
+    assert_eq!(info["streams"][0]["duration_ts"], last + median);
+    // The host's development ffprobe reads the MP4 independently.
+    let out = Command::new("ffprobe")
+        .args(["-v", "error", "-show_packets", "-of", "json"])
+        .arg(&mp4)
+        .output()
+        .unwrap();
+    assert!(out.status.success());
+    let probed: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap();
+    let durations = probed["packets"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|p| (p["pts"].as_i64().unwrap(), p["duration"].as_i64().unwrap()))
+        .collect::<Vec<_>>();
+    assert_eq!(durations.len(), pts.len());
+    assert_eq!(*durations.last().unwrap(), (last, median));
+    let checked = media::inspect(&mp4, "camera.mp4").await.unwrap();
+    assert_eq!(checked.signature, source.signature);
+    assert_eq!(checked.info["streams"][0]["codec_tag_string"], "avc1");
 }

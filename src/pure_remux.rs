@@ -2,7 +2,7 @@
 //! raw HEVC), the default engine. Every failure carries a `FailureClass`;
 //! `media` decides from it alone whether the FFmpeg engine may try the input.
 pub(crate) mod annexb;
-mod hevc;
+pub(crate) mod hevc;
 mod mp4;
 pub mod readback;
 pub(crate) mod ts;
