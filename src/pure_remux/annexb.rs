@@ -27,22 +27,36 @@ pub fn trim(mut unit: &[u8]) -> &[u8] {
     unit
 }
 
-/// Sample framing of FFmpeg's `ff_nal_parse_units`: only the `zero_byte` of a
-/// following 4-byte start code is dropped; padding at a buffer end is kept.
-/// Hashing always uses `trim`, so this affects stored bytes, never the SHA.
-fn framed(bytes: &[u8], begin: usize, at: usize) -> &[u8] {
-    let end = if at > begin && bytes[at - 1] == 0 {
-        at - 1
-    } else {
-        at
-    };
-    &bytes[begin..end]
+/// A unit as FFmpeg's `ff_nal_find_startcode` bounds it inside a buffer: the
+/// `zero_byte` of a following 4-byte start code is dropped, padding is kept.
+pub fn framed(raw: &[u8]) -> &[u8] {
+    match raw {
+        [rest @ .., 0] => rest,
+        _ => raw,
+    }
+}
+
+/// A unit of an Annex B buffer: `raw` ends where the next `00 00 01` begins
+/// (`ff_h2645_extract_rbsp`'s `raw_size`), or at the buffer end when `last`.
+pub struct Unit<'a> {
+    pub raw: &'a [u8],
+    pub last: bool,
+}
+impl Unit<'_> {
+    /// Sample bytes: `ff_nal_parse_units` framing within one packet.
+    pub fn sample(&self) -> &[u8] {
+        if self.last {
+            self.raw
+        } else {
+            framed(self.raw)
+        }
+    }
 }
 
 /// Calls `each` for every NAL unit of a complete Annex B buffer.
 pub fn for_each_nal(
     bytes: &[u8],
-    mut each: impl FnMut(&[u8]) -> anyhow::Result<()>,
+    mut each: impl FnMut(Unit<'_>) -> anyhow::Result<()>,
 ) -> anyhow::Result<()> {
     let Some(first) = find_start(bytes, 0) else {
         ensure!(bytes.iter().all(|b| *b == 0), "non Annex B prefix");
@@ -51,10 +65,16 @@ pub fn for_each_nal(
     ensure!(bytes[..first].iter().all(|b| *b == 0), "non Annex B prefix");
     let mut begin = first + 3;
     while let Some(next) = find_start(bytes, begin) {
-        each(framed(bytes, begin, next))?;
+        each(Unit {
+            raw: &bytes[begin..next],
+            last: false,
+        })?;
         begin = next + 3;
     }
-    each(&bytes[begin..])
+    each(Unit {
+        raw: &bytes[begin..],
+        last: true,
+    })
 }
 
 /// Bounded streaming splitter for raw Annex B files.
@@ -74,7 +94,7 @@ impl Scanner {
     pub fn push(
         &mut self,
         data: &[u8],
-        mut each: impl FnMut(&[u8]) -> anyhow::Result<()>,
+        mut each: impl FnMut(Unit<'_>) -> anyhow::Result<()>,
     ) -> anyhow::Result<()> {
         self.buffer.extend_from_slice(data);
         let mut consumed = 0;
@@ -84,7 +104,10 @@ impl Scanner {
                     self.buffer[..at].iter().all(|b| *b == 0),
                     "non Annex B prefix"
                 ),
-                Some(begin) => each(framed(&self.buffer, begin, at))?,
+                Some(begin) => each(Unit {
+                    raw: &self.buffer[begin..at],
+                    last: false,
+                })?,
             }
             self.begin = Some(at + 3);
             self.searched = at + 3;
@@ -106,15 +129,22 @@ impl Scanner {
         );
         Ok(())
     }
-    pub fn finish(self, mut each: impl FnMut(&[u8]) -> anyhow::Result<()>) -> anyhow::Result<()> {
+    pub fn finish(
+        self,
+        mut each: impl FnMut(Unit<'_>) -> anyhow::Result<()>,
+    ) -> anyhow::Result<()> {
         if let Some(begin) = self.begin {
-            each(&self.buffer[begin..])?;
+            each(Unit {
+                raw: &self.buffer[begin..],
+                last: true,
+            })?;
         }
         Ok(())
     }
 }
 
 pub fn kind(unit: &[u8], hevc: bool) -> anyhow::Result<u8> {
+    let unit = trim(unit);
     ensure!(unit.len() >= if hevc { 2 } else { 1 }, "truncated NAL unit");
     ensure!(unit[0] & 0x80 == 0, "forbidden NAL header bit");
     Ok(if hevc {
@@ -130,6 +160,19 @@ pub fn is_parameter_set(kind: u8, hevc: bool) -> bool {
     } else {
         matches!(kind, 7 | 8)
     }
+}
+
+/// Decoder configuration bytes as libavformat derives them: the
+/// `extract_extradata` filter joins the first packet's raw parameter sets with
+/// 3-byte start codes, and the hvcC/avcC writer re-splits that buffer, so every
+/// set but the last loses one trailing zero and the last keeps its padding.
+pub fn configuration_sets(raw_in_order: &[(u8, &[u8])]) -> Vec<(u8, Vec<u8>)> {
+    let last = raw_in_order.len().saturating_sub(1);
+    raw_in_order
+        .iter()
+        .enumerate()
+        .map(|(i, (kind, raw))| (*kind, if i == last { *raw } else { framed(raw) }.to_vec()))
+        .collect()
 }
 
 /// Same policy as `media::NalHasher`: ordered VCL SHA plus decoder header set.
@@ -229,5 +272,9 @@ impl Bits {
             ensure!(zeros < 32, "invalid Exp-Golomb code");
         }
         Ok((1u32 << zeros) - 1 + self.bits(zeros)?)
+    }
+    pub fn se(&mut self) -> anyhow::Result<i64> {
+        let v = i64::from(self.ue()?);
+        Ok(if v % 2 == 1 { (v + 1) / 2 } else { -v / 2 })
     }
 }

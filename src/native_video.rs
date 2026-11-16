@@ -221,8 +221,11 @@ pub fn inspect(source: &Path, kind: &str) -> anyhow::Result<crate::media::Inspec
 /// instead of stopping after 20 frame intervals. The probed r_frame_rate sets
 /// every demuxed packet duration, and MP4 stores the last one as the final
 /// sample duration, so the CLI and the Python reference disagree on jittery
-/// camera clocks.
-pub fn remux_ts(source: &Path, output: &Path, offset: i64) -> anyhow::Result<()> {
+/// camera clocks. HARS instead sets the last packet's duration to `terminal`
+/// (input time base ticks) from `terminal_duration`, the same value the pure
+/// engine writes.
+pub fn remux_ts(source: &Path, output: &Path, offset: i64, terminal: i64) -> anyhow::Result<()> {
+    anyhow::ensure!(terminal > 0, "invalid last sample duration");
     let _profile = crate::profile::Scope::new("native_ts_mux");
     ffmpeg::init()?;
     ffmpeg::log::set_level(ffmpeg::log::Level::Quiet);
@@ -259,6 +262,15 @@ pub fn remux_ts(source: &Path, output: &Path, offset: i64) -> anyhow::Result<()>
     drop(out.write_header_with(options)?);
     let time_base = out.stream(0).context("missing output stream")?.time_base();
     let mut count = 0usize;
+    // One packet of lookahead: only the last packet's duration is replaced.
+    let mut held: Option<ffmpeg::Packet> = None;
+    let mut write = |mut packet: ffmpeg::Packet| -> anyhow::Result<()> {
+        packet.rescale_ts(input_time_base, time_base);
+        packet.set_position(-1);
+        packet.set_stream(0);
+        packet.write_interleaved(&mut out)?;
+        Ok(())
+    };
     loop {
         let mut packet = ffmpeg::Packet::empty();
         match packet.read(&mut input) {
@@ -278,21 +290,25 @@ pub fn remux_ts(source: &Path, output: &Path, offset: i64) -> anyhow::Result<()>
         );
         packet.set_pts(Some(pts - offset));
         packet.set_dts(Some(dts - offset));
-        packet.rescale_ts(input_time_base, time_base);
-        packet.set_position(-1);
-        packet.set_stream(0);
-        packet.write_interleaved(&mut out)?;
+        if let Some(previous) = held.replace(packet) {
+            write(previous)?;
+        }
         count += 1;
     }
-    anyhow::ensure!(count > 0, "no video packets");
+    let mut last = held.context("no video packets")?;
+    last.set_duration(terminal);
+    write(last)?;
+    drop(write);
     out.write_trailer()?;
     Ok(())
 }
 
+/// `terminal` is the last sample duration in microseconds (`terminal_duration`).
 pub fn remux_hevc(
     source: &Path,
     output: &Path,
     times: &[f64],
+    terminal: i64,
 ) -> anyhow::Result<crate::media::Signature> {
     let _profile = crate::profile::Scope::new("native_hevc_mux_with_input_hash");
     anyhow::ensure!(
@@ -301,6 +317,7 @@ pub fn remux_hevc(
             && times.windows(2).all(|t| t[1] > t[0]),
         "invalid camera clock"
     );
+    anyhow::ensure!(terminal > 0, "invalid last sample duration");
     ffmpeg::init()?;
     // FFmpeg's logging is process-global and may include arbitrary media metadata.
     ffmpeg::log::set_level(ffmpeg::log::Level::Quiet);
@@ -378,10 +395,10 @@ pub fn remux_hevc(
         hash.feed(packet.data().context("missing HEVC packet bytes")?)?;
         let mut packet = parameter_sets.filter_one(&mut packet)?;
         let stamp = (times[index] * 1_000_000.).round() as i64;
-        let duration = ((times.get(index + 1).copied().unwrap_or(times[index] + 0.05)
-            - times[index])
-            * 1_000_000.)
-            .round() as i64;
+        let duration = match times.get(index + 1) {
+            Some(next) => ((next - times[index]) * 1_000_000.).round() as i64,
+            None => terminal,
+        };
         packet.set_pts(Some(stamp));
         packet.set_dts(Some(stamp));
         packet.set_duration(duration);

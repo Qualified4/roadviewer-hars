@@ -320,8 +320,12 @@ fn probe_rate(dts: &[i64]) -> (i64, i64) {
     (num / g, 12012 / g)
 }
 
+/// The Python reference (PyAV) ends a qcamera.ts at 1/r_frame_rate of the
+/// library probe. This keeps a model of that estimate (used by
+/// integration/terminal_rule.py) honest against libavformat itself; HARS no
+/// longer copies it (docs/hars/TERMINAL-DURATION.md).
 #[tokio::test]
-async fn ts_terminal_duration_follows_library_rate_probe() {
+async fn python_terminal_estimate_reproduces_library_rate_probe() {
     let temp = tempfile::tempdir().unwrap();
     let ts = jittered_ts(temp.path());
     let source = media::inspect(&ts, "qcamera.ts").await.unwrap();
@@ -371,24 +375,66 @@ async fn ts_terminal_duration_follows_library_rate_probe() {
         rate
     );
     drop(library);
+    // What a plain PyAV demux + MP4 mux (the Python loop) stores as the last duration.
+    let mut demuxed = ffmpeg_next::format::input(&ts).unwrap();
+    let python_last = demuxed
+        .packets()
+        .filter(|(_, p)| p.size() > 0)
+        .last()
+        .map(|(_, p)| p.duration())
+        .unwrap();
+    assert_eq!(python_last, terminal);
+}
 
+/// The product rule on the same jittered clock, without a logged next frame:
+/// both engines end the last sample at the median frame interval.
+#[tokio::test]
+async fn product_terminal_duration_without_next_frame_is_median_interval() {
+    let temp = tempfile::tempdir().unwrap();
+    let ts = jittered_ts(temp.path());
+    let source = media::inspect(&ts, "qcamera.ts").await.unwrap();
+    let packets = source.info["packets"].as_array().unwrap();
+    let dts = packets
+        .iter()
+        .map(|p| p["dts"].as_i64().unwrap())
+        .collect::<Vec<_>>();
+    let mut pts = packets
+        .iter()
+        .map(|p| p["pts"].as_i64().unwrap())
+        .collect::<Vec<_>>();
+    pts.sort_unstable();
+    let mut intervals = dts.windows(2).map(|d| d[1] - d[0]).collect::<Vec<_>>();
+    intervals.sort_unstable();
+    let median = intervals[(intervals.len() - 1) / 2];
+    let rate = probe_rate(&dts);
+    assert_ne!(
+        median,
+        90000 * rate.1 / rate.0,
+        "fixture must separate the rules"
+    );
     let times = pts
         .iter()
         .map(|p| (p - pts[0]) as f64 / 90000.)
         .collect::<Vec<_>>();
-    let mp4 = temp.path().join("camera.mp4");
-    let info = media::remux(&ts, "qcamera.ts", &mp4, &times).await.unwrap();
     let last = pts[pts.len() - 1] - pts[0];
-    assert_eq!(info["streams"][0]["time_base"], "1/90000");
-    assert_eq!(info["streams"][0]["duration_ts"], last + terminal);
-    let mut output = ffmpeg_next::format::input(&mp4).unwrap();
-    let durations = output
-        .packets()
-        .map(|(_, p)| (p.pts().unwrap(), p.duration()))
-        .collect::<Vec<_>>();
-    assert_eq!(durations.len(), pts.len());
-    assert_eq!(*durations.last().unwrap(), (last, terminal));
-    let checked = media::inspect(&mp4, "camera.mp4").await.unwrap();
-    assert_eq!(checked.signature, source.signature);
-    assert_eq!(checked.info["streams"][0]["codec_tag_string"], "avc1");
+    for engine in [media::Engine::Pure, media::Engine::Ffmpeg] {
+        let mp4 = temp.path().join(format!("{engine:?}.mp4"));
+        let done = media::remux_using(engine, &ts, "qcamera.ts", &mp4, &times, None)
+            .await
+            .unwrap();
+        assert_eq!((done.engine, done.fallback.as_deref()), (engine, None));
+        let info = done.info;
+        assert_eq!(info["streams"][0]["time_base"], "1/90000");
+        assert_eq!(info["streams"][0]["duration_ts"], last + median);
+        let mut output = ffmpeg_next::format::input(&mp4).unwrap();
+        let durations = output
+            .packets()
+            .map(|(_, p)| (p.pts().unwrap(), p.duration()))
+            .collect::<Vec<_>>();
+        assert_eq!(durations.len(), pts.len());
+        assert_eq!(*durations.last().unwrap(), (last, median));
+        let checked = media::inspect(&mp4, "camera.mp4").await.unwrap();
+        assert_eq!(checked.signature, source.signature);
+        assert_eq!(checked.info["streams"][0]["codec_tag_string"], "avc1");
+    }
 }

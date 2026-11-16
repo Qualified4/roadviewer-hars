@@ -1,5 +1,10 @@
-#![cfg(feature = "pure-remux")]
-use roadviewer_hars::{experimental::pure_remux, media};
+//! Pure Rust remux engine (the default) against the FFmpeg engine, and the
+//! fallback contract between them. All media here is synthetic (lavfi + x264/
+//! x265); real-corpus parity is checked by integration scripts.
+use roadviewer_hars::{
+    media::{self, Engine},
+    pure_remux::{self, Job, readback},
+};
 use std::{
     path::Path,
     process::{Command, Stdio},
@@ -75,6 +80,15 @@ fn packets(info: &serde_json::Value) -> Vec<(i64, i64)> {
         .collect()
 }
 
+/// Packet payloads, durations and keyframe flags as libavformat demuxes them.
+fn demuxed(path: &Path) -> Vec<(Vec<u8>, i64, bool)> {
+    let mut input = ffmpeg_next::format::input(path).unwrap();
+    input
+        .packets()
+        .map(|(_, p)| (p.data().unwrap().to_vec(), p.duration(), p.is_key()))
+        .collect()
+}
+
 fn no_leftovers(dir: &Path, keep: &[&str]) {
     for entry in std::fs::read_dir(dir).unwrap() {
         let name = entry.unwrap().file_name().into_string().unwrap();
@@ -82,91 +96,136 @@ fn no_leftovers(dir: &Path, keep: &[&str]) {
     }
 }
 
+/// TS clocks relative to the first PTS, as convert.rs builds them.
+async fn ts_clock(source: &Path) -> (Vec<f64>, i64) {
+    let raw = media::inspect(source, "qcamera.ts").await.unwrap();
+    let mut pts = packets(&raw.info).iter().map(|p| p.0).collect::<Vec<_>>();
+    pts.sort_unstable();
+    (
+        pts.iter().map(|p| (p - pts[0]) as f64 / 90000.).collect(),
+        pts[0],
+    )
+}
+
 #[tokio::test]
-async fn hevc_matches_ffmpeg_engine_pictures_clock_and_layout() {
+async fn hevc_pure_output_equals_ffmpeg_engine_except_container_extras() {
     let temp = tempfile::tempdir().unwrap();
     let source = temp.path().join("fcamera.hevc");
     fixture(&source, true, 0);
     let mut times = clock();
     times[5] += 0.01;
-    let pure = temp.path().join("pure.mp4");
-    let report = pure_remux::remux(&source, "fcamera.hevc", &pure, &times, true).unwrap();
     let raw = media::inspect(&source, "fcamera.hevc").await.unwrap();
-    assert_eq!(report.signature, raw.signature);
-    assert_eq!(report.frames, 10);
-    let independent = media::inspect(&pure, "fcamera.mp4").await.unwrap();
-    assert_eq!(independent.signature, raw.signature);
-    assert_eq!(independent.info["streams"][0]["codec_tag_string"], "hvc1");
-    let reference = temp.path().join("ffmpeg.mp4");
-    media::remux(&source, "fcamera.hevc", &reference, &times)
+    let mut outputs = Vec::new();
+    for engine in [Engine::Pure, Engine::Ffmpeg] {
+        let output = temp.path().join(format!("{engine:?}.mp4"));
+        let done = media::remux_using(
+            engine,
+            &source,
+            "fcamera.hevc",
+            &output,
+            &times,
+            Some(48_000_000),
+        )
         .await
         .unwrap();
-    let a = media::probe(&pure, "fcamera.mp4", true).await.unwrap();
-    let b = media::probe(&reference, "fcamera.mp4", true).await.unwrap();
+        assert_eq!((done.engine, done.fallback.as_deref()), (engine, None));
+        let independent = media::inspect(&output, "fcamera.mp4").await.unwrap();
+        assert_eq!(independent.signature, raw.signature);
+        assert_eq!(independent.info["streams"][0]["codec_tag_string"], "hvc1");
+        outputs.push((output, done.info));
+    }
+    let a = media::probe(&outputs[0].0, "fcamera.mp4", true)
+        .await
+        .unwrap();
+    let b = media::probe(&outputs[1].0, "fcamera.mp4", true)
+        .await
+        .unwrap();
     media::validate_times(&a, &times).unwrap();
     assert_eq!(packets(&a), packets(&b));
-    assert_eq!(a["streams"][0]["time_base"], b["streams"][0]["time_base"]);
-    assert_eq!(
-        a["streams"][0]["duration_ts"],
-        b["streams"][0]["duration_ts"]
-    );
-    let checked = pure_remux::inspect(&pure, true).unwrap();
-    assert_eq!(checked.keyframes, vec![0]);
-    let (errors, frames) = decode_errors(&pure);
+    for field in [
+        "time_base",
+        "duration_ts",
+        "width",
+        "height",
+        "has_b_frames",
+    ] {
+        assert_eq!(a["streams"][0][field], b["streams"][0][field], "{field}");
+    }
+    // 0.9 s last stamp + the logged 48 ms gap.
+    assert_eq!(a["streams"][0]["duration_ts"], 948_000);
+    assert_eq!(demuxed(&outputs[0].0), demuxed(&outputs[1].0));
+    let (_, pure) = readback::inspect(&outputs[0].0, true).unwrap();
+    let (_, ffmpeg) = readback::inspect(&outputs[1].0, true).unwrap();
+    assert_eq!(pure.decoder_configuration, ffmpeg.decoder_configuration);
+    assert_eq!(pure.keyframes, vec![0]);
+    assert_eq!(pure.top_level, ["ftyp", "moov", "mdat"]);
+    assert_eq!(pure.durations, ffmpeg.durations);
+    let (errors, frames) = decode_errors(&outputs[0].0);
     assert_eq!((errors.as_str(), frames), ("", 10));
-    no_leftovers(temp.path(), &["fcamera.hevc", "pure.mp4", "ffmpeg.mp4"]);
+    no_leftovers(temp.path(), &["fcamera.hevc", "Pure.mp4", "Ffmpeg.mp4"]);
 }
 
 #[tokio::test]
-async fn h264_ts_matches_ffmpeg_engine_with_and_without_b_frames() {
-    for bframes in [0, 2] {
-        let temp = tempfile::tempdir().unwrap();
-        let source = temp.path().join("qcamera.ts");
-        fixture(&source, false, bframes);
-        let raw = media::inspect(&source, "qcamera.ts").await.unwrap();
-        let scale = 90000.;
-        let mut pts = packets(&raw.info)
-            .iter()
-            .map(|p| p.0 as f64 / scale)
-            .collect::<Vec<_>>();
-        pts.sort_by(f64::total_cmp);
-        let times = pts.iter().map(|p| p - pts[0]).collect::<Vec<_>>();
-        let pure = temp.path().join("pure.mp4");
-        let report = pure_remux::remux(&source, "qcamera.ts", &pure, &times, true).unwrap();
-        assert_eq!(report.signature, raw.signature, "bframes={bframes}");
-        let independent = media::inspect(&pure, "camera.mp4").await.unwrap();
-        assert_eq!(independent.signature, raw.signature);
-        let a = media::probe(&pure, "camera.mp4", true).await.unwrap();
-        media::validate_times(&a, &times).unwrap();
-        let (errors, frames) = decode_errors(&pure);
-        assert_eq!((errors.as_str(), frames), ("", 10), "bframes={bframes}");
-        let checked = pure_remux::inspect(&pure, false).unwrap();
-        if bframes == 0 {
-            let reference = temp.path().join("ffmpeg.mp4");
-            media::remux(&source, "qcamera.ts", &reference, &times)
+async fn h264_ts_pure_output_equals_ffmpeg_engine() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("qcamera.ts");
+    fixture(&source, false, 0);
+    let (times, _) = ts_clock(&source).await;
+    let raw = media::inspect(&source, "qcamera.ts").await.unwrap();
+    let mut outputs = Vec::new();
+    for engine in [Engine::Pure, Engine::Ffmpeg] {
+        let output = temp.path().join(format!("{engine:?}.mp4"));
+        let done = media::remux_using(engine, &source, "qcamera.ts", &output, &times, None)
+            .await
+            .unwrap();
+        assert_eq!((done.engine, done.fallback.as_deref()), (engine, None));
+        assert_eq!(
+            media::inspect(&output, "camera.mp4")
                 .await
-                .unwrap();
-            let b = media::probe(&reference, "camera.mp4", true).await.unwrap();
-            assert_eq!(packets(&a), packets(&b));
-            assert!(
-                checked
-                    .pts
-                    .iter()
-                    .zip(&checked.dts)
-                    .all(|(p, d)| *p == *d as i64)
-            );
-        } else {
-            assert_eq!(checked.pts[0], 0);
-            assert!(
-                checked
-                    .pts
-                    .iter()
-                    .zip(&checked.dts)
-                    .any(|(p, d)| *p < *d as i64),
-                "negative ctts expected"
-            );
-        }
+                .unwrap()
+                .signature,
+            raw.signature
+        );
+        outputs.push((output, done.info));
     }
+    assert_eq!(packets(&outputs[0].1), packets(&outputs[1].1));
+    assert_eq!(
+        outputs[0].1["streams"][0]["duration_ts"],
+        outputs[1].1["streams"][0]["duration_ts"]
+    );
+    assert_eq!(demuxed(&outputs[0].0), demuxed(&outputs[1].0));
+    let (_, pure) = readback::inspect(&outputs[0].0, false).unwrap();
+    let (_, ffmpeg) = readback::inspect(&outputs[1].0, false).unwrap();
+    assert_eq!(pure.decoder_configuration, ffmpeg.decoder_configuration);
+    assert_eq!(pure.durations, ffmpeg.durations);
+    let (errors, frames) = decode_errors(&outputs[0].0);
+    assert_eq!((errors.as_str(), frames), ("", 10));
+}
+
+/// B-frame TS: the pure engine refuses picture reordering; FFmpeg writes the
+/// file exactly as before (its ctts/edit list is what Python also produces).
+#[tokio::test]
+async fn b_frame_ts_falls_back_to_ffmpeg() {
+    let temp = tempfile::tempdir().unwrap();
+    let source = temp.path().join("qcamera.ts");
+    fixture(&source, false, 2);
+    let (times, _) = ts_clock(&source).await;
+    let output = temp.path().join("camera.mp4");
+    let done = media::remux_using(Engine::Pure, &source, "qcamera.ts", &output, &times, None)
+        .await
+        .unwrap();
+    assert_eq!(done.engine, Engine::Ffmpeg);
+    assert!(
+        done.fallback
+            .as_deref()
+            .unwrap()
+            .starts_with("unsupported: H.264 picture reordering"),
+        "{:?}",
+        done.fallback
+    );
+    let (errors, frames) = decode_errors(&output);
+    assert_eq!((errors.as_str(), frames), ("", 10));
+    no_leftovers(temp.path(), &["qcamera.ts", "camera.mp4"]);
 }
 
 fn units(bytes: &[u8]) -> Vec<&[u8]> {
@@ -190,12 +249,24 @@ fn units(bytes: &[u8]) -> Vec<&[u8]> {
     out
 }
 
-fn rejects(source: &Path, kind: &str, times: &[f64]) -> String {
+fn job(kind: &str, times: &[f64], offset: i64) -> Job {
+    Job {
+        kind: kind.into(),
+        times: times.to_vec(),
+        terminal: if kind.ends_with(".ts") { 9000 } else { 100_000 },
+        offset,
+    }
+}
+
+fn rejects(source: &Path, kind: &str, times: &[f64], offset: i64) -> String {
     let dir = source.parent().unwrap();
     let output = dir.join("out.mp4");
-    let error = pure_remux::remux(source, kind, &output, times, true)
-        .unwrap_err()
-        .to_string();
+    let error = format!(
+        "{:#}",
+        pure_remux::remux(source, &output, &job(kind, times, offset))
+            .err()
+            .unwrap_or_else(|| panic!("accepted {}", source.display()))
+    );
     assert!(!output.exists(), "{error}");
     let leftovers = std::fs::read_dir(dir)
         .unwrap()
@@ -211,13 +282,14 @@ fn rejects(source: &Path, kind: &str, times: &[f64]) -> String {
     error
 }
 
-#[test]
-fn damaged_and_boundary_inputs_fail_without_panic_or_output() {
+#[tokio::test]
+async fn damaged_and_boundary_inputs_fail_without_panic_or_output() {
     let temp = tempfile::tempdir().unwrap();
     let hevc = temp.path().join("fcamera.hevc");
     fixture(&hevc, true, 0);
     let ts = temp.path().join("qcamera.ts");
     fixture(&ts, false, 0);
+    let (ts_times, offset) = ts_clock(&ts).await;
     let raw_hevc = std::fs::read(&hevc).unwrap();
     let raw_ts = std::fs::read(&ts).unwrap();
     let dir = temp.path().join("cases");
@@ -230,11 +302,11 @@ fn damaged_and_boundary_inputs_fail_without_panic_or_output() {
     let times = clock();
 
     let cut = case("cut.ts", &raw_ts[..raw_ts.len() - 100]);
-    assert!(rejects(&cut, "qcamera.ts", &times).contains("MPEG-TS"));
+    assert!(rejects(&cut, "qcamera.ts", &ts_times, offset).contains("MPEG-TS"));
 
     let whole = raw_ts.len() / 188 / 2 * 188;
     let half = case("half.ts", &raw_ts[..whole]);
-    rejects(&half, "qcamera.ts", &times);
+    rejects(&half, "qcamera.ts", &ts_times, offset);
 
     let mut lost = Vec::new();
     let mut seen = 0;
@@ -249,7 +321,11 @@ fn damaged_and_boundary_inputs_fail_without_panic_or_output() {
         lost.extend_from_slice(packet);
     }
     let lost = case("lost.ts", &lost);
-    assert!(rejects(&lost, "qcamera.ts", &times).contains("continuity"));
+    let error = rejects(&lost, "qcamera.ts", &ts_times, offset);
+    assert!(
+        error.contains("unsupported") && error.contains("continuity"),
+        "{error}"
+    );
 
     let mut stripped = Vec::new();
     for unit in units(&raw_hevc) {
@@ -259,29 +335,29 @@ fn damaged_and_boundary_inputs_fail_without_panic_or_output() {
         }
     }
     let stripped = case("noparams.hevc", &stripped);
-    assert!(rejects(&stripped, "fcamera.hevc", &times).contains("decoder configuration"));
+    assert!(rejects(&stripped, "fcamera.hevc", &times, 0).contains("decoder configuration"));
 
     let mut huge = vec![0, 0, 0, 1, 0x02, 0x01];
     huge.resize(33 * 1024 * 1024, 0x55);
     let huge = case("huge.hevc", &huge);
-    assert!(rejects(&huge, "fcamera.hevc", &times).contains("bounded memory"));
+    assert!(rejects(&huge, "fcamera.hevc", &times, 0).contains("bounded memory"));
 
     let empty = case("empty.hevc", b"");
-    rejects(&empty, "fcamera.hevc", &times);
+    rejects(&empty, "fcamera.hevc", &times, 0);
     let empty_ts = case("empty.ts", b"");
-    rejects(&empty_ts, "qcamera.ts", &times);
+    rejects(&empty_ts, "qcamera.ts", &ts_times, offset);
     let garbage = case("garbage.hevc", b"#EXTM3U\nhttps://example.com/private\n");
-    assert!(rejects(&garbage, "fcamera.hevc", &times).contains("Annex B"));
+    assert!(rejects(&garbage, "fcamera.hevc", &times, 0).contains("Annex B"));
 
     let hevc_copy = case("count.hevc", &raw_hevc);
-    assert!(rejects(&hevc_copy, "fcamera.hevc", &times[..9]).contains("count"));
+    assert!(rejects(&hevc_copy, "fcamera.hevc", &times[..9], 0).contains("count"));
+    let mut late = times.clone();
+    late.iter_mut().for_each(|t| *t += 0.5);
+    assert!(rejects(&hevc_copy, "fcamera.hevc", &late, 0).contains("does not start at zero"));
     let ts_copy = case("count.ts", &raw_ts);
-    rejects(&ts_copy, "qcamera.ts", &times[..9]);
-    let mut shifted = times.clone();
-    shifted[4] += 0.01;
-    assert!(rejects(&ts_copy, "qcamera.ts", &shifted).contains("timestamps"));
-    assert!(rejects(&ts_copy, "fcamera.hevc", &times).contains("Annex B"));
-    rejects(&hevc_copy, "qcamera.ts", &times);
+    assert!(rejects(&ts_copy, "qcamera.ts", &ts_times, offset + 1).contains("earliest"));
+    assert!(rejects(&ts_copy, "fcamera.hevc", &times, 0).contains("Annex B"));
+    rejects(&hevc_copy, "qcamera.ts", &ts_times, offset);
 }
 
 #[test]
@@ -294,12 +370,18 @@ fn mutated_inputs_never_panic() {
         state ^= state << 17;
         state
     };
+    let runtime = tokio::runtime::Runtime::new().unwrap();
+    let mut outcomes = [0usize; 3];
     for (kind, hevc) in [("qcamera.ts", false), ("fcamera.hevc", true)] {
         let source = temp.path().join(kind);
         fixture(&source, hevc, 0);
         let raw = std::fs::read(&source).unwrap();
-        let times = clock();
-        for round in 0..150 {
+        let (times, offset) = if hevc {
+            (clock(), 0)
+        } else {
+            runtime.block_on(ts_clock(&source))
+        };
+        for round in 0..160 {
             let mut bytes = raw.clone();
             // Header-heavy prefix mutations hit PAT/PMT/PES/parameter-set parsers.
             let span = if round % 2 == 0 {
@@ -317,15 +399,28 @@ fn mutated_inputs_never_panic() {
             let input = temp.path().join(format!("m{round}-{kind}"));
             std::fs::write(&input, &bytes).unwrap();
             let output = temp.path().join(format!("m{round}.mp4"));
-            let result =
-                std::panic::catch_unwind(|| pure_remux::remux(&input, kind, &output, &times, true));
+            let job = job(kind, &times, offset);
+            let result = std::panic::catch_unwind(|| pure_remux::remux(&input, &output, &job));
             assert!(result.is_ok(), "panic on round {round} of {kind}");
-            if let Ok(Ok(_)) = result {
-                let (errors, frames) = decode_errors(&output);
-                assert!(frames > 0, "{errors}");
+            match result.unwrap() {
+                Ok(_) => {
+                    outcomes[0] += 1;
+                    let (errors, frames) = decode_errors(&output);
+                    assert!(frames > 0, "{errors}");
+                }
+                Err(e) if e.downcast_ref::<pure_remux::Unsupported>().is_some() => {
+                    outcomes[1] += 1;
+                    assert!(!output.exists());
+                }
+                Err(_) => {
+                    outcomes[2] += 1;
+                    assert!(!output.exists());
+                }
             }
+            let _ = std::fs::remove_file(&output);
         }
     }
+    assert_eq!(outcomes.iter().sum::<usize>(), 320, "{outcomes:?}");
 }
 
 #[test]

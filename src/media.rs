@@ -113,7 +113,7 @@ pub struct Signature {
     pub headers: BTreeSet<(u8, String)>,
 }
 
-#[derive(serde::Serialize, serde::Deserialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Inspection {
     pub info: Value,
     pub signature: Signature,
@@ -345,13 +345,76 @@ pub fn validate_times(info: &Value, times: &[f64]) -> anyhow::Result<()> {
     );
     Ok(())
 }
+/// Which engine copies raw camera originals into MP4. Internal setting only:
+/// outputs, file names and API responses do not depend on it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Engine {
+    Pure,
+    Ffmpeg,
+}
+pub const ENGINE_SETTING: &str = "HARS_REMUX_ENGINE";
+impl Engine {
+    pub fn configured() -> anyhow::Result<Self> {
+        match std::env::var(ENGINE_SETTING) {
+            Err(std::env::VarError::NotPresent) => Ok(Self::Pure),
+            Ok(v) if v == "pure" => Ok(Self::Pure),
+            Ok(v) if v == "ffmpeg" => Ok(Self::Ffmpeg),
+            _ => bail!("{ENGINE_SETTING} must be pure or ffmpeg"),
+        }
+    }
+    fn name(self) -> &'static str {
+        match self {
+            Self::Pure => "pure",
+            Self::Ffmpeg => "ffmpeg",
+        }
+    }
+}
+
+static REMUXED: [std::sync::atomic::AtomicU64; 3] =
+    [const { std::sync::atomic::AtomicU64::new(0) }; 3];
+/// Process-wide (pure, ffmpeg, fallbacks) remux counts, for diagnostics.
+pub fn remux_counts() -> [u64; 3] {
+    REMUXED
+        .each_ref()
+        .map(|c| c.load(std::sync::atomic::Ordering::Relaxed))
+}
+fn count(index: usize) {
+    REMUXED[index].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+}
+
+/// Internal diagnostics of one remux; `info` is the only product output.
+#[derive(Debug)]
+pub struct Remuxed {
+    pub info: Value,
+    pub engine: Engine,
+    /// Why the pure engine's attempt was discarded, when FFmpeg wrote the file.
+    pub fallback: Option<String>,
+    pub terminal: Option<crate::terminal_duration::Terminal>,
+}
+
 pub async fn remux(
     source: &Path,
     kind: &str,
     output: &Path,
     times: &[f64],
 ) -> anyhow::Result<Value> {
-    remux_probed(source, kind, output, times, None).await
+    Ok(
+        remux_using(Engine::configured()?, source, kind, output, times, None)
+            .await?
+            .info,
+    )
+}
+
+/// `next_frame_ns`: logged gap from the last frame to the next camera frame.
+pub async fn remux_using(
+    engine: Engine,
+    source: &Path,
+    kind: &str,
+    output: &Path,
+    times: &[f64],
+    next_frame_ns: Option<u64>,
+) -> anyhow::Result<Remuxed> {
+    remux_inner(engine, source, kind, output, times, next_frame_ns, None).await
 }
 
 // A scan may be shared only inside the same conversion, never across jobs or requests.
@@ -360,8 +423,34 @@ pub(crate) async fn remux_probed(
     kind: &str,
     output: &Path,
     times: &[f64],
+    next_frame_ns: Option<u64>,
     provided: Option<Inspection>,
 ) -> anyhow::Result<Value> {
+    let engine = Engine::configured()?;
+    Ok(
+        remux_inner(engine, source, kind, output, times, next_frame_ns, provided)
+            .await?
+            .info,
+    )
+}
+
+struct Clocks {
+    timescale: u32,
+    /// TS source (pts, dts) relative to `offset`, in decode order.
+    source: Option<Vec<(i64, i64)>>,
+    offset: i64,
+    terminal: crate::terminal_duration::Terminal,
+}
+
+async fn remux_inner(
+    engine: Engine,
+    source: &Path,
+    kind: &str,
+    output: &Path,
+    times: &[f64],
+    next_frame_ns: Option<u64>,
+    provided: Option<Inspection>,
+) -> anyhow::Result<Remuxed> {
     anyhow::ensure!(source != output, "source and output must differ");
     anyhow::ensure!(
         !times.is_empty()
@@ -385,9 +474,203 @@ pub(crate) async fn remux_probed(
     if kind.ends_with(".mp4") {
         let input = inspection.context("missing MP4 inspection")?;
         validate_times(&input.info, times)?;
-        return Ok(input.info);
+        return Ok(Remuxed {
+            info: input.info,
+            engine,
+            fallback: None,
+            terminal: None,
+        });
     }
-    let temp = output.with_extension(format!("{}.tmp.mp4", crate::store::id()));
+    let clocks = clocks(kind, times, inspection.as_ref(), next_frame_ns)?;
+    let mut fallback = None;
+    if engine == Engine::Pure {
+        match pure(source, kind, output, times, &clocks, inspection.as_ref()).await {
+            Ok(info) => {
+                count(0);
+                tracing::info!(
+                    event = "remux_engine",
+                    engine = "pure",
+                    kind,
+                    terminal_ticks = clocks.terminal.ticks,
+                    terminal_basis = ?clocks.terminal.basis,
+                );
+                return Ok(Remuxed {
+                    info,
+                    engine,
+                    fallback: None,
+                    terminal: Some(clocks.terminal),
+                });
+            }
+            Err(reason) => {
+                count(2);
+                tracing::warn!(event = "remux_fallback", from = "pure", to = "ffmpeg", kind, reason = %reason);
+                fallback = Some(reason);
+            }
+        }
+    }
+    let info = ffmpeg(source, kind, output, times, &clocks, inspection).await?;
+    count(1);
+    tracing::info!(
+        event = "remux_engine",
+        engine = Engine::Ffmpeg.name(),
+        requested = engine.name(),
+        kind,
+        terminal_ticks = clocks.terminal.ticks,
+        terminal_basis = ?clocks.terminal.basis,
+    );
+    Ok(Remuxed {
+        info,
+        engine: Engine::Ffmpeg,
+        fallback,
+        terminal: Some(clocks.terminal),
+    })
+}
+
+/// Output clocks both engines must produce, decided once before either runs.
+fn clocks(
+    kind: &str,
+    times: &[f64],
+    inspection: Option<&Inspection>,
+    next_frame_ns: Option<u64>,
+) -> anyhow::Result<Clocks> {
+    let Some(input) = inspection else {
+        let stamps = times
+            .iter()
+            .map(|t| (t * 1_000_000.).round() as i64)
+            .collect::<Vec<_>>();
+        return Ok(Clocks {
+            timescale: 1_000_000,
+            source: None,
+            offset: 0,
+            terminal: crate::terminal_duration::decide(&stamps, 1_000_000, next_frame_ns)?,
+        });
+    };
+    anyhow::ensure!(kind == "qcamera.ts", "unsupported camera original format");
+    anyhow::ensure!(
+        input.info["streams"][0]["time_base"] == "1/90000",
+        "invalid stream time base"
+    );
+    let packets = input.info["packets"]
+        .as_array()
+        .context("missing packet timestamps")?
+        .iter()
+        .map(|p| Some((p["pts"].as_i64()?, p["dts"].as_i64()?)))
+        .collect::<Option<Vec<_>>>()
+        .context("missing PTS")?;
+    // Python subtracts the smallest source PTS from both clocks.
+    let offset = packets.iter().map(|p| p.0).min().context("missing PTS")?;
+    let dts = packets.iter().map(|p| p.1).collect::<Vec<_>>();
+    Ok(Clocks {
+        timescale: 90_000,
+        source: Some(
+            packets
+                .iter()
+                .map(|(p, d)| (p - offset, d - offset))
+                .collect(),
+        ),
+        offset,
+        terminal: crate::terminal_duration::decide(&dts, 90_000, next_frame_ns)?,
+    })
+}
+
+fn temp_for(output: &Path) -> PathBuf {
+    output.with_extension(format!("{}.tmp.mp4", crate::store::id()))
+}
+
+/// The pure engine's attempt. Any refusal, crash or failed check is returned
+/// as a reason; its output is removed and FFmpeg then handles the input.
+async fn pure(
+    source: &Path,
+    kind: &str,
+    output: &Path,
+    times: &[f64],
+    clocks: &Clocks,
+    inspection: Option<&Inspection>,
+) -> Result<Value, String> {
+    use crate::pure_remux::{Job, Reply};
+    let temp = temp_for(output);
+    let job = Job {
+        kind: kind.to_owned(),
+        times: times.to_vec(),
+        terminal: clocks.terminal.ticks,
+        offset: clocks.offset,
+    };
+    let reply = if let Some(worker) = WORKER_EXECUTABLE.get() {
+        let job_path = temp.with_extension("job.json");
+        let result = async {
+            crate::store::atomic_json(&job_path, &job).await?;
+            let mut command = Command::new(worker);
+            command
+                .arg("__pure-remux")
+                .arg(source)
+                .arg(&job_path)
+                .arg(&temp);
+            anyhow::Ok(serde_json::from_slice::<Reply>(&run(&mut command).await?)?)
+        }
+        .await;
+        let _ = tokio::fs::remove_file(&job_path).await;
+        result.map_err(|e| format!("worker: {e:#}"))
+    } else {
+        // Library embedding/tests: a panic must not take the caller down.
+        match WORKERS.clone().acquire_owned().await {
+            Ok(permit) => {
+                let input = source.to_path_buf();
+                let target = temp.clone();
+                tokio::task::spawn_blocking(move || {
+                    let _permit = permit;
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        Reply::from(crate::pure_remux::remux(&input, &target, &job))
+                    }))
+                    .unwrap_or_else(|_| Reply::Failed {
+                        reason: "panic".into(),
+                    })
+                })
+                .await
+                .map_err(|e| format!("worker: {e}"))
+            }
+            Err(e) => Err(format!("worker: {e}")),
+        }
+    };
+    let result = async {
+        let outcome = match reply? {
+            Reply::Done(outcome) => outcome,
+            Reply::Unsupported { reason } => return Err(format!("unsupported: {reason}")),
+            Reply::Failed { reason } => return Err(format!("failed: {reason}")),
+        };
+        if let Some(input) = inspection
+            && input.signature != outcome.input
+        {
+            return Err("verification: input signatures disagree".into());
+        }
+        verify_and_place(
+            &temp,
+            output,
+            kind,
+            times,
+            clocks,
+            &outcome.input,
+            outcome.output,
+        )
+        .await
+        .map_err(|e| format!("verification: {e:#}"))
+    }
+    .await;
+    if result.is_err() {
+        let _ = tokio::fs::remove_file(&temp).await;
+    }
+    result
+}
+
+async fn ffmpeg(
+    source: &Path,
+    kind: &str,
+    output: &Path,
+    times: &[f64],
+    clocks: &Clocks,
+    inspection: Option<Inspection>,
+) -> anyhow::Result<Value> {
+    let temp = temp_for(output);
+    let terminal = i64::try_from(clocks.terminal.ticks)?;
     let result = async {
         let before = if kind.ends_with(".hevc") {
             if let Some(worker) = WORKER_EXECUTABLE.get() {
@@ -398,7 +681,8 @@ pub(crate) async fn remux_probed(
                     .arg("__native-hevc")
                     .arg(source)
                     .arg(&clock_path)
-                    .arg(&temp);
+                    .arg(&temp)
+                    .arg(terminal.to_string());
                 let result = run(&mut command).await;
                 let _ = tokio::fs::remove_file(&clock_path).await;
                 serde_json::from_slice::<Signature>(&result?)?
@@ -410,27 +694,21 @@ pub(crate) async fn remux_probed(
                 let clock = times.to_vec();
                 tokio::task::spawn_blocking(move || {
                     let _permit = permit;
-                    crate::native_video::remux_hevc(&input, &output, &clock)
+                    crate::native_video::remux_hevc(&input, &output, &clock, terminal)
                 })
                 .await??
             }
         } else {
             let input = inspection.context("missing source inspection")?;
-            // Python subtracts the smallest source PTS from both clocks.
-            let offset = input.info["packets"]
-                .as_array()
-                .context("missing packet timestamps")?
-                .iter()
-                .filter_map(|p| p["pts"].as_i64())
-                .min()
-                .context("missing PTS")?;
+            let offset = clocks.offset;
             if let Some(worker) = WORKER_EXECUTABLE.get() {
                 let mut command = Command::new(worker);
                 command
                     .arg("__native-ts")
                     .arg(source)
                     .arg(&temp)
-                    .arg(offset.to_string());
+                    .arg(offset.to_string())
+                    .arg(terminal.to_string());
                 run(&mut command).await?;
             } else {
                 let permit = WORKERS.clone().acquire_owned().await?;
@@ -438,34 +716,76 @@ pub(crate) async fn remux_probed(
                 let output = temp.clone();
                 tokio::task::spawn_blocking(move || {
                     let _permit = permit;
-                    crate::native_video::remux_ts(&input, &output, offset)
+                    crate::native_video::remux_ts(&input, &output, offset, terminal)
                 })
                 .await??;
             }
             input.signature
         };
-        let target_kind = if kind == "qcamera.ts" {
-            "camera.mp4"
-        } else {
-            "fcamera.mp4"
-        };
-        let checked = inspect(&temp, target_kind).await?;
-        let info = checked.info;
-        validate_info(&info, target_kind)?;
-        validate_times(&info, times)?;
-        anyhow::ensure!(
-            before == checked.signature,
-            "compressed pictures changed during remux"
-        );
-        verify_mp4_boxes(&temp, kind != "qcamera.ts").await?;
-        tokio::fs::rename(&temp, output).await?;
-        Ok(info)
+        let checked = inspect(&temp, target_kind(kind)).await?;
+        verify_and_place(&temp, output, kind, times, clocks, &before, checked).await
     }
     .await;
     if result.is_err() {
         let _ = tokio::fs::remove_file(&temp).await;
     }
     result
+}
+
+fn target_kind(kind: &str) -> &'static str {
+    if kind == "qcamera.ts" {
+        "camera.mp4"
+    } else {
+        "fcamera.mp4"
+    }
+}
+
+/// Checks every engine's output the same way before the atomic rename.
+async fn verify_and_place(
+    temp: &Path,
+    output: &Path,
+    kind: &str,
+    times: &[f64],
+    clocks: &Clocks,
+    before: &Signature,
+    checked: Inspection,
+) -> anyhow::Result<Value> {
+    let info = checked.info;
+    validate_info(&info, target_kind(kind))?;
+    validate_times(&info, times)?;
+    anyhow::ensure!(
+        *before == checked.signature,
+        "compressed pictures changed during remux"
+    );
+    let stream = &info["streams"][0];
+    anyhow::ensure!(
+        stream["time_base"] == format!("1/{}", clocks.timescale),
+        "invalid stream time base"
+    );
+    let packets = info["packets"]
+        .as_array()
+        .context("missing packet timestamps")?
+        .iter()
+        .map(|p| Some((p["pts"].as_i64()?, p["dts"].as_i64()?)))
+        .collect::<Option<Vec<_>>>()
+        .context("missing PTS")?;
+    if let Some(source) = &clocks.source {
+        anyhow::ensure!(*source == packets, "video timestamps changed during remux");
+    }
+    let span = packets
+        .last()
+        .map(|p| p.1)
+        .zip(packets.first().map(|p| p.1));
+    anyhow::ensure!(
+        span.zip(stream["duration_ts"].as_i64())
+            .is_some_and(|((last, first), total)| {
+                u64::try_from(total - (last - first)).ok() == Some(clocks.terminal.ticks)
+            }),
+        "last sample duration changed during remux"
+    );
+    verify_mp4_boxes(temp, kind != "qcamera.ts").await?;
+    tokio::fs::rename(temp, output).await?;
+    Ok(info)
 }
 async fn verify_mp4_boxes(path: &Path, hevc: bool) -> anyhow::Result<()> {
     use tokio::io::AsyncSeekExt;
