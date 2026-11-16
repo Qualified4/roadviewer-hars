@@ -679,3 +679,60 @@ fn python_indexes_read_the_same() {
         let _ = index::entry(&m, kind);
     }
 }
+
+// --- Pending share deletions and the recording they belong to.
+
+#[tokio::test]
+async fn an_abandoned_deletion_gives_its_share_files_back_to_the_recording() {
+    let e = nas_env().await;
+    let id = e.record('a', &[("rlog.zst", data(100, 1))], OLD).await;
+    e.cycle().await;
+    // A deletion that queued the share file and stopped before the recording was hidden.
+    PendingDeletes::new(&e.root)
+        .add(&id, &["rlog.zst".into()], &[], false)
+        .await
+        .unwrap();
+    roadviewer_hars::storage::journal_add(&e.root, std::slice::from_ref(&id), "manual")
+        .await
+        .unwrap();
+    let registration = e.app.store.registration.lock().await;
+    roadviewer_hars::storage::recover(&e.app.store, &registration)
+        .await
+        .unwrap();
+    drop(registration);
+    assert!(
+        PendingDeletes::new(&e.root)
+            .rows()
+            .await
+            .unwrap()
+            .is_empty()
+    );
+    e.cycle().await;
+    assert!(e.on_nas(&id, "rlog.zst").is_some());
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn a_recording_that_cannot_be_checked_keeps_its_share_files() {
+    use std::os::unix::fs::PermissionsExt;
+    let e = nas_env().await;
+    let id = e.record('a', &[("rlog.zst", data(100, 1))], OLD).await;
+    e.cycle().await;
+    PendingDeletes::new(&e.root)
+        .add(&id, &["rlog.zst".into()], &[], false)
+        .await
+        .unwrap();
+    let folder = e.root.join(&id);
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o000)).unwrap();
+    let nas = match &*e.a().backend() {
+        roadviewer_hars::archive::WriteBackend::Nas(n) => n.clone(),
+        _ => unreachable!(),
+    };
+    let removed = PendingDeletes::new(&e.root).process_nas(&nas).await;
+    std::fs::set_permissions(&folder, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert_eq!(removed.unwrap(), 0);
+    assert!(
+        e.on_nas(&id, "rlog.zst").is_some(),
+        "an I/O error is not a deletion"
+    );
+}

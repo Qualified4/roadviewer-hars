@@ -186,8 +186,28 @@ impl PendingDeletes {
     }
 
     fn deleted(&self, id: &str) -> bool {
-        // A deletion stopped between recording the files and removing the recording still uses them.
-        !self.root.join(id).join("meta.json").exists()
+        // A deletion stopped between recording the files and removing the recording still uses them, and a
+        // recording that cannot be checked now is never taken for deleted.
+        matches!(self.root.join(id).join("meta.json").try_exists(), Ok(false))
+    }
+
+    /// Rows of recordings that are still whole (their deletion was abandoned): nothing of theirs is removed later.
+    pub async fn forget(&self, ids: &[String]) -> std::io::Result<()> {
+        let _guard = LOCK.lock().await;
+        let rows = self.load()?;
+        let kept: Vec<Value> = rows
+            .iter()
+            .filter(|r| {
+                let id = r["id"].as_str().unwrap_or_default();
+                !(ids.iter().any(|i| i == id)
+                    && matches!(self.root.join(id).join("meta.json").try_exists(), Ok(true)))
+            })
+            .cloned()
+            .collect();
+        if kept.len() == rows.len() {
+            return Ok(());
+        }
+        self.save(&kept)
     }
 
     /// The NAS: the rows' kinds are removed from the HARS write root. Returns the number of files removed.

@@ -217,6 +217,7 @@ async fn main() -> anyhow::Result<()> {
         None
     };
     let _background = app.background();
+    let archive = app.archive.clone();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "hars_started");
     let ui = axum::serve(
         ui_listener,
@@ -235,6 +236,12 @@ async fn main() -> anyhow::Result<()> {
         } else {
             std::future::pending::<anyhow::Result<()>>().await
         }
+    };
+    // The archiver stops after the file it is on once serving ends, instead of being cut off mid-copy.
+    let ui = async {
+        let result = ui.await;
+        archive.shutdown();
+        result
     };
     tokio::select! {result=async {tokio::try_join!(ui,device)}=>{result?;},result=native_exit=>{result?;}}
     Ok(())

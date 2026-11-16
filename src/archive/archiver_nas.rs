@@ -3,7 +3,10 @@
 //! the probe requires the sentinel's `owner: "roadviewer-hars"`.
 use super::{
     ArchiveWrite, ErrorCode, NasBackend, UploadResume,
-    archiver::{Archive, Ctx, CycleResult, Outcome, file_sha256, is_file, kind_static, lock, stat},
+    archiver::{
+        Archive, Ctx, CycleResult, Outcome, file_sha256, is_file, kind_static, lock, share_remove,
+        share_stat, stat,
+    },
     index::{self, ARCHIVE_ORDER, VIDEO_KINDS},
 };
 use crate::store::now;
@@ -233,7 +236,7 @@ impl Archive {
         if self.nas_available(nas).await
             && let Ok(path) = nas.path_for(id, kind)
         {
-            let _ = std::fs::remove_file(path);
+            let _ = share_remove(&path).await;
         }
     }
 
@@ -416,7 +419,7 @@ impl Archive {
         }
         let path = nas.path_for(id, kind).ok()?;
         let unlinked = if self.nas_available(nas).await {
-            std::fs::remove_file(&path)
+            share_remove(&path).await
         } else {
             Err(std::io::Error::other("share_unavailable"))
         };
@@ -550,7 +553,7 @@ impl Archive {
             return true;
         };
         let local = self.host.folder(id).join(kind);
-        let present = match std::fs::metadata(&target) {
+        let present = match share_stat(&target).await {
             Ok(meta) => meta.is_file(),
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => false,
             Err(_) => {
@@ -665,7 +668,7 @@ impl Archive {
             let Ok(target) = nas.path_for(id, kind) else {
                 continue;
             };
-            let size = match std::fs::metadata(&target) {
+            let size = match share_stat(&target).await {
                 Ok(meta) if meta.is_file() => meta.len(),
                 Ok(_) => continue,
                 Err(err) if err.kind() == std::io::ErrorKind::NotFound => continue,
@@ -750,7 +753,7 @@ impl Archive {
             let Ok(path) = nas.path_for(&id, &kind) else {
                 continue;
             };
-            match std::fs::metadata(path) {
+            match share_stat(&path).await {
                 Ok(m) if m.is_file() => {
                     lock(&self.st).missing.remove(&(id, kind));
                 }
@@ -814,7 +817,7 @@ impl Archive {
         let Ok(target) = nas.path_for(id, kind) else {
             return true;
         };
-        let size = match std::fs::metadata(&target) {
+        let size = match share_stat(&target).await {
             Ok(meta) if meta.is_file() => meta.len(),
             Ok(_) => return true,
             Err(err) if err.kind() == std::io::ErrorKind::NotFound => return true,

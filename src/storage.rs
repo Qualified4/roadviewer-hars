@@ -469,7 +469,12 @@ fn tolerant_size(path: &Path) -> std::io::Result<u64> {
 /// Python `reserved`: the outstanding part of every upload reservation (received chunks are
 /// already counted as used).
 pub async fn reserved(root: &Path) -> std::io::Result<u64> {
+    reserved_except(root, None).await
+}
+/// Python `reserved(exclude=...)`: a committing upload's own reservation is not room it still needs.
+pub async fn reserved_except(root: &Path, exclude: Option<&str>) -> std::io::Result<u64> {
     let uploads = root.join(".uploads");
+    let exclude = exclude.map(str::to_owned);
     tokio::task::spawn_blocking(move || {
         let mut total = 0u64;
         let entries = match std::fs::read_dir(&uploads) {
@@ -479,6 +484,12 @@ pub async fn reserved(root: &Path) -> std::io::Result<u64> {
         };
         for entry in entries {
             let path = entry?.path();
+            if exclude
+                .as_deref()
+                .is_some_and(|e| path.file_name().is_some_and(|n| n == e))
+            {
+                continue;
+            }
             let bytes = match std::fs::read(path.join("reservation.json")) {
                 Ok(v) => serde_json::from_slice::<Value>(&v)
                     .ok()
@@ -617,6 +628,18 @@ pub async fn admit(
     protected_ids: &BTreeSet<String>,
     commit: Option<&MutexGuard<'_, ()>>,
 ) -> Result<u64> {
+    admit_reserved(store, total, incoming, staging, protected_ids, commit, None).await
+}
+/// [`admit`] for the upload session `reservation` committing now (Python `reservation_id`).
+pub async fn admit_reserved(
+    store: &Store,
+    total: u64,
+    incoming: &[String],
+    staging: bool,
+    protected_ids: &BTreeSet<String>,
+    commit: Option<&MutexGuard<'_, ()>>,
+    reservation: Option<&str>,
+) -> Result<u64> {
     let settings = load_settings(&store.root).await?;
     let limits = limits(&settings);
     let needed = needed(total, staging);
@@ -631,6 +654,7 @@ pub async fn admit(
             needed,
             incoming,
             protected_ids,
+            commit.and(reservation),
         )
         .await;
     }
@@ -698,9 +722,10 @@ async fn drive_move_admit(
     needed: u64,
     incoming: &[String],
     protected_ids: &BTreeSet<String>,
+    reservation: Option<&str>,
 ) -> Result<u64> {
     let used = store.used().await? as u128;
-    let reserved = reserved(&store.root).await? as u128;
+    let reserved = reserved_except(&store.root, reservation).await? as u128;
     let free = fs2::available_space(&store.root)? as u128;
     let need = needed as u128;
     let disk_full = free < reserved + need + MARGIN as u128;
@@ -709,7 +734,12 @@ async fn drive_move_admit(
         || limit > 0 && used + reserved + need >= limit
         || threshold > 0 && used + reserved + need >= threshold as u128
     {
-        archive.request_reclaim(if disk_full { needed } else { 0 }, incoming, protected_ids);
+        archive.request_reclaim(
+            if disk_full { needed } else { 0 },
+            incoming,
+            protected_ids,
+            reservation,
+        );
     }
     if disk_full {
         return Err(StorageError::InsufficientDisk.into());
@@ -986,12 +1016,18 @@ pub async fn recover(store: &Store, _registration: &MutexGuard<'_, ()>) -> std::
         }
     }
     let mut settled = done.clone();
+    let mut kept = Vec::new();
     for entry in &journal {
         if !hidden.contains(&entry.id) {
             tracing::warn!(reason = %entry.reason, "delete_journal_entry_discarded");
             settled.push(entry.id.clone());
+            kept.push(entry.id.clone());
         }
     }
+    // The archived files queued for a deletion that did not happen still belong to their recording.
+    crate::archive::pending::PendingDeletes::new(&store.root)
+        .forget(&kept)
+        .await?;
     journal_remove(&store.root, &settled).await?;
     match failure {
         Some(e) => Err(e),

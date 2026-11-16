@@ -860,13 +860,14 @@ impl Uploads {
                         .chain(plan["updates"].as_array().into_iter().flatten())
                         .filter_map(|d| d["id"].as_str().map(str::to_owned))
                         .collect();
-                    crate::storage::admit(
+                    crate::storage::admit_reserved(
                         &self.store,
                         0,
                         &names,
                         true,
                         &duplicates,
                         Some(&registration),
+                        Some(name),
                     )
                     .await?;
                 }

@@ -749,7 +749,7 @@ async fn capacity_moves_take_pinned_recordings_last() {
         .await;
     assert_eq!(status, StatusCode::OK);
     assert_eq!(e.a().drive_move(), Some(0));
-    e.a().request_reclaim(0, &[], &Default::default());
+    e.a().request_reclaim(0, &[], &Default::default(), None);
     wait(|| !e.a().running()).await;
     assert_eq!(
         e.loc(&other, "rlog.zst").await,
@@ -761,7 +761,7 @@ async fn capacity_moves_take_pinned_recordings_last() {
         "local",
         "the batch bounds one run"
     );
-    e.a().request_reclaim(0, &[], &Default::default());
+    e.a().request_reclaim(0, &[], &Default::default(), None);
     wait(|| !e.a().running()).await;
     assert_eq!(
         e.loc(&pinned, "rlog.zst").await,

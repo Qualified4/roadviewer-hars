@@ -200,15 +200,20 @@ impl NasCore {
 
     async fn open(&self, r: &RemoteRef, start: u64, end: Option<u64>) -> Result<ChunkReader> {
         let path = self.path(r).await?;
-        let mut file = match std::fs::File::open(&path) {
+        let opened = tokio::task::spawn_blocking(move || {
+            let mut file = std::fs::File::open(&path)?;
+            file.seek(SeekFrom::Start(start))?;
+            Ok::<_, std::io::Error>(file)
+        })
+        .await
+        .map_err(|_| BackendError::new(ErrorCode::Io, "join"))?;
+        let file = match opened {
             Ok(f) => f,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 return Err(BackendError::bare(ErrorCode::NotFound));
             }
             Err(e) => return Err(unavailable(&e)),
         };
-        file.seek(SeekFrom::Start(start))
-            .map_err(|e| unavailable(&e))?;
         Ok(ChunkReader(Reader::File {
             file: tokio::fs::File::from_std(file),
             left: end.map(|e| (e + 1).saturating_sub(start)),

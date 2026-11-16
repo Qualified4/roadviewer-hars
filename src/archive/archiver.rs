@@ -150,6 +150,8 @@ pub(crate) struct Status {
 #[derive(Clone, Debug, Default)]
 pub struct Reclaim {
     pub extra: u64,
+    /// The committing upload whose own reservation is not counted (Python `exclude`).
+    pub exclude: Option<String>,
     pub incoming: Vec<String>,
     pub protected: BTreeSet<String>,
 }
@@ -925,6 +927,20 @@ pub(crate) fn stat(path: &Path) -> std::io::Result<(u64, u64)> {
         .unwrap_or_default()
         .as_nanos() as u64;
     Ok((m.len(), mtime))
+}
+
+/// A share path's metadata, read off the runtime's workers: a hung mount holds a blocking thread, not a worker.
+pub(crate) async fn share_stat(path: &Path) -> std::io::Result<std::fs::Metadata> {
+    let path = path.to_owned();
+    tokio::task::spawn_blocking(move || std::fs::metadata(path))
+        .await
+        .unwrap_or_else(|_| Err(std::io::Error::other("join")))
+}
+pub(crate) async fn share_remove(path: &Path) -> std::io::Result<()> {
+    let path = path.to_owned();
+    tokio::task::spawn_blocking(move || std::fs::remove_file(path))
+        .await
+        .unwrap_or_else(|_| Err(std::io::Error::other("join")))
 }
 
 pub(crate) fn is_file(path: &Path) -> bool {

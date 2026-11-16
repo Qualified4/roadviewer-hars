@@ -289,7 +289,7 @@ impl Archive {
     /// The local targets are met again (limit and threshold, plus the bytes a refused upload needs).
     pub(crate) async fn enough(&self, ctx: &Ctx, r: &Reclaim) -> bool {
         let root = &self.host.store.root;
-        let Ok(reserved) = crate::storage::reserved(root).await else {
+        let Ok(reserved) = crate::storage::reserved_except(root, r.exclude.as_deref()).await else {
             return false;
         };
         let limit = crate::storage::load_settings(root)
@@ -414,13 +414,20 @@ impl Archive {
     }
 
     /// Python `request_reclaim`: one coalesced goal for the existing archiver, never a wait under admission locks.
-    pub fn request_reclaim(&self, extra: u64, incoming: &[String], protected: &BTreeSet<String>) {
+    pub fn request_reclaim(
+        &self,
+        extra: u64,
+        incoming: &[String],
+        protected: &BTreeSet<String>,
+        exclude: Option<&str>,
+    ) {
         let s = self.settings();
         if !s.enabled || s.effective_mode() != Mode::Move {
             return;
         }
         self.start_cycle(Some(Reclaim {
             extra,
+            exclude: exclude.map(str::to_owned),
             incoming: incoming.to_vec(),
             protected: protected.clone(),
         }));
