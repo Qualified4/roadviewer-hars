@@ -388,3 +388,37 @@ fn a_file_that_does_not_read_back_falls_back_or_fails_with_both_kept_safe() {
     assert_eq!(std::fs::read(&other).unwrap(), previous);
     c.clean(&["out.mp4", "other.mp4"]);
 }
+
+/// The worker's memory limit is a resource failure, and the default limit
+/// leaves room for the largest valid buffers: a 33 MiB NAL unit is refused
+/// by the input bound (invalid), never by running out of memory.
+#[test]
+fn memory_limit_fails_without_fallback_and_the_default_fits_the_bounds() {
+    let c = case();
+    let log = failed(
+        &c.command(&c.root.join("out.mp4"))
+            .env("HARS_PURE_WORKER_MEMORY_MB", "1")
+            .output()
+            .unwrap(),
+    );
+    no_fallback(&log, "out_of_memory");
+    c.clean(&[]);
+    let mut huge = c.original.clone();
+    huge.extend([0, 0, 1, 0x02, 0x01]);
+    huge.resize(huge.len() + 33 * 1024 * 1024, 0x55);
+    std::fs::write(&c.source, &huge).unwrap();
+    let log = failed(&c.command(&c.root.join("huge.mp4")).output().unwrap());
+    let (_, fields) = event(&log, "remux_fallback").unwrap_or_else(|| panic!("{log}"));
+    assert_eq!(
+        (
+            fields["failure_class"].as_str(),
+            fields["fallback_result"].as_str()
+        ),
+        (Some("invalid"), Some("failed")),
+        "{log}"
+    );
+    assert!(log.contains("bounded memory limit"), "{log}");
+    std::fs::write(&c.source, &c.original).unwrap();
+    c.clean(&[]);
+    c.retry("out.mp4");
+}

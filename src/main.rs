@@ -91,6 +91,12 @@ async fn run() -> anyhow::Result<()> {
         anyhow::ensure!(args.len() == 5, "invalid internal media job");
         let job: roadviewer_hars::pure_remux::Job =
             roadviewer_hars::store::read_json(std::path::Path::new(&args[3])).await?;
+        roadviewer_hars::pure_remux::limit_memory(
+            std::env::var("HARS_PURE_WORKER_MEMORY_MB")
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(roadviewer_hars::pure_remux::MEMORY_BUDGET_MIB),
+        )?;
         let reply = roadviewer_hars::pure_remux::Reply::from(roadviewer_hars::pure_remux::remux(
             std::path::Path::new(&args[2]),
             std::path::Path::new(&args[4]),

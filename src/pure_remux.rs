@@ -131,6 +131,53 @@ impl Failure {
     }
 }
 
+/// Address space a worker may add once its job is read: twice the largest
+/// buffers a valid input can need (NAL splitter and hash buffer, one sample,
+/// one PES: 32 MiB each, with growth slack). Internal setting
+/// `HARS_PURE_WORKER_MEMORY_MB` changes it, for fault tests.
+pub const MEMORY_BUDGET_MIB: u64 = 256;
+
+/// Caps the worker's address space at its current size plus `budget_mib`, so
+/// an input needing more memory than any valid one makes the worker abort on
+/// an allocation failure (`media` reports `out_of_memory`, no fallback)
+/// instead of pressing the host. The base size is measured, not assumed: the
+/// shared libraries mapped differ between hosts.
+pub fn limit_memory(budget_mib: u64) -> anyhow::Result<()> {
+    #[cfg(target_os = "linux")]
+    {
+        use anyhow::Context;
+        let status = std::fs::read_to_string("/proc/self/status")?;
+        let kib = status
+            .lines()
+            .find_map(|l| l.strip_prefix("VmSize:"))
+            .and_then(|v| v.trim().strip_suffix("kB")?.trim().parse::<u64>().ok())
+            .context("worker address space size")?;
+        let limit = (kib + budget_mib * 1024) * 1024;
+        let mut current = libc::rlimit {
+            rlim_cur: 0,
+            rlim_max: 0,
+        };
+        // SAFETY: getrlimit/setrlimit read and write the one rlimit struct passed.
+        unsafe {
+            ensure!(
+                libc::getrlimit(libc::RLIMIT_AS, &mut current) == 0,
+                "read worker memory limit"
+            );
+            let capped = libc::rlimit {
+                rlim_cur: limit.min(current.rlim_max),
+                rlim_max: current.rlim_max,
+            };
+            ensure!(
+                libc::setrlimit(libc::RLIMIT_AS, &capped) == 0,
+                "set worker memory limit"
+            );
+        }
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = budget_mib;
+    Ok(())
+}
+
 #[derive(Clone, Debug, serde::Serialize, serde::Deserialize)]
 pub struct Job {
     pub kind: String,
