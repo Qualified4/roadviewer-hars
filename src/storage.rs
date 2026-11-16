@@ -649,8 +649,7 @@ pub async fn admit_reserved(
         return drive_move_admit(
             store,
             &archive,
-            limits,
-            threshold,
+            (limits, threshold),
             needed,
             incoming,
             protected_ids,
@@ -717,8 +716,7 @@ pub async fn admit_reserved(
 async fn drive_move_admit(
     store: &Store,
     archive: &crate::archive::Archive,
-    limits: Limits,
-    threshold: u64,
+    (limits, threshold): (Limits, u64),
     needed: u64,
     incoming: &[String],
     protected_ids: &BTreeSet<String>,
