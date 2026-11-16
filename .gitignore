@@ -6,6 +6,8 @@ __pycache__/
 *.zst
 *.ts
 *.mp4
+# Synthetic 10-frame clip for the container check (scripts/container_smoke.py), no recording.
+!/scripts/smoke/qcamera.ts
 /target/
 /.hars-data/
 /.env
