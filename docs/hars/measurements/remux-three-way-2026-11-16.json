@@ -1,0 +1,145 @@
+{
+ "date": "2026-11-16",
+ "source_commit": "d849d10",
+ "scope": "validated remux step only (input hash, mux, output check); no log conversion, thumbnail or upload",
+ "runs": {
+  "warmups_per_variant_per_video": 1,
+  "measured_rounds": 5,
+  "order": "rotated and alternately reversed per round"
+ },
+ "samples": 390,
+ "all_outputs_verified": true,
+ "kinds": {
+  "fcamera.hevc": {
+   "python": {
+    "videos": 13,
+    "elapsed_sum_of_medians": 7.591,
+    "cpu_sum_of_medians": 3.999,
+    "elapsed_round_totals_min_max": [
+     7.379,
+     8.191
+    ],
+    "cpu_round_totals_min_max": [
+     3.931,
+     4.158
+    ],
+    "peak_rss_max_kib": 51296,
+    "peak_rss_median_kib": 49656,
+    "rss_samples_median": 26,
+    "max_timestamp_difference_from_python_seconds": 0.0,
+    "max_packet_duration_difference_from_python_seconds": 0.0,
+    "videos_with_packet_duration_difference": 0
+   },
+   "rust_ffmpeg": {
+    "videos": 13,
+    "elapsed_sum_of_medians": 8.804,
+    "cpu_sum_of_medians": 5.046,
+    "elapsed_round_totals_min_max": [
+     8.818,
+     9.012
+    ],
+    "cpu_round_totals_min_max": [
+     5.035,
+     5.092
+    ],
+    "peak_rss_max_kib": 95152,
+    "peak_rss_median_kib": 93488,
+    "rss_samples_median": 30,
+    "max_timestamp_difference_from_python_seconds": 1e-06,
+    "max_packet_duration_difference_from_python_seconds": 1e-06,
+    "videos_with_packet_duration_difference": 4
+   },
+   "rust_pure": {
+    "videos": 13,
+    "elapsed_sum_of_medians": 3.547,
+    "cpu_sum_of_medians": 1.366,
+    "elapsed_round_totals_min_max": [
+     3.522,
+     3.838
+    ],
+    "cpu_round_totals_min_max": [
+     1.349,
+     1.402
+    ],
+    "peak_rss_max_kib": 34248,
+    "peak_rss_median_kib": 34072,
+    "rss_samples_median": 13,
+    "max_timestamp_difference_from_python_seconds": 1e-06,
+    "max_packet_duration_difference_from_python_seconds": 1e-06,
+    "videos_with_packet_duration_difference": 4
+   },
+   "input_bytes": 488896405
+  },
+  "qcamera.ts": {
+   "python": {
+    "videos": 13,
+    "elapsed_sum_of_medians": 2.115,
+    "cpu_sum_of_medians": 1.48,
+    "elapsed_round_totals_min_max": [
+     2.234,
+     2.597
+    ],
+    "cpu_round_totals_min_max": [
+     1.488,
+     1.615
+    ],
+    "peak_rss_max_kib": 50012,
+    "peak_rss_median_kib": 49784,
+    "rss_samples_median": 8,
+    "max_timestamp_difference_from_python_seconds": 0.0,
+    "max_packet_duration_difference_from_python_seconds": 0.0,
+    "videos_with_packet_duration_difference": 0
+   },
+   "rust_ffmpeg": {
+    "videos": 13,
+    "elapsed_sum_of_medians": 2.221,
+    "cpu_sum_of_medians": 1.651,
+    "elapsed_round_totals_min_max": [
+     2.348,
+     2.688
+    ],
+    "cpu_round_totals_min_max": [
+     1.667,
+     1.766
+    ],
+    "peak_rss_max_kib": 70644,
+    "peak_rss_median_kib": 70192,
+    "rss_samples_median": 9,
+    "max_timestamp_difference_from_python_seconds": 0.0,
+    "max_packet_duration_difference_from_python_seconds": 0.0,
+    "videos_with_packet_duration_difference": 0
+   },
+   "rust_pure": {
+    "videos": 13,
+    "elapsed_sum_of_medians": 0.597,
+    "cpu_sum_of_medians": 0.423,
+    "elapsed_round_totals_min_max": [
+     0.599,
+     0.693
+    ],
+    "cpu_round_totals_min_max": [
+     0.424,
+     0.456
+    ],
+    "peak_rss_max_kib": 33780,
+    "peak_rss_median_kib": 32076,
+    "rss_samples_median": 3,
+    "max_timestamp_difference_from_python_seconds": 0.0,
+    "max_packet_duration_difference_from_python_seconds": 0.003577777777777778,
+    "videos_with_packet_duration_difference": 11
+   },
+   "input_bytes": 30132264
+  }
+ },
+ "environment": "WSL2 Ubuntu 24.04 x86_64, 16 logical CPU, Rust 1.100 release, system FFmpeg 6.1.1, PyAV 16.1.0; inputs on NTFS via drvfs (read only), outputs on ext4",
+ "load_average_1m_before_after": [
+  20.15,
+  13.2
+ ],
+ "load_note": "another job ran tests on the same machine; variants were interleaved so each saw the same noise",
+ "variants": {
+  "python": "preserved Python video code through integration/python_video_job.py",
+  "rust_ffmpeg": "default release build, `remux` CLI (FFmpeg engine, product path)",
+  "rust_pure": "release build with --features pure-remux, `__pure-remux` CLI through a one-line sh wrapper (experimental, not in the product path)"
+ }
+}
