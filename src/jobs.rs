@@ -314,6 +314,8 @@ impl Jobs {
                         .is_some_and(|p| (0.0..=100.).contains(&p))
                 {
                     self.progress.write().await.insert(record.into(), v);
+                } else {
+                    crate::media::relay_remux_event(record, &line);
                 }
             }
             anyhow::ensure!(

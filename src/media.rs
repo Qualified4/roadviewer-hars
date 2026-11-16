@@ -382,6 +382,38 @@ fn count(index: usize) {
     REMUXED[index].fetch_add(1, std::sync::atomic::Ordering::Relaxed);
 }
 
+/// The server runs conversions in a child process; its remux events are
+/// logged again here with only their known fields, so fallbacks stay visible.
+pub fn relay_remux_event(record: &str, line: &str) {
+    let Ok(event) = serde_json::from_str::<Value>(line) else {
+        return;
+    };
+    let fields = &event["fields"];
+    let text = |key: &str| {
+        fields[key]
+            .as_str()
+            .map(|s| s.chars().take(200).collect::<String>())
+            .unwrap_or_default()
+    };
+    match fields["event"].as_str() {
+        Some("remux_engine") => tracing::info!(
+            event = "remux_engine",
+            record,
+            engine = text("engine"),
+            kind = text("kind"),
+            terminal_ticks = fields["terminal_ticks"].as_u64(),
+            terminal_basis = text("terminal_basis"),
+        ),
+        Some("remux_fallback") => tracing::warn!(
+            event = "remux_fallback",
+            record,
+            kind = text("kind"),
+            reason = text("reason"),
+        ),
+        _ => {}
+    }
+}
+
 /// Internal diagnostics of one remux; `info` is the only product output.
 #[derive(Debug)]
 pub struct Remuxed {
