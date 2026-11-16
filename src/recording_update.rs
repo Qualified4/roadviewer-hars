@@ -258,6 +258,7 @@ pub async fn apply(store: &Store, update: &Value) -> Result<Value> {
         }
         meta["video"] = json!(true);
         meta["bytes"] = json!(original_bytes(&folder, &meta));
+        // HARS's download list (`/download/video`) must name the camera files now on disk.
         meta["video_downloads"] = crate::jobs::download_entries(&folder).await?;
         crate::fault::point("update_before_metadata");
         store.save_meta(meta.clone()).await?;
