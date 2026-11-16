@@ -5,8 +5,11 @@ whole: identical parameter sets, a keyframe at each start), the 20 MB input's
 frame count at a higher bitrate (bytes without frames), plus hostile inputs
 (parameter sets only, 5-byte SEI units only, one 33 MiB NAL unit), runs the
 `remux` command of BINARY on each and reads the worker's own peak RSS from its
-profile record. Prints one JSON summary: per input the size, result and worker
-peak, and the least-squares slope of worker peak against input size.
+profile record, and the exact peak of the largest single process (`wait4`;
+also set when a build without the worker cap is killed under an external
+limit, where the exit is the negative signal). Prints one JSON summary: per
+input the size, result and peaks, and the least-squares slope of worker peak
+against input size.
 
 usage: python3 integration/pure_remux_memory.py BINARY WORKDIR [--max-mb 400]
 WORKDIR must be new; it is removed at the end unless --keep.
@@ -36,22 +39,35 @@ def run(binary, source, frames, out):
     env = {k: v for k, v in os.environ.items() if not k.startswith("HARS_")}
     env["HARS_PROFILE_FILE"] = str(profile)
     started = time.monotonic()
-    proc = subprocess.run([str(binary), "remux", str(source), "fcamera.hevc", str(clock), str(output)],
-                          env=env, capture_output=True, text=True)
+    errors = out / (source.name + ".stderr")
+    with errors.open("w") as stderr:
+        child = subprocess.Popen([str(binary), "remux", str(source), "fcamera.hevc", str(clock), str(output)],
+                                 env=env, stdout=subprocess.DEVNULL, stderr=stderr, text=True)
+        # wait4: the exact peak RSS of the largest single process (the CLI or its reaped worker).
+        _, status, usage = os.wait4(child.pid, 0)
     elapsed = time.monotonic() - started
+    proc = subprocess.CompletedProcess(child.args, os.waitstatus_to_exitcode(status), "", errors.read_text())
+    errors.unlink()
     worker = 0
     if profile.exists():
         for line in profile.read_text().splitlines():
             stages = json.loads(line)["stages"]
             if any(k.startswith("pure_") for k in stages):
                 worker = max(v["cumulative_peak_rss_kib"] for v in stages.values())
-    events = [json.loads(l)["fields"] for l in proc.stderr.splitlines() if l.startswith("{")]
+    events = []
+    for line in proc.stderr.splitlines():
+        try:
+            events.append(json.loads(line)["fields"])
+        except (ValueError, KeyError, TypeError):
+            pass
     failure = next((e for e in events if e.get("event") in ("remux_failure", "remux_fallback")), None)
     if output.exists():
         output.unlink()
     return {"input_mb": round(source.stat().st_size / 1e6, 1), "frames": frames, "ok": proc.returncode == 0,
-            "failure_class": failure and failure.get("failure_class"), "reason_code": failure and failure.get("reason_code"),
-            "elapsed_seconds": round(elapsed, 3), "worker_peak_rss_kib": worker}
+            "exit": proc.returncode, "failure_class": failure and failure.get("failure_class"),
+            "reason_code": failure and failure.get("reason_code"), "fallback": failure and failure.get("fallback"),
+            "elapsed_seconds": round(elapsed, 3), "worker_peak_rss_kib": worker,
+            "largest_process_peak_rss_kib": usage.ru_maxrss}
 
 
 def main():
