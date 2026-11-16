@@ -964,9 +964,6 @@ pub(crate) async fn share_stat(path: &Path) -> std::io::Result<std::fs::Metadata
         .await
         .unwrap_or_else(|_| Err(std::io::Error::other("join")))
 }
-pub(crate) async fn share_remove(path: &Path) -> std::io::Result<()> {
-    super::nas::remove_share_file(path).await
-}
 
 pub(crate) fn is_file(path: &Path) -> bool {
     std::fs::metadata(path).is_ok_and(|m| m.is_file())

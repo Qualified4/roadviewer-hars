@@ -903,11 +903,10 @@ pub fn failure(error: &anyhow::Error) -> crate::pure_remux::Failure {
         #[cfg(not(unix))]
         return Failure::new(C::Internal, "worker_error", format!("{error:#} {status}"));
     }
-    match Failure::classify(error) {
-        f if f.class != C::Resource && crate::native_video::resource_error(error) => {
-            Failure::new(C::Resource, "io_error", f.reason)
-        }
-        f => f,
+    let f = Failure::classify(error);
+    match crate::native_video::ffmpeg_resource_code(error) {
+        Some(code) if f.class != C::Resource => Failure::new(C::Resource, code, f.reason),
+        _ => f,
     }
 }
 

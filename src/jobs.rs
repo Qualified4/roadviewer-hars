@@ -386,7 +386,11 @@ impl Jobs {
                         let _=stop(&mut child);
                         let _=child.wait().await;
                     }
+                    let kept=read_json::<Value>(&staging.join(crate::convert::KEPT_PREVIOUS)).await.ok();
                     let _=tokio::fs::remove_dir_all(&staging).await;
+                    if let Some(kept)=kept && self.keep_previous(record,generation,&kept["warning"]).await? {
+                        return Ok(());
+                    }
                     return Err(error);
                 }
             },
@@ -411,9 +415,17 @@ impl Jobs {
             .await
             .context("conversion summary missing")?;
         atomic_json(&staging.join(".generation"), &generation).await?;
+        // The MP4s this generation wrote, by size: a resumed publication tells one it moved next to
+        // its original from a stored MP4 that was there before (a conversion of MP4 inputs writes none).
+        let mut produced = serde_json::Map::new();
+        for (_, _, mp4) in CAMERA_FILES {
+            if let Ok(stat) = tokio::fs::metadata(staging.join(mp4)).await {
+                produced.insert(mp4.into(), json!(stat.len()));
+            }
+        }
         atomic_json(
             &folder.join(".conversion.json"),
-            &json!({"generation":generation}),
+            &json!({"generation":generation,"produced":produced}),
         )
         .await?;
         self.publish(record, generation).await
@@ -459,11 +471,19 @@ impl Jobs {
             tokio::fs::remove_file(folder.join(".conversion.json")).await?;
             return Ok(());
         }
+        let journal_path = folder.join(".conversion.json");
+        let journal: Value = read_json(&journal_path).await.unwrap_or(Value::Null);
         let installed = read_json::<String>(&prepared.join(".generation"))
             .await
             .ok()
             .as_deref()
             == Some(generation);
+        if installed && meta["status"] == "ready" {
+            // The metadata of this publication is durable: only the originals it lists remain to go.
+            return self
+                .finish_publication(&folder, &journal_path, &journal, &backup)
+                .await;
+        }
         if !installed {
             anyhow::ensure!(
                 staging.join("summary.json").is_file(),
@@ -474,16 +494,14 @@ impl Jobs {
             }
             tokio::fs::rename(&staging, &prepared).await?;
             sync_dirs(&[&folder]).await?;
+            crate::fault::point("publish_installed");
         }
         let summary: Value = read_json(&prepared.join("summary.json")).await?;
         let keep = self.store.processing.read().await["keep_original_video"] != false;
         let mut codecs = serde_json::Map::new();
         let mut origins = serde_json::Map::new();
-        for (camera, raw, mp4) in [
-            ("qcamera", "qcamera.ts", "camera.mp4"),
-            ("front", "fcamera.hevc", "fcamera.mp4"),
-            ("wide", "ecamera.hevc", "ecamera.mp4"),
-        ] {
+        let mut originals = vec![];
+        for (camera, raw, mp4) in CAMERA_FILES {
             if !summary["videos"][camera].is_object() {
                 continue;
             }
@@ -495,11 +513,13 @@ impl Jobs {
             let archived = index::location(&meta, raw) != "local"
                 || index::is_archived_location(&index::location(&meta, mp4));
             // A restart resuming this generation's publication finds an MP4 it already moved next to
-            // the original it was made from (a conversion reads a local original before a stored MP4).
+            // the original it was made from: the one this generation wrote (the journal's size), not a
+            // stored MP4 the conversion read while its original was elsewhere.
             let moved = installed
                 && !prepared.join(mp4).exists()
-                && folder.join(mp4).is_file()
-                && folder.join(raw).is_file();
+                && folder.join(raw).is_file()
+                && std::fs::metadata(folder.join(mp4))
+                    .is_ok_and(|m| m.is_file() && journal["produced"][mp4] == json!(m.len()));
             if !keep && !archived && (moved || prepared.join(mp4).is_file()) {
                 // An MP4 removed by archive cleanup exists again, locally: the index must not hide it.
                 if index::location(&meta, mp4) == "removed"
@@ -537,42 +557,58 @@ impl Jobs {
                     }
                 }
                 if folder.join(raw).is_file() {
-                    tokio::fs::remove_file(folder.join(raw)).await?;
+                    originals.push(raw);
                 }
             }
         }
         meta["video_codecs"] = json!(codecs);
         meta["video_origins"] = json!(origins);
         meta["video_downloads"] = download_entries(&folder).await?;
-        for key in [
-            "duration",
-            "warnings",
-            "model_frames",
-            "videos",
-            "drive_summary",
-            "replay_v",
-            "started_at",
-            "start_source",
-            "first_mono",
-            "gps_offset",
-            "clock_offset",
-            "start_v",
-            "has_track",
-        ] {
-            if let Some(v) = summary.get(key) {
-                meta[key] = v.clone();
-            }
-        }
-        meta["video"] = json!(summary["video"].is_object());
+        apply_summary(&mut meta, &summary);
         meta["status"] = json!("ready");
         meta["error"] = Value::Null;
         meta["manual_conversion"] = json!(false);
         meta["decoder_version"] = json!("hars-v28-runtime-geometry");
+        // Originals go only after the index that describes their absence (a promoted copy, a visible
+        // MP4) is durable; until then every step above is redone the same on a restart. Once it is,
+        // the journal is what still names them.
+        let mut journal = journal;
+        journal["generation"] = json!(generation);
+        journal["originals"] = json!(originals);
+        atomic_json(&journal_path, &journal).await?;
         self.store
             .save_meta(meta)
             .await
             .map_err(|_| anyhow::anyhow!("conversion metadata publication failed"))?;
-        tokio::fs::remove_file(folder.join(".conversion.json")).await?;
+        crate::fault::point("publish_meta_saved");
+        self.finish_publication(&folder, &journal_path, &journal, &backup)
+            .await
+    }
+
+    /// The rest of a publication whose metadata is durable: the originals its journal names, then
+    /// the journal and the previous output. Each original goes only with its MP4 next to it.
+    async fn finish_publication(
+        &self,
+        folder: &std::path::Path,
+        journal_path: &std::path::Path,
+        journal: &Value,
+        backup: &std::path::Path,
+    ) -> anyhow::Result<()> {
+        for (_, raw, mp4) in CAMERA_FILES {
+            let listed = journal["originals"]
+                .as_array()
+                .is_some_and(|l| l.iter().any(|k| k == raw));
+            if !listed || !folder.join(mp4).is_file() {
+                continue;
+            }
+            match tokio::fs::remove_file(folder.join(raw)).await {
+                Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e.into()),
+                Err(_) => {}
+                Ok(()) => crate::fault::point("publish_original_deleted"),
+            }
+        }
+        sync_dirs(&[folder]).await?;
+        tokio::fs::remove_file(journal_path).await?;
         // Only this job's old, derived directory is removed, after its replacement
         // and metadata are durable. Raw sources are always retained.
         if backup.is_dir() {
@@ -582,7 +618,73 @@ impl Jobs {
     }
 }
 
+const CAMERA_FILES: [(&str, &str, &str); 3] = [
+    ("qcamera", "qcamera.ts", "camera.mp4"),
+    ("front", "fcamera.hevc", "fcamera.mp4"),
+    ("wide", "ecamera.hevc", "ecamera.mp4"),
+];
+
+fn apply_summary(meta: &mut Value, summary: &Value) {
+    for key in [
+        "duration",
+        "warnings",
+        "model_frames",
+        "videos",
+        "drive_summary",
+        "replay_v",
+        "started_at",
+        "start_source",
+        "first_mono",
+        "gps_offset",
+        "clock_offset",
+        "start_v",
+        "has_track",
+    ] {
+        if let Some(v) = summary.get(key) {
+            meta[key] = v.clone();
+        }
+    }
+    meta["video"] = json!(summary["video"].is_object());
+}
+
 impl Jobs {
+    /// A conversion that stopped for a resource failure rather than drop a camera the published
+    /// result plays: the record is that result again, `ready`, with the failure among its warnings,
+    /// so its videos stay playable. False when that result is gone or another generation owns the record.
+    async fn keep_previous(
+        &self,
+        record: &str,
+        generation: &str,
+        warning: &Value,
+    ) -> anyhow::Result<bool> {
+        let lock = self.store.record_lock(record).await;
+        let _guard = lock.lock().await;
+        let (Ok(folder), Ok(mut meta)) = (
+            self.store.folder(record).await,
+            self.store.meta(record).await,
+        ) else {
+            return Ok(false);
+        };
+        let Ok(summary) = read_json::<Value>(&folder.join("prepared/summary.json")).await else {
+            return Ok(false);
+        };
+        if meta["conversion_id"] != generation {
+            return Ok(false);
+        }
+        apply_summary(&mut meta, &summary);
+        let mut warnings = summary["warnings"].as_array().cloned().unwrap_or_default();
+        warnings.push(warning.clone());
+        meta["warnings"] = json!(warnings);
+        meta["video_downloads"] = download_entries(&folder).await?;
+        meta["status"] = json!("ready");
+        meta["error"] = Value::Null;
+        meta["manual_conversion"] = json!(false);
+        self.store
+            .save_meta(meta)
+            .await
+            .map_err(|_| anyhow::anyhow!("save kept conversion result failed"))?;
+        Ok(true)
+    }
     /// Python `local_content`, before the publication lock: (size, mtime, sha256) of each local original with a
     /// remote copy the publication may delete, so an identical copy can stand in for it (`promote_remote`).
     async fn original_contents(&self, record: &str) -> BTreeMap<&'static str, (u64, u64, String)> {
