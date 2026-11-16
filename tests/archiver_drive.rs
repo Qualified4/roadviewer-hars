@@ -773,3 +773,73 @@ async fn capacity_moves_take_pinned_recordings_last() {
         "moving never deletes the recording"
     );
 }
+
+/// Python  fields; HARS conversions write the route themselves, so a moved log counts as read.
+/// Reading routes from Drive is not ported: a pass is refused with 501 rather than reported as started.
+#[tokio::test]
+async fn drive_maps_status_has_python_fields_and_a_pass_is_not_faked() {
+    let e = drive_env(json!({"archive_mode": "move", "archive_allow_local_delete": true})).await;
+    let id = e.record('a', &[("rlog.zst", data(1000, 1))], OLD).await;
+    let prepared = e.root.join(&id).join("prepared");
+    std::fs::create_dir_all(&prepared).unwrap();
+    std::fs::write(prepared.join("data.json.gz"), b"x").unwrap();
+    std::fs::write(
+        prepared.join("summary.json"),
+        br#"{"track_v":2,"has_track":false,"track_read":true}"#,
+    )
+    .unwrap();
+    e.cycle().await;
+    assert_eq!(e.loc(&id, "rlog.zst").await, "gdrive");
+    let (_, storage) = e.req("GET", "/api/settings/storage", Value::Null).await;
+    let fill = &storage["archive"]["track_fill"];
+    let keys: Vec<&str> = fill
+        .as_object()
+        .unwrap()
+        .keys()
+        .map(String::as_str)
+        .collect();
+    let mut want = vec![
+        "enabled",
+        "manual",
+        "running",
+        "stopping",
+        "waiting",
+        "total",
+        "done",
+        "failed",
+        "pending",
+        "last_error",
+        "retry_in",
+        "finished_at",
+    ];
+    want.sort();
+    let mut got = keys.clone();
+    got.sort();
+    assert_eq!(got, want);
+    assert_eq!(
+        (
+            fill["total"].clone(),
+            fill["done"].clone(),
+            fill["pending"].clone()
+        ),
+        (json!(1), json!(1), json!(0))
+    );
+    let (status, body) = e
+        .req("GET", "/api/settings/archive/tracks/run", Value::Null)
+        .await;
+    assert_eq!(
+        (status, body["track_fill"]["running"].clone()),
+        (StatusCode::OK, json!(false))
+    );
+    let (status, body) = e
+        .req("POST", "/api/settings/archive/tracks/run", Value::Null)
+        .await;
+    assert_eq!(
+        (status, body["error"].clone()),
+        (StatusCode::NOT_IMPLEMENTED, json!("feature_not_ported"))
+    );
+    let (status, _) = e
+        .req("POST", "/api/settings/archive/tracks/stop", Value::Null)
+        .await;
+    assert_eq!(status, StatusCode::OK);
+}

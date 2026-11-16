@@ -63,6 +63,9 @@ pub async fn settings(
     drop(registration);
     // The archive is probed and measured after the lock is released: a slow mount must not stall the server.
     snapshot["archive"] = crate::http_archive::archive_block(&app.archive).await;
+    if app.archive.settings().remote() {
+        snapshot["archive"]["track_fill"] = crate::http_archive::track_fill(&app).await;
+    }
     Ok(Json(snapshot))
 }
 
