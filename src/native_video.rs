@@ -4,18 +4,26 @@ use ffmpeg_next as ffmpeg;
 use std::path::Path;
 
 /// Whether a media worker's error is the machine's (storage, memory) rather than its input's, so
-/// that its exit status says so (`media::RESOURCE_EXIT`). FFmpeg reports a failed write by errno.
+/// that its exit status says so (`media::RESOURCE_EXIT`). FFmpeg reports a failed write by errno,
+/// judged by the same table as the pure engine's (`pure_remux::resource_code`).
 pub fn resource_error(error: &anyhow::Error) -> bool {
-    if let Some(ffmpeg::Error::Other { errno }) = error.downcast_ref::<ffmpeg::Error>() {
-        #[cfg(unix)]
-        return matches!(
-            *errno,
-            libc::ENOSPC | libc::EFBIG | libc::EDQUOT | libc::ENOMEM | libc::EIO
-        );
-        #[cfg(not(unix))]
-        return false;
+    if error.downcast_ref::<ffmpeg::Error>().is_some() {
+        return ffmpeg_resource_code(error).is_some();
     }
     crate::pure_remux::Failure::classify(error).class == crate::pure_remux::FailureClass::Resource
+}
+/// The resource code of an FFmpeg errno, if it is one.
+pub fn ffmpeg_resource_code(error: &anyhow::Error) -> Option<&'static str> {
+    let Some(ffmpeg::Error::Other { errno }) = error.downcast_ref::<ffmpeg::Error>() else {
+        return None;
+    };
+    #[cfg(unix)]
+    return crate::pure_remux::resource_code(&std::io::Error::from_raw_os_error(*errno));
+    #[cfg(not(unix))]
+    {
+        let _ = errno;
+        None
+    }
 }
 
 // Own the FFmpeg bitstream filter. Send transfers packet ownership; receive

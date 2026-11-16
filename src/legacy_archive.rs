@@ -564,6 +564,14 @@ pub async fn scan(AxState(app): AxState<App>, body: Bytes) -> Answer {
     };
     let listing = match source.backend.list_media().await {
         Ok(files) => group(files),
+        // Past `archive::MAX_LISTED_FILES`: nothing is listed rather than part of the remote.
+        Err(e) if e.reason() == Some("too_many_files") => {
+            return error_reason(
+                StatusCode::UNPROCESSABLE_ENTITY,
+                "legacy_too_large",
+                "too_many_files",
+            );
+        }
         Err(e) if source.info["backend"] == "gdrive" => return drive_error(&e),
         Err(e) => {
             return error_reason(
@@ -1018,9 +1026,14 @@ async fn fetch_once(
             let Some(chunk) = chunk else {
                 break;
             };
+            count += chunk.len() as u64;
+            // The listed size is what was reserved: a file that grew since, or a server sending
+            // more, stops here instead of filling the disk before the size check.
+            if count > f.remote.bytes {
+                return Err(Fetch::Retry("size_mismatch".into()));
+            }
             sha.update(&chunk);
             md5.update(&chunk);
-            count += chunk.len() as u64;
             file.write_all(&chunk).await.map_err(io)?;
             session.touch();
             crate::fault::point("legacy_import_mid_file");

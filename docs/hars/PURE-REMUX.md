@@ -33,7 +33,19 @@
 
 ## 실패 분류와 대체 정책
 
-순서: `media`가 입력을 검사하고(TS는 FFmpeg 패킷 검사가 두 엔진 공통의 원본 검사다) 마지막 sample 길이를 한 번 정한 뒤 순수 엔진을 실행한다. 순수 엔진의 실패는 타입(`pure_remux::FailureClass`)으로만 분류한다. 오류 문자열은 판정에 쓰지 않는다. 분류 순서: `Unsupported` 원인 → OS 자원 오류(`io::Error`의 errno) → 오류가 난 단계(`Stage`: 입력 읽기 `invalid`, 쓰기 `internal`, 다시 읽기 `verification`). worker 프로세스의 종료 방식도 같은 분류로 바꾼다(`media::failure`). 기계 때문에 실패한 media worker는 종료 코드 75로 끝난다(`media::RESOURCE_EXIT`; FFmpeg 엔진의 쓰기 errno ENOSPC·EFBIG·EDQUOT·ENOMEM·EIO 포함, `native_video::resource_error`). 그래서 FFmpeg 사본의 디스크 부족도 `resource`다. 변환(`convert.rs`)도 문자열이 아니라 이 `Failure` 값으로 판정한다.
+순서: `media`가 입력을 검사하고(TS는 FFmpeg 패킷 검사가 두 엔진 공통의 원본 검사다) 마지막 sample 길이를 한 번 정한 뒤 순수 엔진을 실행한다. 순수 엔진의 실패는 타입(`pure_remux::FailureClass`)으로만 분류한다. 오류 문자열은 판정에 쓰지 않는다. 분류 순서: `Unsupported` 원인 → OS 자원 오류(`io::Error`의 errno) → 오류가 난 단계(`Stage`: 입력 읽기 `invalid`, 쓰기 `internal`, 다시 읽기 `verification`). worker 프로세스의 종료 방식도 같은 분류로 바꾼다(`media::failure`). 기계 때문에 실패한 media worker는 종료 코드 75로 끝난다(`media::RESOURCE_EXIT`; FFmpeg 엔진의 errno도 아래 표 하나로 판정, `native_video::resource_error`). 그래서 FFmpeg 사본의 디스크 부족도 `resource`다. 변환(`convert.rs`)도 문자열이 아니라 이 `Failure` 값으로 판정한다.
+
+OS 오류(errno)의 분류(`pure_remux::resource_code`, 두 엔진 공통). `resource`는 다음 시도에서 풀릴 수 있는 기계 조건만이다. 나머지 errno는 같은 입력이면 매번 같은 결과이므로 그 오류가 난 단계(`Stage`)로 분류한다: 입력 읽기면 `invalid`, 쓰기면 `internal`. 둘 다 FFmpeg 대체를 한 번 시도하고, 그것도 실패하면 그 카메라 없이 경고로 끝난다.
+
+| errno | `reason_code` | 분류 |
+|---|---|---|
+| ENOSPC | `no_space` | `resource` |
+| EFBIG(`RLIMIT_FSIZE` 포함) | `file_too_large` | `resource` |
+| EDQUOT | `quota` | `resource` |
+| ENOMEM | `out_of_memory` | `resource` |
+| EIO(불량 섹터), EACCES·EPERM(권한), ENOENT, ESTALE·ENOTCONN(끊긴 마운트), EINTR·EAGAIN, 그 밖의 모든 errno | 단계별(`invalid_input`, `engine_error`) | `invalid`(읽기) / `internal`(쓰기) |
+
+errno가 아닌 `resource`: 180초 시간 상한(`deadline`), worker SIGKILL(`worker_killed`), SIGABRT(메모리 상한, `out_of_memory`), worker 종료 코드 75(`worker_resource`). 이전(`09c48e9`까지)에는 EINTR·EAGAIN을 뺀 모든 errno가 `resource`(`io_error`)여서, 읽을 수 없는 카메라 파일(EIO, EACCES) 하나가 다시 변환할 때마다 같은 실패를 냈다.
 
 | 분류 | 예 | 대체 | 로그 이벤트(수준) | 최종 상태 |
 |---|---|---|---|---|
@@ -41,15 +53,18 @@
 | `invalid` | parameter set의 forbidden bit, parameter set 없음, NAL 32 MiB 초과, 첫 그림 전 parameter set 64개/1 MiB 초과, 프레임 수 불일치, 시작 코드 없는 PES 앞부분, TS 연속성 오류·transport error·PTS 없는 PES, 잘린 TS 패킷 | FFmpeg 1회, 같은 입력 검사·한도로 | `remux_fallback`(WARN) | [손상 입력 사례](#손상-입력-사례) |
 | `internal` | 쓰기 단계 오류, panic(worker 종료 코드 101), worker 신호 종료(SIGSEGV 등), worker 응답 해석 실패 | FFmpeg 1회(독립 검사 통과 시만 게시) | `remux_fallback`(ERROR) | 게시 또는 해당 영상 없음 |
 | `verification` | 순수 출력이 판독 검사(서명, 시각, 레이아웃, sync 표시, sample 경계)와 불일치 | FFmpeg 1회(같은 검사) | `remux_fallback`(ERROR) | 게시 또는 해당 영상 없음 |
-| `resource` | ENOSPC, EFBIG(`RLIMIT_FSIZE`), EDQUOT, ENOMEM, 기타 OS I/O 오류(TS 읽기의 EIO 포함), 180초 시간 상한, worker SIGKILL(OOM killer·종료), SIGABRT(메모리 상한에서 할당 실패), worker 종료 코드 75 | **없음** | `remux_failure`(WARN) | 게시된 결과가 그 카메라를 재생하면 변환 전체 실패(`error`), 이전 결과 유지. 아니면 해당 영상 없음 + 경고. 부분 출력 삭제 |
+| `resource` | ENOSPC, EFBIG(`RLIMIT_FSIZE`), EDQUOT, ENOMEM(위 표), 180초 시간 상한, worker SIGKILL(OOM killer·종료), SIGABRT(메모리 상한에서 할당 실패), worker 종료 코드 75 | **없음** | `remux_failure`(WARN) | 디스크에 게시된 결과가 그 카메라를 재생하면 이번 시도를 버리고 이전 결과로 `ready` + 경고(아래). 아니면 해당 영상 없음 + 경고. 부분 출력 삭제 |
 
 - "해당 영상 없음"은 Python `prepare_video` 실패와 같다: 그 카메라 MP4 없이 기록은 `ready`, `warnings`에 `<카메라> 영상 준비 실패: …`. `resource`면 경고가 `… 영상 준비 실패: resource (<reason_code>): <이유>`로 분류를 드러낸다. 원본은 남는다(원본 보존 끔이어도 `jobs`는 MP4를 만든 카메라의 원본만 지운다). 다시 변환하려면 사용자가 변환 결과를 지우고 다시 변환한다(Python과 같음). 시험: `tests/conversion_resource.rs`, `tests/conversion_keep_previous.rs`.
-- 이전 결과 보호: `resource` 실패는 같은 디스크·메모리·시간이 다음 시도에서는 풀릴 수 있다. 그래서 게시된 결과가 그 카메라 영상을 가졌으면(기록 메타 `videos.<카메라>`가 있거나 `prepared/<mp4>`가 있으면) 그 카메라 없이 `ready`로 바꾸지 않고 변환 전체를 실패로 끝낸다. 변환 프로세스가 `conversion_kept_previous`(ERROR, `kind`·`failure_class`·`reason_code`·`reason`)를 남기고 실패하고, `jobs`의 기존 실패 규칙대로 상태 `error`, 오류 `conversion failed; original data preserved`, staging 삭제. `prepared/`, 저장된 MP4(원본 보존 끔), 원본, 메타의 결과 필드는 바뀌지 않는다. 사용자가 다시 변환하면(Python처럼 그때 `clear_prepared`) 정상 결과가 된다. 입력·엔진 실패(`unsupported`·`invalid`·`internal`·`verification`)에는 적용하지 않는다: 같은 입력이면 다시 해도 같은 결과라 기록이 영영 `ready`가 되지 못하고, 원본(또는 그 카메라의 유일한 MP4 원본)은 어느 경우에도 지워지지 않는다. 이것이 Python과 다른 점이다(Python은 카메라 실패를 원인과 무관하게 경고로 넘긴다). 취소는 실패가 아니라 기존 취소 규칙(`unconverted`)으로 끝나고 이전 결과는 그대로다.
+- 이전 결과 보호: `resource` 실패는 같은 디스크·메모리·시간이 다음 시도에서는 풀릴 수 있다. 그래서 지금 디스크에 게시된 결과가 그 카메라를 재생하면 그 카메라가 빠진 결과로 바꾸지 않는다. 판정은 디스크만 본다: `prepared/summary.json`의 `videos.<카메라>`가 있고, 그 MP4가 `prepared/<mp4>`, 기록 폴더의 저장된 `<mp4>`, 또는 아카이브에 있어야 한다(`convert::previous_plays`). 기록 메타의 `videos`는 보지 않는다: Python과 같이 `clear_prepared`가 이 필드를 지우지 않아 재변환(변환 결과 삭제 → 변환, 카메라 추가) 때는 낡은 값이 남기 때문이다(`09c48e9`까지는 이 낡은 값으로 판정해, `prepared/`가 이미 지워진 재변환이 `error`로 끝나고 다시 해도 같았다).
+  - 게시된 결과가 있을 때: 변환 프로세스가 `conversion_kept_previous`(ERROR, `kind`·`failure_class`·`reason_code`·`reason`)를 남기고 staging에 `kept-previous.json`을 쓴 뒤 실패한다. `jobs`는 staging을 지우고, 그 세대가 아직 기록의 세대이고 `prepared/summary.json`이 있으면 기록을 그 결과의 `ready`로 되돌린다: 결과 필드는 `prepared/summary.json`에서 다시 쓰고, `warnings`는 그 결과의 경고 + `<카메라> 영상 준비 실패: resource (<reason_code>): <이유> (이전 변환 결과 유지)` 한 줄, `error`는 null. `prepared/`, 저장된 MP4(원본 보존 끔), 원본은 바이트 단위로 그대로이고 영상 Range 요청이 계속 재생된다. 그 결과가 사라졌거나 다른 세대가 기록을 가졌으면 기존 실패 규칙(`error`)이다.
+  - 게시된 결과가 없을 때(일반적인 재변환, 첫 변환): Python처럼 그 카메라 없이 `ready` + `resource (<reason_code>)` 경고. 저장된 MP4(원본 보존 끔)는 게시가 건드리지 않으므로 그대로 남고, 영상 라우트가 색인의 저장본을 재생한다.
+  - 어느 경우도 `error`에 머물지 않는다. 같은 기록에 실패를 몇 번 반복해도 `ready`다(`repeated_resource_failures_on_one_record_stay_ready`). 입력·엔진 실패(`unsupported`·`invalid`·`internal`·`verification`)에는 보호를 적용하지 않는다: 같은 입력이면 다시 해도 같은 결과이고, 원본(또는 그 카메라의 유일한 MP4 원본)은 어느 경우에도 지워지지 않는다. Python과 다른 점은 게시된 결과가 있을 때의 `resource` 실패 하나다(Python은 카메라 실패를 원인과 무관하게 경고로 넘기고 그 카메라 없는 결과를 게시한다). 취소는 실패가 아니라 기존 취소 규칙(`unconverted`)으로 끝나고 이전 결과는 그대로다.
 - 이벤트 필드: `event`, `engine`(`pure`), `kind`(카메라 종류), `failure_class`, `reason_code`(집계용 고정 코드), `reason`(300자 이내 오류 사슬), `fallback`(bool), `fallback_result`(`published`/`failed`), `fallback_reason`. raw HEVC 앞부분의 NAL 아닌 바이트는 `remux_input_prefix`(WARN, `bytes`)로 남긴다. 서버는 변환 자식 프로세스의 이 이벤트를 레코드 id(`record`)와 같은 수준으로 다시 기록한다(`media::relay_remux_event`). 조회는 서버 로그(구조화 JSON)만 쓴다. 기록 메타나 API 응답에는 넣지 않았다: 공개 스키마가 Python과 같아야 하고, 엔진 진단은 운영자용이기 때문이다.
 - 대체는 카메라 파일 하나당 최대 1회다(`remux_inner`에 재시도 루프가 없다). 한 기록에는 카메라 파일이 셋까지라 기록당 최대 3회다. 실패한 변환은 기존 변환 큐 규칙대로 끝나고 자동으로 다시 돌지 않는다.
 - FFmpeg 대체 출력도 순수 출력과 같은 검사를 받는다: raw HEVC는 libavformat 파서와 무관한 `NalHasher` 원본 서명(`media::raw_signature`, 같은 NAL·parameter set 한도)이 FFmpeg 패킷 서명·출력 서명과 같아야 하고, 출력은 FFmpeg inspect와 `pure_remux::readback` 두 판독기로 읽는다(sync 표시, sample당 그림 1개, 서명, 마지막 sample 길이). 공통 검사는 `verify_and_place`다.
 - 부분 출력: 엔진의 sample payload는 출력 폴더의 이름 없는 임시 파일(`O_TMPFILE`, `tempfile::tempfile_in`)이라 어떤 종료에도 남지 않는다. 출력 임시 파일과 job/clock JSON은 drop 가드(`media::Scratch`)가 실패·취소·시간 초과 때 지운다. 변환이 실패·취소되면 `jobs`가 프로세스 그룹을 종료한 뒤 그 세대의 staging 폴더를 지운다(아직 게시 전이므로 안전). 서버가 변환 중에 죽어 남은 staging 폴더는 다음 시작 때 지운다(`Jobs::open`; 저널에 없는 세대만. 저널에 있는 세대는 기존대로 `publish`가 처리하고, 취소된 완료 세대는 staging을 남긴다). 게시는 원자적 rename이라 기존 결과는 새 결과가 검사를 통과하기 전에는 바뀌지 않는다.
-- 내구성: 두 엔진의 MP4는 rename 전에 `sync_all`하고, rename 뒤 그 폴더도 sync한다(`media::durable_rename`). 원본 보존 끔에서 `publish`는 MP4를 기록 폴더로 옮긴 뒤 기록 폴더와 `prepared/`를 sync하고 나서야 원본을 지운다. 그 사이에 서버가 죽으면 원본이 남고, 재시작의 저널 복구가 이미 옮긴 MP4를 알아보고 원본 삭제까지 마친다(`retention_off_deletes_an_original_only_after_its_mp4_is_durable`; 이전에는 복구가 옮긴 MP4를 못 보고 원본을 남겼다). 정전 자체는 모의하지 못했다(순서만 시험).
+- 내구성: 두 엔진의 MP4는 rename 전에 `sync_all`하고, rename 뒤 그 폴더도 sync한다(`media::durable_rename`). 원본 보존 끔에서 `publish`는 MP4를 기록 폴더로 옮긴 뒤 기록 폴더와 `prepared/`를 sync한다. 원본은 그 원본의 부재를 설명하는 인덱스 변경(Drive 사본의 저장본 승격, `removed` 항목 제거, MP4의 원격 사본 폐기)이 메타에 내구적으로 저장된 뒤에만 지운다: 지울 원본 목록을 저널(`.conversion.json`의 `originals`)에 쓰고 → 메타 저장 → 목록의 원본 삭제(옆에 MP4가 있을 때만) → 디렉터리 sync → 저널 삭제. 메타 저장 전에 죽으면 원본이 모두 남아 재시작이 같은 단계를 다시 하고, 저장 뒤에 죽으면 재시작이 저널의 목록만 마저 지운다. 어느 중단 지점에서도 같은 끝 상태가 된다(`retention_off_publication_converges_from_every_crash_point`: MP4 이동 후, 메타 저장 후, 첫 원본 삭제 후; `09c48e9`까지는 원본을 지운 뒤 메타를 저장해, 그 사이에 죽으면 사본이 승격되지 않고 `removed`가 새 MP4를 가렸다). 재개 때 "이미 옮긴 MP4"는 저널의 `produced`(이 세대가 쓴 MP4 크기)와 크기가 같을 때만 인정한다: MP4 입력으로 변환한 세대는 MP4를 쓰지 않으므로, 변환 중 복원된 원본 옆의 저장된 MP4를 자기 출력으로 보고 원본을 지우지 않는다(`a_restored_original_next_to_a_stored_mp4_survives_a_resumed_publication`). 정전 자체는 모의하지 못했다(순서만 시험).
 - 고아 worker: 모든 media worker와 변환 프로세스는 `PR_SET_PDEATHSIG(SIGKILL)`로 시작한다(`media::die_with_parent`). 부모가 SIGKILL로 죽어도 worker가 끝나며, 시험(`killed_conversion_process_takes_its_worker_and_a_retry_completes`)은 이 설정을 빼면 실패한다.
 
 `times[0] ≠ 0`: 제품 경로에서는 일어나지 않는다. `convert.rs`가 raw HEVC 시각을 첫 프레임 기준으로, TS 시각을 최소 PTS 기준으로 만들기 때문이다. CLI 등에서 들어오면 순수 엔진이 거부하고 FFmpeg 엔진이 edit list로 처리한다(기존 동작).
@@ -166,6 +181,8 @@ UI 검사는 iframe 안의 실제 페이지를 사용자처럼 조작한다(버�
 |---|---|---|
 | 입력 × 1.5 | 순수 엔진 `resource`/`no_space`, 대체 없음, 실패(종료 1) | `remux_fallback` `unsupported`/`low_space` → FFmpeg `published`, 출력 10,127,301바이트, 남은 임시 파일 0 |
 | 입력 × 0.5 | (측정 안 함) | `low_space` → FFmpeg도 ENOSPC, FFmpeg worker 종료 코드 75(`resource`), 남은 파일 0 |
+
+한계(동시 변환): 여유 공간 판정(`media::short_for_pure`)은 그 순간의 여유 공간만 본다. 동시 변환(설정 `concurrency` 2~4)은 기록마다 별도 변환 프로세스(`convert-log`)라, 서로 같은 여유 공간을 보고 각자 순수 엔진(입력의 약 2배)을 고를 수 있다. 프로세스 사이의 예약 장치는 두지 않았다(프로세스 내 카운터로는 다른 변환을 볼 수 없다). 그 결과 ENOSPC가 나면 그 카메라는 `resource`(`no_space`)로 끝난다: 게시된 결과가 있으면 그 결과로 `ready` + 경고, 없으면 그 카메라 없이 `ready` + 경고이고, 어느 쪽도 `error`에 머물지 않으며 원본은 남는다. 공간이 돌아온 뒤 다시 변환하면 된다.
 
 ## 브라우저 재생
 

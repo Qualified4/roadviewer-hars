@@ -358,6 +358,8 @@ def scenario_limited(ctx, env=None, fsize=None):
     data = limited.request(f"/api/logs/{record}/data") if row["status"] == "ready" else {}
     out = {"states": states, "status": row["status"], "events": events, "videos": sorted(data.get("videos", {})),
            "warnings": [w[:80] for w in data.get("warnings", [])], "staging_left": limited.staging(record),
+           # What the resource failure left still plays (a ready record never stays without its playable cameras).
+           "playback": {c: playback(limited, record, c) for c in ("qcamera", "front") if c in data.get("videos", {})},
            "originals_unchanged": limited.originals(record) == originals, "processes_gone": None}
     limited.stop()
     out["processes_gone"] = gone(limited)

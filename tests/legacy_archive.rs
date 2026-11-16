@@ -741,6 +741,43 @@ async fn a_damaged_copy_fails_and_leaves_nothing() {
     assert_drive_untouched(&env.fake, mark, &before);
 }
 
+/// A download that goes on past the size the listing gave (the file grew since, or the server is hostile) is
+/// stopped at that size, not written to the end and then compared: the space reserved for it bounds what lands.
+#[tokio::test]
+async fn a_download_longer_than_listed_stops_at_the_listed_size() {
+    let env = new_env().await;
+    py_folder(&env);
+    let a = pid(1);
+    let rlog = data(300_000, 1);
+    py_file(&env, "py-a-rlog", &a, "rlog.zst", &rlog, Mark::Right);
+    let before = drive_snapshot(&env.fake);
+    let mark = env.fake.mark();
+    let sent = {
+        let mut st = env.fake.st();
+        st.media_overrun = 64 << 20;
+        st.media_sent.clone()
+    };
+    let job = import(&env, with_ids(drive_body(), &[&a])).await;
+    let r = record(&job, &a);
+    assert_eq!(
+        (r["state"].clone(), r["reason"].clone()),
+        (json!("failed"), json!("size_mismatch")),
+        "{r}"
+    );
+    let attempts = env
+        .fake
+        .count(mark, "GET", "/drive/v3/files/py-a-rlog?alt=media");
+    assert!(attempts >= 1);
+    let sent = sent.load(std::sync::atomic::Ordering::SeqCst);
+    assert!(
+        sent < attempts * (rlog.len() + (16 << 20)),
+        "{sent} bytes sent over {attempts} attempts"
+    );
+    assert!(env.app.store.records.read().await.is_empty());
+    no_leftovers(&env).await;
+    assert_drive_untouched(&env.fake, mark, &before);
+}
+
 #[tokio::test]
 async fn a_new_camera_joins_the_recording_hars_has() {
     let env = new_env().await;

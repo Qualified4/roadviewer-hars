@@ -2275,3 +2275,26 @@ fn shared_types_match_python() {
     );
     assert_eq!(archive::drive::q("a'b\\c"), "a\\'b\\\\c");
 }
+
+/// A Drive query whose pages add up past its bound is refused as a whole, not cut to a partial listing.
+#[tokio::test]
+async fn a_drive_listing_past_its_bound_is_refused_not_cut() {
+    let e = env().await;
+    let auth = e.connected().await;
+    let client = e.client(&auth);
+    for n in 0..12 {
+        e.fake
+            .put(&format!("listed-{n}"), FFile::media(b"x", &["parent"], &[]));
+    }
+    let query = "'parent' in parents and trashed=false";
+    assert_eq!(
+        client
+            .list_upto(query, "files(id)", 12)
+            .await
+            .unwrap()
+            .len(),
+        12
+    );
+    let refused = client.list_upto(query, "files(id)", 11).await.unwrap_err();
+    assert_eq!(refused.reason(), Some("too_many_files"));
+}

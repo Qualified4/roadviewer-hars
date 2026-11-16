@@ -120,6 +120,10 @@ pub struct St {
     pub cut_media: u32,
     /// A pause before each 64 KiB of a full-file download (a slow link).
     pub media_delay: Option<std::time::Duration>,
+    /// Bytes a full-file download sends beyond the listed size, without a length (a file that grew
+    /// after it was listed, a hostile server), counted into `media_sent` as they are sent.
+    pub media_overrun: usize,
+    pub media_sent: Arc<std::sync::atomic::AtomicUsize>,
     pub no_auth: bool,
     /// A file whose content is answered only after this long (a slow Drive while a client gives up).
     pub media_hold: HashMap<String, std::time::Duration>,
@@ -501,6 +505,9 @@ pub async fn handle(
             .unwrap()
             .captures(&range)
         else {
+            if st.media_overrun > 0 {
+                return overrun_stream(f.content.clone(), st.media_overrun, st.media_sent.clone());
+            }
             let cut = st.cut_media > 0;
             if cut {
                 st.cut_media -= 1;
@@ -667,6 +674,34 @@ fn media_stream(content: Vec<u8>, cut: bool, delay: Option<std::time::Duration>)
     Response::builder()
         .status(StatusCode::OK)
         .header("content-length", len.to_string())
+        .body(axum::body::Body::from_stream(stream))
+        .unwrap()
+}
+
+/// The file and then `extra` zero bytes, in 64 KiB pieces made as they are sent, with no length.
+fn overrun_stream(
+    content: Vec<u8>,
+    extra: usize,
+    sent: Arc<std::sync::atomic::AtomicUsize>,
+) -> Response {
+    const PIECE: usize = 64 << 10;
+    let total = content.len() + extra;
+    let stream = futures_util::stream::unfold(0usize, move |at| {
+        let (content, sent) = (content.clone(), sent.clone());
+        async move {
+            if at >= total {
+                return None;
+            }
+            let end = (at + PIECE).min(total);
+            let piece: Vec<u8> = (at..end)
+                .map(|i| content.get(i).copied().unwrap_or(0))
+                .collect();
+            sent.fetch_add(piece.len(), std::sync::atomic::Ordering::SeqCst);
+            Some((Ok::<_, std::io::Error>(Bytes::from(piece)), end))
+        }
+    });
+    Response::builder()
+        .status(StatusCode::OK)
         .body(axum::body::Body::from_stream(stream))
         .unwrap()
 }

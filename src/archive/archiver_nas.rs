@@ -1,11 +1,12 @@
 //! The share side of the archiver (Python `archive_file`, `cleanup_nas`, `_recover` and the missing-file rules).
 //! Every write goes through the HARS write root: a share is only touched while its probe answers connected, and
-//! the probe requires the sentinel's `owner: "roadviewer-hars"`.
+//! the probe requires the sentinel's `owner: "roadviewer-hars"`. Every removal on it reads that sentinel again
+//! right before it (`NasBackend::remove_copy`, `nas::remove_stale_part`): the probe answer is cached.
 use super::{
     ErrorCode, NasBackend,
     archiver::{
-        Archive, Ctx, CycleResult, Outcome, file_sha256, is_file, kind_static, lock, share_remove,
-        share_stat, stat,
+        Archive, Ctx, CycleResult, Outcome, file_sha256, is_file, kind_static, lock, share_stat,
+        stat,
     },
     index::{self, ARCHIVE_ORDER, VIDEO_KINDS},
     nas::Copied,
@@ -228,10 +229,8 @@ impl Archive {
 
     /// A copy no index refers to; only on a connected (HARS-owned) root.
     async fn remove_nas_copy(&self, nas: &NasBackend, id: &str, kind: &str) {
-        if self.nas_available(nas).await
-            && let Ok(path) = nas.path_for(id, kind)
-        {
-            let _ = share_remove(&path).await;
+        if self.nas_available(nas).await {
+            let _ = nas.remove_copy(id, kind).await;
         }
     }
 
@@ -408,9 +407,9 @@ impl Archive {
                 return None;
             }
         }
-        let path = nas.path_for(id, kind).ok()?;
+        nas.path_for(id, kind).ok()?;
         let unlinked = if self.nas_available(nas).await {
-            share_remove(&path).await
+            nas.remove_copy(id, kind).await
         } else {
             Err(std::io::Error::other("share_unavailable"))
         };
@@ -480,6 +479,7 @@ impl Archive {
         let Some(root) = nas.settings().path.clone() else {
             return;
         };
+        let owner = nas.ownership();
         let parts = tokio::task::spawn_blocking(move || -> std::io::Result<()> {
             for top in std::fs::read_dir(&root)? {
                 let top = top?;
@@ -492,7 +492,7 @@ impl Archive {
                     if f.file_name().to_string_lossy().ends_with(".part")
                         && f.file_type()?.is_file()
                     {
-                        super::nas::remove_stale_part(&f.path())?;
+                        super::nas::remove_stale_part(&f.path(), &owner)?;
                     }
                 }
             }

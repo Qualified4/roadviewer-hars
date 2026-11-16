@@ -149,3 +149,42 @@ async fn a_missing_share_folder_is_never_recreated() {
     assert!(matches!(outcome, Outcome::Failed(_)));
     assert!(!share.exists(), "the share folder is not created locally");
 }
+
+/// Within the probe's cache window the share path becomes a Python Road Viewer folder holding the same
+/// `<id>/<kind>` and a `.part` of its own: the cleanup of an archived file, the removal of an unindexed copy and the
+/// recovery's part sweep all read the sentinel again and touch none of it.
+#[tokio::test]
+async fn removals_within_the_probe_cache_never_reach_a_root_that_became_python_s() {
+    let tmp = tempfile::tempdir().unwrap();
+    let share = tmp.path().join("nas");
+    std::fs::create_dir_all(&share).unwrap();
+    let e = env(&share, tmp).await;
+    let (id, _) = record(&e, 'a', b"archived file").await;
+    e.archive.run_cycle().await;
+    let entry = index::entry(&e.app.store.meta(&id).await.unwrap(), "rlog.zst");
+    assert_eq!(entry["location"], "nas");
+    let ctx = e.archive.ctx();
+    let nas = ctx.nas().unwrap();
+    assert!(e.archive.nas_available(nas).await);
+    let sentinel = share.join(super::super::SENTINEL);
+    let mut marks: Value = serde_json::from_slice(&std::fs::read(&sentinel).unwrap()).unwrap();
+    marks["owner"] = json!("roadviewer");
+    std::fs::write(&sentinel, marks.to_string()).unwrap();
+    let python = share.join(&id).join("rlog.zst");
+    std::fs::write(&python, b"python's file").unwrap();
+    let python_part = share.join(&id).join("fcamera.hevc.part");
+    std::fs::write(&python_part, b"python's part").unwrap();
+
+    let cleaned = e
+        .archive
+        .remove_archived(nas, &id, "rlog.zst", &entry)
+        .await;
+    assert_ne!(cleaned, Some(true));
+    e.archive.remove_nas_copy(nas, &id, "rlog.zst").await;
+    e.archive.recover_nas(&ctx).await;
+    assert_eq!(std::fs::read(&python).unwrap(), b"python's file");
+    assert_eq!(std::fs::read(&python_part).unwrap(), b"python's part");
+    let after = e.app.store.meta(&id).await.unwrap();
+    assert_eq!(index::location(&after, "rlog.zst"), "nas", "{after}");
+    assert!(index::entry(&after, "rlog.zst").get("removing").is_none());
+}

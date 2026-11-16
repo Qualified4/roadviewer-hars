@@ -85,6 +85,14 @@ impl BackendError {
     }
 }
 
+/// How many files one remote listing may hold (a Drive query across its pages, a share's media files). Far
+/// above a real archive (three to six files per recording); past it the listing is refused as a whole
+/// (`too_many_files`), not cut, so no decision is taken on part of a remote.
+pub const MAX_LISTED_FILES: usize = 200_000;
+pub fn too_many_files() -> BackendError {
+    BackendError::new(ErrorCode::Io, "too_many_files")
+}
+
 /// An OS error as a token (its message can carry a path).
 pub(crate) fn io_reason(e: &std::io::Error) -> String {
     format!("{:?}", e.kind())
