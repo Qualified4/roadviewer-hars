@@ -1082,6 +1082,7 @@ async fn ffmpeg(
     if crate::fault::injected("ffmpeg_remux_corrupt") {
         crate::fault::flip_last_byte(&temp)?;
     }
+    start_writeback(&std::fs::File::open(&temp)?);
     let checked = inspect(&temp, target_kind(kind)).await?;
     // The pure engine's read-back also checks this copy: sync samples against
     // the pictures, one picture per sample and the same signature.
@@ -1170,6 +1171,19 @@ async fn durable_rename(temp: &Path, output: &Path) -> std::io::Result<()> {
         sync_parent(&output)
     })
     .await?
+}
+
+/// Starts writing `file` back without waiting for it, so the read-back checks overlap the disk
+/// write and the fsync before the rename finds little left.
+pub fn start_writeback(file: &std::fs::File) {
+    #[cfg(target_os = "linux")]
+    {
+        use std::os::fd::AsRawFd;
+        // SAFETY: sync_file_range only reads the open descriptor; a failure leaves the fsync to do it all.
+        unsafe { libc::sync_file_range(file.as_raw_fd(), 0, 0, libc::SYNC_FILE_RANGE_WRITE) };
+    }
+    #[cfg(not(target_os = "linux"))]
+    let _ = file;
 }
 
 /// fsync of the directory holding `path`, so a rename or removal in it survives a power cut.

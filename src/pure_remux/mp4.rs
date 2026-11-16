@@ -190,7 +190,7 @@ pub fn write(path: &Path, plan: &Plan, payload: Payload) -> anyhow::Result<()> {
         file.seek(SeekFrom::Start(offset))?;
         file.write_all(bytes)?;
     }
-    file.flush()?;
+    crate::media::start_writeback(&file);
     Ok(())
 }
 
