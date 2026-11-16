@@ -1065,3 +1065,32 @@ async fn fetch_once(
     }
     outcome
 }
+
+// ---------------------------------------------------------------- without a server
+
+const USAGE: &str = "usage: roadviewer-hars legacy-archive scan|import JSON (the body of \
+                     /api/settings/archive/legacy/scan or /import)";
+
+/// `roadviewer-hars legacy-archive scan|import JSON`: the routes' work on a data folder no server holds (opening
+/// it takes the same instance lock). Prints the scan or the finished job; copies wait for the server to convert.
+pub async fn cli(app: App, args: &[String]) -> anyhow::Result<i32> {
+    anyhow::ensure!(args.len() == 2, USAGE);
+    let body = Bytes::from(args[1].clone());
+    let answer = match args[0].as_str() {
+        "scan" => scan(AxState(app.clone()), body).await,
+        "import" => {
+            let started = import(AxState(app.clone()), body).await;
+            if started.0 == StatusCode::ACCEPTED {
+                while app.legacy.running().await {
+                    tokio::time::sleep(Duration::from_millis(200)).await;
+                }
+                reply(StatusCode::OK, json!({"job": app.legacy.snapshot()}))
+            } else {
+                started
+            }
+        }
+        _ => anyhow::bail!(USAGE),
+    };
+    println!("{}", answer.1);
+    Ok(if answer.0.is_success() { 0 } else { 1 })
+}

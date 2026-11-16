@@ -1444,3 +1444,64 @@ async fn sigkill_mid_share_copy_then_restart_converges() {
 async fn sigkill_before_registration_then_restart_converges() {
     killed_and_restarted("legacy_import_before_finish", true).await;
 }
+
+#[tokio::test]
+async fn the_command_line_works_without_a_server_and_refuses_beside_one() {
+    let fake = start_fake().await;
+    let tmp = tempfile::tempdir().unwrap();
+    let root = tmp.path().join("data");
+    std::fs::create_dir_all(&root).unwrap();
+    std::fs::write(
+        root.join(".processing-settings.json"),
+        br#"{"auto_convert":false}"#,
+    )
+    .unwrap();
+    let share = tmp.path().join("python-share");
+    let a = pid(1);
+    let rlog = data(5000, 1);
+    py_share(&share, &[(&a, &[("rlog.zst", rlog.clone())])]);
+    read_only(&share, true);
+    let before = tree(&share);
+    let run = |verb: &str, body: Value| {
+        let out = Command::new(env!("CARGO_BIN_EXE_roadviewer-hars"))
+            .args(["legacy-archive", verb, &body.to_string()])
+            .env("HARS_DATA", &root)
+            .env("RV_ARCHIVE_ALLOW_ANY_PATH", "1")
+            .env("RUST_LOG", "off")
+            .stderr(Stdio::null())
+            .output()
+            .unwrap();
+        (
+            out.status.code(),
+            serde_json::from_slice::<Value>(&out.stdout).unwrap_or(Value::Null),
+        )
+    };
+    let (code, scan) = run("scan", nas_body(&share));
+    assert_eq!(code, Some(0), "{scan}");
+    assert_eq!(scan["records"][0]["id"], a.as_str());
+    let (code, out) = run("import", with_ids(nas_body(&share), &[&a]));
+    assert_eq!(code, Some(0), "{out}");
+    assert_eq!(out["job"]["records"][0]["state"], "imported", "{out}");
+    let id = out["job"]["records"][0]["hars_id"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    assert_eq!(
+        std::fs::read(root.join(&id).join("rlog.zst")).unwrap(),
+        rlog
+    );
+    let (code, out) = run("scan", json!({"backend": "ftp"}));
+    assert_eq!(
+        (code, out["error"].clone()),
+        (Some(1), json!("invalid_legacy_request"))
+    );
+    // The server holds the folder: the command line does not open it.
+    let p = start(&root, &fake.url, None).await;
+    let (code, out) = run("import", with_ids(nas_body(&share), &[&a]));
+    assert_ne!(code, Some(0), "{out}");
+    let (_, list) = call(&p, "GET", "/api/logs", &Value::Null).await;
+    assert_eq!(list["logs"].as_array().unwrap().len(), 1);
+    drop(p);
+    assert_eq!(tree(&share), before);
+    read_only(&share, false);
+}
