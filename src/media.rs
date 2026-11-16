@@ -1024,12 +1024,16 @@ async fn ffmpeg(
     // The pure engine's read-back also checks this copy: sync samples against
     // the pictures, one picture per sample and the same signature.
     let file = temp.clone();
-    let (read, _) =
+    let (read, layout) =
         tokio::task::spawn_blocking(move || crate::pure_remux::readback::inspect(&file, hevc))
             .await??;
     anyhow::ensure!(
         read.signature == before,
         "compressed pictures changed during remux"
+    );
+    anyhow::ensure!(
+        layout.durations.last() == Some(&clocks.terminal.ticks),
+        "last sample duration changed during remux"
     );
     verify_and_place(&temp, output, kind, times, clocks, &before, checked).await
 }
@@ -1077,11 +1081,16 @@ async fn verify_and_place(
         .last()
         .map(|p| p.1)
         .zip(packets.first().map(|p| p.1));
+    // Without composition offsets libavformat's stream duration is the decode span plus the last sample.
+    // FFmpeg's copy of B-frames reports one that follows its edit list instead; `ffmpeg` checks that
+    // copy's last sample in its sample table.
     anyhow::ensure!(
-        span.zip(stream["duration_ts"].as_i64())
-            .is_some_and(|((last, first), total)| {
-                u64::try_from(total - (last - first)).ok() == Some(clocks.terminal.ticks)
-            }),
+        packets.iter().any(|(pts, dts)| pts != dts)
+            || span
+                .zip(stream["duration_ts"].as_i64())
+                .is_some_and(|((last, first), total)| {
+                    u64::try_from(total - (last - first)).ok() == Some(clocks.terminal.ticks)
+                }),
         "last sample duration changed during remux"
     );
     verify_mp4_boxes(temp, kind != "qcamera.ts").await?;

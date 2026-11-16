@@ -267,6 +267,12 @@ fn verify(output: &Path, hevc: bool, job: &Job, input: Signature) -> anyhow::Res
         layout.top_level == ["ftyp", "moov", "mdat"],
         "unexpected MP4 layout"
     );
+    // This engine writes no composition offsets, so its media ends with its last sample. Not a check for any
+    // MP4: FFmpeg's copy of a B-frame input ends its media at the last presentation time instead.
+    ensure!(
+        layout.media_duration == layout.durations.iter().sum::<u64>(),
+        "MP4 media duration disagrees with its samples"
+    );
     ensure!(
         layout.durations.last() == Some(&job.terminal),
         "last sample duration changed during remux"

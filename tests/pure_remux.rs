@@ -214,22 +214,66 @@ async fn h264_ts_pure_output_equals_ffmpeg_engine() {
 async fn b_frame_ts_falls_back_to_ffmpeg() {
     let temp = tempfile::tempdir().unwrap();
     let source = temp.path().join("qcamera.ts");
-    fixture(&source, false, 2);
+    // A jittered clock, as a camera's: the last picture's composition offset
+    // then differs from the first, and FFmpeg's B-frame MP4 reports a stream
+    // duration that follows its edit list rather than the decode span.
+    let mut cmd = Command::new("ffmpeg");
+    cmd.args(["-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i"])
+        .arg("testsrc2=size=160x96:rate=10,settb=1/90000,setpts='(N/10+0.003*sin(N*1.7))/TB'")
+        .args([
+            "-frames:v",
+            "10",
+            "-an",
+            "-threads",
+            "1",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+        ])
+        .args([
+            "-bf",
+            "2",
+            "-g",
+            "10",
+            "-fps_mode",
+            "passthrough",
+            "-enc_time_base:v",
+            "1:90000",
+        ])
+        .args(["-f", "mpegts"])
+        .arg(&source)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null());
+    assert!(cmd.status().unwrap().success());
     let (times, _) = ts_clock(&source).await;
+    assert_eq!(times.len(), 10);
     let output = temp.path().join("camera.mp4");
-    let done = media::remux_using(Engine::Pure, &source, "qcamera.ts", &output, &times, None)
+    // A logged next frame makes the last sample shorter than the others, as on
+    // real recordings.
+    for next_frame_ns in [None, Some(47_000_000)] {
+        let done = media::remux_using(
+            Engine::Pure,
+            &source,
+            "qcamera.ts",
+            &output,
+            &times,
+            next_frame_ns,
+        )
         .await
         .unwrap();
-    assert_eq!(done.engine, Engine::Ffmpeg);
-    let failure = done.fallback.unwrap();
-    assert_eq!(failure.class, FailureClass::Unsupported, "{failure:?}");
-    assert!(
-        failure.reason.contains("H.264 picture reordering"),
-        "{failure:?}"
-    );
-    let (errors, frames) = decode_errors(&output);
-    assert_eq!((errors.as_str(), frames), ("", 10));
-    no_leftovers(temp.path(), &["qcamera.ts", "camera.mp4"]);
+        assert_eq!(done.engine, Engine::Ffmpeg);
+        let failure = done.fallback.unwrap();
+        assert_eq!(failure.class, FailureClass::Unsupported, "{failure:?}");
+        assert!(
+            failure.reason.contains("H.264 picture reordering"),
+            "{failure:?}"
+        );
+        let (errors, frames) = decode_errors(&output);
+        assert_eq!((errors.as_str(), frames), ("", 10));
+        no_leftovers(temp.path(), &["qcamera.ts", "camera.mp4"]);
+        std::fs::remove_file(&output).unwrap();
+    }
 }
 
 /// What the product path did with an input: the pure engine wrote it, or it

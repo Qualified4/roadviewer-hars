@@ -82,15 +82,18 @@ def main():
         base = args.workdir / "base.hevc"
         frames = 600
         encode(base, frames)
-        data = base.read_bytes()
+        size = base.stat().st_size
         results = {"scaling": [], "hostile": []}
+        # Inputs are streamed to disk, never held here: a child's peak RSS
+        # (wait4) includes this process's pages until its exec.
         for repeat in (1, 5, 20):
-            if len(data) * repeat / 1e6 > args.max_mb * 1.2:
+            if size * repeat / 1e6 > args.max_mb * 1.2:
                 continue
             source = args.workdir / f"x{repeat}.hevc"
             with source.open("wb") as f:
                 for _ in range(repeat):
-                    f.write(data)
+                    with base.open("rb") as b:
+                        shutil.copyfileobj(b, f)
             results["scaling"].append(run(args.binary, source, frames * repeat, args.workdir))
             source.unlink()
         # Same frame count, several times the bytes: separates the per-frame
@@ -99,14 +102,29 @@ def main():
         encode(dense, frames, "40000k")
         results["same_frames_more_bytes"] = run(args.binary, dense, frames, args.workdir)
         dense.unlink()
+        def repeated(unit, total):
+            block = unit * ((1 << 20) // len(unit))
+
+            def write(f):
+                for _ in range(total // len(block)):
+                    f.write(block)
+            return write
+
+        def big_nal(f):
+            with base.open("rb") as b:
+                f.write(b.read(size // 20))
+            f.write(b"\0\0\1\x02\1")
+            for _ in range(33):
+                f.write(b"\x55" * (1 << 20))
         hostile = {
-            "parameter_sets_only": b"\0\0\1\x40\1" * (100_000_000 // 5),
-            "sei_units_only": b"\0\0\1\x4e\1" * (100_000_000 // 5),
-            "one_33_mib_nal": data[: len(data) // 20] + b"\0\0\1\x02\1" + b"\x55" * (33 << 20),
+            "parameter_sets_only": repeated(b"\0\0\1\x40\1", 100_000_000),
+            "sei_units_only": repeated(b"\0\0\1\x4e\1", 100_000_000),
+            "one_33_mib_nal": big_nal,
         }
-        for name, raw in hostile.items():
+        for name, write in hostile.items():
             source = args.workdir / f"{name}.hevc"
-            source.write_bytes(raw)
+            with source.open("wb") as f:
+                write(f)
             row = run(args.binary, source, frames, args.workdir)
             row["input"] = name
             results["hostile"].append(row)

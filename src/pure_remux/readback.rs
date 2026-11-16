@@ -488,11 +488,6 @@ pub fn inspect(path: &Path, hevc: bool) -> anyhow::Result<(Inspection, Layout)> 
     let t = tables(&stbl)?;
     let count = t.sizes.len();
     ensure!(count > 0, "missing pictures or decoder configuration");
-    let sum = t.durations.iter().sum::<u64>();
-    ensure!(
-        media_duration == sum,
-        "MP4 media duration disagrees with its samples"
-    );
     let keyframes = t.sync.clone().unwrap_or_else(|| (0..count).collect());
     ensure!(
         keyframes.first() == Some(&0),
