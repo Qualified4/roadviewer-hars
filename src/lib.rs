@@ -15,6 +15,7 @@ pub mod jobs;
 pub mod listing;
 pub mod logs;
 pub mod media;
+pub mod media_read;
 pub mod migration;
 pub mod native_video;
 pub mod network;

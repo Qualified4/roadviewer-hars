@@ -4,9 +4,11 @@
 //! The browser reads an export itself and imports one recording at a time through an ordinary
 //! chunked upload session; the server never unpacks a tar, so member paths cannot escape.
 use crate::{
+    archive::{Archive, ArchiveRead, ErrorCode, resolve::RemoteFile},
     error::ApiError,
     http::App,
-    listing::{self, file_size, has_video, location, original_bytes, stored},
+    listing::{self, file_size, has_video, location, original_bytes},
+    media_read::{self, Source},
     parity::{
         Answer, Fail, RecordingOrder, SOURCES, STORED_KINDS, TAG_COLORS, download_name, local_time,
         message_disposition, nfc, number, other, py_strip, py_words,
@@ -27,7 +29,7 @@ use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet},
     path::{Path as FsPath, PathBuf},
-    sync::LazyLock,
+    sync::{Arc, LazyLock},
 };
 use tokio::{
     io::AsyncReadExt,
@@ -765,8 +767,12 @@ pub async fn begin(State(app): State<App>, body: Bytes) -> Answer<Response> {
         })
         .collect::<Vec<_>>();
     if files.is_empty() {
+        // Only references (every file is on Drive or the NAS): registered at once.
+        crate::http_archive::list_state(&app.archive).await;
         let registration = app.store.registration.lock().await;
-        return register(&app, &record, vec![], &registration).await;
+        let result = register(&app, &record, vec![], &registration).await;
+        drop(registration);
+        return imported(&app, result).await;
     }
     let id = record["id"].as_str().unwrap();
     if app.store.root.join(id).exists() {
@@ -872,8 +878,24 @@ async fn finish_registered(app: &App, session: &crate::upload::Session) -> Answe
     if let Some(reason) = skipped(app, &record).await {
         return Ok(skipped_answer(reason, &record));
     }
+    // Refreshed before locking: admission reads the archive state without probing the share.
+    crate::http_archive::list_state(&app.archive).await;
     let registration = app.store.registration.lock().await;
-    register(app, &record, received, &registration).await
+    let result = register(app, &record, received, &registration).await;
+    drop(registration);
+    imported(app, result).await
+}
+/// Python `answer`: archived files of recordings evicted by admission go once the locks are released, and the
+/// archive's index totals are counted again with the imported references.
+async fn imported(app: &App, result: Answer<Response>) -> Answer<Response> {
+    if result
+        .as_ref()
+        .is_ok_and(|r| r.status() == StatusCode::CREATED)
+    {
+        crate::http_archive::process_pending(&app.archive).await;
+        app.archive.forget_index();
+    }
+    result
 }
 
 /// Builds the recording in a staging folder under the data root and publishes it with one rename,
@@ -1115,6 +1137,8 @@ impl Zip {
 /// Opened only when its turn comes, so a request holds one descriptor however many members it has.
 struct Member {
     path: PathBuf,
+    /// A file only the remote backend has, read from it as the ZIP is written (`path` is unused).
+    remote: Option<RemoteFile>,
     name: String,
     /// Whether the member carries its file's modification time (Python `zip_stream`).
     stamped: bool,
@@ -1125,10 +1149,42 @@ async fn remove_temporaries(members: &[Member]) {
         let _ = tokio::fs::remove_file(&m.path).await;
     }
 }
-async fn stream_zip(tx: Tx, members: Vec<Member>) {
+async fn stream_zip(tx: Tx, members: Vec<Member>, archive: Arc<Archive>) {
     let mut zip = Zip::default();
     let outcome = async {
         for m in &members {
+            if let Some(file) = &m.remote {
+                // A failure ends the stream (an incomplete ZIP), except a file deleted meanwhile, which is left out
+                // as a removed local one is (Python `zip_stream`).
+                let backend = archive.backend();
+                let mut reader = match backend.open(&file.reference, 0, None).await {
+                    Ok(r) => r,
+                    Err(e) if e.code == ErrorCode::NotFound => continue,
+                    Err(e) => {
+                        let _ = tx.send(Err(std::io::Error::other(e.code.as_str()))).await;
+                        return Err(Closed);
+                    }
+                };
+                send(&tx, zip.local(&m.name, dos(m.stamped.then(now)))).await?;
+                let mut crc = crc32fast::Hasher::new();
+                let mut size = 0u64;
+                loop {
+                    match reader.next_chunk().await {
+                        Ok(Some(chunk)) => {
+                            crc.update(&chunk);
+                            size += chunk.len() as u64;
+                            send(&tx, chunk).await?;
+                        }
+                        Ok(None) => break,
+                        Err(e) => {
+                            let _ = tx.send(Err(std::io::Error::other(e.code.as_str()))).await;
+                            return Err(Closed);
+                        }
+                    }
+                }
+                send(&tx, zip.descriptor(crc.finalize(), size)).await?;
+                continue;
+            }
             // Sizes and offsets are written after each member's data (data descriptors), so a file
             // removed since the request was planned is left out, as Python's `zip_stream` does.
             let Ok(mut file) = tokio::fs::File::open(&m.path).await else {
@@ -1216,10 +1272,14 @@ pub async fn download_zip(
             }
         }
         for kind in kinds {
-            let path = folder.join(&kind);
-            if !path.is_file() {
-                continue;
-            }
+            // Every file is resolved before streaming: one unreachable file refuses the whole ZIP.
+            let (path, remote) = match media_read::media_file(&app.archive, id, &meta, &kind).await
+            {
+                Err(e) => return Ok(e.into_response()),
+                Ok(None) => continue,
+                Ok(Some(Source::Path(p))) => (p, None),
+                Ok(Some(Source::Remote(r))) => (PathBuf::new(), Some(r)),
+            };
             let mut name = download_name(&meta, &kind);
             if names.contains(&name) {
                 name = format!("{}-{name}", &id[..8]);
@@ -1227,6 +1287,7 @@ pub async fn download_zip(
             names.insert(name.clone());
             members.push(Member {
                 path,
+                remote,
                 name,
                 stamped: true,
                 temporary: false,
@@ -1242,7 +1303,7 @@ pub async fn download_zip(
         ids.len()
     );
     let (tx, body) = channel();
-    tokio::spawn(stream_zip(tx, members));
+    tokio::spawn(stream_zip(tx, members, app.archive.clone()));
     Ok(zip_response(header, body))
 }
 
@@ -1255,41 +1316,61 @@ async fn download_selected(
     if format != "mp4" && format != "original" {
         return Err(request());
     }
-    type Planned = (PathBuf, String, Option<(&'static str, f64)>, Value);
+    type Planned = (Source, String, Option<(&'static str, f64)>, Value, PathBuf);
     let mut plans: Vec<Planned> = vec![];
     for id in ids {
         let folder = app.store.folder(id).await?;
         let meta = app.store.meta(id).await?;
-        if parts.contains("rlog") && folder.join("rlog.zst").is_file() {
-            plans.push((
-                folder.join("rlog.zst"),
-                "rlog.zst".into(),
-                None,
-                meta.clone(),
-            ));
+        // Resolve only the file actually sent: an unreachable MP4 must not block its reachable original.
+        let file = |kind: &'static str| media_read::media_file(&app.archive, id, &meta, kind);
+        if parts.contains("rlog") {
+            match file("rlog.zst").await {
+                Err(e) => return Ok(e.into_response()),
+                Ok(Some(source)) => plans.push((
+                    source,
+                    "rlog.zst".into(),
+                    None,
+                    meta.clone(),
+                    folder.clone(),
+                )),
+                Ok(None) => {}
+            }
         }
         for source in ["front", "wide", "qcamera"] {
             if !parts.contains(source) {
                 continue;
             }
             let (_, original, mp4) = *SOURCES.iter().find(|s| s.0 == source).unwrap();
-            let kept = || {
-                [folder.join(mp4), folder.join("prepared").join(mp4)]
-                    .into_iter()
-                    .find(|p| p.is_file())
+            let kept = || async {
+                Ok::<_, media_read::MediaError>(match file(mp4).await? {
+                    Some(found) => Some(found),
+                    None => Some(folder.join("prepared").join(mp4))
+                        .filter(|p| p.is_file())
+                        .map(Source::Path),
+                })
             };
             if format == "mp4" {
-                if let Some(path) = kept() {
-                    plans.push((path, mp4.into(), None, meta.clone()));
+                match kept().await {
+                    Err(e) => return Ok(e.into_response()),
+                    Ok(Some(found)) => {
+                        plans.push((found, mp4.into(), None, meta.clone(), folder.clone()))
+                    }
+                    Ok(None) => {}
                 }
                 continue;
             }
-            if stored(&folder, &meta, original) && folder.join(original).is_file() {
-                plans.push((folder.join(original), original.into(), None, meta.clone()));
-                continue;
+            match file(original).await {
+                Err(e) => return Ok(e.into_response()),
+                Ok(Some(found)) => {
+                    plans.push((found, original.into(), None, meta.clone(), folder.clone()));
+                    continue;
+                }
+                Ok(None) => {}
             }
-            let Some(path) = kept() else {
-                continue;
+            let found = match kept().await {
+                Err(e) => return Ok(e.into_response()),
+                Ok(Some(found)) => found,
+                Ok(None) => continue,
             };
             let option = listing::download_options(&folder, &meta)
                 .into_iter()
@@ -1303,10 +1384,11 @@ async fn download_selected(
             }
             let offset = meta["video_origins"][source].as_f64().unwrap_or(0.);
             plans.push((
-                path,
+                found,
                 original.into(),
                 Some((original, offset)),
                 meta.clone(),
+                folder.clone(),
             ));
         }
     }
@@ -1316,28 +1398,46 @@ async fn download_selected(
     let mut members = vec![];
     let mut names = BTreeSet::new();
     let exports = app.store.root.join(EXPORTS);
-    for (path, kind, export, meta) in plans {
-        let (path, temporary) = if let Some((original, offset)) = export {
-            let ext = if original == "qcamera.ts" {
-                "ts"
-            } else {
-                "hevc"
-            };
-            let output = exports.join(format!("{}.{ext}", crate::store::id()));
-            let made = match tokio::fs::create_dir_all(&exports).await {
-                Ok(()) => crate::media::reverse(&path, original, &output, offset)
-                    .await
-                    .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "media_export_failed")),
-                Err(e) => Err(e.into()),
-            };
-            if let Err(e) = made {
-                let _ = tokio::fs::remove_file(&output).await;
-                remove_temporaries(&members).await;
-                return Err(e.into());
+    for (found, kind, export, meta, folder) in plans {
+        let (path, remote, temporary) = match (export, found) {
+            (Some((original, offset)), found) => {
+                let ext = if original == "qcamera.ts" {
+                    "ts"
+                } else {
+                    "hevc"
+                };
+                // One to export from a path is staged first, verified (Python `open_downloads`).
+                let (input, staged) = match found {
+                    Source::Path(p) => (p, None),
+                    Source::Remote(r) => {
+                        match media_read::stage_remote(&app.archive, &folder, &r).await {
+                            Ok(p) => (p.clone(), Some(p)),
+                            Err(e) => {
+                                remove_temporaries(&members).await;
+                                return Ok(e.into_response());
+                            }
+                        }
+                    }
+                };
+                let output = exports.join(format!("{}.{ext}", crate::store::id()));
+                let made = match tokio::fs::create_dir_all(&exports).await {
+                    Ok(()) => crate::media::reverse(&input, original, &output, offset)
+                        .await
+                        .map_err(|_| ApiError(StatusCode::BAD_REQUEST, "media_export_failed")),
+                    Err(e) => Err(e.into()),
+                };
+                if let Some(p) = &staged {
+                    media_read::unstage(p).await;
+                }
+                if let Err(e) = made {
+                    let _ = tokio::fs::remove_file(&output).await;
+                    remove_temporaries(&members).await;
+                    return Err(e.into());
+                }
+                (output, None, true)
             }
-            (output, true)
-        } else {
-            (path, false)
+            (None, Source::Path(p)) => (p, None, false),
+            (None, Source::Remote(r)) => (PathBuf::new(), Some(r), false),
         };
         let id = meta["id"].as_str().unwrap_or("");
         let mut name = download_name(&meta, &kind);
@@ -1347,6 +1447,7 @@ async fn download_selected(
         names.insert(name.clone());
         members.push(Member {
             path,
+            remote,
             name,
             stamped: false,
             temporary,
@@ -1354,7 +1455,7 @@ async fn download_selected(
     }
     let header = message_disposition(&format!("roadviewer-{}-segments-{format}.zip", ids.len()));
     let (tx, body) = channel();
-    tokio::spawn(stream_zip(tx, members));
+    tokio::spawn(stream_zip(tx, members, app.archive.clone()));
     Ok(zip_response(header, body))
 }
 
