@@ -1,11 +1,14 @@
 """End-to-end check of the archiver in the real executable, against the Python suite's loopback Drive fake
 (reference/python/tests/fake_drive.py) and a temporary NAS folder. Nothing reaches Google or a real share.
 
-Usage: python3 integration/archive_e2e.py BINARY RLOG_A RLOG_B [--port 18180]
+Usage: python3 integration/archive_e2e.py BINARY RLOG_A RLOG_B [RLOG_C] [--port 18180]
 The HARS UI binds PORT, the device API PORT+1 and the Drive fake PORT+2 (all loopback).
 A qcamera.ts next to an rlog (same route--segment prefix) is uploaded with it: after each move the recording's
 video plays (Range 206), its stored files download with their SHA-256, it converts again from the archive, and the
-same holds after a restart.
+same holds after a restart. Recording A is first copied with its original video kept, so the next conversion
+deletes the original and its Drive copy becomes the stored file (Python `promote_remote`); its MP4 then moves to
+Drive and plays from there, byte for byte. With RLOG_C, a copied MP4 made again by a conversion loses its copy
+(Python `drop_remote` in `clear_prepared`) while the Drive file stays.
 """
 import argparse, hashlib, json, os, shutil, signal, subprocess, sys, tempfile, threading, time, urllib.request, urllib.error
 from pathlib import Path
@@ -18,6 +21,7 @@ p = argparse.ArgumentParser()
 p.add_argument('binary')
 p.add_argument('rlog_a')
 p.add_argument('rlog_b')
+p.add_argument('rlog_c', nargs='?')
 p.add_argument('--port', type=int, default=18180)
 args = p.parse_args()
 
@@ -103,7 +107,7 @@ def hashes(data_dir, id):
     return {k: hashlib.sha256((data_dir / id / k).read_bytes()).hexdigest() for k in STORED if (data_dir / id / k).is_file()}
 
 
-def reads_back(id, expected, where):
+def reads_back(id, expected, where, mp4=None):
     """The moved recording plays and downloads as before (Python media_file/remote_response)."""
     m = row(id)
     assert m['storage_locations'].get('rlog') == where, m.get('storage_locations')
@@ -113,6 +117,12 @@ def reads_back(id, expected, where):
     if m.get('video'):
         status, headers, body = fetch('/api/logs/%s/video?source=qcamera' % id, {'Range': 'bytes=0-1023'})
         assert status == 206 and len(body) == 1024 and headers.get("content-range", "").startswith('bytes 0-1023/'), (status, headers)
+        if mp4 is not None:
+            assert body == mp4[:1024], 'first bytes of the stored MP4'
+            mid = len(mp4) // 2
+            status, headers, body = fetch('/api/logs/%s/video?source=qcamera' % id, {'Range': 'bytes=%d-%d' % (mid, mid + 65535)})
+            assert status == 206 and body == mp4[mid:mid + 65536], (status, headers.get('content-range'))
+            assert headers['content-range'] == 'bytes %d-%d/%d' % (mid, mid + 65535, len(mp4)), headers
     return sorted(expected)
 
 
@@ -153,9 +163,9 @@ with tempfile.TemporaryDirectory(prefix='hars-archive-e2e-') as tmp, Drive(args.
                **drive.env())
     proc = start(env)
     try:
-        # Drive: sign in through the device flow, move mode with deleting allowed.
+        # Drive: sign in through the device flow; copy mode while the original video is kept (the default).
         call('POST', '/api/settings/archive', {'archive_enabled': True, 'archive_backend': 'gdrive', 'archive_min_age_hours': 0,
-                                               'archive_mode': 'move', 'archive_allow_local_delete': True})
+                                               'archive_mode': 'copy'})
         code = call('POST', '/api/settings/archive/gdrive/connect', ok=(202,))
         assert code['user_code'] and 'e2e-secret' not in json.dumps(code)
         wait('drive connected', lambda: call('GET', '/api/settings/storage')['archive']['gdrive']['connected'], 60)
@@ -163,6 +173,23 @@ with tempfile.TemporaryDirectory(prefix='hars-archive-e2e-') as tmp, Drive(args.
         wait('conversion', lambda: row(a)['status'] == 'ready' or row(a)['status'] == 'error' and SystemExit(row(a)))
         assert row(a)['status'] == 'ready', row(a)
         expected_a = hashes(data_dir, a)
+        assert 'qcamera.ts' in expected_a, 'RLOG_A needs its qcamera.ts beside it'
+        job = run_manual()
+        assert job['state'] == 'done', job
+        copy = meta(data_dir, a)['storage']['qcamera.ts']
+        assert copy['location'] == 'local' and copy['remote']['sha256'] == expected_a['qcamera.ts'], copy
+        # The next publication deletes the original; its verified copy becomes the stored file.
+        call('POST', '/api/settings/processing', {'keep_original_video': False})
+        convert_again(a)
+        promoted = meta(data_dir, a)['storage']['qcamera.ts']
+        assert promoted['location'] == 'gdrive' and promoted['file_id'] == copy['remote']['file_id'], promoted
+        assert promoted['sha256'] == expected_a['qcamera.ts'] and not (data_dir / a / 'qcamera.ts').exists(), promoted
+        with drive.lock: assert hashlib.sha256(drive.files[promoted['file_id']]['content']).hexdigest() == expected_a['qcamera.ts']
+        mp4_a = (data_dir / a / 'camera.mp4').read_bytes()
+        expected_a['camera.mp4'] = hashlib.sha256(mp4_a).hexdigest()
+        report['drive_promoted'] = 'qcamera.ts copy became the stored file at publication'
+        # Move mode with deleting allowed: the MP4 and the log move to Drive.
+        call('POST', '/api/settings/archive', {'archive_mode': 'move', 'archive_allow_local_delete': True})
         job = run_manual()
         assert job['state'] == 'done' and job['succeeded'] >= 1, job
         m = meta(data_dir, a)
@@ -176,14 +203,17 @@ with tempfile.TemporaryDirectory(prefix='hars-archive-e2e-') as tmp, Drive(args.
         listed = row(a)
         assert listed['storage_locations']['rlog'] == 'gdrive' and 'storage' not in listed, listed
         report['drive_archived'] = {'files': job['succeeded'], 'bytes': job['bytes_done']}
-        report['drive_reads'] = reads_back(a, expected_a, 'gdrive')
+        moved_mp4 = meta(data_dir, a)['storage']['camera.mp4']
+        assert moved_mp4['location'] == 'gdrive' and not (data_dir / a / 'camera.mp4').exists(), moved_mp4
+        report['drive_reads'] = reads_back(a, expected_a, 'gdrive', mp4_a)
+        report['drive_video'] = 'MP4 played from Drive: Range 206 bytes equal the stored MP4'
         convert_again(a)
         # Restart: the index survives, the archive reconnects with the saved token.
         stop(proc); proc = start(env)
         assert meta(data_dir, a)['storage']['rlog.zst'] == entry
         wait('drive connected after restart', lambda: call('GET', '/api/settings/storage')['archive']['state'] == 'connected', 60)
         assert row(a)['storage_locations']['rlog'] == 'gdrive'
-        reads_back(a, expected_a, 'gdrive')
+        reads_back(a, expected_a, 'gdrive', mp4_a)
         report['drive_reconverted'] = 'from staged Drive copies, read again after restart'
         # Delete: queued, then removed from Drive by the next cycle.
         call('DELETE', '/api/logs/' + a)
@@ -195,24 +225,53 @@ with tempfile.TemporaryDirectory(prefix='hars-archive-e2e-') as tmp, Drive(args.
         assert not (data_dir / '.pending-nas-deletes.json').exists()
         report['drive_delete'] = 'removed after the next cycle'
 
+        if args.rlog_c:
+            # A copied MP4 made again by a conversion: its copy no longer describes it and leaves the index; the
+            # Drive file is left where it is.
+            call('POST', '/api/settings/archive', {'archive_mode': 'copy'})
+            call('POST', '/api/settings/processing', {'keep_original_video': True})
+            c = upload(args.rlog_c, '00000459--27751e7c28--3--rlog.zst')
+            wait('conversion', lambda: row(c)['status'] in ('ready', 'error'))
+            assert row(c)['status'] == 'ready', row(c)
+            assert run_manual()['state'] == 'done'
+            call('POST', '/api/settings/processing', {'keep_original_video': False})
+            convert_again(c)
+            assert meta(data_dir, c)['storage']['qcamera.ts']['location'] == 'gdrive'
+            assert run_manual()['state'] == 'done'
+            block = meta(data_dir, c)['storage']['camera.mp4']
+            assert block['location'] == 'local' and block['remote']['file_id'], block
+            convert_again(c)
+            m = meta(data_dir, c)
+            assert 'remote' not in m['storage'].get('camera.mp4', {}), m['storage'].get('camera.mp4')
+            assert not (data_dir / c / 'camera.mp4').exists() and (data_dir / c / 'prepared' / 'camera.mp4').is_file()
+            with drive.lock: assert block['remote']['file_id'] in drive.files, 'the superseded copy stays on Drive'
+            status, _, body = fetch('/api/logs/%s/video?source=qcamera' % c, {'Range': 'bytes=0-1023'})
+            assert status == 206 and body == (data_dir / c / 'prepared' / 'camera.mp4').read_bytes()[:1024], status
+            call('DELETE', '/api/logs/' + c)
+            run_manual()
+            report['drive_dropped'] = 'copied MP4 made again: copy dropped from the index, Drive file kept'
+        else:
+            report['drive_dropped'] = 'not run (no RLOG_C)'
+
         # NAS: a temporary folder (any path allowed for the test), always moving.
         call('POST', '/api/settings/archive', {'archive_backend': 'smb', 'archive_path': str(nas), 'archive_nas_margin_mb': 0})
         b = upload(args.rlog_b, '00000459--27751e7c28--2--rlog.zst')
         wait('conversion', lambda: row(b)['status'] in ('ready', 'error'))
         assert row(b)['status'] == 'ready', row(b)
         expected_b = hashes(data_dir, b)
+        mp4_b = (data_dir / b / 'camera.mp4').read_bytes()
         job = run_manual()
         assert job['state'] == 'done', job
         e = meta(data_dir, b)['storage']['rlog.zst']
         assert e['location'] == 'nas' and (nas / b / 'rlog.zst').is_file() and not (data_dir / b / 'rlog.zst').exists(), e
         sentinel = json.loads((nas / '.roadviewer-storage.json').read_text())
         assert sentinel['owner'] == 'roadviewer-hars'
-        report['nas_reads'] = reads_back(b, expected_b, 'nas')
+        report['nas_reads'] = reads_back(b, expected_b, 'nas', mp4_b)
         convert_again(b)
         stop(proc); proc = start(env)
         assert meta(data_dir, b)['storage']['rlog.zst'] == e
         wait('share connected after restart', lambda: call('GET', '/api/settings/storage')['archive']['state'] == 'connected', 60)
-        reads_back(b, expected_b, 'nas')
+        reads_back(b, expected_b, 'nas', mp4_b)
         block = call('GET', '/api/settings/storage')['archive']
         assert block['archived_files'] >= 1 and block['state'] == 'connected', block
         call('DELETE', '/api/logs/' + b)
