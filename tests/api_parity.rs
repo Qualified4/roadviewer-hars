@@ -436,27 +436,31 @@ async fn unknown_methods_paths_and_limits_answer_json() {
         (status, v["error"].as_str()),
         (StatusCode::NOT_FOUND, Some("not_found"))
     );
-    for (method, path) in [
-        ("GET", "/api/settings/archive"),
-        (
-            "POST",
-            "/api/logs/0123456789abcdef0123456789abcdef/archive/retry",
-        ),
-    ] {
-        let (status, _, v) = send(
-            ingress(a.clone()),
-            method,
-            path,
-            vec![],
-            &[("x-roadviewer-request", "1")],
-        )
-        .await;
-        assert_eq!(
-            (status, v["error"].as_str()),
-            (StatusCode::NOT_IMPLEMENTED, Some("feature_not_ported")),
-            "{path}"
-        );
-    }
+    // Ported with the archiver: answered by their handlers.
+    let (status, _, v) = send(
+        ingress(a.clone()),
+        "GET",
+        "/api/settings/archive",
+        vec![],
+        &[("x-roadviewer-request", "1")],
+    )
+    .await;
+    assert_eq!(
+        (status, &v["archive_enabled"]),
+        (StatusCode::OK, &json!(false))
+    );
+    let (status, _, v) = send(
+        ingress(a.clone()),
+        "POST",
+        "/api/logs/0123456789abcdef0123456789abcdef/archive/retry",
+        vec![],
+        &[("x-roadviewer-request", "1")],
+    )
+    .await;
+    assert_eq!(
+        (status, v["error"].as_str()),
+        (StatusCode::NOT_FOUND, Some("not_found"))
+    );
     let (status, _, v) = send(
         ingress(a.clone()),
         "PUT",

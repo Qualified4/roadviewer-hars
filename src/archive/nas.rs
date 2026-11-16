@@ -2,15 +2,20 @@
 //! a root whose sentinel names HARS as its owner; [`NasLegacy`] reads a Python share and cannot write.
 use super::{
     Availability, CACHE_SECONDS, CHUNK, Clock, MEDIA_KINDS, NAS_RESERVE, OWNER_VALUE,
-    PYTHON_NAS_OWNER, SENTINEL, backend::*, fsutil,
+    PROBE_WAIT_SECONDS, PYTHON_NAS_OWNER, SENTINEL, backend::*, fsutil,
 };
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
+    collections::HashMap,
     fmt,
     io::{Read, Seek, SeekFrom, Write},
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{
+        Arc, LazyLock, Mutex, Weak,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
 };
 
 /// The data root's `.archive.json` key for the share's storage id.
@@ -199,15 +204,20 @@ impl NasCore {
 
     async fn open(&self, r: &RemoteRef, start: u64, end: Option<u64>) -> Result<ChunkReader> {
         let path = self.path(r).await?;
-        let mut file = match std::fs::File::open(&path) {
+        let opened = tokio::task::spawn_blocking(move || {
+            let mut file = std::fs::File::open(&path)?;
+            file.seek(SeekFrom::Start(start))?;
+            Ok::<_, std::io::Error>(file)
+        })
+        .await
+        .map_err(|_| BackendError::new(ErrorCode::Io, "join"))?;
+        let file = match opened {
             Ok(f) => f,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
                 return Err(BackendError::bare(ErrorCode::NotFound));
             }
             Err(e) => return Err(unavailable(&e)),
         };
-        file.seek(SeekFrom::Start(start))
-            .map_err(|e| unavailable(&e))?;
         Ok(ChunkReader(Reader::File {
             file: tokio::fs::File::from_std(file),
             left: end.map(|e| (e + 1).saturating_sub(start)),
@@ -324,34 +334,134 @@ fn is_mount(_: &Path) -> bool {
     false
 }
 
-/// The copy in progress: moved to a blocking thread for each block so a slow share never stalls the runtime.
-struct Copy {
-    src: std::fs::File,
-    dst: std::fs::File,
-    h: Sha256,
-    count: u64,
-}
-impl Copy {
-    async fn step(mut self) -> Result<(Self, usize)> {
-        tokio::task::spawn_blocking(move || {
-            let mut buf = vec![0; CHUNK];
-            let n = loop {
-                match self.src.read(&mut buf) {
-                    Ok(n) => break n,
-                    Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
-                    Err(e) => return Err(BackendError::from_io(&e)),
-                }
-            };
-            self.h.update(&buf[..n]);
-            self.dst
-                .write_all(&buf[..n])
-                .map_err(|e| BackendError::from_io(&e))?;
-            self.count += n as u64;
-            Ok((self, n))
-        })
-        .await
-        .map_err(|_| BackendError::new(ErrorCode::Io, "join"))?
+/// One writer per share target in this process, whichever backend instance or cycle it comes from. A blocking copy
+/// outlives the future that started it (an abort only drops the future), so without this a later cycle or a
+/// recovery could create, sweep or rename the same `<kind>.part` while the earlier copy still writes it. The guard
+/// is taken and released on the blocking thread that does the writing.
+static WRITERS: LazyLock<Mutex<HashMap<PathBuf, Weak<Mutex<()>>>>> = LazyLock::new(Mutex::default);
+
+fn writer(target: &Path) -> Arc<Mutex<()>> {
+    let mut all = lock(&WRITERS);
+    if let Some(w) = all.get(target).and_then(Weak::upgrade) {
+        return w;
     }
+    all.retain(|_, w| w.strong_count() > 0);
+    let w = Arc::new(Mutex::new(()));
+    all.insert(target.to_owned(), Arc::downgrade(&w));
+    w
+}
+
+/// Blocking: removes a share target with no copy of it in progress.
+pub(crate) fn remove_target(target: &Path) -> std::io::Result<()> {
+    let w = writer(target);
+    let _g = lock(&w);
+    std::fs::remove_file(target)
+}
+
+/// Blocking: a `<kind>.part` left behind is removed unless a copy of this process still owns it (that copy removes
+/// or renames it itself). True when it was removed.
+pub(crate) fn remove_stale_part(part: &Path) -> std::io::Result<bool> {
+    let name = part.file_name().unwrap_or_default().to_string_lossy();
+    let target = part.with_file_name(name.strip_suffix(".part").unwrap_or(&name));
+    let w = writer(&target);
+    let Ok(_g) = w.try_lock() else {
+        return Ok(false);
+    };
+    std::fs::remove_file(part).map(|()| true)
+}
+
+/// Set when the future waiting for a copy is gone; the copy stops before its next block and before the rename.
+struct CancelOnDrop(Arc<AtomicBool>);
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        self.0.store(true, Ordering::SeqCst);
+    }
+}
+
+enum Copied {
+    Reused,
+    Written,
+}
+
+fn cancelled() -> BackendError {
+    BackendError::new(ErrorCode::Io, "cancelled")
+}
+
+/// Python `archive_file`'s copy, whole on one blocking thread holding the target's writer guard: reuse an identical
+/// target, else `<kind>.part`, fsync, read back and compare, rename. Any failure or cancellation removes the part.
+fn copy_to_share(
+    local: &Path,
+    target: &Path,
+    sha256: Option<&str>,
+    size: u64,
+    cancel: &AtomicBool,
+    progress: &tokio::sync::mpsc::UnboundedSender<u64>,
+) -> Result<Copied> {
+    let w = writer(target);
+    let _g = lock(&w);
+    if cancel.load(Ordering::SeqCst) {
+        return Err(cancelled());
+    }
+    let io = |e: std::io::Error| BackendError::from_io(&e);
+    // One level only (Python): a share folder missing because the share went away must not be recreated on the
+    // local disk below its mount point.
+    let parent = target.parent().unwrap_or(Path::new("/"));
+    match std::fs::create_dir(parent) {
+        Err(e) if e.kind() != std::io::ErrorKind::AlreadyExists => return Err(io(e)),
+        _ => {}
+    }
+    // A copy left by a crash before its index was written is reused when it is identical.
+    let same_size = std::fs::metadata(target).is_ok_and(|m| m.is_file() && m.len() == size);
+    if same_size && sha256.is_some_and(|w| file_sha256(target).is_ok_and(|h| h == w)) {
+        return Ok(Copied::Reused);
+    }
+    if fs2::available_space(parent).map_err(io)? < size + NAS_RESERVE {
+        return Err(BackendError::new(ErrorCode::QuotaExceeded, "nas_full"));
+    }
+    let part = fsutil::with_suffix(target, ".part");
+    let written = (|| {
+        let mut src = std::fs::File::open(local).map_err(io)?;
+        let mut dst = std::fs::File::create(&part).map_err(io)?;
+        let (mut h, mut count, mut buf) = (Sha256::new(), 0u64, vec![0; CHUNK]);
+        loop {
+            if cancel.load(Ordering::SeqCst) {
+                return Err(cancelled());
+            }
+            let n = match src.read(&mut buf) {
+                Ok(0) => break,
+                Ok(n) => n,
+                Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+                Err(e) => return Err(io(e)),
+            };
+            h.update(&buf[..n]);
+            dst.write_all(&buf[..n]).map_err(io)?;
+            count += n as u64;
+            let _ = progress.send(count);
+        }
+        if count != size {
+            return Err(BackendError::new(ErrorCode::Mismatch, "size"));
+        }
+        let digest = hex::encode(h.finalize());
+        if sha256.is_some_and(|s| s != digest) {
+            return Err(BackendError::new(ErrorCode::Mismatch, "sha256"));
+        }
+        dst.sync_all().map_err(io)?;
+        drop_cache(&dst);
+        drop(dst);
+        // The bytes on the share must be the bytes read: compared from the share, not this machine's cache.
+        if file_sha256(&part).map_err(io)? != digest {
+            return Err(BackendError::new(ErrorCode::Mismatch, "sha256"));
+        }
+        if cancel.load(Ordering::SeqCst) {
+            return Err(cancelled());
+        }
+        std::fs::rename(&part, target).map_err(io)?;
+        fsutil::sync_dir(target).map_err(io)
+    })();
+    if written.is_err() {
+        let _ = std::fs::remove_file(&part);
+    }
+    written.map(|()| Copied::Written)
 }
 
 fn file_sha256(path: &Path) -> std::io::Result<String> {
@@ -400,6 +510,36 @@ impl NasBackend {
             .path
             .as_deref()
             .is_some_and(|p| mounted(p, self.core.settings.allow_any_path))
+    }
+
+    /// The share is still this HARS root and holds the copy just written, read now rather than from the probe
+    /// cache: a share unmounted between files leaves an empty mount point on the local disk, where a copy and its
+    /// read-back also succeed. With `clean`, a copy found anywhere but on this root is removed.
+    pub async fn confirm(&self, id: &str, kind: &str, size: u64, clean: bool) -> bool {
+        self.core.invalidate();
+        let (Some(root), Ok(target)) = (
+            self.core.settings.path.clone(),
+            self.core.path_for(id, kind),
+        ) else {
+            return false;
+        };
+        let (local, owner) = ((self.core.local)(), self.core.owner);
+        let check = tokio::task::spawn_blocking(move || {
+            let probe = probe_sync(Some(&root), local, owner);
+            let held = std::fs::metadata(&target).is_ok_and(|m| m.is_file() && m.len() == size);
+            if clean && probe.state != State::Connected && held {
+                let _ = remove_target(&target);
+                let _ = target.parent().map(std::fs::remove_dir);
+            }
+            probe.state == State::Connected && held
+        });
+        let ok = tokio::time::timeout(Duration::from_secs_f64(PROBE_WAIT_SECONDS), check)
+            .await
+            .is_ok_and(|r| r.unwrap_or(false));
+        if !ok {
+            self.core.invalidate();
+        }
+        ok
     }
 
     /// Writes need the root connected and HARS-owned; a root marked by anyone else is refused as foreign.
@@ -525,68 +665,29 @@ impl ArchiveWrite for NasBackend {
             sha256.map(str::to_owned),
             md5.map(str::to_owned),
         );
-        let parent = target.parent().map(Path::to_path_buf).unwrap_or_default();
-        let part = fsutil::with_suffix(&target, ".part");
-        let (t, want) = (target.clone(), sha256.map(str::to_owned));
-        // A copy left by a crash before its index was written is reused when it is identical.
-        let reused = tokio::task::spawn_blocking(move || -> std::io::Result<bool> {
-            std::fs::create_dir_all(t.parent().unwrap_or(Path::new("/")))?;
-            let same_size = std::fs::metadata(&t).is_ok_and(|m| m.is_file() && m.len() == size);
-            Ok(same_size && want.is_some_and(|w| file_sha256(&t).is_ok_and(|h| h == w)))
-        })
-        .await
-        .map_err(|_| BackendError::new(ErrorCode::Io, "join"))?
-        .map_err(|e| BackendError::from_io(&e))?;
-        if reused {
-            on_progress(size, &UploadResume::default())?;
-            return Ok(r);
+        let flag = Arc::new(AtomicBool::new(false));
+        let cancel = CancelOnDrop(flag.clone());
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let (local, want) = (local.to_owned(), sha256.map(str::to_owned));
+        let copy = tokio::task::spawn_blocking(move || {
+            copy_to_share(&local, &target, want.as_deref(), size, &flag, &tx)
+        });
+        while let Some(count) = rx.recv().await {
+            if let Err(e) = on_progress(count, &UploadResume::default()) {
+                // The copy is stopped and its part gone before the caller hears of it.
+                drop(cancel);
+                let _ = copy.await;
+                return Err(e);
+            }
         }
-        let free = fs2::available_space(&parent).map_err(|e| BackendError::from_io(&e))?;
-        if free < size + NAS_RESERVE {
-            return Err(BackendError::new(ErrorCode::QuotaExceeded, "nas_full"));
-        }
-        let outcome = async {
-            let mut copy = Copy {
-                src: std::fs::File::open(local).map_err(|e| BackendError::from_io(&e))?,
-                dst: std::fs::File::create(&part).map_err(|e| BackendError::from_io(&e))?,
-                h: Sha256::new(),
-                count: 0,
-            };
-            loop {
-                let (next, n) = copy.step().await?;
-                copy = next;
-                if n == 0 {
-                    break;
-                }
-                on_progress(copy.count, &UploadResume::default())?;
-            }
-            if copy.count != size {
-                return Err(BackendError::new(ErrorCode::Mismatch, "size"));
-            }
-            let digest = hex::encode(copy.h.clone().finalize());
-            if sha256.is_some_and(|s| s != digest) {
-                return Err(BackendError::new(ErrorCode::Mismatch, "sha256"));
-            }
-            let (p, t) = (part.clone(), target.clone());
-            tokio::task::spawn_blocking(move || -> Result<()> {
-                copy.dst.sync_all().map_err(|e| BackendError::from_io(&e))?;
-                drop_cache(&copy.dst);
-                drop(copy.dst);
-                // The bytes on the share must be the bytes read: compared from the share, not this machine's cache.
-                if file_sha256(&p).map_err(|e| BackendError::from_io(&e))? != digest {
-                    return Err(BackendError::new(ErrorCode::Mismatch, "sha256"));
-                }
-                std::fs::rename(&p, &t).map_err(|e| BackendError::from_io(&e))?;
-                fsutil::sync_dir(&t).map_err(|e| BackendError::from_io(&e))
-            })
+        let copied = copy
             .await
-            .map_err(|_| BackendError::new(ErrorCode::Io, "join"))?
+            .map_err(|_| BackendError::new(ErrorCode::Io, "join"))??;
+        drop(cancel);
+        if matches!(copied, Copied::Reused) {
+            on_progress(size, &UploadResume::default())?;
         }
-        .await;
-        if outcome.is_err() {
-            let _ = tokio::fs::remove_file(&part).await;
-        }
-        outcome.map(|()| r)
+        Ok(r)
     }
 
     async fn session_status(&self, _resume: &UploadResume) -> Result<SessionState> {
@@ -603,7 +704,7 @@ impl ArchiveWrite for NasBackend {
         let path = self.core.path_for(&id, &kind)?;
         let removed = tokio::task::spawn_blocking(move || {
             if std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file())
-                && std::fs::remove_file(&path).is_err()
+                && remove_target(&path).is_err()
             {
                 return false;
             }

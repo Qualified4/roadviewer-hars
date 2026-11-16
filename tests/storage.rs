@@ -1268,3 +1268,26 @@ async fn concurrent_finish_eviction_and_manual_delete_converge() {
         .count();
     assert_eq!(on_disk, a.store.records.read().await.len());
 }
+/// Python  judges remote copies per recording: a route with one Drive-backed segment still gives up its
+/// other segments, before any newer route.
+#[tokio::test]
+async fn a_drive_copy_keeps_only_its_own_segment() {
+    let temp = tempfile::tempdir().unwrap();
+    let a = app(temp.path()).await;
+    let pa = make_log(&a, 'a', "00000001--aaaaaaaaaa", 0, 1., 50000).await;
+    let pb = make_log(&a, 'b', "00000001--aaaaaaaaaa", 1, 2., 100000).await;
+    let pc = make_log(&a, 'c', "00000002--bbbbbbbbbb", 0, 3., 50000).await;
+    let mut meta = a.store.meta(&rid('a')).await.unwrap();
+    meta["storage"] = json!({"rlog.zst":{"location":"local","remote":{"backend":"gdrive","file_id":"f1","bytes":50000,"sha256":"00"}}});
+    a.store.save_meta(meta).await.unwrap();
+    configure(&a, used(&a).await + 20000, "delete_oldest").await;
+    let plan = storage::eviction_plan(&a.store, &[], &BTreeSet::new())
+        .await
+        .unwrap();
+    assert_eq!(plan.ids(), vec![rid('b'), rid('c')]);
+    assert_eq!(plan.kept[&rid('a')], Protection::RemoteCopy);
+    commit(&a, 10000, &[]).await.unwrap();
+    assert!(pa.exists(), "the Drive-backed segment stays");
+    assert!(!pb.exists(), "its route's other segment goes first");
+    assert!(pc.exists(), "the newer route is not touched");
+}

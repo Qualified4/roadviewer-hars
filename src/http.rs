@@ -1,7 +1,8 @@
 use crate::{
     auth::{Auth, header},
     error::{ApiError, Result, bad, missing},
-    http_storage,
+    http_archive, http_storage,
+    media_read::Source,
     store::{Store, atomic_json, id, read_json, sha},
     upload::Uploads,
 };
@@ -39,6 +40,7 @@ pub struct App {
     pub used: Arc<AtomicU64>,
     pub device_https_enabled: bool,
     pub jobs: Arc<crate::jobs::Jobs>,
+    pub archive: Arc<crate::archive::Archive>,
     pub network: Arc<crate::network::Network>,
     transfer_slots: Arc<tokio::sync::Semaphore>,
     pub slot_wait: std::time::Duration,
@@ -55,6 +57,7 @@ impl App {
         let store = Store::open(root).await?;
         crate::storage::open(&store).await?;
         crate::transfer::cleanup_staging(&store.root)?;
+        crate::media_read::cleanup_staging(&store.root)?;
         let auth = Arc::new(Auth::open(&store.root).await?);
         let uploads =
             Uploads::open(store.clone(), auth.clone(), max_upload_mb * 1024 * 1024).await?;
@@ -64,6 +67,16 @@ impl App {
             .map_err(|_| anyhow::anyhow!("upload commit recovery failed; data preserved"))?;
         let used = Arc::new(AtomicU64::new(store.used().await?));
         let jobs = crate::jobs::Jobs::open(store.clone(), uploads.clone()).await?;
+        let archive = crate::archive::Archive::open(
+            crate::archive::Host {
+                store: store.clone(),
+                uploads: uploads.clone(),
+                jobs: jobs.clone(),
+            },
+            crate::archive::settings::options(),
+            crate::archive::settings::allow_any_path(),
+            None,
+        );
         Ok(Self {
             store,
             auth,
@@ -73,6 +86,7 @@ impl App {
             used,
             device_https_enabled: false,
             jobs,
+            archive,
             network: Arc::new(crate::network::Network::from_env()),
             transfer_slots: Arc::new(tokio::sync::Semaphore::new(8)),
             slot_wait: std::time::Duration::from_secs(30),
@@ -85,6 +99,7 @@ impl App {
     }
     pub fn background(&self) -> tokio::task::JoinHandle<()> {
         let app = self.clone();
+        app.archive.start();
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
             let mut tick = 0u64;
@@ -158,6 +173,31 @@ pub fn ingress(app: App) -> Router {
             get(http_storage::settings).post(http_storage::settings),
         )
         .route("/api/storage/cleanup", post(http_storage::cleanup))
+        .route(
+            "/api/settings/archive",
+            get(http_archive::preferences_api).post(http_archive::preferences_api),
+        )
+        .route(
+            "/api/settings/archive/run",
+            get(http_archive::run).post(http_archive::run),
+        )
+        .route(
+            "/api/settings/archive/tracks/run",
+            get(http_archive::track_fill_run).post(http_archive::track_fill_run),
+        )
+        .route(
+            "/api/settings/archive/tracks/stop",
+            post(http_archive::track_fill_stop),
+        )
+        .route(
+            "/api/settings/archive/gdrive/connect",
+            post(http_archive::gdrive_connect),
+        )
+        .route(
+            "/api/settings/archive/gdrive/disconnect",
+            post(http_archive::gdrive_disconnect),
+        )
+        .route("/api/logs/{id}/archive/retry", post(http_archive::retry))
         .route("/api/settings/devices", get(devices))
         .route(
             "/api/settings/devices/pairing",
@@ -482,7 +522,13 @@ async fn list(State(app): State<App>, headers: HeaderMap) -> Result<Response> {
         .values()
         .cloned()
         .collect::<Vec<_>>();
+    let share = if metas.iter().any(http_archive::touched) {
+        Some(http_archive::list_state(&app.archive).await)
+    } else {
+        None
+    };
     let root = app.store.root.clone();
+    let archive = app.archive.clone();
     let mut logs = tokio::task::spawn_blocking(move || {
         let ids = metas
             .iter()
@@ -491,7 +537,12 @@ async fn list(State(app): State<App>, headers: HeaderMap) -> Result<Response> {
         crate::listing::forget_missing(&root, &ids);
         metas
             .iter()
-            .map(|m| crate::listing::row(&root.join(m["id"].as_str().unwrap_or("")), m))
+            .map(|m| {
+                let mut row = crate::listing::row(&root.join(m["id"].as_str().unwrap_or("")), m);
+                let touched = share.filter(|_| http_archive::touched(m));
+                row.extend(http_archive::list_fields(&archive, m, touched));
+                row
+            })
             .collect::<Vec<_>>()
     })
     .await
@@ -738,7 +789,10 @@ async fn processing(
     }
     Ok(Json(app.store.processing.read().await.clone()))
 }
-async fn convert(State(app): State<App>, Path(id): Path<String>) -> Result<Json<Value>> {
+async fn convert(State(app): State<App>, Path(id): Path<String>) -> Result<Response> {
+    // Outside the lock: archived files may wait on the share.
+    let states =
+        crate::recording_update::archived_states(&app.archive, &app.store.meta(&id).await?).await;
     let lock = app.store.record_lock(&id).await;
     let _guard = lock.lock().await;
     let folder = app.store.folder(&id).await?;
@@ -747,10 +801,56 @@ async fn convert(State(app): State<App>, Path(id): Path<String>) -> Result<Json<
         meta["status"].as_str(),
         Some("ready" | "queued" | "processing")
     ) {
-        return Ok(Json(json!({"status":meta["status"]})));
+        return Ok(Json(json!({"status":meta["status"]})).into_response());
     }
-    if !folder.join("rlog.zst").is_file() {
+    // Python `convert`: local files are checked here; an archived one not resolved beforehand counts as
+    // unreachable. A conversion needs every archived input, videos included.
+    let state = |kind: &str| -> &str {
+        match crate::listing::location(&meta, kind) {
+            "nas" | "gdrive" => states
+                .get(kind)
+                .map_or("storage_unavailable", String::as_str),
+            "removed" => "missing",
+            _ if folder.join(kind).is_file() => {
+                let error = &meta["storage"][kind]["error"];
+                if error.is_null() || error == "remote_mismatch" {
+                    "available"
+                } else {
+                    "corrupt"
+                }
+            }
+            _ if meta["storage"][kind]["remote"].is_object() => "storage_unavailable",
+            _ => "missing",
+        }
+    };
+    let kinds = crate::parity::STORED_KINDS;
+    if kinds
+        .iter()
+        .any(|k| matches!(state(k), "storage_unavailable" | "checking"))
+    {
+        return Ok((
+            StatusCode::CONFLICT,
+            Json(
+                json!({"error":"storage_unavailable","message":"저장소 연결 후 다시 시도하세요."}),
+            ),
+        )
+            .into_response());
+    }
+    // An unreadable archived camera could not be converted again: its MP4 in prepared/ is the only playable copy.
+    if kinds.iter().any(|k| state(k) == "corrupt") {
+        return Ok(crate::media_read::MediaError::new("media_corrupt", false).into_response());
+    }
+    let log = crate::listing::location(&meta, "rlog.zst");
+    let reconvertible =
+        log == "local" || matches!(log, "nas" | "gdrive") && state("rlog.zst") == "available";
+    if state("rlog.zst") == "missing" || !reconvertible {
         return Err(crate::error::conflict("원본 로그가 없습니다."));
+    }
+    let revision = meta["conversion_revision"].as_u64().unwrap_or(0) + 1;
+    let archived = crate::recording_update::available_originals(Some(&states));
+    crate::recording_update::clear_prepared(&folder, &mut meta, revision, &archived).await?;
+    if let Some(m) = meta.as_object_mut() {
+        m.remove("deferred");
     }
     meta["status"] = json!("queued");
     meta["manual_conversion"] = json!(true);
@@ -758,7 +858,7 @@ async fn convert(State(app): State<App>, Path(id): Path<String>) -> Result<Json<
     meta["queued_at"] = json!(crate::store::now());
     meta["error"] = Value::Null;
     app.store.save_meta(meta).await?;
-    Ok(Json(json!({"status":"queued"})))
+    Ok(Json(json!({"status":"queued"})).into_response())
 }
 async fn remove_prepared(
     State(app): State<App>,
@@ -1068,13 +1168,23 @@ async fn video(
         "wide" => "ecamera.mp4",
         _ => return Err(missing("not_found")),
     };
-    let prepared = folder.join("prepared").join(name);
-    let path = if prepared.exists() {
-        prepared
-    } else {
-        folder.join(name)
+    // Python `video`: the stored MP4 wherever the index has it, else the converted one in prepared/.
+    let path = match crate::media_read::media_file(&app.archive, &id, &meta, name).await {
+        Err(e) => return Ok(e.into_response()),
+        Ok(Some(Source::Remote(file))) => {
+            return Ok(crate::media_read::remote_response(
+                &app.archive,
+                &file,
+                "video/mp4",
+                None,
+                request.headers(),
+            )
+            .await);
+        }
+        Ok(Some(Source::Path(path))) => path,
+        Ok(None) => folder.join("prepared").join(name),
     };
-    safe_file(&folder, &path).await?;
+    media_file_check(&folder, &path).await?;
     let mut response = serve(path, request).await?;
     response
         .headers_mut()
@@ -1104,8 +1214,23 @@ async fn original(
         return Err(missing("not_found"));
     }
     let folder = app.store.folder(&id).await?;
-    let mut path = folder.join(&kind);
     let meta = app.store.meta(&id).await?;
+    let mut path = match crate::media_read::media_file(&app.archive, &id, &meta, &kind).await {
+        Err(e) => return Ok(e.into_response()),
+        Ok(Some(Source::Remote(file))) => {
+            let name = crate::parity::download_name(&meta, &kind);
+            return Ok(crate::media_read::remote_response(
+                &app.archive,
+                &file,
+                media_mime(&kind),
+                Some(&name),
+                request.headers(),
+            )
+            .await);
+        }
+        Ok(Some(Source::Path(path))) => path,
+        Ok(None) => folder.join(&kind),
+    };
     if kind.ends_with(".mp4") && !path.is_file() {
         path = folder.join("prepared").join(&kind);
     }
@@ -1120,39 +1245,80 @@ async fn original(
             "fcamera.hevc" => ("fcamera.mp4", "front"),
             _ => ("ecamera.mp4", "wide"),
         };
-        let prepared = folder.join("prepared").join(mp4);
-        let retained = if folder.join(mp4).exists() {
-            folder.join(mp4)
-        } else {
-            prepared
+        // Python `planned_video`: the kept MP4 wherever it is (a Drive-only one is staged, verified), else the
+        // converted one in prepared/.
+        let mut staged = None;
+        let retained = match crate::media_read::media_file(&app.archive, &id, &meta, mp4).await {
+            Err(e) => return Ok(e.into_response()),
+            Ok(Some(Source::Path(path))) => path,
+            Ok(Some(Source::Remote(file))) => {
+                match crate::media_read::stage_remote(&app.archive, &folder, &file).await {
+                    Ok(path) => {
+                        staged = Some(path.clone());
+                        path
+                    }
+                    Err(e) => return Ok(e.into_response()),
+                }
+            }
+            Ok(None) => folder.join("prepared").join(mp4),
         };
-        safe_file(&folder, &retained).await?;
-        let exports = app.store.root.join(".exports");
-        tokio::fs::create_dir_all(&exports).await?;
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            tokio::fs::set_permissions(&exports, std::fs::Permissions::from_mode(0o700)).await?;
+        let exported = async {
+            media_file_check(&folder, &retained).await?;
+            let exports = app.store.root.join(".exports");
+            tokio::fs::create_dir_all(&exports).await?;
+            #[cfg(unix)]
+            {
+                use std::os::unix::fs::PermissionsExt;
+                tokio::fs::set_permissions(&exports, std::fs::Permissions::from_mode(0o700))
+                    .await?;
+            }
+            let output = exports.join(format!(
+                "{}.{}",
+                crate::store::id(),
+                if kind == "qcamera.ts" { "ts" } else { "hevc" }
+            ));
+            let meta = app.store.meta(&id).await?;
+            let offset = meta["video_origins"][source].as_f64().unwrap_or(0.);
+            crate::media::reverse(&retained, &kind, &output, offset)
+                .await
+                .map_err(|_| bad("media_export_failed"))?;
+            let response = serve(output.clone(), request)
+                .await
+                .map(|response| attachment(response, &meta, &kind));
+            // ServeFile has already opened its file. Linux keeps it readable after unlink.
+            let _ = tokio::fs::remove_file(&output).await;
+            response
         }
-        let output = exports.join(format!(
-            "{}.{}",
-            crate::store::id(),
-            if kind == "qcamera.ts" { "ts" } else { "hevc" }
-        ));
-        let meta = app.store.meta(&id).await?;
-        let offset = meta["video_origins"][source].as_f64().unwrap_or(0.);
-        crate::media::reverse(&retained, &kind, &output, offset)
-            .await
-            .map_err(|_| bad("media_export_failed"))?;
-        let response = serve(output.clone(), request)
-            .await
-            .map(|response| attachment(response, &meta, &kind));
-        // ServeFile has already opened its file. Linux keeps it readable after unlink.
-        let _ = tokio::fs::remove_file(&output).await;
-        return response;
+        .await;
+        if let Some(path) = &staged {
+            crate::media_read::unstage(path).await;
+        }
+        return exported;
     }
-    safe_file(&folder, &path).await?;
+    media_file_check(&folder, &path).await?;
     Ok(attachment(serve(path, request).await?, &meta, &kind))
+}
+/// A file a media route serves: inside the recording folder it must stay there (no link out); elsewhere it is a
+/// path the archive index resolved on the share.
+async fn media_file_check(folder: &std::path::Path, path: &std::path::Path) -> Result<()> {
+    if path.starts_with(folder) {
+        return safe_file(folder, path).await;
+    }
+    match tokio::fs::metadata(path).await {
+        Ok(m) if m.is_file() => Ok(()),
+        _ => Err(missing("not_found")),
+    }
+}
+fn media_mime(kind: &str) -> &'static str {
+    if kind.ends_with(".mp4") {
+        "video/mp4"
+    } else if kind.ends_with(".hevc") {
+        "video/hevc"
+    } else if kind == "qcamera.ts" {
+        "video/mp2t"
+    } else {
+        "application/zstd"
+    }
 }
 /// Python `original` answers through Werkzeug `send_file`: its filename form and `no-cache`.
 fn attachment(mut response: Response, meta: &Value, kind: &str) -> Response {
@@ -1161,18 +1327,9 @@ fn attachment(mut response: Response, meta: &Value, kind: &str) -> Response {
         response.headers_mut().insert(h::CONTENT_DISPOSITION, value);
     }
     if response.status().is_success() {
-        let mime = if kind.ends_with(".mp4") {
-            "video/mp4"
-        } else if kind.ends_with(".hevc") {
-            "video/hevc"
-        } else if kind == "qcamera.ts" {
-            "video/mp2t"
-        } else {
-            "application/zstd"
-        };
         response
             .headers_mut()
-            .insert(h::CONTENT_TYPE, mime.parse().unwrap());
+            .insert(h::CONTENT_TYPE, media_mime(kind).parse().unwrap());
         response
             .headers_mut()
             .insert(h::CACHE_CONTROL, "no-cache".parse().unwrap());
@@ -1184,7 +1341,9 @@ async fn download_video(
     Path(id): Path<String>,
     request: Request,
 ) -> Result<Response> {
+    let folder = app.store.folder(&id).await?;
     let meta = app.store.meta(&id).await?;
+    // The conversion's own list (it also offers an MP4 left in prepared/), else Python `video_download_kind`.
     let kind = meta["video_downloads"]
         .as_array()
         .and_then(|v| {
@@ -1193,6 +1352,7 @@ async fn download_video(
                 .or_else(|| v.first())
         })
         .and_then(|v| v["kind"].as_str())
+        .or_else(|| crate::listing::video_download_kind(&folder, &meta))
         .ok_or_else(|| missing("not_found"))?
         .to_owned();
     original(State(app), Path((id, kind)), request).await

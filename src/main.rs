@@ -90,6 +90,19 @@ async fn main() -> anyhow::Result<()> {
         result?;
         return Ok(());
     }
+    if args.get(1).is_some_and(|v| v == "track-log") {
+        anyhow::ensure!(
+            args.len() == 4,
+            "usage: roadviewer-hars track-log RLOG PREPARED"
+        );
+        let (rlog, prepared) = (PathBuf::from(&args[2]), PathBuf::from(&args[3]));
+        let fields = tokio::task::spawn_blocking(move || {
+            roadviewer_hars::archive::track_fill::extract(&rlog, &prepared)
+        })
+        .await??;
+        println!("{fields}");
+        return Ok(());
+    }
     if args.get(1).is_some_and(|v| v == "analyze-log") {
         anyhow::ensure!(
             args.len() == 4,
@@ -217,6 +230,7 @@ async fn main() -> anyhow::Result<()> {
         None
     };
     let _background = app.background();
+    let archive = app.archive.clone();
     tracing::info!(version = env!("CARGO_PKG_VERSION"), "hars_started");
     let ui = axum::serve(
         ui_listener,
@@ -235,6 +249,12 @@ async fn main() -> anyhow::Result<()> {
         } else {
             std::future::pending::<anyhow::Result<()>>().await
         }
+    };
+    // The archiver stops after the file it is on once serving ends, instead of being cut off mid-copy.
+    let ui = async {
+        let result = ui.await;
+        archive.shutdown();
+        result
     };
     tokio::select! {result=async {tokio::try_join!(ui,device)}=>{result?;},result=native_exit=>{result?;}}
     Ok(())

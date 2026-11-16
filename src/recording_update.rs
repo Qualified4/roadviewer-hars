@@ -87,17 +87,62 @@ pub fn additional_videos(
     added
 }
 
-/// Why a new camera cannot be added now. A reconversion needs every archived file and a
-/// readable log; HARS cannot reach an archive, so an archived recording waits as Python's does
-/// while the share is not connected.
-pub fn refusal(meta: &Value) -> Option<ApiError> {
-    if crate::storage::archived(meta) {
+/// Why a new camera cannot be added now (Python `register_files`). A reconversion needs every
+/// archived file, so an archived recording waits while the archive's last state is not
+/// `connected`; it also needs a readable log, judged for an archived one by `states` resolved
+/// before the locks (None: not resolved, which waits for the archive too).
+pub fn refusal(
+    meta: &Value,
+    reachable: bool,
+    states: Option<&BTreeMap<String, String>>,
+) -> Option<ApiError> {
+    let archived = crate::storage::archived(meta);
+    if archived && !reachable {
         return Some(ApiError(StatusCode::CONFLICT, "storage_unavailable"));
     }
-    if location(meta, "rlog.zst") != "local" {
+    let log = location(meta, "rlog.zst");
+    let state = states.and_then(|s| s.get("rlog.zst")).map(String::as_str);
+    let reconvertible =
+        log == "local" || matches!(log, "nas" | "gdrive") && state == Some("available");
+    if !reconvertible {
+        if matches!(log, "nas" | "gdrive")
+            && matches!(state, None | Some("storage_unavailable" | "checking"))
+        {
+            return Some(ApiError(StatusCode::CONFLICT, "storage_unavailable"));
+        }
         return Some(ApiError(StatusCode::CONFLICT, "log_unavailable"));
     }
     None
+}
+
+/// Python `archived_states`: the state of each archived file of a recording, resolved outside
+/// every lock (the share may be slow).
+pub async fn archived_states(
+    archive: &crate::archive::Archive,
+    meta: &Value,
+) -> BTreeMap<String, String> {
+    let id = meta["id"].as_str().unwrap_or_default();
+    let mut states = BTreeMap::new();
+    for kind in crate::parity::STORED_KINDS {
+        if matches!(location(meta, kind), "nas" | "gdrive") {
+            states.insert(
+                kind.to_owned(),
+                archive.resolve(id, meta, kind).await.1.to_owned(),
+            );
+        }
+    }
+    states
+}
+
+/// The archived originals a resolved `available` lets [`clear_prepared`] replace by a new conversion.
+pub fn available_originals(states: Option<&BTreeMap<String, String>>) -> BTreeSet<String> {
+    SOURCES
+        .iter()
+        .filter(|(_, original, _)| {
+            states.and_then(|s| s.get(*original)).map(String::as_str) == Some("available")
+        })
+        .map(|(_, original, _)| (*original).to_owned())
+        .collect()
 }
 
 /// Python's `restored`: every added kind is an original whose MP4 is kept and whose content is
@@ -160,15 +205,26 @@ fn public(meta: &Value) -> Value {
     meta
 }
 
-/// Python `clear_prepared`. Only an original that is local and present lets its MP4 go: the
-/// only retained copy of a camera is never removed.
-async fn clear_prepared(folder: &Path, meta: &mut Value, revision: u64) -> std::io::Result<()> {
+/// Python `clear_prepared`. Only a readable original lets its MP4 go: a local one that is present,
+/// or an archived one whose state was resolved `available` beforehand (`archived`). The only
+/// retained copy of a camera is never removed.
+pub async fn clear_prepared(
+    folder: &Path,
+    meta: &mut Value,
+    revision: u64,
+    archived: &BTreeSet<String>,
+) -> std::io::Result<()> {
     match tokio::fs::remove_dir_all(folder.join("prepared")).await {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
         _ => {}
     }
     for (_, original, mp4) in SOURCES {
-        if location(meta, original) == "local" && folder.join(original).is_file() {
+        let readable = match location(meta, original) {
+            "local" => folder.join(original).is_file(),
+            "nas" | "gdrive" => archived.contains(original),
+            _ => false,
+        };
+        if readable {
             match tokio::fs::remove_file(folder.join(mp4)).await {
                 Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
                 _ => {}
@@ -186,9 +242,14 @@ async fn clear_prepared(folder: &Path, meta: &mut Value, revision: u64) -> std::
 }
 
 /// The journal entry for one recording: what [`apply`] needs without the session's manifest.
-pub fn entry(meta: &Value, restored: bool, added: &[(usize, String, String, String)]) -> Value {
+pub fn entry(
+    meta: &Value,
+    restored: bool,
+    added: &[(usize, String, String, String)],
+    archived: &BTreeSet<String>,
+) -> Value {
     let revision = meta["conversion_revision"].as_u64().unwrap_or(0) + u64::from(!restored);
-    json!({"id":meta["id"],"restored":restored,"conversion_revision":revision,
+    json!({"id":meta["id"],"restored":restored,"conversion_revision":revision,"archived_available":archived,
         "kinds":added.iter().map(|(index,kind,name,sha)| json!({"index":index,"kind":kind,"name":name,"sha256":sha})).collect::<Vec<_>>()})
 }
 
@@ -242,7 +303,13 @@ pub async fn apply(store: &Store, update: &Value) -> Result<Value> {
                 json!({"size":stat.len(),"mtime_ns":mtime_ns,"sha256":sha});
         }
         if !restored {
-            clear_prepared(&folder, &mut meta, revision).await?;
+            let archived = update["archived_available"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter_map(|k| k.as_str().map(str::to_owned))
+                .collect();
+            clear_prepared(&folder, &mut meta, revision, &archived).await?;
             let settings = store.processing.read().await.clone();
             let queued = meta["manual_conversion"] == true
                 || (settings["auto_convert"] == true && meta["auto_excluded"] != true);
@@ -334,10 +401,24 @@ mod tests {
         // An archived kind counts as stored.
         let archived = json!({"storage":{"ecamera.hevc":{"location":"nas"}}});
         assert!(added(&archived, &[("ecamera.hevc", "e")], &[]).is_empty());
-        assert!(refusal(&archived).is_some_and(|e| e.1 == "storage_unavailable"));
+        // Python `register_files`: an archived recording waits for a connected archive, then
+        // needs a readable log (an archived one by its state resolved before the locks).
+        assert!(refusal(&archived, false, None).is_some_and(|e| e.1 == "storage_unavailable"));
+        assert!(refusal(&archived, true, None).is_none());
+        let log = json!({"storage":{"rlog.zst":{"location":"gdrive"}}});
+        let states = |s: &str| BTreeMap::from([("rlog.zst".to_owned(), s.to_owned())]);
+        assert!(refusal(&log, true, None).is_some_and(|e| e.1 == "storage_unavailable"));
+        assert!(
+            refusal(&log, true, Some(&states("checking")))
+                .is_some_and(|e| e.1 == "storage_unavailable")
+        );
+        assert!(
+            refusal(&log, true, Some(&states("corrupt"))).is_some_and(|e| e.1 == "log_unavailable")
+        );
+        assert!(refusal(&log, true, Some(&states("available"))).is_none());
         let removed = json!({"storage":{"rlog.zst":{"location":"removed"}}});
-        assert!(refusal(&removed).is_some_and(|e| e.1 == "log_unavailable"));
-        assert!(refusal(&meta).is_none());
+        assert!(refusal(&removed, true, None).is_some_and(|e| e.1 == "log_unavailable"));
+        assert!(refusal(&meta, false, None).is_none());
     }
     #[test]
     fn drop_remote_keeps_a_copy_of_the_same_content() {
