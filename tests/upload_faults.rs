@@ -582,9 +582,10 @@ async fn stalled_bodies_return_transfer_slots_and_exhaustion_is_reported() {
     }
     for mut stream in streams {
         let (code, body) = parse_response(&read_all(&mut stream).await);
+        // `upload_busy` is in the RV1 uploader's TRANSIENT set, so the chunk is retried.
         assert_eq!(
             (code, body["error"].as_str().unwrap()),
-            (408, "request_timeout")
+            (503, "upload_busy")
         );
     }
     slots_free(&server).await;
@@ -846,6 +847,138 @@ async fn interrupted_session_directory_changes_do_not_block_startup() {
         server.ui,
         Expect {
             registered: &[],
+            sessions: 0,
+        },
+    )
+    .await;
+}
+
+fn legacy_request(name: &str, data: &[u8]) -> Vec<u8> {
+    let mut body = format!("--XBOUNDARY\r\nContent-Disposition: form-data; name=\"files\"; filename=\"{name}\"\r\nContent-Type: application/octet-stream\r\n\r\n").into_bytes();
+    body.extend_from_slice(data);
+    body.extend_from_slice(b"\r\n--XBOUNDARY--\r\n");
+    let mut headers = csrf();
+    headers.push((
+        "Content-Type",
+        "multipart/form-data; boundary=XBOUNDARY".into(),
+    ));
+    request_bytes("POST", "/api/upload", &headers, &body)
+}
+fn files_under(root: &std::path::Path) -> std::collections::BTreeMap<std::path::PathBuf, u64> {
+    let mut found = std::collections::BTreeMap::new();
+    let mut pending = vec![root.to_path_buf()];
+    while let Some(dir) = pending.pop() {
+        for entry in std::fs::read_dir(&dir).unwrap() {
+            let entry = entry.unwrap();
+            if entry.file_type().unwrap().is_dir() {
+                pending.push(entry.path());
+            } else {
+                found.insert(entry.path(), entry.metadata().unwrap().len());
+            }
+        }
+    }
+    found
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn legacy_upload_refused_by_admission_writes_nothing() {
+    let (temp, server, _) = fixture().await;
+    let body = serde_json::to_vec(&json!({"max_bytes":1,"policy":"reject_new"})).unwrap();
+    let mut headers = csrf();
+    headers.push(("Content-Type", "application/json".into()));
+    assert_eq!(
+        http(server.ui, "POST", "/api/settings/storage", &headers, &body)
+            .await
+            .0,
+        200
+    );
+    let before = files_under(temp.path());
+    let (log, _) = segment(31, 8 * KIB);
+    let mut stream = TcpStream::connect(server.ui).await.unwrap();
+    stream
+        .write_all(&legacy_request("2026-11-15--12-00-00--31--rlog.zst", &log))
+        .await
+        .unwrap();
+    let (code, body) = parse_response(&read_all(&mut stream).await);
+    assert_eq!(
+        (code, body["error"].as_str().unwrap()),
+        (507, "storage_limit_exceeded")
+    );
+    assert_eq!(
+        files_under(temp.path()),
+        before,
+        "a refused upload must not leave a single byte in the data folder"
+    );
+    invariants(
+        temp.path(),
+        server.ui,
+        Expect {
+            registered: &[],
+            sessions: 0,
+        },
+    )
+    .await;
+}
+
+#[cfg(target_os = "linux")]
+#[tokio::test(flavor = "multi_thread")]
+async fn legacy_upload_disk_full_is_reported_as_507() {
+    let (temp, server, _) = fixture().await;
+    let (log, _) = segment(32, 4 * KIB);
+    let request = legacy_request("2026-11-15--12-00-00--32--rlog.zst", &log);
+    let head = request.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+    let mut stream = TcpStream::connect(server.ui).await.unwrap();
+    stream.write_all(&request[..head]).await.unwrap();
+    let root = temp.path().to_path_buf();
+    let stage = std::sync::Arc::new(std::sync::Mutex::new(None));
+    let found = stage.clone();
+    poll("the multipart staging folder", || {
+        let root = root.clone();
+        let found = found.clone();
+        async move {
+            let dir = std::fs::read_dir(&root)
+                .unwrap()
+                .map(|e| e.unwrap().path())
+                .find(|p| {
+                    p.file_name()
+                        .unwrap()
+                        .to_string_lossy()
+                        .starts_with(".legacy-")
+                });
+            let hit = dir.is_some();
+            *found.lock().unwrap() = dir;
+            hit
+        }
+    })
+    .await;
+    let stage = stage.lock().unwrap().clone().unwrap();
+    // One small field is a single buffered write: only flush can report its ENOSPC.
+    std::os::unix::fs::symlink("/dev/full", stage.join("0")).unwrap();
+    stream.write_all(&request[head..]).await.unwrap();
+    let (code, body) = parse_response(&read_all(&mut stream).await);
+    assert_eq!(
+        (code, body["error"].as_str().unwrap()),
+        (507, "insufficient_disk_space")
+    );
+    assert!(!stage.exists(), "the staging folder is removed");
+    invariants(
+        temp.path(),
+        server.ui,
+        Expect {
+            registered: &[],
+            sessions: 0,
+        },
+    )
+    .await;
+    let mut stream = TcpStream::connect(server.ui).await.unwrap();
+    stream.write_all(&request).await.unwrap();
+    let (code, body) = parse_response(&read_all(&mut stream).await);
+    assert_eq!(code, 201, "{body}");
+    invariants(
+        temp.path(),
+        server.ui,
+        Expect {
+            registered: &[&[&log]],
             sessions: 0,
         },
     )

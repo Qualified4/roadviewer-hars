@@ -209,7 +209,9 @@ async fn main() -> anyhow::Result<()> {
     );
     let ui_listener = tokio::net::TcpListener::bind(bind).await?;
     let device_listener = tokio::net::TcpListener::bind(device_bind).await?;
-    let mut nginx = if ha_mode {
+    // Python `start.py` starts the TLS proxy only for a host port read from Supervisor, so a
+    // failed lookup or an unmapped port leaves the external API off, as `port_error` reports.
+    let mut nginx = if ha_mode && app.network.active_port.is_some() {
         roadviewer_hars::ha::start_nginx(&options).await?
     } else {
         None

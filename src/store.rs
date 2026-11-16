@@ -136,7 +136,7 @@ impl Store {
         let instance = opts.open(root.join(".hars-instance.lock"))?;
         fs2::FileExt::try_lock_exclusive(&instance)?;
         let sweep = root.clone();
-        tokio::task::spawn_blocking(move || sweep_temps(&sweep, 2)).await??;
+        tokio::task::spawn_blocking(move || sweep_temps(&sweep, 2)).await?;
         tokio::fs::create_dir_all(root.join(".uploads")).await?;
         let mut records = BTreeMap::new();
         let mut dirs = tokio::fs::read_dir(&root).await?;
@@ -219,23 +219,38 @@ impl Store {
 }
 
 /// Deletes `atomic_json` temporaries left by a killed writer. The instance lock excludes live writers.
-fn sweep_temps(dir: &Path, depth: u8) -> std::io::Result<()> {
-    for entry in std::fs::read_dir(dir)? {
-        let entry = entry?;
-        let kind = entry.file_type()?;
+/// A leftover temporary is only wasted space, so an unreadable folder is logged and skipped
+/// instead of keeping the whole app from starting.
+fn sweep_temps(dir: &Path, depth: u8) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(kind = ?e.kind(), "temporary_sweep_skipped_folder");
+            return;
+        }
+    };
+    for entry in entries {
+        let Ok(entry) = entry else {
+            tracing::warn!("temporary_sweep_skipped_entry");
+            continue;
+        };
+        let Ok(kind) = entry.file_type() else {
+            tracing::warn!("temporary_sweep_skipped_entry");
+            continue;
+        };
         let name = entry.file_name().to_string_lossy().into_owned();
         if kind.is_dir() && depth > 0 {
-            sweep_temps(&entry.path(), depth - 1)?;
+            sweep_temps(&entry.path(), depth - 1);
         } else if kind.is_file()
             && name
                 .strip_suffix(".tmp")
                 .and_then(|stem| stem.rsplit_once('.'))
                 .is_some_and(|(_, token)| valid_id(token))
+            && let Err(e) = std::fs::remove_file(entry.path())
         {
-            std::fs::remove_file(entry.path())?;
+            tracing::warn!(kind = ?e.kind(), "temporary_sweep_remove_failed");
         }
     }
-    Ok(())
 }
 
 pub fn directory_size(root: &Path) -> std::io::Result<u64> {

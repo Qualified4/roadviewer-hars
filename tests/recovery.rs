@@ -173,3 +173,46 @@ async fn cancelled_completed_conversion_is_not_published_on_restart() {
     assert!(staging.join("summary.json").is_file());
     assert_eq!(std::fs::read(folder.join("rlog.zst")).unwrap(), b"original");
 }
+
+#[cfg(unix)]
+#[tokio::test]
+async fn failed_temporary_sweep_and_leftover_exports_do_not_block_startup() {
+    use std::os::unix::fs::PermissionsExt;
+    let temp = tempfile::tempdir().unwrap();
+    drop(app(temp.path()).await);
+    let leftover = temp.path().join(format!("settings.{}.tmp", id()));
+    std::fs::write(&leftover, b"{}").unwrap();
+    // A folder whose temporary cannot be deleted: no write permission on the folder.
+    let locked = temp.path().join("locked");
+    std::fs::create_dir(&locked).unwrap();
+    let stuck = locked.join(format!("meta.{}.tmp", id()));
+    std::fs::write(&stuck, b"{}").unwrap();
+    let exports = temp.path().join(".exports");
+    std::fs::create_dir(&exports).unwrap();
+    std::fs::write(exports.join(format!("{}.hevc", id())), b"partial export").unwrap();
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o500)).unwrap();
+    assert!(
+        std::fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(locked.join("probe"))
+            .is_err(),
+        "the test needs a folder this user cannot change"
+    );
+    let opened = App::open(
+        temp.path().to_path_buf(),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("reference/python/roadviewer/app/web"),
+        false,
+        512,
+    )
+    .await;
+    std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let a = opened.expect("a temporary that cannot be deleted is only logged");
+    assert!(stuck.exists());
+    assert!(!leftover.exists(), "other temporaries are still swept");
+    assert!(
+        !exports.exists(),
+        "original-format exports of an interrupted download are removed at startup"
+    );
+    drop(a);
+}
