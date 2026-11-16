@@ -293,8 +293,9 @@ async fn camera_addition_supersedes_an_interrupted_conversion_publication() {
         ] {
             assert!(!gone.exists(), "{installed}: {gone:?}");
         }
+        let disk: Value = read_json(&folder.join("meta.json")).await.unwrap();
         drop(a);
         let a = app(temp.path()).await;
-        assert_eq!(a.store.meta(&record).await.unwrap(), meta);
+        assert_eq!(a.store.meta(&record).await.unwrap(), disk);
     }
 }

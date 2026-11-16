@@ -514,7 +514,8 @@ async fn sigkill_during_camera_addition_converges_on_restart() {
             serde_json::from_slice(&std::fs::read(root.join(&record).join("meta.json")).unwrap())
                 .unwrap();
         assert_eq!(
-            &saved, updated,
+            approx(&saved),
+            approx(updated),
             "{point}: the receipt shows the saved recording"
         );
         assert!(!root.join(&record).join("prepared").exists(), "{point}");

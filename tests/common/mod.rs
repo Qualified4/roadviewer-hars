@@ -462,3 +462,14 @@ fn walk(path: &Path, temps: &mut Vec<PathBuf>) {
         }
     }
 }
+
+/// serde_json parses floats without exact round trips, so a timestamp written and read again can
+/// differ in its last bit; metadata is compared with timestamps rounded to the microsecond.
+pub fn approx(value: &Value) -> Value {
+    match value {
+        Value::Number(n) if n.is_f64() => json!((n.as_f64().unwrap() * 1e6).round() as i64),
+        Value::Array(v) => Value::Array(v.iter().map(approx).collect()),
+        Value::Object(m) => Value::Object(m.iter().map(|(k, v)| (k.clone(), approx(v))).collect()),
+        other => other.clone(),
+    }
+}

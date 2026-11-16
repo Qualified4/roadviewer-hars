@@ -453,7 +453,7 @@ async fn camera_added_to_registered_segment_is_attached_and_reconverted() {
     assert!(!folder.join("prepared").exists());
     assert_eq!(std::fs::read(folder.join("qcamera.ts")).unwrap(), video);
     let saved: Value = read_json(&folder.join("meta.json")).await.unwrap();
-    assert_eq!(&saved, updated);
+    assert_eq!(approx(&saved), approx(updated));
     invariants(
         temp.path(),
         server.ui,
