@@ -165,7 +165,7 @@ pub fn flatten_batch(body: &Value, streaming: bool, max_log: u64) -> Result<Vec<
     }
     Ok(files)
 }
-fn split_name(name: &str) -> Result<(String, String, String)> {
+pub(crate) fn split_name(name: &str) -> Result<(String, String, String)> {
     let clean = name.replace('\\', "/");
     if clean.starts_with('/')
         || clean.contains(':')
@@ -287,7 +287,24 @@ impl Uploads {
         let mut dirs = tokio::fs::read_dir(store.root.join(".uploads")).await?;
         while let Some(entry) = dirs.next_entry().await? {
             let name = entry.file_name().to_string_lossy().into_owned();
-            if !valid_id(&name) || !entry.file_type().await?.is_dir() {
+            if !entry.file_type().await?.is_dir() {
+                continue;
+            }
+            let interrupted = name
+                .strip_suffix(".creating")
+                .or_else(|| name.strip_suffix(".removing"))
+                .is_some_and(valid_id);
+            // Before staged creation/removal existed, a crash could leave a session folder without
+            // its manifest. Such a folder has no journal, so nothing in it can be registered.
+            let incomplete = valid_id(&name)
+                && !entry.path().join("commit.json").exists()
+                && !(entry.path().join("manifest.json").exists()
+                    && entry.path().join("reservation.json").exists());
+            if interrupted || incomplete {
+                tokio::fs::remove_dir_all(entry.path()).await?;
+                continue;
+            }
+            if !valid_id(&name) {
                 continue;
             }
             let files: Vec<UploadFile> = read_json(&entry.path().join("manifest.json")).await?;
@@ -310,7 +327,7 @@ impl Uploads {
             max_log,
         }))
     }
-    async fn get(&self, session: &str) -> Result<Arc<Session>> {
+    pub(crate) async fn get(&self, session: &str) -> Result<Arc<Session>> {
         self.sessions
             .read()
             .await
@@ -388,10 +405,10 @@ impl Uploads {
             .sessions
             .read()
             .await
-            .values()
-            .cloned()
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
             .collect::<Vec<_>>();
-        for s in sessions {
+        for (name, s) in sessions {
             let _life = s.lifecycle.write().await;
             let meta = s.meta.read().await.clone();
             if meta["device_id"] == device && meta["batch_id"] == batch {
@@ -401,7 +418,13 @@ impl Uploads {
                 if meta["expires_at"].as_f64().unwrap_or(0.) <= now()
                     || now() - s.last_progress().await? > IDLE
                 {
-                    return Err(ApiError(StatusCode::GONE, "session_expired"));
+                    if s.path.join("commit.json").exists() {
+                        return Err(conflict("upload_busy"));
+                    }
+                    // Python's begin runs expiry cleanup first, so a retried batch starts a new session.
+                    remove_session(&s.path).await?;
+                    self.sessions.write().await.remove(&name);
+                    break;
                 }
                 if let Some(result) = meta.get("result") {
                     return Ok((StatusCode::OK, json!({"state":"completed","result":result})));
@@ -472,6 +495,15 @@ impl Uploads {
             .await?;
         Ok(json!({"id":s.path.file_name().unwrap().to_string_lossy(),"chunk_size":2*1024*1024}))
     }
+    /// A browser session for files whose names the caller has validated (imports, multipart).
+    pub(crate) async fn create_browser(&self, files: Vec<UploadFile>) -> Result<Arc<Session>> {
+        let _admission = self.admission.lock().await;
+        self.create(files, json!({"expires_at":now()+7200.}), self.max_log)
+            .await
+    }
+    pub(crate) async fn forget(&self, session: &str) {
+        self.sessions.write().await.remove(session);
+    }
     async fn create(&self, files: Vec<UploadFile>, meta: Value, max: u64) -> Result<Arc<Session>> {
         let total = files
             .iter()
@@ -497,29 +529,37 @@ impl Uploads {
                 .await?;
         let name = id();
         let path = self.store.root.join(".uploads").join(&name);
-        tokio::fs::create_dir(&path).await?;
+        // A session folder becomes visible complete or not at all, so startup never meets half of one.
+        let staging = path.with_extension("creating");
+        tokio::fs::create_dir(&staging).await?;
         let result = async {
-            atomic_json(&path.join("manifest.json"), &files).await?;
+            atomic_json(&staging.join("manifest.json"), &files).await?;
             atomic_json(
-                &path.join("reservation.json"),
+                &staging.join("reservation.json"),
                 &json!({"bytes":amount,"expires_at":meta["expires_at"]}),
             )
             .await?;
             if meta.get("device_id").is_some() {
-                atomic_json(&path.join("device.json"), &meta).await?;
+                atomic_json(&staging.join("device.json"), &meta).await?;
             }
-            Ok::<_, std::io::Error>(())
+            tokio::fs::rename(&staging, &path).await?;
+            sync_dir(path.parent().unwrap()).await
         }
         .await;
         if let Err(e) = result {
-            let _ = tokio::fs::remove_dir_all(&path).await;
+            let _ = tokio::fs::remove_dir_all(&staging).await;
             return Err(e.into());
         }
         let session = Arc::new(Session::load(path, files, meta).await?);
         self.sessions.write().await.insert(name, session.clone());
         Ok(session)
     }
-    async fn check_session(&self, s: &Session, device: bool, headers: &HeaderMap) -> Result<()> {
+    pub(crate) async fn check_session(
+        &self,
+        s: &Session,
+        device: bool,
+        headers: &HeaderMap,
+    ) -> Result<()> {
         if device {
             self.authorize(s.path.file_name().unwrap().to_str().unwrap(), headers)
                 .await?;
@@ -546,6 +586,42 @@ impl Uploads {
         )
     }
     pub async fn chunk(
+        &self,
+        name: &str,
+        index: usize,
+        offset: Option<u64>,
+        body: &[u8],
+        device: bool,
+        headers: &HeaderMap,
+    ) -> Result<Value> {
+        let result = self
+            .write_chunk(name, index, offset, body, device, headers)
+            .await;
+        if let Err(ApiError(status, _)) = &result
+            && matches!(
+                *status,
+                StatusCode::INSUFFICIENT_STORAGE | StatusCode::INTERNAL_SERVER_ERROR
+            )
+        {
+            self.release(name).await;
+        }
+        result
+    }
+    /// Python drops a session whose chunk failed on storage once no other request still uses it,
+    /// releasing its reservation; the uploader then starts the batch again.
+    async fn release(&self, name: &str) {
+        let Ok(s) = self.get(name).await else {
+            return;
+        };
+        let Ok(_life) = s.lifecycle.try_write() else {
+            return;
+        };
+        if s.path.join("commit.json").exists() || remove_session(&s.path).await.is_err() {
+            return;
+        }
+        self.sessions.write().await.remove(name);
+    }
+    async fn write_chunk(
         &self,
         name: &str,
         index: usize,
@@ -621,13 +697,21 @@ impl Uploads {
         let mut f = opts.open(path).await?;
         let outcome = async {
             f.write_all(body).await?;
+            // tokio's sync_data records a failed background write instead of returning it; flush reports it.
+            f.flush().await?;
+            crate::fault::point("chunk_before_sync");
             f.sync_data().await
         }
         .await;
+        if outcome.is_err() {
+            // Bytes of a failed, unacknowledged write must not be offered as a resume offset.
+            let _ = f.set_len(current).await;
+        }
         s.received[index].store(f.metadata().await?.len(), Ordering::Release);
         outcome?;
         s.progressed_ms
             .fetch_max((now() * 1000.) as u64, Ordering::AcqRel);
+        crate::fault::point("chunk_after_sync");
         tracing::info!(
             file_lock_wait_us = lock_wait.as_micros() as u64,
             file_write_us = write.elapsed().as_micros() as u64,
@@ -652,7 +736,7 @@ impl Uploads {
         if s.path.join("commit.json").exists() {
             return Err(conflict("upload_busy"));
         }
-        tokio::fs::remove_dir_all(&s.path).await?;
+        remove_session(&s.path).await?;
         self.sessions.write().await.remove(name);
         Ok(json!({"deleted":name}))
     }
@@ -694,14 +778,24 @@ impl Uploads {
                 if body.as_object().is_none_or(|v| v.len() != 1) {
                     return Err(bad("invalid_file"));
                 }
+                // Python's device finish refuses a body contradicting the manifest before
+                // registration starts, so this session stays.
+                if s.files
+                    .iter()
+                    .zip(hashes)
+                    .any(|(f, h)| f.sha256.as_deref().is_some_and(|v| Some(v) != h.as_str()))
+                {
+                    return Err(ApiError(
+                        StatusCode::UNPROCESSABLE_ENTITY,
+                        "checksum_mismatch",
+                    ));
+                }
                 Some(hashes)
             } else {
                 None
             };
-            let mut digests = Vec::new();
             for (i, f) in s.files.iter().enumerate() {
-                let path = s.path.join(i.to_string());
-                if tokio::fs::metadata(&path)
+                if tokio::fs::metadata(s.path.join(i.to_string()))
                     .await
                     .map(|m| m.len())
                     .unwrap_or(0)
@@ -709,55 +803,94 @@ impl Uploads {
                 {
                     return Err(conflict("incomplete_upload"));
                 }
-                let digest = file_hash(&path).await?;
-                let expected = hashes
-                    .map(|v| v[i].as_str().unwrap())
-                    .or(f.sha256.as_deref());
-                if expected.is_some_and(|v| v != digest)
-                    || (streaming && f.sha256.as_deref().is_some_and(|v| Some(v) != expected))
-                {
-                    return Err(ApiError(
-                        StatusCode::UNPROCESSABLE_ENTITY,
-                        "checksum_mismatch",
-                    ));
-                }
-                let (_, kind, _) = split_name(&f.name)?;
-                if kind.ends_with(".mp4") || kind.ends_with(".hevc") {
-                    crate::media::validate_upload(&path, &kind)
-                        .await
-                        .map_err(|_| bad("invalid_file"))?;
-                }
-                digests.push(digest);
             }
+            // From here on Python's `finish_upload` removes the session in every outcome, so the
+            // uploader's next begin of the batch uploads it again instead of meeting the same
+            // stored bytes until the idle expiry. `upload_busy` is HARS's retryable wait.
+            let verified = async {
+                let mut digests = Vec::new();
+                for (i, f) in s.files.iter().enumerate() {
+                    let path = s.path.join(i.to_string());
+                    let digest = file_hash(&path).await?;
+                    let expected = hashes
+                        .map(|v| v[i].as_str().unwrap())
+                        .or(f.sha256.as_deref());
+                    if expected.is_some_and(|v| v != digest) {
+                        return Err(ApiError(
+                            StatusCode::UNPROCESSABLE_ENTITY,
+                            "checksum_mismatch",
+                        ));
+                    }
+                    let (_, kind, _) = split_name(&f.name)?;
+                    if kind.ends_with(".mp4") || kind.ends_with(".hevc") {
+                        crate::media::validate_upload(&path, &kind)
+                            .await
+                            .map_err(|_| bad("invalid_file"))?;
+                    }
+                    digests.push(digest);
+                }
+                Ok(digests)
+            }
+            .await;
+            let digests = match verified {
+                Ok(v) => v,
+                Err(e) => return Err(self.discard(name, &s, e).await),
+            };
             // Registration never holds a shared UI/authentication lock. Hashing already completed.
             registration = self.store.registration.lock().await;
-            self.check_session(&s, device, headers).await?;
-            let plan = self.plan(&s, &digests).await?;
-            if plan["records"].as_array().is_some_and(|v| !v.is_empty()) {
-                // Everything is received and verified: only now may old recordings make room.
-                let names = s.files.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
-                let duplicates = plan["result"]["duplicates"]
-                    .as_array()
-                    .into_iter()
-                    .flatten()
-                    .filter_map(|d| d["id"].as_str().map(str::to_owned))
-                    .collect();
-                crate::storage::admit(
-                    &self.store,
-                    0,
-                    &names,
-                    true,
-                    &duplicates,
-                    Some(&registration),
-                )
-                .await?;
+            let planned = async {
+                self.check_session(&s, device, headers).await?;
+                let plan = self.plan(&s, &digests).await?;
+                if ["records", "updates"]
+                    .iter()
+                    .any(|k| plan[k].as_array().is_some_and(|v| !v.is_empty()))
+                {
+                    // Everything is received and verified: only now may old recordings make room,
+                    // never one this upload matched (Python `protected_ids`).
+                    let names = s.files.iter().map(|f| f.name.clone()).collect::<Vec<_>>();
+                    let duplicates = plan["result"]["duplicates"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .chain(plan["updates"].as_array().into_iter().flatten())
+                        .filter_map(|d| d["id"].as_str().map(str::to_owned))
+                        .collect();
+                    crate::storage::admit(
+                        &self.store,
+                        0,
+                        &names,
+                        true,
+                        &duplicates,
+                        Some(&registration),
+                    )
+                    .await?;
+                }
+                atomic_json(&plan_path, &plan).await?;
+                Ok(plan)
             }
-            atomic_json(&plan_path, &plan).await?;
+            .await;
+            let plan = match planned {
+                Ok(v) => v,
+                Err(e) if plan_path.exists() => return Err(e),
+                Err(e) => return Err(self.discard(name, &s, e).await),
+            };
+            crate::fault::point("finish_after_journal");
             plan
         };
         let result = self.apply_plan(name, &s, &plan, device).await?;
         drop(registration);
         Ok((StatusCode::CREATED, result))
+    }
+    /// Drops a session whose registration failed (the caller holds its lifecycle lock) and
+    /// returns the failure to answer with.
+    async fn discard(&self, name: &str, s: &Session, error: ApiError) -> ApiError {
+        if error.1 == "upload_busy" {
+            return error;
+        }
+        if remove_session(&s.path).await.is_ok() {
+            self.sessions.write().await.remove(name);
+        }
+        error
     }
     async fn apply_plan(
         &self,
@@ -776,6 +909,7 @@ impl Uploads {
             tokio::fs::create_dir_all(target.parent().unwrap()).await?;
             if source.exists() {
                 tokio::fs::rename(&source, &target).await?;
+                crate::fault::point("finish_after_move");
             } else if file_hash(&target).await? != entry["sha256"].as_str().unwrap() {
                 return Err(conflict("checksum_mismatch"));
             }
@@ -783,15 +917,22 @@ impl Uploads {
         for meta in plan["records"].as_array().unwrap() {
             self.store.save_meta(meta.clone()).await?;
         }
-        let result = plan["result"].clone();
+        let mut updated = vec![];
+        for update in plan["updates"].as_array().into_iter().flatten() {
+            updated.push(crate::recording_update::apply(&self.store, update).await?);
+        }
+        crate::fault::point("finish_before_receipt");
+        let mut result = plan["result"].clone();
+        result["updated"] = json!(updated);
         if device {
             let mut receipt = s.meta.read().await.clone();
             receipt["result"] = result.clone();
             self.auth.save_receipt(name, receipt.clone()).await?;
             *s.meta.write().await = receipt;
         }
+        crate::fault::point("finish_after_receipt");
         // Receipt is durable before removing the resumable session and reservation.
-        tokio::fs::remove_dir_all(&s.path).await?;
+        remove_session(&s.path).await?;
         self.sessions.write().await.remove(name);
         Ok(result)
     }
@@ -846,11 +987,22 @@ impl Uploads {
             let p = peer.path.join("commit.json");
             if p.exists() {
                 let plan: Value = read_json(&p).await?;
-                if plan["records"].as_array().unwrap().iter().any(|m| {
-                    digests
-                        .iter()
-                        .any(|d| m["content_hashes"]["rlog.zst"]["sha256"] == *d)
-                }) {
+                let updating = plan["updates"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|u| existing.iter().find(|m| m["id"] == u["id"]));
+                if plan["records"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .chain(updating)
+                    .any(|m| {
+                        digests
+                            .iter()
+                            .any(|d| m["content_hashes"]["rlog.zst"]["sha256"] == *d)
+                    })
+                {
                     return Err(conflict("upload_busy"));
                 }
             }
@@ -858,6 +1010,8 @@ impl Uploads {
         let mut records = Vec::new();
         let mut moves = Vec::new();
         let mut duplicates = Vec::new();
+        let mut updates = Vec::new();
+        let mut planned_kinds: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
         for group in groups.values() {
             let mut kinds = BTreeSet::new();
             let mut cameras = BTreeSet::new();
@@ -871,17 +1025,50 @@ impl Uploads {
                 .find(|(_, kind, _)| kind == "rlog.zst")
                 .ok_or_else(|| bad("rlog_required"))?;
             if let Some(old) = existing
-                .iter()
+                .iter_mut()
                 .find(|m| m["content_hashes"]["rlog.zst"]["sha256"] == digests[log.0])
             {
-                // Additional camera registration requires invalidating prepared data atomically. Do not silently discard it.
-                if group
+                let old_id = old["id"].as_str().unwrap_or_default().to_owned();
+                let folder = self.store.root.join(&old_id);
+                let incoming = group
                     .iter()
-                    .any(|(_, kind, _)| old["files"].get(kind).is_none())
-                {
-                    return Err(conflict("batch_conflict"));
+                    .map(|(i, kind, _)| (kind.clone(), digests[*i].clone()))
+                    .collect::<BTreeMap<_, _>>();
+                let known = old["content_hashes"]
+                    .as_object()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|(k, v)| Some((k.clone(), v["sha256"].as_str()?.to_owned())))
+                    .collect::<BTreeMap<_, _>>();
+                let planned = planned_kinds.entry(old_id.clone()).or_default();
+                let added = crate::recording_update::additional_videos(
+                    &folder, old, &incoming, &known, planned,
+                );
+                if added.is_empty() {
+                    let video_differs = group.iter().any(|(i, k, _)| {
+                        crate::recording_update::VIDEO_KINDS.contains(&k.as_str())
+                            && known.get(k) != Some(&digests[*i])
+                    });
+                    duplicates
+                        .push(json!({"id":old["id"],"name":log.2,"video_differs":video_differs}));
+                    continue;
                 }
-                duplicates.push(json!({"id":old["id"],"name":log.2,"video_differs":group.iter().any(|(i,k,_)|old["content_hashes"][k]["sha256"]!=digests[*i])}));
+                if let Some(refused) = crate::recording_update::refusal(old) {
+                    return Err(refused);
+                }
+                let restored =
+                    crate::recording_update::restored(&folder, &added, &incoming, &known);
+                let mut rows = vec![];
+                for kind in &added {
+                    let (i, _, _) = group.iter().find(|(_, k, _)| k == kind).unwrap();
+                    let name = s.files[*i].name.rsplit('/').next().unwrap().to_owned();
+                    moves.push(json!({"index":i,"id":old_id,"kind":kind,"sha256":digests[*i]}));
+                    old["files"][kind] = json!(name);
+                    old["content_hashes"][kind] = json!({"sha256":digests[*i]});
+                    planned.insert(kind.clone());
+                    rows.push((*i, kind.clone(), name, digests[*i].clone()));
+                }
+                updates.push(crate::recording_update::entry(old, restored, &rows));
                 continue;
             }
             let record = id();
@@ -910,8 +1097,9 @@ impl Uploads {
             existing.push(meta.clone());
             records.push(meta);
         }
+        // `updated` is filled in when the journal is applied: it shows the recordings as saved.
         Ok(
-            json!({"records":records,"moves":moves,"result":{"logs":records,"duplicates":duplicates,"updated":[]}}),
+            json!({"records":records,"moves":moves,"updates":updates,"result":{"logs":records,"duplicates":duplicates,"updated":[]}}),
         )
     }
     pub async fn cleanup(&self) -> Result<usize> {
@@ -931,10 +1119,16 @@ impl Uploads {
             if s.path.join("commit.json").exists() {
                 continue;
             } // A registration journal is never expired/deleted.
-            if s.meta.read().await["expires_at"].as_f64().unwrap_or(0.) <= now()
+            let meta = s.meta.read().await.clone();
+            let revoked = match meta["device_id"].as_str() {
+                Some(device) => self.auth.check_device(device).await.is_err(),
+                None => false,
+            };
+            if revoked
+                || meta["expires_at"].as_f64().unwrap_or(0.) <= now()
                 || now() - s.last_progress().await? > IDLE
             {
-                tokio::fs::remove_dir_all(&s.path).await?;
+                remove_session(&s.path).await?;
                 self.sessions.write().await.remove(&name);
                 removed += 1;
             }
@@ -970,7 +1164,7 @@ impl Uploads {
             removed += tokio::task::spawn_blocking(move || crate::store::directory_size(&path))
                 .await
                 .map_err(std::io::Error::other)??;
-            tokio::fs::remove_dir_all(&s.path).await?;
+            remove_session(&s.path).await?;
             self.sessions.write().await.remove(&name);
         }
         Ok(removed)
@@ -1009,6 +1203,26 @@ impl Uploads {
             },
         )
     }
+}
+async fn sync_dir(path: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        let path = path.to_path_buf();
+        tokio::task::spawn_blocking(move || std::fs::File::open(path)?.sync_all()).await??;
+    }
+    #[cfg(not(unix))]
+    let _ = path;
+    Ok(())
+}
+/// One rename hides the whole session; the folder's contents are deleted afterwards and,
+/// after a crash, at the next startup.
+pub(crate) async fn remove_session(path: &Path) -> std::io::Result<()> {
+    let grave = path.with_extension("removing");
+    tokio::fs::rename(path, &grave).await?;
+    sync_dir(path.parent().unwrap()).await?;
+    crate::fault::point("session_removing");
+    let _ = tokio::fs::remove_dir_all(&grave).await;
+    Ok(())
 }
 pub async fn file_hash(path: &Path) -> std::io::Result<String> {
     let mut file = tokio::fs::File::open(path).await?;

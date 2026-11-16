@@ -366,6 +366,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "filetime"
+version = "0.2.29"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "5c287a33c7f0a620c38e641e7f60827713987b3c0f26e8ddc9462cc69cf75759"
+dependencies = [
+ "cfg-if",
+ "libc",
+]
+
+[[package]]
 name = "find-msvc-tools"
 version = "0.1.15"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -894,6 +904,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "mpeg2ts"
+version = "0.6.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "83c1d679004305ea6e44eb53526da5816934a05b4b5b3b9a470e708a41d70a18"
+
+[[package]]
 name = "multer"
 version = "3.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1257,26 +1273,35 @@ dependencies = [
  "bytes",
  "capnp",
  "capnpc",
+ "crc32fast",
  "ffmpeg-next",
  "flate2",
  "fs2",
+ "futures-util",
  "hex",
  "hmac",
+ "http-body-util",
+ "hyper",
+ "hyper-util",
  "libc",
  "md-5",
+ "mpeg2ts",
  "rand 0.9.5",
  "regex",
  "reqwest",
  "serde",
  "serde_json",
  "sha2",
+ "shiguredo_mp4",
  "subtle",
+ "tar",
  "tempfile",
  "tokio",
  "tower",
  "tower-http",
  "tracing",
  "tracing-subscriber",
+ "unicode-general-category",
  "unicode-normalization",
  "url",
  "uuid",
@@ -1486,6 +1511,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "shiguredo_mp4"
+version = "2026.5.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "82e773aead88d11a806c8b78dbc2577afb3a20fcc80108aafb3724f6dbb9fbe0"
+
+[[package]]
 name = "shlex"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1593,6 +1624,16 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 3.0.10",
+]
+
+[[package]]
+name = "tar"
+version = "0.4.46"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3f6221d9a6003c78398e3b239969f352578258df48c8eb051caadae0015bc840"
+dependencies = [
+ "filetime",
+ "libc",
 ]
 
 [[package]]
@@ -1852,6 +1893,12 @@ name = "unicase"
 version = "2.10.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "357cc3acc6a036009fd6c973ed009037c732d60d0b4f6c673e9041497482a28f"
+
+[[package]]
+name = "unicode-general-category"
+version = "1.1.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "0b993bddc193ae5bd0d623b49ec06ac3e9312875fdae725a975c51db1cc1677f"
 
 [[package]]
 name = "unicode-ident"

@@ -10,11 +10,24 @@ pub struct ApiError(pub StatusCode, pub &'static str);
 pub type Result<T> = std::result::Result<T, ApiError>;
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
+        // Python's camera-addition refusals (`register_files`) carry a message on every route.
+        let added = match self.1 {
+            "storage_unavailable" => Some("저장소 연결 후 다시 시도하세요."),
+            "log_unavailable" => Some(
+                "원본 로그가 없어 영상을 추가할 수 없습니다. 로그와 영상을 함께 다시 업로드하세요.",
+            ),
+            _ => None,
+        };
         let body = match crate::storage::message(self.1) {
             Some(message) if self.0 == StatusCode::INSUFFICIENT_STORAGE => {
                 json!({"error":self.1,"message":message})
             }
-            _ => json!({"error":self.1}),
+            _ => match added {
+                Some(message) if self.0 == StatusCode::CONFLICT => {
+                    json!({"error":self.1,"message":message})
+                }
+                _ => json!({"error":self.1}),
+            },
         };
         (self.0, Json(body)).into_response()
     }
@@ -22,10 +35,11 @@ impl IntoResponse for ApiError {
 impl From<std::io::Error> for ApiError {
     fn from(e: std::io::Error) -> Self {
         // Never log arbitrary OS messages containing source paths or credentials.
-        match e.raw_os_error() {
-            Some(28) => Self(StatusCode::INSUFFICIENT_STORAGE, "insufficient_disk_space"),
-            _ => Self(StatusCode::INTERNAL_SERVER_ERROR, "storage_error"),
+        // Errors surfaced through tokio's file buffer keep only their kind, not the errno.
+        if e.raw_os_error() == Some(28) || e.kind() == std::io::ErrorKind::StorageFull {
+            return Self(StatusCode::INSUFFICIENT_STORAGE, "insufficient_disk_space");
         }
+        Self(StatusCode::INTERNAL_SERVER_ERROR, "storage_error")
     }
 }
 pub fn bad(code: &'static str) -> ApiError {

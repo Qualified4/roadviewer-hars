@@ -8,7 +8,7 @@ use axum::{
     Json,
     body::Bytes,
     extract::{Path, Query, State},
-    http::Method,
+    http::{HeaderMap, Method, header::CONTENT_TYPE},
 };
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::atomic::Ordering, time::Duration};
@@ -16,7 +16,26 @@ use std::{collections::BTreeMap, sync::atomic::Ordering, time::Duration};
 /// A conversion is stopped before its recording is deleted (Python terminates the decoder).
 const CONVERSION_STOP: Duration = Duration::from_secs(30);
 
-pub async fn settings(State(app): State<App>, method: Method, body: Bytes) -> Result<Json<Value>> {
+/// Flask `get_json(silent=True)` reads a body only when its type is JSON.
+fn json_type(headers: &HeaderMap) -> bool {
+    let mime = headers
+        .get(CONTENT_TYPE)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("")
+        .split(';')
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_ascii_lowercase();
+    mime == "application/json" || (mime.starts_with("application/") && mime.ends_with("+json"))
+}
+
+pub async fn settings(
+    State(app): State<App>,
+    method: Method,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<Value>> {
     let registration = app.store.registration.lock().await;
     let mut settings = storage::load_settings(&app.store.root).await?;
     if method == Method::POST {
@@ -24,8 +43,10 @@ pub async fn settings(State(app): State<App>, method: Method, body: Bytes) -> Re
         if app.archive.manual_active() {
             return Err(conflict("archive_running"));
         }
-        let (max, policy) =
-            storage::parse_settings_update(&body).ok_or_else(|| bad("invalid_storage_settings"))?;
+        let (max, policy) = json_type(&headers)
+            .then(|| storage::parse_settings_update(&body))
+            .flatten()
+            .ok_or_else(|| bad("invalid_storage_settings"))?;
         settings["max_bytes"] = json!(max);
         settings["policy"] = json!(policy);
         storage::save_settings(&app.store.root, &settings).await?;
@@ -48,10 +69,12 @@ pub async fn settings(State(app): State<App>, method: Method, body: Bytes) -> Re
 pub async fn pin(
     State(app): State<App>,
     Path(id): Path<String>,
+    headers: HeaderMap,
     body: Bytes,
 ) -> Result<Json<Value>> {
-    let pinned = serde_json::from_slice::<Value>(&body)
-        .ok()
+    let pinned = json_type(&headers)
+        .then(|| serde_json::from_slice::<Value>(&body).ok())
+        .flatten()
         .and_then(|v| v.get("pinned").and_then(Value::as_bool))
         .ok_or_else(|| bad("invalid_pin"))?;
     let _registration = app.store.registration.lock().await;

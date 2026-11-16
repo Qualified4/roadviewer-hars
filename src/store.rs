@@ -39,6 +39,8 @@ pub async fn atomic_json(path: &Path, value: &impl Serialize) -> std::io::Result
     let mut file = options.open(&temp).await?;
     let outcome = async {
         file.write_all(&bytes).await?;
+        // tokio's sync_all records a failed background write instead of returning it; flush reports it.
+        file.flush().await?;
         file.sync_all().await?;
         drop(file);
         tokio::fs::rename(&temp, path).await?;
@@ -135,6 +137,8 @@ impl Store {
         }
         let instance = opts.open(root.join(".hars-instance.lock"))?;
         fs2::FileExt::try_lock_exclusive(&instance)?;
+        let sweep = root.clone();
+        tokio::task::spawn_blocking(move || sweep_temps(&sweep, 2)).await?;
         tokio::fs::create_dir_all(root.join(".uploads")).await?;
         let mut records = BTreeMap::new();
         let mut dirs = tokio::fs::read_dir(&root).await?;
@@ -220,6 +224,41 @@ impl Store {
     pub async fn used(&self) -> std::io::Result<u64> {
         let root = self.root.clone();
         tokio::task::spawn_blocking(move || directory_size(&root)).await?
+    }
+}
+
+/// Deletes `atomic_json` temporaries left by a killed writer. The instance lock excludes live writers.
+/// A leftover temporary is only wasted space, so an unreadable folder is logged and skipped
+/// instead of keeping the whole app from starting.
+fn sweep_temps(dir: &Path, depth: u8) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(v) => v,
+        Err(e) => {
+            tracing::warn!(kind = ?e.kind(), "temporary_sweep_skipped_folder");
+            return;
+        }
+    };
+    for entry in entries {
+        let Ok(entry) = entry else {
+            tracing::warn!("temporary_sweep_skipped_entry");
+            continue;
+        };
+        let Ok(kind) = entry.file_type() else {
+            tracing::warn!("temporary_sweep_skipped_entry");
+            continue;
+        };
+        let name = entry.file_name().to_string_lossy().into_owned();
+        if kind.is_dir() && depth > 0 {
+            sweep_temps(&entry.path(), depth - 1);
+        } else if kind.is_file()
+            && name
+                .strip_suffix(".tmp")
+                .and_then(|stem| stem.rsplit_once('.'))
+                .is_some_and(|(_, token)| valid_id(token))
+            && let Err(e) = std::fs::remove_file(entry.path())
+        {
+            tracing::warn!(kind = ?e.kind(), "temporary_sweep_remove_failed");
+        }
     }
 }
 

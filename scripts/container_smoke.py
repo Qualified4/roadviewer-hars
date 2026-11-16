@@ -31,10 +31,19 @@ with tempfile.TemporaryDirectory(prefix="hars-tls-") as temp:
     launcher=wrapper/"nginx"
     launcher.write_text('#!/bin/sh\ncase "$*" in *"daemon off;"*) sleep 0.3;; esac\nexec /usr/sbin/nginx "$@"\n')
     os.chmod(launcher,0o755)
+    # The TLS proxy starts only for a host port read from Supervisor, as in the Python app, so
+    # the check serves the one `addons/self/info` answer a mapped port produces.
+    info = json.dumps({"result": "ok", "data": {"network": {"8443/tcp": 8443}}})
+    (root / "supervisor.conf").write_text(
+        "events {} http { server { listen 80; location = /addons/self/info "
+        "{ default_type application/json; return 200 '" + info + "'; } } }")
     context = ssl.create_default_context(cafile=str(root / "fullchain.pem"))
     started = False
     try:
-        command("docker", "run", "-d", "--name", name,
+        command("docker", "network", "create", name)
+        command("docker", "run", "-d", "--name", name + "-supervisor", "--network", name, "--network-alias", "supervisor",
+                "-v", temp + ":/ssl:ro", "--entrypoint", "/usr/sbin/nginx", image, "-c", "/ssl/supervisor.conf", "-g", "daemon off;")
+        command("docker", "run", "-d", "--name", name, "--network", name, "-e", "SUPERVISOR_TOKEN=smoke",
                 "-e", "PATH=/ssl/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin",
                 "-e", "HARS_INGRESS_ONLY=0", "-p", "127.0.0.1::8099", "-p", "127.0.0.1::8443",
                 "-v", temp + ":/ssl:ro", "-v", str(root / "options.json") + ":/data/options.json:ro", image)
@@ -87,3 +96,5 @@ with tempfile.TemporaryDirectory(prefix="hars-tls-") as temp:
     finally:
         if started:
             subprocess.run(["docker", "rm", "-f", name], check=True, stdout=subprocess.DEVNULL)
+        subprocess.run(["docker", "rm", "-f", name + "-supervisor"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        subprocess.run(["docker", "network", "rm", name], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

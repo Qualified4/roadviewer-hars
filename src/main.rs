@@ -45,6 +45,24 @@ async fn main() -> anyhow::Result<()> {
         roadviewer_hars::profile::finish();
         return Ok(());
     }
+    #[cfg(feature = "pure-remux")]
+    if args.get(1).is_some_and(|v| v == "__pure-remux") {
+        anyhow::ensure!(
+            args.len() == 6 || (args.len() == 7 && args[6] == "--no-verify"),
+            "usage: roadviewer-hars __pure-remux SOURCE KIND TIMES_JSON OUTPUT [--no-verify]"
+        );
+        let clock: Vec<f64> =
+            roadviewer_hars::store::read_json(std::path::Path::new(&args[4])).await?;
+        let report = roadviewer_hars::experimental::pure_remux::remux(
+            std::path::Path::new(&args[2]),
+            &args[3],
+            std::path::Path::new(&args[5]),
+            &clock,
+            args.len() == 6,
+        )?;
+        println!("{}", serde_json::to_string(&report)?);
+        return Ok(());
+    }
     if args.get(1).is_some_and(|v| v == "__native-ts") {
         anyhow::ensure!(args.len() == 5, "invalid internal media job");
         roadviewer_hars::native_video::remux_ts(
@@ -167,6 +185,11 @@ async fn main() -> anyhow::Result<()> {
     );
     let mut app = App::open(root, web, ingress_only, max_upload_mb).await?;
     app.device_https_enabled = ha_mode && options.device_https_enabled;
+    if ha_mode {
+        app.network = std::sync::Arc::new(
+            roadviewer_hars::network::Network::boot(options.device_https_enabled).await,
+        );
+    }
     let bind: SocketAddr = std::env::var("HARS_BIND")
         .unwrap_or_else(|_| {
             if ha_mode {
@@ -186,7 +209,9 @@ async fn main() -> anyhow::Result<()> {
     );
     let ui_listener = tokio::net::TcpListener::bind(bind).await?;
     let device_listener = tokio::net::TcpListener::bind(device_bind).await?;
-    let mut nginx = if ha_mode {
+    // Python `start.py` starts the TLS proxy only for a host port read from Supervisor, so a
+    // failed lookup or an unmapped port leaves the external API off, as `port_error` reports.
+    let mut nginx = if ha_mode && app.network.active_port.is_some() {
         roadviewer_hars::ha::start_nginx(&options).await?
     } else {
         None
