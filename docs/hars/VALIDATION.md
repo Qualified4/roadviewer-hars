@@ -80,3 +80,64 @@ CI는 기존 `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS re
 - ego Chromium 실제 UI에서 원본 HEVC 재생/일시정지·30초 탐색, qcamera 전환/59.9초 말미 탐색(readyState4/오류0), 지도·GPS 경로·실제 차량 그래프·overlay를 확인했다. 기존47코퍼스는 별도3cam 업로드 후 와이드44.999989초 탐색도 통과했다. 새13코퍼스에 실제 ecamera 원본이 있는 것처럼 보고하지 않는다. [업로드·다운로드·관측·브라우저 결과](measurements/original13-upload-browser-2026-11-15.json).
 
 전용 브라우저 Space와 테스트 서버는 모든 레코드 ready를 확인하고 종료했다. 사진/원본 로그·영상/GPS 좌표/인증정보/원시 perf 메모리/strace payload를 Git에 넣지 않았다. Python/openpilot 원본·HAOS·Ingress·운영 포트/도메인/업로드 설정·GHCR 운영 이미지·릴리스는 변경하지 않았다. 실제 raw ecamera, HAOS/실장치/TLS 장시간 운영, ISO 전용 conformance suite, 서로 다른 FFmpeg/PyAV 탐색 설정의 완전한 분리는 미검증이다.
+
+## alpha.3 기능 완성·안정화 (2026-11-16)
+
+기준 `a76c0c5`에서 PR #3~#13을 거쳤다. 각 PR은 `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS required`가 모두 성공한 뒤 병합했다. 아래에서 "모의"는 테스트 프로세스 안의 모의 서버나 임시 폴더를 뜻한다. 실제 Google Drive, 실제 NAS, 실제 HAOS, 실제 차량 장치에는 접속하지 않았다.
+
+### 영상 시간축
+
+- 원본 13구간의 3·9번 qcamera 마지막 sample duration 차이(Python 4481/4518 ticks, HARS 4500)의 원인은 `ffmpeg`/`ffprobe` CLI가 강제하는 `scan_all_pmts=1`이었다. 같은 FFmpeg에서 이 옵션만 바꿔 양쪽 값을 재현했다. 이전 문서의 "FFmpeg 6과 8의 버전 차이"는 틀린 가설이다.
+- 배포 이미지(bookworm, FFmpeg 5.1.9)에서 3·9·5번 구간을 직접 변환해 4481/4518/4500을 확인했다(libavformat 기본 옵션 경로, PR #4 시점).
+- 이후 마지막 프레임 길이의 기준을 Python 추정에서 rlog의 실제 타이밍으로 바꿨다. 근거와 규칙은 [TERMINAL-DURATION.md](TERMINAL-DURATION.md)에 있다. Python 대비 비교는 허용오차를 넓히지 않고, 입력에서 Python 값과 HARS 값을 각각 계산해 양쪽 출력이 자기 값과 1e-9 안에서 같은지 단언한다. 나머지 필드는 1e-6 비교 그대로다.
+- `tests/ts_duration.rs`의 합성 입력 전제 조건은 FFmpeg 5.1의 도구로 만든 스트림에서 성립하지 않는다. CI는 ubuntu-24.04(FFmpeg 6.1)에서 돈다.
+
+### 저장 공간과 삭제
+
+- `tests/storage.rs`: `admit` 계산식 경계, 507 코드 3종, 사전 점검에서 부족하면 무삭제, 전체·부분·미고정 혼합 주행의 고정 보호, 업로드 중 주행과 변환 대기·변환 중 기록의 보호, `pinned_routes` 이전, 삭제 저널의 중단 지점별 복구, 권한 오류 주입, 세션 생성과 정리의 경합, 계획 후 변환 대기로 바뀐 주행의 전체 건너뜀.
+- 삭제의 확정 시점은 숨김 rename이다. 재시작 복구는 숨겨진 폴더만 마무리하고, 저널에만 있고 온전한 기록은 지우지 않는다.
+- 독립 검토에서 나온 경합 3건은 수정 전 코드에서 실패하는 테스트로 재현한 뒤 고쳤다.
+
+### 업로드 장애
+
+- `tests/upload_faults.rs`, `tests/upload_crash.rs`, `integration/uploader_faults.py`: 청크 전송 중 TCP 종료, 재전송과 offset 충돌, SIGKILL(청크 fsync 전후, finish 5개 지점, 카메라 추가 6개 지점), finish 응답 유실, 중복 배치, 업로드 중 자동 변환 대기, `/dev/full`과 `RLIMIT_FSIZE`의 ENOSPC, 정체된 본문과 슬롯 고갈, 만료 토큰·폐기 장치·nonce 재사용.
+- 각 사례 뒤에 세션·예약·임시 파일·저널, 등록 파일 SHA-256, 목록 중복 여부를 재시작 전후로 검사한다.
+- 드러난 결함: 실패한 쓰기를 성공으로 응답(fsync 전 flush 누락), 장치 삭제 뒤 재시작 불가, 세션 폴더 삭제 중 크래시 뒤 재시작 불가, 정체된 본문의 슬롯 영구 점유. 모두 수정했다.
+- finish 검증 실패 뒤 세션을 유지하면 업로더의 재시도가 유휴 만료까지 같은 422를 받는 것을 3회 재현했고, Python처럼 세션을 해제하도록 바꿨다.
+- 실제 tmpfs ENOSPC는 root가 필요해 `integration/upload_enospc.py`로 로컬에서 1회만 실행했다. 전원 차단과 OS 크래시는 검증하지 않았다.
+
+### API 동등성
+
+- `integration/api_contract_compare.py`가 실제 Python 서버와 HARS를 loopback에 나란히 띄워 비교한다. 53개 요청에서 상태 코드 53개, JSON 키 집합 46개가 같다. 차이 7개는 오류 형식(HARS는 `error`에 코드, `message`에 Python 문장)과 `video_downloads` 키 하나다.
+- Python이 만든 tar를 HARS가 가져오고 HARS가 만든 tar를 Python이 가져온다. rlog SHA와 태그가 보존된다.
+- 네트워크 설정·재시작은 모의 Supervisor로만 확인했다.
+
+### 아카이빙
+
+- `tests/archive_backends.rs`, `tests/archiver*.rs`, `tests/archive_*.rs`, `integration/archive_e2e.py`: OAuth 장치 흐름과 토큰 갱신, resumable 업로드의 끊김 후 재개와 세션 만료 후 재시작, size·md5·sha256 검증, copy·move, 단계별 크래시 뒤 복구, 원격 장애 중 로컬 보존, NAS 미마운트·끊김, 수동 실행과 `archive_running`, 기록 삭제에서 원격 삭제 저널까지, 원격 Range 재생과 다운로드, 아카이브 입력 재변환, 지도 보충.
+- Python 구조의 폴더와 파일을 모의 Drive에 두고 아카이브·정리·삭제·연결 해제를 모두 실행한 뒤 바이트와 메타가 그대로임을 단언한다.
+- 독립 검토 지적: 언마운트 직후 로컬 디스크에 보관, 포기한 확인 작업의 뒤늦은 삭제, 다른 소유자 폴더에서의 삭제, 끊긴 요청의 임시 사본, 공유 폴더의 심볼릭 링크. 모두 재현 테스트와 함께 수정했다.
+- 중단된 NAS 복사가 다음 주기의 임시 파일을 rename하던 경합은 병렬 부하에서 100회 중 8회 실패했고, 대상별 배타 락과 취소 확인을 넣은 뒤 100회 중 0회다.
+
+### Python 원격 데이터 읽기 전용 가져오기
+
+- `tests/legacy_archive.rs`, `integration/legacy_import_e2e.py`: 스캔, 가져오기 성공, 해시 불일치, 중복, 카메라 추가, 용량 부족, 5xx, 다운로드 중간 끊김, 취소, SIGKILL 3개 지점에서 Python 폴더·파일을 대상으로 한 요청이 GET뿐임을 요청 로그로 단언한다.
+- NAS 원본은 읽기 전용 권한(0555, 0444)으로 두고 전후 상태가 같음을 단언한다.
+
+### 실제 코퍼스 회귀
+
+`d849d10`(PR #9까지)에서 캐시된 Python 기준 결과와 1e-6 절대오차로 비교했다.
+
+| 코퍼스 | 구간 | 동등 | 모델 프레임 |
+|---|---:|---:|---:|
+| 원본 형식 | 13 | 13 | 15,600 |
+| 기존 14구간 | 14 | 14 | 16,350 |
+| 기존 47구간 | 47 | 47 | 56,399 |
+
+최종 커밋의 결과는 이 절 끝의 "최종 커밋 검증"에 적는다.
+
+### HAOS 병행 설치(구성 수준)
+
+- `scripts/check_coexistence.py`가 slug, 이미지, 패널명, 데이터 루트, 미게시 호스트 포트, `boot: manual`, Supervisor API 권한을 Python 앱 구성과 대조한다. CI에서 실행한다.
+- 컨테이너 기동 검사는 같은 이미지의 nginx로 Supervisor의 포트 응답을 흉내 낸다. TLS 프록시는 Python처럼 Supervisor가 알려 준 포트가 있을 때만 뜬다.
+- 실제 HAOS에서의 설치·시작·종료·업데이트·재시작·Ingress는 검증하지 않았다.
