@@ -117,6 +117,10 @@ pub struct St {
     /// The line dies for a session once it holds this many bytes: its PUTs answer 503.
     pub cut_after: Option<usize>,
     pub no_auth: bool,
+    /// A file whose content is answered only after this long (a slow Drive while a client gives up).
+    pub media_delay: HashMap<String, std::time::Duration>,
+    /// Content requests held by  so far.
+    pub media_held: u32,
     pub file_count: u32,
     pub session_count: u32,
     pub token_count: u32,
@@ -332,6 +336,18 @@ pub async fn handle(
             .unwrap_or_default()
             .to_owned()
     };
+    let delay = {
+        let mut st = fake.st();
+        let delay = path
+            .strip_prefix("/drive/v3/files/")
+            .filter(|_| query.get("alt").map(String::as_str) == Some("media"))
+            .and_then(|id| st.media_delay.get(id).copied());
+        st.media_held += u32::from(delay.is_some());
+        delay
+    };
+    if let Some(delay) = delay {
+        tokio::time::sleep(delay).await;
+    }
     let mut guard = fake.st();
     let st = &mut *guard;
     st.requests.push(Req {

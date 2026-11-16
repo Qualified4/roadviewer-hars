@@ -1252,60 +1252,51 @@ async fn original(
             Err(e) => return Ok(e.into_response()),
             Ok(Some(Source::Path(path))) => path,
             Ok(Some(Source::Remote(file))) => {
-                match crate::media_read::stage_remote(&app.archive, &folder, &file).await {
-                    Ok(path) => {
-                        staged = Some(path.clone());
-                        path
-                    }
+                match crate::media_read::stage(&app.archive, &folder, &file).await {
+                    Ok(copy) => staged.insert(copy).path().to_owned(),
                     Err(e) => return Ok(e.into_response()),
                 }
             }
             Ok(None) => folder.join("prepared").join(mp4),
         };
-        let exported = async {
-            media_file_check(&folder, &retained).await?;
-            let exports = app.store.root.join(".exports");
-            tokio::fs::create_dir_all(&exports).await?;
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                tokio::fs::set_permissions(&exports, std::fs::Permissions::from_mode(0o700))
-                    .await?;
-            }
-            let output = exports.join(format!(
-                "{}.{}",
-                crate::store::id(),
-                if kind == "qcamera.ts" { "ts" } else { "hevc" }
-            ));
-            let meta = app.store.meta(&id).await?;
-            let offset = meta["video_origins"][source].as_f64().unwrap_or(0.);
-            crate::media::reverse(&retained, &kind, &output, offset)
+        media_file_check(&folder, &retained).await?;
+        let exports = app.store.root.join(".exports");
+        tokio::fs::create_dir_all(&exports).await?;
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            tokio::fs::set_permissions(&exports, std::fs::Permissions::from_mode(0o700)).await?;
+        }
+        let output = exports.join(format!(
+            "{}.{}",
+            crate::store::id(),
+            if kind == "qcamera.ts" { "ts" } else { "hevc" }
+        ));
+        let meta = app.store.meta(&id).await?;
+        let offset = meta["video_origins"][source].as_f64().unwrap_or(0.);
+        let output =
+            crate::media_read::export_original(retained, staged, kind.clone(), output, offset)
                 .await
                 .map_err(|_| bad("media_export_failed"))?;
-            let response = serve(output.clone(), request)
-                .await
-                .map(|response| attachment(response, &meta, &kind));
-            // ServeFile has already opened its file. Linux keeps it readable after unlink.
-            let _ = tokio::fs::remove_file(&output).await;
-            response
-        }
-        .await;
-        if let Some(path) = &staged {
-            crate::media_read::unstage(path).await;
-        }
-        return exported;
+        let response = serve(output.path().to_owned(), request)
+            .await
+            .map(|response| attachment(response, &meta, &kind));
+        // ServeFile has already opened its file. Linux keeps it readable after unlink.
+        output.remove().await;
+        return response;
     }
     media_file_check(&folder, &path).await?;
     Ok(attachment(serve(path, request).await?, &meta, &kind))
 }
 /// A file a media route serves: inside the recording folder it must stay there (no link out); elsewhere it is a
-/// path the archive index resolved on the share.
+/// path the archive index resolved on the share, which must be a regular file there and not a link.
 async fn media_file_check(folder: &std::path::Path, path: &std::path::Path) -> Result<()> {
     if path.starts_with(folder) {
         return safe_file(folder, path).await;
     }
-    match tokio::fs::metadata(path).await {
-        Ok(m) if m.is_file() => Ok(()),
+    let share_path = path.to_owned();
+    match tokio::task::spawn_blocking(move || crate::archive::nas::share_meta(&share_path)).await {
+        Ok(Ok(m)) if m.is_file() => Ok(()),
         _ => Err(missing("not_found")),
     }
 }

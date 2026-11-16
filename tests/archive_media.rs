@@ -163,6 +163,37 @@ async fn drive_moved_files_stream_from_drive() {
     assert_eq!(header(&h, "cache-control"), Some("no-store"));
 }
 
+/// Python `remote_response` answers an empty file with `Content-Length: 0` (end - start + 1 with end = -1).
+#[tokio::test]
+async fn an_empty_drive_file_is_answered_with_no_bytes() {
+    let e = Env::new().await;
+    e.use_drive(json!({"archive_mode": "move", "archive_allow_local_delete": true}))
+        .await;
+    let id = moved(&e, &data(3000, 5), &data(100, 6)).await;
+    assert_eq!(e.loc(&id, "rlog.zst").await, "gdrive");
+    // An empty log on Drive, as its index records it.
+    let (file_id, _) = e.drive_file(&id, "rlog.zst").unwrap();
+    e.fake.put(&file_id, {
+        let mut f = e.fake.file(&file_id).unwrap();
+        f.content = Vec::new();
+        f.sha256 = Some(sha(b""));
+        f.md5 = Some(common::fake_drive::md5_hex(b""));
+        f
+    });
+    e.set(&id, |m| {
+        let entry = &mut m["storage"]["rlog.zst"];
+        entry["bytes"] = json!(0);
+        entry["sha256"] = json!(sha(b""));
+        entry["md5"] = json!(common::fake_drive::md5_hex(b""));
+    })
+    .await;
+    e.a().backend().invalidate();
+    let (status, h, body) = get(&e, &format!("/api/logs/{id}/original/rlog.zst"), &[]).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(header(&h, "content-length"), Some("0"));
+    assert!(body.is_empty());
+}
+
 #[tokio::test]
 async fn an_unreachable_share_answers_storage_unavailable_not_missing() {
     let e = Env::new().await;
