@@ -205,6 +205,15 @@ impl RemoteRef {
     }
 }
 
+/// One media file of a Python-owned archive (`<id>/<kind>`) and, on Drive, the `rv_sha256` Python recorded.
+#[derive(Clone, Debug)]
+pub struct LegacyFile {
+    pub id: String,
+    pub kind: String,
+    pub marked_sha256: Option<String>,
+    pub remote: RemoteRef,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RemoteStat {
     pub exists: bool,

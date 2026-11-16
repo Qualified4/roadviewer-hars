@@ -771,6 +771,70 @@ impl NasLegacy {
     pub fn path_for(&self, id: &str, kind: &str) -> Result<PathBuf> {
         self.core.path_for(id, kind)
     }
+    /// The share's sentinel as written (owner, storage id), or the probe reason it cannot be read.
+    pub fn sentinel(path: &Path) -> std::result::Result<Value, &'static str> {
+        match std::fs::metadata(path) {
+            Ok(m) if m.is_dir() => {}
+            Ok(_) => return Err("path_missing"),
+            Err(e)
+                if matches!(
+                    e.kind(),
+                    std::io::ErrorKind::NotFound | std::io::ErrorKind::NotADirectory
+                ) =>
+            {
+                return Err("path_missing");
+            }
+            Err(_) => return Err("os_error"),
+        }
+        match std::fs::read(path.join(SENTINEL)) {
+            Ok(bytes) => serde_json::from_slice::<Value>(&bytes)
+                .ok()
+                .filter(Value::is_object)
+                .ok_or("sentinel_invalid"),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Err("sentinel_missing"),
+            Err(_) => Err("os_error"),
+        }
+    }
+    /// Every `<id>/<kind>` regular file of the share (symlinks are not followed).
+    pub async fn list_media(&self) -> Result<Vec<LegacyFile>> {
+        if !self.core.available().await {
+            return Err(BackendError::new(ErrorCode::Unavailable, "share"));
+        }
+        let root = self.core.settings.path.clone().unwrap_or_default();
+        tokio::task::spawn_blocking(move || -> std::io::Result<Vec<LegacyFile>> {
+            let mut out = Vec::new();
+            for entry in std::fs::read_dir(&root)? {
+                let entry = entry?;
+                let id = entry.file_name().to_string_lossy().into_owned();
+                if id.starts_with('.') || !entry.file_type()?.is_dir() {
+                    continue;
+                }
+                for kind in MEDIA_KINDS {
+                    match std::fs::symlink_metadata(entry.path().join(kind)) {
+                        Ok(m) if m.is_file() => out.push(LegacyFile {
+                            id: id.clone(),
+                            kind: kind.to_owned(),
+                            marked_sha256: None,
+                            remote: RemoteRef::new(
+                                BackendKind::Smb,
+                                format!("{id}/{kind}"),
+                                m.len(),
+                                None,
+                                None,
+                            ),
+                        }),
+                        Ok(_) => {}
+                        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                        Err(e) => return Err(e),
+                    }
+                }
+            }
+            Ok(out)
+        })
+        .await
+        .map_err(|_| BackendError::new(ErrorCode::Io, "join"))?
+        .map_err(|e| unavailable(&e))
+    }
 }
 
 impl ArchiveRead for NasLegacy {

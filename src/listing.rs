@@ -34,11 +34,12 @@ const SUMMARY_COPIES: [&str; 10] = [
     "start_v",
 ];
 /// HARS bookkeeping that Python metadata does not have.
-const INTERNAL: [&str; 4] = [
+const INTERNAL: [&str; 5] = [
     "queued_at",
     "conversion_id",
     "cancel_requested",
     "video_downloads",
+    "imported_from",
 ];
 const EARLIEST: f64 = 1420070400.;
 const RACY_NS: u128 = 2_000_000_000;

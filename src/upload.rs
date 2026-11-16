@@ -269,6 +269,11 @@ impl Session {
     async fn last_progress(&self) -> Result<f64> {
         Ok(self.progressed_ms.load(Ordering::Acquire) as f64 / 1000.)
     }
+    /// Progress made by a writer other than the chunk route (keeps the session from idling out).
+    pub(crate) fn touch(&self) {
+        self.progressed_ms
+            .store((now() * 1000.) as u64, Ordering::Release);
+    }
 }
 /// Archived recordings an upload re-sends, by id, with the states of their archived files.
 type ArchivedMatches = BTreeMap<String, BTreeMap<String, String>>;
@@ -504,10 +509,35 @@ impl Uploads {
         self.create(files, json!({"expires_at":now()+7200.}), self.max_log)
             .await
     }
+    /// A browser session that carries `marker` from the moment it exists (an import fed by the server itself,
+    /// whose leftovers startup removes by that file).
+    pub(crate) async fn create_marked(
+        &self,
+        files: Vec<UploadFile>,
+        marker: (&str, &Value),
+    ) -> Result<Arc<Session>> {
+        let _admission = self.admission.lock().await;
+        self.create_with(
+            files,
+            json!({"expires_at":now()+7200.}),
+            self.max_log,
+            Some(marker),
+        )
+        .await
+    }
     pub(crate) async fn forget(&self, session: &str) {
         self.sessions.write().await.remove(session);
     }
     async fn create(&self, files: Vec<UploadFile>, meta: Value, max: u64) -> Result<Arc<Session>> {
+        self.create_with(files, meta, max, None).await
+    }
+    async fn create_with(
+        &self,
+        files: Vec<UploadFile>,
+        meta: Value,
+        max: u64,
+        marker: Option<(&str, &Value)>,
+    ) -> Result<Arc<Session>> {
         let total = files
             .iter()
             .try_fold(0u64, |a, f| a.checked_add(f.size))
@@ -544,6 +574,9 @@ impl Uploads {
             .await?;
             if meta.get("device_id").is_some() {
                 atomic_json(&staging.join("device.json"), &meta).await?;
+            }
+            if let Some((name, value)) = marker {
+                atomic_json(&staging.join(name), value).await?;
             }
             tokio::fs::rename(&staging, &path).await?;
             sync_dir(path.parent().unwrap()).await
