@@ -418,11 +418,17 @@ impl Jobs {
         // MP4s of the published result this one took over: the journal carries the list, so
         // `prepared/` keeps the layout it always has.
         let carried_path = staging.join(crate::convert::CARRIED_PREVIOUS);
-        let carried = read_json::<Value>(&carried_path).await.ok();
-        if carried.is_some() {
-            tokio::fs::remove_file(&carried_path).await?;
-        }
-        let carried = carried.unwrap_or_else(|| json!([]));
+        // Only an absent list means nothing was taken over. A list that cannot be read must stop
+        // the publication: read as empty, a carried MP4 would count as produced and, with originals
+        // not retained, replace the original the engine refused.
+        let carried = match read_json::<Value>(&carried_path).await {
+            Ok(list) => {
+                tokio::fs::remove_file(&carried_path).await?;
+                list
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => json!([]),
+            Err(e) => return Err(e).context("carried camera list unreadable"),
+        };
         // The MP4s this generation wrote, by size: a resumed publication tells one it moved next to
         // its original from a stored MP4 that was there before (a conversion of MP4 inputs writes none).
         let mut produced = serde_json::Map::new();

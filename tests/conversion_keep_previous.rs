@@ -773,6 +773,8 @@ async fn a_restored_original_next_to_a_stored_mp4_survives_a_resumed_publication
 /// summary entry, with a warning, and its original stays. With retention off at that point the
 /// new camera's MP4 goes next to its original as usual, and the carried one is neither moved
 /// nor its original deleted. Converting again ends in the same state.
+/// The state is built by hand (files moved, record requeued): the upload path that adds a camera
+/// clears `prepared/` first and so never reaches the takeover.
 #[tokio::test(flavor = "multi_thread")]
 async fn a_camera_the_engine_refuses_keeps_its_published_video_and_a_new_camera_publishes() {
     for keep in [true, false] {

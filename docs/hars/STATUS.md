@@ -1,6 +1,6 @@
 # 구현 및 검증 현황
 
-현재 버전은 **2.0.0-alpha.3**이다. Python Road Viewer 1.3.16의 53개 API 라우트가 모두 등록되어 있고 `501 feature_not_ported`를 반환하는 경로는 없다. 운영 전환 후보는 아니다. 실제 HAOS, 실제 Google Drive·NAS, 실제 차량 장치에서의 검증이 남아 있다. 정식 `2.0.0` 릴리스, 운영 포트 승계, Python 설정 변경, openpilot 목적지 변경은 수행하지 않았다.
+현재 버전은 **2.0.0-alpha.4**이다. 2.0.0-alpha.4에서 FFmpeg 의존성(CLI, `ffprobe`, `ffmpeg-next`, libav*)을 제품 빌드·실행·배포 이미지에서 완전히 제거했다([FFMPEG-REMOVAL.md](FFMPEG-REMOVAL.md)). Python Road Viewer 1.3.16의 53개 API 라우트가 모두 등록되어 있고 `501 feature_not_ported`를 반환하는 경로는 없다. 운영 전환 후보는 아니다. 실제 HAOS, 실제 Google Drive·NAS, 실제 차량 장치에서의 검증이 남아 있다. 정식 `2.0.0` 릴리스, 운영 포트 승계, Python 설정 변경, openpilot 목적지 변경은 수행하지 않았다.
 
 검증 근거는 [VALIDATION.md](VALIDATION.md), 측정 조건과 수치는 [PERFORMANCE.md](PERFORMANCE.md), 라우트별 상태는 [api-parity.json](api-parity.json)(Python 라우트 목록의 출처는 [inventory.json](inventory.json)), 전환 절차는 [CUTOVER.md](CUTOVER.md)에 있다.
 
@@ -27,9 +27,13 @@
 | 기록 목록·검색·정렬·지도·북마크·태그 | 완료 | 실제 Python 서버와 응답 비교 | |
 | 네트워크 설정·재시작(Supervisor) | 완료 | 모의 Supervisor | 실제 Supervisor |
 | 로그 분석·replay·telemetry·GPS·summary | 완료 | 실제 61구간·72,749프레임, 원본 13구간 | 추가 차량·지역 |
-| 영상 리먹싱 | 순수 Rust 엔진이 기본, FFmpeg 엔진은 대체 경로 | 원본 13구간 26영상, 두 엔진 출력 동일, 경계·장애 테스트 | aarch64 실기기, Safari·Firefox, 실주행 B-frame·interlaced |
+| 영상 리먹싱 | 순수 Rust 엔진만(FFmpeg 엔진·대체 경로 제거) | 원본 13구간 26영상, 14·47구간 회귀, 경계·장애 테스트, FFmpeg 없는 컨테이너에서 변환 | aarch64 실기기, Safari·Firefox. B-frame·interlaced 등은 지원하지 않음(아래 표) |
 | 마지막 프레임 길이 | rlog의 다음 카메라 프레임 기준 | 연속 12쌍에서 실제 간격과 0~1 tick | [TERMINAL-DURATION.md](TERMINAL-DURATION.md) |
-| 기존 MP4 재사용·역변환·썸네일 | 완료(FFmpeg 사용) | 61구간, 역변환 NAL·PTS 일치 | 썸네일 픽셀 동일성(점수 ±0.01) |
+| 기존 MP4 재사용 | 완료 | 61구간 | |
+| 원본 형식 내보내기(역변환) | 순수 Rust([FFMPEG-REMOVAL.md](FFMPEG-REMOVAL.md)) | 26영상 왕복: NAL·프레임·키프레임·PTS/DTS·디코딩 MD5 26/26, TS는 원본과 바이트 동일, 손상 입력 300건 | HEVC는 PPS 뒤 0 바이트 60개가 원본과 다름(MP4에 남지 않는 정보, 이전 FFmpeg 역변환과는 동일). 4 GiB 초과 |
+| 썸네일 | 순수 Rust 디코더·축소·JPEG([THUMBNAIL-DECODER.md](THUMBNAIL-DECODER.md)) | 5,040프레임 디코딩이 FFmpeg과 비트 동일, 85개 입력에서 고른 프레임·점수·메타·축소 결과 동일 | JPEG 바이트는 다름(PSNR 중앙값 55 dB). aarch64 실측. 10비트·4:2:2·4:4:4·interlaced는 썸네일 없음 |
+| 업로드·원본 영상 검사 | 순수 Rust, 별도 worker 프로세스 | 기존 `ffprobe` 검사와 138건 대조: 기존이 거부한 것을 새로 수락한 경우 0 | |
+| 배포 이미지 | FFmpeg 없음. 런타임 패키지는 `nginx`, `ca-certificates` | amd64 로컬 측정, CI가 두 아키텍처에서 FFmpeg 잔존 검사와 크기 측정 | 수치는 [PERFORMANCE.md](PERFORMANCE.md) |
 | 변환 큐·취소·복구 | 완료 | worker 강제 종료, 쓰기 한도, 프로세스 그룹 종료 | |
 | HAOS 독립 설치 구성 | 완료 | `scripts/check_coexistence.py`, amd64·aarch64 컨테이너 기동·TLS | 실제 HAOS 병행 설치·재시작·Ingress |
 | 인증 오프라인 승계 | 완료 | Python 발급 상태로 재페어링 없이 업로드(CI) | 실제 운영 스냅샷 |
@@ -41,11 +45,27 @@
 - **원격 쓰기 범위.** HARS는 `Road Viewer HARS` 폴더(Drive)와 owner `roadviewer-hars` sentinel(NAS)에만 쓴다. Python의 폴더는 읽기만 한다.
 - **잘린 qcamera.** TS의 마지막 패킷이 영상 데이터 중간에서 잘린 파일을 Python은 그 데이터를 버린 채 게시한다. HARS는 그 카메라를 실패로 끝내고 원본을 보존한다. 패킷 경계에서 잘린 파일은 Python처럼 게시한다.
 - **자원 실패와 기존 결과.** 리먹싱이 디스크 부족·시간 초과·메모리 상한·강제 종료로 실패했을 때, 디스크에 그 카메라를 재생할 수 있는 게시 결과가 있으면 이번 시도를 버리고 그 결과로 되돌린다. Python은 그 카메라가 빠진 결과를 게시한다. 게시 결과가 없으면 Python과 같다.
+- **자원이 아닌 실패와 기존 결과(alpha.4).** 엔진이 입력을 거부했을 때(unsupported·invalid·verification·internal) 디스크의 게시 결과가 그 카메라를 재생할 수 있으면 그 카메라의 이전 MP4만 이어받고 나머지 카메라는 변환해 게시한다. 카메라 추가 업로드는 Python처럼 `prepared/`를 먼저 비우므로 이 경우에는 거부된 카메라가 경고와 함께 빠진다(원본은 보존).
+- **여유 공간 부족.** 여유 공간이 입력의 2배 + 100 MiB보다 적으면 쓰기 전에 자원 실패로 끝낸다. alpha.3은 이 경우 FFmpeg 엔진으로 사본 하나만 써서 변환했다.
 - **삭제.** 숨김 rename을 확정 시점으로 하는 저널을 쓴다. Python은 `rmtree` 한 번이다.
 - **finish 중 크래시.** 등록 저널로 복구해 같은 영수증을 돌려준다. Python은 영수증을 잃는다.
 - **보충 변환.** `backfill.py`·`gap_backfill.py`는 이식하지 않았다. 옛 Python 변환기가 쓰지 않던 값을 채우는 용도이고 HARS 변환기는 처음부터 그 값을 쓴다. Python에서 가져온 옛 기록의 해당 값은 재변환으로 채운다.
 - **지도 보충의 대기 조건.** Python은 영상 재생 중이면 기다린다. HARS는 업로드·변환·보관 실행만 본다.
 - **썸네일.** 요청 시 즉시 생성하지 않고 변환 때 만든다.
+
+## alpha.4에서 지원 범위가 달라진 입력
+
+FFmpeg 대체 경로가 없어지면서 순수 엔진이 거부하는 입력은 명시적 실패로 끝난다. comma 장치가 만드는 영상과 실주행 코퍼스(13·14·47구간)에는 해당 사례가 없다. 실패해도 원본과 이전 게시 결과는 보존된다. 전체 표와 근거는 [FFMPEG-REMOVAL.md](FFMPEG-REMOVAL.md)에 있다.
+
+| 입력 | alpha.3 | alpha.4 |
+|---|---|---|
+| B-frame TS, interlaced TS, SPS scaling matrix, PES 하나에 그림 여러 장 | FFmpeg 엔진이 변환 | 변환 실패(unsupported) |
+| PAT/PMT가 손상됐거나 첫 패킷 앞에 쓰레기가 있는 TS | FFmpeg 엔진이 변환(추정) | 변환 실패(invalid) |
+| edit list로 미디어를 지연시킨 MP4(B-frame MP4), NAL 길이 필드가 4가 아닌 MP4, sample entry가 여러 개인 MP4 | 수락 | 실패 |
+| hev1·다중 트랙 MP4, avcC와 in-band SPS가 다른 MP4의 원본 형식 내보내기 | FFmpeg이 내보냄 | 내보내기 실패 |
+| H.264 4:2:2·4:4:4·10비트·interlaced, HEVC Main10·4:4:4의 썸네일 | 생성 | 썸네일 없음(변환은 영향 없음) |
+| 여유 공간이 입력의 2배 + 100 MiB 미만 | FFmpeg 엔진이 변환 | 자원 실패 |
+| scrambling 플래그가 선 TS, 비영상 패킷에서 잘린 TS, moov가 mdat 뒤인 MP4, 오디오 트랙이 더 있는 MP4, hev1/avc3 MP4 입력 | FFmpeg 대체 또는 거부 | 순수 엔진이 변환 |
 
 ## 운영 전환 전 남은 위험
 
@@ -55,3 +75,5 @@
 4. Python의 `.archive.json`을 HARS 데이터 폴더에 복사하면 안 된다.
 5. NAS에서 확인과 열기 사이에 파일을 심볼릭 링크로 바꿔치기하는 경합은 막지 못한다. NAS 쓰기 권한이 있는 공격자가 전제다.
 6. 실제 차량 장치의 장시간·동시 업로드, 전원 차단, aarch64 실기기 재생은 확인하지 못했다.
+7. 썸네일 디코더(`rusty_h264-decoder`, `rusty_h265`)는 2026년에 나온 crate다. 별도 worker 프로세스에서 메모리·시간 상한 아래 돌고 실패는 썸네일 누락으로만 이어진다.
+8. TS 원본 검사와 리먹싱 엔진이 같은 `mpeg2ts` demuxer를 쓴다. 출력 MP4는 독립 판독기로 확인하지만 입력 판독의 독립 대조(이전의 libavformat)는 없어졌다.

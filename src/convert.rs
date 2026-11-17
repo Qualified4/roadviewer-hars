@@ -366,9 +366,11 @@ pub async fn prepare(
                 // files on disk say it plays: `meta.videos` outlives `clear_prepared`, as in Python.
                 if previous_plays(&recording, &meta, name, mp4).await {
                     // An input the engine cannot copy (which an earlier version may have published)
-                    // fails the same way on every attempt: stopping would keep every other camera,
-                    // a new one included, unpublished for good. That camera is taken over as it is
-                    // published and the others convert.
+                    // fails the same way on every attempt: stopping would keep every other camera
+                    // unpublished for good. That camera is taken over as it is published and the
+                    // others convert. This needs `prepared/` to still hold the published result:
+                    // adding a camera and a manual reconversion clear it first, as Python does, and
+                    // then the refused camera is left out with a warning instead.
                     if failure.class != FailureClass::Resource {
                         match carry_previous(&recording, &dest, &meta, name, mp4).await {
                             Ok(previous) => {
