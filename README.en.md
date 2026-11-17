@@ -4,7 +4,7 @@
 
 > **This repository is Road Viewer 2.x, rebuilt in Rust. It is a prerelease (alpha), not yet officially released, and cutover validation is in progress.** See the [implementation and validation status](docs/hars/STATUS.md) (Korean) for the current version. No stable release or production cutover has been made.
 >
-> The Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha) remains maintained as a separate product. This app is meant to be installed next to the existing Python app for testing; the Home Assistant app store and sidebar show it as **Road Viewer HARS**. Features that are not ported never report success. Do not install the current build as a complete replacement for Python 1.x or move production uploads to it.
+> The Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha) remains maintained as a separate product. This app is meant to be installed next to the existing Python app for testing; the Home Assistant app store and sidebar show it as **Road Viewer**. Features that are not ported never report success. Do not install the current build as a complete replacement for Python 1.x or move production uploads to it.
 >
 > The feature descriptions below follow Python Road Viewer 1.3.18. HARS 2.x serves the same web UI and implements the same API; intentional differences from Python are listed in the [implementation and validation status](docs/hars/STATUS.md#python과-의도적으로-다른-점) (Korean).
 >
@@ -29,7 +29,7 @@ Switch the right panel to the road view to compare a top-down view of lanes, pat
 ## Getting started
 
 1. Add `https://github.com/Qualified4/roadviewer-hars` under Home Assistant **Settings → Apps → App store → ⋮ → Repositories**. Some versions call apps “add-ons.”
-2. Install the entry shown as **Road Viewer HARS** in the app store, start it and open its web UI. Automatic start is off by default (`boot: manual`), so start it yourself after the host restarts.
+2. Install the entry shown as **Road Viewer** in the app store, start it and open its web UI. Automatic start is off by default (`boot: manual`), so start it yourself after the host restarts.
 3. On the **업로드** (Upload) tab, select files with **파일 추가** (Add files) or drag them into the upload area, then press **업로드** (Upload). Uploads keep running when you switch tabs; the header shows progress.
 4. When conversion finishes, press **재생** (Play) on the **로그** (Logs) tab. If automatic conversion is disabled, first press **변환** (Convert).
 

@@ -30,7 +30,7 @@
 
 ## 설치와 접속
 
-Home Assistant 앱 스토어의 저장소에 `https://github.com/Qualified4/roadviewer-hars`를 추가하고 **Road Viewer HARS**(앱 스토어·사이드바 표시 이름)를 설치·시작합니다. 자동 시작은 기본으로 꺼져 있습니다(`boot: manual`). **웹 UI 열기** 또는 사이드바로 접속합니다. Home Assistant 버전에 따라 ‘앱’이 ‘애드온’으로 표시됩니다. HACS용 통합 구성요소가 아닙니다.
+Home Assistant 앱 스토어의 저장소에 `https://github.com/Qualified4/roadviewer-hars`를 추가하고 **Road Viewer**(앱 스토어·사이드바 표시 이름)를 설치·시작합니다. 자동 시작은 기본으로 꺼져 있습니다(`boot: manual`). **웹 UI 열기** 또는 사이드바로 접속합니다. Home Assistant 버전에 따라 ‘앱’이 ‘애드온’으로 표시됩니다. HACS용 통합 구성요소가 아닙니다.
 
 설치·업데이트는 GHCR에 미리 빌드한 이미지(`ghcr.io/qualified4/roadviewer-hars`)를 내려받습니다. 지원 플랫폼은 **amd64(Intel/AMD 64비트)**와 **aarch64(ARM 64비트)**이며, 기기에 맞는 이미지 하나만 받습니다. 여러 플랫폼을 배포해도 다른 플랫폼의 이미지까지 다운로드하지 않습니다. 32비트 ARM과 i386은 지원하지 않습니다.
 

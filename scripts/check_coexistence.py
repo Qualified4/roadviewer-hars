@@ -18,7 +18,8 @@ hars_text = (ROOT / "roadviewer_hars/config.yaml").read_text(encoding="utf-8")
 python_text = (ROOT / "reference/python/roadviewer/config.yaml.reference").read_text(encoding="utf-8")
 hars, python = top_level(hars_text), top_level(python_text)
 
-for key in ("slug", "image", "name", "panel_title", "url"):
+# The display name may match: this app is named Road Viewer and replaces the Python one. Identity stays separate.
+for key in ("slug", "image", "url"):
     assert hars[key] != python[key], f"{key} must differ from the Python app"
 assert hars["ingress"] == "true" and hars["ingress_port"] == python["ingress_port"], "each app keeps its own container-private Ingress listener"
 

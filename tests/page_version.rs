@@ -105,15 +105,11 @@ async fn pages_name_the_hars_version_only() {
             html.contains(&format!("\"{assets}style.css?v={HARS}\"")),
             "{uri}"
         );
+        // The pages name the product as preserved, "Road Viewer", with no HARS suffix anywhere.
+        assert!(!html.contains("HARS"), "{uri}: no page names HARS");
         assert!(
-            html.contains("Road Viewer HARS") && !html.contains("HARS HARS"),
-            "{uri}"
-        );
-        // HARS is named in the title and next to the version label only; every other "Road
-        // Viewer" stays as preserved, the wordmark above all (it is sized for those 11 letters).
-        assert!(
-            html.contains("<title>Road Viewer HARS · Home Assistant</title>"),
-            "{uri}: the title names HARS"
+            html.contains("<title>Road Viewer · Home Assistant</title>"),
+            "{uri}: the title is the preserved one"
         );
         if uri == "/?fragment=1" {
             assert!(
@@ -121,17 +117,12 @@ async fn pages_name_the_hars_version_only() {
                 "{uri}: the wordmark keeps the preserved letters"
             );
         }
-        assert_eq!(
-            html.matches("Road Viewer HARS").count(),
-            if fragment { 2 } else { 1 },
-            "{uri}: HARS is named in the title and the version label only"
-        );
         if fragment {
             assert!(
                 html.contains(&format!(
-                    ">Road Viewer HARS <span class=\"app-version\">v{HARS}</span>"
+                    ">Road Viewer <span class=\"app-version\">v{HARS}</span>"
                 )),
-                "{uri}: the version label names HARS"
+                "{uri}: the version label keeps the preserved name"
             );
         }
         if fragment {

@@ -2,9 +2,9 @@
 
 한국어 · [English](README.en.md)
 
-> **이 저장소는 Rust 기반 Road Viewer 2.x입니다. 아직 정식 출시 전의 prerelease(alpha)이며 운영 전환 검증이 진행 중입니다.** 현재 버전은 **2.0.0-alpha.5**이며, 정식 릴리스와 운영 전환을 수행하지 않았습니다.
+> **이 저장소는 Rust 기반 Road Viewer 2.x입니다. 아직 정식 출시 전의 prerelease(alpha)이며 운영 전환 검증이 진행 중입니다.** 현재 버전은 **2.0.0-alpha.6**이며, 정식 릴리스와 운영 전환을 수행하지 않았습니다.
 >
-> Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)는 별도 제품으로 계속 유지됩니다. 이 앱은 기존 Python 앱 옆에 병행 설치해 시험하는 용도이며, Home Assistant 앱 스토어와 사이드바에는 **Road Viewer HARS**로 표시됩니다. 미이식 기능은 성공으로 응답하지 않습니다. 현재 빌드를 Python 1.x의 완전한 대체 제품으로 설치하거나 운영 업로드를 전환하면 안 됩니다.
+> Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)는 별도 제품으로 계속 유지됩니다. 이 앱은 기존 Python 앱 옆에 병행 설치해 시험하는 용도이며, Home Assistant 앱 스토어와 사이드바에는 **Road Viewer**로 표시됩니다. 미이식 기능은 성공으로 응답하지 않습니다. 현재 빌드를 Python 1.x의 완전한 대체 제품으로 설치하거나 운영 업로드를 전환하면 안 됩니다.
 >
 > 아래 기능 설명은 Python Road Viewer 1.3.18 기준입니다. HARS 2.x는 같은 웹 화면을 쓰고 같은 API를 구현하며, Python과 의도적으로 다른 점은 [구현·검증 현황](docs/hars/STATUS.md#python과-의도적으로-다른-점)에 있습니다.
 >
@@ -29,7 +29,7 @@ openpilot 주행 로그와 전방·와이드 카메라 영상을 올리고, **�
 ## 시작하기
 
 1. Home Assistant의 **설정 → 앱 → 앱 스토어 → ⋮ → 저장소**에서 `https://github.com/Qualified4/roadviewer-hars`를 추가합니다. 버전에 따라 ‘앱’이 ‘애드온’으로 표시됩니다.
-2. 앱 스토어에 **Road Viewer HARS**로 표시되는 항목을 설치하고 시작한 뒤 **웹 UI 열기**를 누릅니다. 자동 시작은 기본으로 꺼져 있어(`boot: manual`) 호스트를 다시 켠 뒤에는 직접 시작해야 합니다.
+2. 앱 스토어에 **Road Viewer**로 표시되는 항목을 설치하고 시작한 뒤 **웹 UI 열기**를 누릅니다. 자동 시작은 기본으로 꺼져 있어(`boot: manual`) 호스트를 다시 켠 뒤에는 직접 시작해야 합니다.
 3. **업로드** 탭에서 **파일 추가** 또는 드래그 앤 드롭으로 파일을 선택하고 **업로드**합니다. 다른 탭으로 옮겨도 업로드는 계속되며 헤더에 진행률이 표시됩니다.
 4. 변환이 끝나면 **로그** 탭에서 **재생**을 누릅니다. 자동 변환을 껐다면 목록에서 먼저 **변환**을 누릅니다.
 

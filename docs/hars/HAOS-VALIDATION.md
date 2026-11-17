@@ -45,7 +45,7 @@
 
 설치 전: 운영 중인 Python 앱에서 진행 중인 업로드·변환·보관 작업이 없는 시간대를 고른다. HARS 설치 자체는 Python을 재시작시키지 않지만 호스트의 CPU·디스크를 함께 쓴다. 호스트의 남은 디스크 공간을 기록한다.
 
-설치: HAOS 앱 저장소에 `https://github.com/Qualified4/roadviewer-hars`를 추가하고 "Road Viewer HARS"를 설치한다. 옵션은 기본값 그대로 둔다(외부 HTTPS 끔, 포트 null). 수동으로 시작한다.
+설치: HAOS 앱 저장소에 `https://github.com/Qualified4/roadviewer-hars`를 추가하고 "Road Viewer"(2.0.0-alpha.5까지는 "Road Viewer HARS")를 설치한다. 옵션은 기본값 그대로 둔다(외부 HTTPS 끔, 포트 null). 수동으로 시작한다.
 
 | 단계 | 확인 | 통과 기준 |
 |---|---|---|

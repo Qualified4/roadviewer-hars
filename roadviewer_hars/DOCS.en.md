@@ -16,7 +16,7 @@ Start with **업로드 tab → Add files → Upload → Convert → Play**. The 
 
 ## Installation and access
 
-Add `https://github.com/Qualified4/roadviewer-hars` to the Home Assistant app store repositories, install the entry shown as **Road Viewer HARS** (its app store and sidebar name), start it, then open its web UI. Automatic start is off by default (`boot: manual`). Some Home Assistant versions call apps “add-ons.” This is not a HACS integration. Home Assistant Container does not provide the Supervisor app store.
+Add `https://github.com/Qualified4/roadviewer-hars` to the Home Assistant app store repositories, install the entry shown as **Road Viewer** (its app store and sidebar name), start it, then open its web UI. Automatic start is off by default (`boot: manual`). Some Home Assistant versions call apps “add-ons.” This is not a HACS integration. Home Assistant Container does not provide the Supervisor app store.
 
 Supported platforms are **amd64** (64-bit Intel/AMD) and **aarch64** (64-bit ARM). Installation downloads only the matching prebuilt GHCR image (`ghcr.io/qualified4/roadviewer-hars`). ARM 32-bit and i386 are unsupported. Home Assistant may display download/extraction progress; it is not a reliable estimate of total startup time.
 
