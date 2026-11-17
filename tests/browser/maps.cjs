@@ -3,7 +3,7 @@
 // in the dark and the light theme. The OpenFreeMap basemap (MapLibre in Leaflet) is stubbed with small fixtures (no
 // network) unless RV_MAP_REAL_TILES=1; the positions are synthetic, never a real drive.
 const fs=require('fs'),os=require('os'),path=require('path'),zlib=require('zlib'),assert=require('node:assert/strict'),{spawn}=require('child_process'),{chromium}=require('playwright');
-const {settleLayout}=require('./browser-helpers.cjs');
+const {settleLayout,waitForSteadyLayout}=require('./browser-helpers.cjs');
 // OpenFreeMap stubs: a style per theme (a background, a GeoJSON street grid around the routes and a symbol layer of
 // street names, so 글자 숨기기 has layers to hide), its TileJSON, empty vector tiles and empty glyph ranges.
 // RV_MAP_REAL_TILES=1 lets the browser fetch the real OpenFreeMap styles and tiles instead (with RV_MAP_SHOTS, to look).
@@ -106,10 +106,15 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
    await page.goto(base);await page.locator('.log-route').first().waitFor();
    assert(!await page.evaluate(()=>!!(window.L||window.maplibregl)),'Leaflet and MapLibre load only when a map is first shown');
    // ② The cards with GPS show their route (SVGs, no tiles); phones: a 지도 button left of 재생, no route in the thumbnail.
-   await page.locator('.route-map-button').first().waitFor();
+   // The 지도 buttons show while /api/tracks is on its way (no shape yet); maps.js draws every card's shape in one pass
+   // when the routes arrive, so the first drawn shape is the point where the cards are complete.
+   await page.locator('.route-map-button svg .shape-line').first().waitFor();
    assert.equal(await page.locator('.route-map-button').count(),2);assert.equal(await page.locator('.route-map-button svg .shape-line').count(),2);
    assert.equal(await page.locator('.log-route[data-route*="00000397"] :is(.route-inset,.route-strip,.route-map-button)').count(),0,'no GPS: no route at all');
-   {const card=page.locator('.log-route[data-route*="00000395"]'),button=await card.locator('.route-map-button').boundingBox(),play=await card.locator('.log-route-actions a.replay').boundingBox();
+   // Both boxes from one layout once the row has stopped moving (two reads in turn once caught the list between
+   // layouts: the button 56 px below 재생).
+   {const card=page.locator('.log-route[data-route*="00000395"]');await settleLayout(page);await waitForSteadyLayout(page,'.log-route[data-route*="00000395"] :is(.route-map-button,.log-route-actions a.replay)');
+    const {button,play}=await card.evaluate(e=>{const box=s=>{const r=e.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};return {button:box('.route-map-button'),play:box('.log-route-actions a.replay')}});
     assert(button.height>=44&&button.x+button.width<=play.x&&play.x-(button.x+button.width)<=12&&Math.abs(button.y+button.height/2-play.y-play.height/2)<2,JSON.stringify({button,play}));
     assert.equal(await card.locator('.route-map-button').innerText(),'지도');
     // The empty left of the actions row folds the card (지도 sits beside 재생).
@@ -680,10 +685,16 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
     const state=()=>page.evaluate(()=>rvVideoMapState());
     for(const large of [true,false]){
      const before=await state();assert(!before.held&&before.large!==large&&before.box.join()===before.frame.join(),'at rest the map fills its frame '+JSON.stringify(before));
-     // The motion is sampled in the page on the first frame the frame has moved (a sample 120 ms after the tap could
-     // still see it unmoved on a loaded machine).
-     const during=await page.evaluate(before=>new Promise(done=>{const start=performance.now();document.getElementById('videoMap').click();
-      const look=()=>{const s=rvVideoMapState();if(s.frame.join()!==before.frame.join()||performance.now()-start>3000)done(s);else requestAnimationFrame(look)};requestAnimationFrame(look)}),before);assert(during.held&&during.centred&&during.frame.join()!==before.frame.join()&&during.box[0]>=during.frame[0]&&during.box[1]>=during.frame[1]&&(large||during.box[0]>=before.box[0]&&during.box[1]>=before.box[1]),'held, centred and covering the moving frame (shrinking: at least its larger size, or a few px over it when the room was measured again meanwhile) '+JSON.stringify({before,during}));
+     // The motion is sampled halfway through the frame's own size transition, in the task of the tap: the hold is set by
+     // the tap and lifted by a 280 ms timer, which cannot run before this task ends. (Waiting for a frame in which the
+     // frame had moved saw it already released when a loaded machine delayed that frame past the timer; a sample 120 ms
+     // after the tap could still see it unmoved.)
+     const during=await page.evaluate(()=>{const m=document.getElementById('videoMap');m.click();m.getBoundingClientRect();
+      const moving=m.getAnimations().filter(a=>['width','height'].includes(a.transitionProperty)&&a.playState==='running');
+      if(!moving.length)return {motion:false,...rvVideoMapState()};
+      for(const a of moving)a.currentTime=a.effect.getComputedTiming().duration/2;
+      return {motion:true,...rvVideoMapState()}});
+     assert(during.motion,'the frame changes size in a transition '+JSON.stringify({before,during}));assert(during.held&&during.centred&&during.frame.join()!==before.frame.join()&&during.box[0]>=during.frame[0]&&during.box[1]>=during.frame[1]&&(large||during.box[0]>=before.box[0]&&during.box[1]>=before.box[1]),'held, centred and covering the moving frame (shrinking: at least its larger size, or a few px over it when the room was measured again meanwhile) '+JSON.stringify({before,during}));
      await page.waitForFunction(large=>{const s=rvVideoMapState();return !s.held&&s.large===large&&s.box.join()===s.frame.join()},large,{timeout:5000}).catch(()=>{});
      const after=await state();assert(!after.held&&after.large===large&&after.box.join()===after.frame.join()&&after.frame.join()!==before.frame.join()&&(!large||[0,1].every(k=>during.box[k]>=after.frame[k]-2&&during.box[k]-after.frame[k]<12)),'released at the new size (growing: held at that size, or a few px over it when the room for the map was measured again meanwhile: still covering) '+JSON.stringify({during,after}))}
     await page.emulateMedia({reducedMotion:'reduce'});await settleLayout(page)}
