@@ -162,3 +162,12 @@ Windows 작업 폴더 안의 소스를 WSL Ubuntu 24.04에서 빌드했다. Rust
 - 불안정 테스트 2건은 모두 테스트 결함(전역 카운터, 파일 기준 대기)이었고 재실행으로 덮지 않고 고쳤다. 두 번째는 alpha.3에도 있던 것(20회 중 2회).
 - 지원 범위가 줄어든 입력(B-frame·interlaced TS, B-frame MP4, 특수 픽셀 형식의 썸네일, 저공간 변환 등)은 STATUS.md 표에 있다. 병합 전 사용자 확인 대상.
 - 미검증은 VALIDATION.md의 alpha.4 "미검증"을 따른다. 태그·릴리스·GHCR 게시, 운영 포트·Python·openpilot·HAOS 변경은 하지 않았다.
+
+## 2026-11-17 프런트엔드 1.3.18 동기화 (`feat/ui-sync-1.3.18`)
+
+- 기준 `main` `4f263bb`. 보존 원본을 Python `d3de134`(1.3.18)로 올렸다. 바뀐 원본 20개는 올리기 전 모두 1.3.16 원본과 바이트 단위로 같았다(HARS 쪽 수정 없음). 추가·삭제 파일 없음, Python 서버 코드(`roadviewer/app/*.py`) 변경 없음. HARS 버전은 `2.0.0-alpha.4` 그대로.
+- 기능: 1.3.17 지도 차량 아이콘 색상(자동·흰색·민트·파랑·하늘·보라·분홍·주황·빨강, 지도 탭·영상 위 작은 지도·방향 화살표, `localStorage` `roadviewer-map-car-color`), 1.3.18 불투명 차체·창문, 구간 카드 밀어 올리기의 제목 위치와 끝에서 1.3배 확대.
+- 결정: 페이지 버전 치환을 문자열 `"1.3.16"` 고정에서 원본 릴리스 번호를 Python과 같은 곳(`library.html`의 `assets/style.css?v=`)에서 읽어 자산 `?v=`와 `>v…<` 표시만 바꾸는 방식으로 고쳤다. 고정 문자열이면 1.3.18 페이지의 자산 주소가 Python 버전에 묶였다. `tests/page_version.rs`가 지킨다.
+- 결정: `localStorage` 키는 원본 그대로 둔다. 같은 HA 출처(Ingress)에서 Python과 HARS가 키를 공유하는 것은 기존 키(차량 아이콘 모양·지도 테마 등)와 같은 방식이다.
+- 검증: `integration/ui_sync_check.py`(실주행 연속 3구간, 새 빌드 8/8 통과, `4f263bb` 빌드는 실패), `ui_view_check.py` 9/9, 원본 `segment_peek.cjs`를 HARS가 내보낸 파일로 통과, 원본 `maps.cjs`는 HARS에 붙였으나 110행에서 실패(원인 미확인, DEVELOPMENT.md "웹 화면 검사"), 실코퍼스 13구간 13/13 차이 없음.
+- 위험: 이미 배포된 `2.0.0-alpha.4`와 같은 버전으로 웹 파일이 바뀌므로, 그 버전 자산을 1년 캐시(`public, max-age=31536000`)한 브라우저는 다음 HARS 버전까지 이전 자산을 쓸 수 있다. 다음 배포 전에 버전을 올려야 한다.

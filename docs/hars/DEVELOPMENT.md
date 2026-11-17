@@ -5,6 +5,7 @@
 
 - [진단](#진단)
 - [CI/CD](#cicd)
+- [웹 화면 검사 (브라우저, CI 밖)](#웹-화면-검사-브라우저-ci-밖)
 - [재생 변환 비교](#재생-변환-비교)
 - [변환 성능 재현](#변환-성능-재현)
 <!-- /toc -->
@@ -60,6 +61,34 @@ Rust 구조화 로그는 요청 ID, 경로, 서버 진입, 인증/파일 락 대
 프리릴리스 workflow는 HARS 저장소의 `2.0.0-alpha.N`, `beta.N`, `rc.N` 태그만 처리한다. Cargo/HA 버전이 태그와 일치해야 하며 HARS 전용 GHCR 이미지를 게시한다. `2.0.0` 정식 태그는 이 workflow로 게시할 수 없다. 현재 작업에서 태그·Release·배포는 수행하지 않는다.
 
 한글 경로에서 네이티브 Python 로더가 비정상 종료하는 문제를 피하도록 비교 서버는 영문 임시 경로에서 실행한다. Rust의 Cargo 산출물은 WSL 영문 임시 디렉터리에 두어 Windows 파일 시스템의 빌드 비용을 줄일 수 있다.
+
+## 웹 화면 검사 (브라우저, CI 밖)
+
+웹 파일은 `reference/python/roadviewer/app/web/`의 보존 원본을 그대로 쓴다. 원본을 새 릴리스로 올릴 때는 `scripts/verify_reference.py`의 `SOURCE`와 `scripts/inventory.py`의 기준을 함께 바꾼다. 페이지의 버전 치환은 브라우저 없이 `tests/page_version.rs`가 CI에서 지킨다(원본 릴리스 번호가 페이지에 남거나 치환 대상이 사라지면 실패).
+
+아래 검사는 브라우저가 필요해 CI에 넣지 않았다. 새 임시 프로필의 headless Chromium 계열만 쓰고, 서버는 임시 데이터 폴더와 loopback 포트의 release 실행 파일이다. 대상 레코드는 영상과 GPS가 있고 같은 주행에 구간이 2개 이상 있어야 하므로 실주행 연속 구간 3개를 `/api/uploads`로 올려 변환한 뒤 쓴다(`integration/real_upload_smoke.py`와 같은 업로드 절차).
+
+```sh
+HARS_DATA=/tmp/hars-ui HARS_INGRESS_ONLY=0 HARS_BIND=127.0.0.1:18760 HARS_DEVICE_BIND=127.0.0.1:18761 target/release/roadviewer-hars &
+# 1.3.17-1.3.18: 차량 아이콘 색상 9종(지도 옵션·표시 설정), 지도 탭과 영상 위 작은 지도에 함께 적용,
+# 새로 고침 뒤 유지, 방향 화살표 색, 자동=기존 모습, 불투명 차체·창문, 구간 카드 밀어 올리기(끝에서 1.3배)
+python3 integration/ui_sync_check.py --browser ~/.cache/ms-playwright/chromium-1248/chrome-linux64/chrome \
+  --profile "$(mktemp -d)" --port 18770 --server http://127.0.0.1:18760 --record ID --output sync.json
+# 재생·카메라 전환·시킹·오버레이·지도·그래프
+python3 integration/ui_view_check.py --browser EXE --profile NEW_DIR --port 18772 --server http://127.0.0.1:18760 --record ID --output view.json
+```
+
+`ui_sync_check.py`의 브라우저는 바깥 호스트 이름을 풀지 못하게 띄운다. 지도 타일을 받지 않으므로 실주행 위치가 밖으로 나가지 않는다. `ui_view_check.py`는 그렇게 하지 않으므로 실주행 데이터에서는 지도 타일 요청이 OpenFreeMap으로 나간다. 구간 카드 제스처는 원본 `tests/segment_peek.cjs`가 CDP로 보내는 터치 대신 같은 포인터·터치 이벤트를 스크립트로 보낸다.
+
+보존 원본 브라우저 테스트(`reference/python/tests/*.cjs`, Node + Playwright)는 원본 파일을 고치지 않고 HARS에 붙일 수 있다. `segment_peek.cjs`는 API를 가짜로 채우고 화면 파일을 작업 폴더에서 읽으므로, `integration/upstream_cjs/mirror_web.py`로 HARS가 내보낸 페이지·자산을 영문 임시 폴더에 받아 그 폴더에서 실행한다. `maps.cjs`는 `RV_PYTHON`이 띄우는 서버를 쓰므로 `integration/upstream_cjs/hars_as_python.py`(HARS 기동 + `/api/hassio_ingress/test/` 접두사 제거 프록시)를 `RV_PYTHON`으로 준다. 이 테스트는 Python 형식 기록 파일을 데이터 폴더에 직접 써 넣는다.
+
+```sh
+cd /tmp/peek && NODE_PATH=PLAYWRIGHT_NODE_MODULES node "$REPO/reference/python/tests/segment_peek.cjs"
+cd "$REPO/reference/python" && HARS_BIN=... HARS_WEB=... RV_PYTHON="$REPO/integration/upstream_cjs/hars_as_python.py" \
+  RV_TEST_VIDEO=SYNTHETIC.mp4 NODE_PATH=PLAYWRIGHT_NODE_MODULES node tests/maps.cjs
+```
+
+2026-11-17 1.3.18 동기화(`feat/ui-sync-1.3.18`)에서 `segment_peek.cjs`는 통과했다. `maps.cjs`는 110행(목록 카드 경로 버튼 안의 경로 선 2개)에서 0개로 실패해 그 뒤(1.3.17 색상 단언 포함)는 실행되지 않았다. 같은 기록의 `/api/tracks`는 Python과 점이 같고 `distance_m` 표기(`900` 대 `900.0`)만 달랐다. 원인은 확인하지 않았다.
 
 ## 재생 변환 비교
 
