@@ -685,10 +685,16 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
     const state=()=>page.evaluate(()=>rvVideoMapState());
     for(const large of [true,false]){
      const before=await state();assert(!before.held&&before.large!==large&&before.box.join()===before.frame.join(),'at rest the map fills its frame '+JSON.stringify(before));
-     // The motion is sampled in the page on the first frame the frame has moved (a sample 120 ms after the tap could
-     // still see it unmoved on a loaded machine).
-     const during=await page.evaluate(before=>new Promise(done=>{const start=performance.now();document.getElementById('videoMap').click();
-      const look=()=>{const s=rvVideoMapState();if(s.frame.join()!==before.frame.join()||performance.now()-start>3000)done(s);else requestAnimationFrame(look)};requestAnimationFrame(look)}),before);assert(during.held&&during.centred&&during.frame.join()!==before.frame.join()&&during.box[0]>=during.frame[0]&&during.box[1]>=during.frame[1]&&(large||during.box[0]>=before.box[0]&&during.box[1]>=before.box[1]),'held, centred and covering the moving frame (shrinking: at least its larger size, or a few px over it when the room was measured again meanwhile) '+JSON.stringify({before,during}));
+     // The motion is sampled halfway through the frame's own size transition, in the task of the tap: the hold is set by
+     // the tap and lifted by a 280 ms timer, which cannot run before this task ends. (Waiting for a frame in which the
+     // frame had moved saw it already released when a loaded machine delayed that frame past the timer; a sample 120 ms
+     // after the tap could still see it unmoved.)
+     const during=await page.evaluate(()=>{const m=document.getElementById('videoMap');m.click();m.getBoundingClientRect();
+      const moving=m.getAnimations().filter(a=>['width','height'].includes(a.transitionProperty)&&a.playState==='running');
+      if(!moving.length)return {motion:false,...rvVideoMapState()};
+      for(const a of moving)a.currentTime=a.effect.getComputedTiming().duration/2;
+      return {motion:true,...rvVideoMapState()}});
+     assert(during.motion,'the frame changes size in a transition '+JSON.stringify({before,during}));assert(during.held&&during.centred&&during.frame.join()!==before.frame.join()&&during.box[0]>=during.frame[0]&&during.box[1]>=during.frame[1]&&(large||during.box[0]>=before.box[0]&&during.box[1]>=before.box[1]),'held, centred and covering the moving frame (shrinking: at least its larger size, or a few px over it when the room was measured again meanwhile) '+JSON.stringify({before,during}));
      await page.waitForFunction(large=>{const s=rvVideoMapState();return !s.held&&s.large===large&&s.box.join()===s.frame.join()},large,{timeout:5000}).catch(()=>{});
      const after=await state();assert(!after.held&&after.large===large&&after.box.join()===after.frame.join()&&after.frame.join()!==before.frame.join()&&(!large||[0,1].every(k=>during.box[k]>=after.frame[k]-2&&during.box[k]-after.frame[k]<12)),'released at the new size (growing: held at that size, or a few px over it when the room for the map was measured again meanwhile: still covering) '+JSON.stringify({during,after}))}
     await page.emulateMedia({reducedMotion:'reduce'});await settleLayout(page)}
