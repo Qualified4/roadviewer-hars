@@ -57,5 +57,16 @@ capnpc = "0.25"
 lto = "thin"
 strip = "debuginfo"
 
+# The thumbnail tests decode real video. Unoptimised, these four crates took 33 s of one test;
+# optimised they take 11 s. Only test and debug builds are affected: release already optimises.
+[profile.dev.package.rusty_h264-common]
+opt-level = 3
+[profile.dev.package.rusty_h264-decoder]
+opt-level = 3
+[profile.dev.package.rusty_h265]
+opt-level = 3
+[profile.dev.package.rusty_h265-accel]
+opt-level = 3
+
 [lints.clippy]
 await_holding_lock = "deny"

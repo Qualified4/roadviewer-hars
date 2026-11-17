@@ -16,7 +16,7 @@
 ```sh
 cargo fmt --all --check
 cargo clippy --locked --all-targets -- -D warnings
-cargo test --locked --all-targets
+cargo test --locked --all-targets   # CI는 같은 테스트를 cargo nextest run --locked --all-targets 로 병렬 실행한다
 python3 scripts/verify_reference.py
 python3 scripts/check_release.py
 docker build -t roadviewer-hars:test .
