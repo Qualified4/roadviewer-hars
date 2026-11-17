@@ -456,6 +456,9 @@ fn upstream_version(library: &str) -> Option<&str> {
 /// The preserved pages stamp Python's release into asset URLs (`?v=`) and the version label
 /// (`>v…<`). HARS serves them under its own version so a HARS release, not a Python one,
 /// renews the year-long asset cache. Other version-like text (the font file name) is kept.
+/// HARS is named in the title and the version label only: the wordmark is sized for the
+/// preserved letters (a longer one shrinks out of a 320 px app bar), and the other mentions
+/// are prose that the scripts rewrite with the preserved text anyway.
 fn page_html(template: &str, upstream: Option<&str>, replay: bool) -> String {
     const VERSION: &str = env!("CARGO_PKG_VERSION");
     let mut html = template
@@ -469,7 +472,11 @@ fn page_html(template: &str, upstream: Option<&str>, replay: bool) -> String {
             .replace(&format!("?v={upstream}"), &format!("?v={VERSION}"))
             .replace(&format!(">v{upstream}<"), &format!(">v{VERSION}<"));
     }
-    html.replace("Road Viewer", "Road Viewer HARS")
+    html.replace("<title>Road Viewer ", "<title>Road Viewer HARS ")
+        .replace(
+            ">Road Viewer <span class=\"app-version\">",
+            ">Road Viewer HARS <span class=\"app-version\">",
+        )
 }
 async fn asset(
     State(app): State<App>,
