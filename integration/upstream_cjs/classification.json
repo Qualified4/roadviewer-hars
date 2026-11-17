@@ -21,7 +21,7 @@
  },
  "video_overlay": {
   "class": "A",
-  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과. 단, CPU 부하·4병렬에서 77행(Escape 뒤 포커스)이 간헐 실패: 4병렬 2/3 실패, 부하 직렬 HARS 2/8·Python 3/8 실패 -> 원본 테스트의 부하 민감성"
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과. 단, 77행(Escape 뒤 포커스)이 간헐 실패. 원인: 앱은 대화상자의 비동기 close 이벤트에서 포커스를 넘기고(video-overlay.js 618행. probe에서 keydown 뒤 2~22 ms), 테스트는 close() 즉시 참이 되는 hidden만 기다린 뒤 activeElement를 읽는다. 원본 테스트의 대기 조건 결함(Python 공통). BROWSER-TESTS.md 참조"
  },
  "upload_stall": {
   "class": "A",
@@ -137,7 +137,7 @@
  },
  "replay_layout": {
   "class": "D",
-  "note": "214행이 버전을 ^v숫자.숫자.숫자$로 검사. HARS는 의도대로 자기 버전 v2.0.0-alpha.4를 표시(src/http.rs page_html). 프리릴리스 버전에서만 생기는 차이"
+  "note": "214행이 버전을 ^v숫자.숫자.숫자$로 검사. HARS는 의도대로 자기 버전 v2.0.0-alpha.4를 표시(src/http.rs page_html). 프리릴리스 버전에서만 생기는 차이. expectations.json의 엄격한 예상 실패(214행 그 단언에서만 실패해야 함) + 버전 줄만 v2.0.0 꼴로 바꾼 미러 사본으로 replay_layout[release_version]을 한 번 더 돌려 전체 통과를 요구"
  },
  "disclosure_animation": {
   "class": "A",
@@ -165,11 +165,11 @@
  },
  "replay_format2": {
   "class": "F",
-  "note": "Python 내부 모듈 compact.py의 compact_data·expand_frames를 import해 app.js와 대조. HARS에는 Python 모듈이 없음(ModuleNotFoundError: compact). 서버를 쓰지 않음"
+  "note": "Python 내부 모듈 compact.py의 compact_data·expand_frames를 import해 app.js와 대조. HARS에는 Python 모듈이 없음(ModuleNotFoundError: compact). 서버를 쓰지 않음. expectations.json에서 제외(실행하지 않음)"
  },
  "library_tabs": {
-  "class": "C",
-  "note": "320px+업로드 표시에서 워드마크 폭<=60px(183행). HARS가 페이지의 'Road Viewer'를 'Road Viewer HARS'로 바꿈(src/http.rs:472). Python 원본 h1만 같은 글자로 바꾸면 Python에서도 같은 행에서 실패"
+  "class": "A",
+  "note": "1단계에서 C(제품 결함): 320px+업로드 표시에서 워드마크 폭<=60px(183행). HARS가 워드마크 h1까지 'Road Viewer HARS'로 바꿨다. af00194에서 제목·버전 줄만 HARS로 표기하도록 고친 뒤 표준 구성으로 통과(tests/page_version.rs가 워드마크를 고정)"
  },
  "replay_downloads": {
   "class": "B",

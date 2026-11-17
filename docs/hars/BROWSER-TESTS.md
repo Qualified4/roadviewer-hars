@@ -5,6 +5,9 @@
 
 - [요약](#요약)
 - [실행](#실행)
+- [게이트](#게이트)
+- [실패 산출물](#실패-산출물)
+- [video_overlay 77행](#video_overlay-77행)
 - [실행기 구조](#실행기-구조)
 - [대상과 세는 단위](#대상과-세는-단위)
 - [분류표](#분류표)
@@ -13,22 +16,25 @@
 - [실행기에서 찾아 고친 결함](#실행기에서-찾아-고친-결함)
 - [자원 정리 확인](#자원-정리-확인)
 - [시간·용량](#시간용량)
-- [CI 구성 제안](#ci-구성-제안)
+- [CI 구성](#ci-구성)
+- [검증](#검증)
 - [미검증과 남은 위험](#미검증과-남은-위험)
 <!-- /toc -->
 
 ## 요약
 
-원본 Python Road Viewer 1.3.18의 브라우저 테스트(`reference/python/tests/*.cjs`)를 원본 파일 수정 없이 HARS 실행 파일과 HARS가 내보내는 웹 파일에 붙여 돌린다. 실행기는 `integration/upstream_cjs/run_browser_tests.py`다. 2026-11-17 `5a2426f` 기준(2.0.0-alpha.4, release 빌드) 결과는 다음과 같다.
+원본 Python Road Viewer 1.3.18의 브라우저 테스트(`reference/python/tests/*.cjs`)를 원본 파일 수정 없이 HARS 실행 파일과 HARS가 내보내는 웹 파일에 붙여 돌린다. 실행기는 `integration/upstream_cjs/run_browser_tests.py`이고, GitHub Actions의 `Browser checks`(필수, `HARS required`가 요구)가 같은 실행기로 돈다.
 
-| 분류 | 뜻 | 수 |
+2026-11-17 최종 상태(`ci/browser-checks`, 2.0.0-alpha.4, debug 빌드 = CI와 같은 빌드):
+
+| 판정 | 수 | 항목 |
 |---|---|---|
-| A | 표준 구성만으로 통과 | 43 |
-| B | 테스트별 fixture·어댑터 대체로 통과 | 5 |
-| C | 실패, HARS 제품 결함 | 1 (`library_tabs`) |
-| D | 실패, 테스트 환경 차이 | 1 (`replay_layout`) |
-| E | 원본 테스트 결함 | 0 |
-| F | Python 전용 의존 | 1 (`replay_format2`) |
+| 통과 | 49 | 아래 둘을 뺀 전부(1단계의 C `library_tabs`는 제품 결함을 고쳐 통과) |
+| 엄격한 예상 실패 | 1 | `replay_layout`(214행 그 단언에서만 실패해야 함) + 버전 줄만 바꾼 사본으로 한 번 더: `replay_layout[release_version]` 통과 필수 |
+| 제외 | 1 | `replay_format2`(Python `compact.py` import) |
+| 예상 밖 실패 | 0 | 직렬 전체 5회, CI 묶음 구성 3회(아래 [검증](#검증)) |
+
+분류(1단계 A~F)는 바뀌지 않았고 `library_tabs`만 C에서 A가 됐다. 남은 위험 하나: `video_overlay` 77행이 원본 테스트의 대기 조건 결함으로 간헐 실패한다(직렬 무부하에서도 0~5/30, [아래](#video_overlay-77행)). 재시도로 숨기지 않으므로 그만큼 `Browser checks`가 간헐적으로 빨갛게 될 수 있다.
 
 "51개"는 `browser-groups.json`의 항목 수다. 테스트 파일은 49개이고 `maps.cjs`가 환경변수만 다르게 세 항목으로 들어 있다. `browser-helpers.cjs`와 `run_group.cjs`는 테스트가 아니다.
 
@@ -37,18 +43,65 @@
 ```sh
 cd integration/upstream_cjs && npm ci && cd -        # playwright 1.64.1 (package-lock.json)
 npx --prefix integration/upstream_cjs playwright install --only-shell chromium
-cargo build --locked --release
+cargo build --locked
 python3 integration/upstream_cjs/run_browser_tests.py \
-  --hars-bin "$CARGO_TARGET_DIR/release/roadviewer-hars" --out /tmp/rv-browser [--jobs 4] [--repeat 5] [--only maps.cjs tags]
-# Python 기준 실행(E 판정용): Flask가 있는 인터프리터
+  --hars-bin "$CARGO_TARGET_DIR/debug/roadviewer-hars" --out /tmp/rv-browser [--groups g1 g2] [--only maps.cjs tags] [--repeat 5]
+# CI 묶음을 모아 판정(각 폴더: summary.json + exit-code)
+python3 integration/upstream_cjs/run_browser_tests.py --aggregate /tmp/shard1 /tmp/shard2 ... --out /tmp/rv-gate
+# Python 기준 실행(E 판정용): Flask가 있는 인터프리터. 예상 실패·제외 없이 선택한 것 전부가 통과해야 한다
 python3 integration/upstream_cjs/run_browser_tests.py --python-baseline ~/venv/bin/python --out /tmp/rv-py --only gdrive_panel.cjs
 ```
 
-Node 22가 PATH에 있어야 한다(`--node`로 지정 가능). 결과는 `--out` 아래 `summary.json`(항목별 결과·초·단언 수·분류·남은 프로세스·남은 임시 항목)과 `run<N>/<항목>/{test.log,hars.log,result.json}`이다. `hars.log`에는 HARS 출력과 어댑터 사건(`[shim ...] proxy`, `restart`, `filled id`)이 시간순으로 들어 있다. `--pw-debug`는 `DEBUG=pw:api`로 Playwright 호출·요청·응답 헤더를 `test.log`에 남긴다.
-
-실패 시 스크린샷·trace는 남기지 않는다. 원본 helper에 그 기능이 없고, 넣으려면 테스트의 `browser.newContext`를 가로채야 하므로 이번 범위에서 하지 않았다. 일부 테스트는 자체 스크린샷 변수(`RV_MAP_SHOTS` 등)를 지원하지만 켜면 테스트가 다른 단계를 더 실행하므로 기본으로 켜지 않는다.
+Node 22가 PATH에 있어야 한다(`--node`로 지정 가능). 종료 코드는 게이트 판정이다(0 통과, 1 게이트 실패, 2 HARS 실행 파일 없음, 130 중단). 결과는 `--out` 아래 `summary.json`(게이트 판정·사유, 예상 실패·제외 목록, 항목별 결과·초·단언 수·분류·파싱한 실패·남은 프로세스·남은 임시 항목, `exit_code`)과 `run<N>/<항목>/{test.log,hars.log,result.json,screenshots/,collect/}`이다. `hars.log`에는 HARS 출력과 어댑터 사건(`[shim ...] proxy`, `restart`, `filled id`)이 시간순으로 들어 있다(서버형 항목만). `--pw-debug`는 `DEBUG=pw:api`로 Playwright 호출·요청·응답 헤더를 `test.log`에 남긴다. `--no-failure-shots`는 사전 로드 없이, `--no-collect`는 수집용 재실행 없이 돈다. `--jobs N`(병렬)은 남아 있지만 `video_overlay` 때문에 게이트용으로 쓰지 않는다.
 
 실행 언어는 Python이다. 서버 어댑터가 Python이고, 프로세스 감독에 `prctl`과 `/proc`이 필요하다.
+
+## 게이트
+
+데이터는 `integration/upstream_cjs/expectations.json` 한 곳이다. `entries: 51`, 예상 실패 1개(`replay_layout`), 제외 1개(`replay_format2`). 실행기는 요약 첫머리에 이 목록과 사유를 그대로 찍는다. 목록에 항목을 더하면 게이트가 받아들이는 것이 바뀌므로, 이 문서의 이 표와 함께 고친다.
+
+| 목록 | 항목 | 판정 조건 | 사유 |
+|---|---|---|---|
+| 예상 실패 | `replay_layout` | `test.log`에 Node가 찍은 오류 머리줄(`이름 [코드]: 메시지`)이 **정확히 1개**, 이름 `AssertionError`, 메시지 `version is an info line in ⋯`, 그 아래 스택에서 처음 나오는 `tests/replay_layout.cjs:<줄>`이 **214**, 종료 코드 1(outcome `fail`). 통과하면 `unexpected-pass`로 게이트 실패(정식 버전이 되면 목록에서 빼야 한다는 신호). 다른 줄·다른 메시지·시간 초과는 `fail` | 214행이 버전 줄을 `^v숫자.숫자.숫자$`로 검사하고 HARS는 의도대로 `v2.0.0-alpha.4`를 낸다 |
+| 예상 실패의 짝 | `replay_layout[release_version]` | 통과 필수. 미러 사본에서 `index.html`의 `<span class="app-version">vX.Y.Z-접미사</span>` 한 곳(정확히 1회 일치해야 함)만 `vX.Y.Z`로 바꾸고 같은 원본 파일을 돌린다. 테스트 파일은 그대로다. 일치가 0회(접미사 없음)면 `not-run`으로 게이트 실패 | 214행 뒤의 단언이 가려지지 않게 |
+| 제외 | `replay_format2` | 실행하지 않고 요약에 `excluded`로 사유와 함께 남는다. 실행되면 게이트 실패 | Python `compact.py`의 `compact_data`·`expand_frames`를 import한다. HARS에는 Python 변환기가 없다 |
+
+`replay_format2`가 지키던 것(Python `compact.py` 인코더와 `app.js` 디코더의 일치)의 HARS 쪽 대체: 인코더 쪽은 `integration/pipeline_contract.py`(CI, 합성 입력)와 `integration/real_conversion_compare.py`(13·14·47 실주행 구간, 로컬)가 HARS의 replayV2 전체가 Python 출력과 같음을 요구하고, `scripts/verify_reference.py`가 `app.js`가 보존 원본 그대로임을 지킨다. **공백:** HARS 출력에 `app.js`의 형식 2 확장(`expandFlat`)을 실제로 돌려 보는 검사는 없다. HARS 출력 = Python 출력이고, Python 출력과 `app.js`의 일치는 원본 저장소의 이 테스트가 확인했다는 간접 근거뿐이다.
+
+그 밖의 게이트 실패 조건(각각 일부러 일으켜 확인, [검증](#검증)):
+
+- 결과가 `pass`(또는 위 조건을 만족하는 예상 실패)가 아닌 항목이 하나라도 있음: `fail`, `timeout`, `supervisor-failed`, `isolation-failed`, `interrupted`.
+- 실행된 테스트 0개. 반복마다 실행 + 제외 ≠ 선택한 항목 수, 같은 항목 중복, 제외 항목 실행.
+- 실행기가 남긴 프로세스, 중단(Ctrl-C).
+- `--aggregate`: 묶음 합이 manifest 51개와 정확히 같지 않음(빠짐·중복), `expectations.json`의 `entries`와 manifest 수가 다름, 묶음의 실제 종료 코드(`exit-code` 파일) ≠ 요약의 `exit_code` ≠ 그 묶음 결과로 다시 계산한 판정, 요약이나 `exit-code`가 없음. 판정은 요약에 적힌 `gate`를 믿지 않고 결과(outcome·파싱한 실패)에서 다시 계산한다.
+
+## 실패 산출물
+
+- **스크린샷.** Node를 `--require integration/upstream_cjs/failure_capture.cjs`로 띄운다. 모든 테스트가 `finally`에서 `browser.close()`를 부르므로, 실패한 단언 직후 그 close가 먼저 열린 페이지마다 `screenshots/page-N.png`과 `failure.txt`(첫 실패 메시지·URL)를 남긴다. 실패는 오류 객체가 만들어질 때 안다: `AssertionError.prototype.generatedMessage`와 Playwright `errors.TimeoutError.prototype.name`에 접근자를 두면 생성자가 그 이름에 값을 넣을 때 setter가 불린다. setter는 원래의 일반 데이터 속성을 그대로 만들어 준다. 테스트의 호출을 감싸지 않으므로 스택·`assert(x)`의 자동 메시지·통과 경로의 타이밍이 그대로다(감싸기 방식은 `assert(x)`의 자동 메시지가 래퍼 줄을 가리키게 되어 버렸다). 확인: 합성 스크립트로 통과·단언 실패·시간 초과·잡힌 실패 4경우의 `test.log`가 사전 로드 유무로 바이트 단위 같음, 전체 1회를 사전 로드 없이 돌린 결과(`--no-failure-shots`)와 5회 결과의 항목별 판정이 같음, 통과한 255회 실행에서 스크린샷이 찍힌 적 0회(`screenshots_discarded_on_pass`). 한계: Playwright의 시간 초과가 아닌 오류(대상 닫힘 등)만으로 실패하면 스크린샷이 없고, 테스트가 단언 실패를 스스로 잡고 통과하면 close에서 스크린샷을 찍은 뒤 버린다(255회 중 0회).
+- **trace.** 상시로 켜지 않는다. 판정이 끝난 뒤, 게이트를 실패시킨 항목(예상 실패 제외)만 같은 조건으로 한 번 더 돌리며 `HARS_TRACE_DIR`로 모든 context에 trace를 켠다(`collect/trace/trace-N.zip`, `collect/test.log`, `collect/screenshots/`). 이 재실행의 결과는 `collection_reruns`에만 적고 판정에 쓰지 않는다. 요약에 `collection rerun (artifacts only, not judged)`로 찍힌다.
+- **CI 아티팩트.** 묶음마다 항상 `browser-summary-N`(`summary.json` + `exit-code`), 실패하면 `browser-artifacts-N`(산출물 폴더 전체: 항목별 `test.log`, `hars.log`, 스크린샷, trace)을 7일 보존한다.
+- **비밀값·좌표.** fixture는 합성 데이터뿐이다(`tests/fixtures`: 2초 검은 영상 `black.mp4`, 합성 색 영상, AppArmor 프로필 원문. 테스트의 기록·GPS는 코드 안의 작은 합성 값). 서버형 테스트의 Drive는 `fake_drive.py`, 토큰은 테스트가 만든 가짜 값이다. HARS 데이터 폴더는 테스트마다 새 임시 폴더다.
+
+## video_overlay 77행
+
+77행 `closing hands focus to nothing`: 겹쳐 보기 설정 대화상자에서 `초기화`를 누른 뒤(포커스가 대화상자 안 `#overlayHeightReset`) Escape를 누르고 `dialog.waitFor({state:'hidden'})` 뒤 `document.activeElement===document.body`를 본다.
+
+- 앱(`video-overlay.js` 617~618행): `cancel`에서 `dialog.close()`를 부르고, 포커스는 `close` **이벤트** 처리기에서 설정 버튼으로 넘긴 뒤 `ripple.js`의 focusin 처리가 마이크로태스크로 놓는다(그래서 body). `close()`가 `open`을 바로 지우므로 대화상자는 그 순간 `hidden`이지만, `close` 이벤트는 나중에 따로 온다.
+- 테스트는 `hidden`만 기다린다. 그 사이에 `activeElement`를 읽으면 숨은 `#overlayHeightReset`이 아직 포커스를 갖고 있다.
+- 증거(`integration/upstream_cjs/probes/video_overlay_focus.cjs`, 게이트 밖 별도 스크립트, 같은 페이지·모킹·단계를 30회 반복하며 페이지 안에서 `close` 시각 기록): 무부하 2/30, 2코어+바쁜 루프 2개 4/30 실패. **실패 6회 모두** 읽는 시점에 `close`가 아직 안 왔고 `activeElement`가 `overlayHeightReset`, **통과 54회 모두** `close`가 먼저 왔다. `close`는 keydown 뒤 무부하 2.2~4.9 ms(중앙값 2.8), 부하 2.9~22.1 ms. 실패한 읽기는 keydown 뒤 5.0~13.9 ms.
+- 결론 **(b) 원본 테스트의 대기 조건 결함.** 테스트가 확인하려는 상태는 `close` 이벤트 뒤에야 성립하는데 테스트는 그보다 먼저 참이 되는 `hidden`만 기다린다. 웹 파일은 HARS가 그대로 내보내므로 Python과 공통이다(1단계에서 Python 원본으로도 부하 시 3/8 실패). 사용자에게 보이는 결함은 아니다(숨은 버튼이 몇 ms 포커스를 가짐). 원본을 고치지 않고는 못 고친다. 실행기 조건(미러, shim, 사전 로드)은 원인이 아니다: 서버를 쓰지 않는 모킹형이고, 사전 로드 유무 교차 실행에서 차이가 없다(아래).
+- 반복(원본 테스트 그대로, `--only video_overlay.cjs`, 직렬):
+
+| 조건 | 실행기 | 통과 | 부하 평균(시작→끝) |
+|---|---|---|---|
+| 직렬 무부하 1차 | 이전 실행기(사전 로드 없음) | 25/30 (실패 5, 이 중 1회는 내 다른 브라우저 시험과 겹침) | 0.60 → 1.34 |
+| 직렬 무부하 2차 | 최종 실행기 | 30/30 | 1.54 → 1.19 |
+| `taskset -c 0-1` 1차 | 이전 실행기 | 23/30 | 1.34 → 1.68 |
+| `taskset -c 0-1` 교차, 사전 로드 켬 | 최종 실행기 | 27/30 | 0.68 → 1.82 |
+| `taskset -c 0-1` 교차, 사전 로드 끔 | 최종 실행기 `--no-failure-shots` | 28/30 | (위와 같은 시간대, 번갈아) |
+| 직렬 전체 5회 + 사전 로드 없는 전체 1회 + CI 묶음 3회 | 최종 | 9/9 | 1.3~3.0 |
+
+실패 17회 모두 77행이다. 직렬 무부하에서도 0~17 %로 흔들리므로 "부하 없는 직렬에서만 안정적"이라고 할 수 없다. 재시도·시간 연장은 넣지 않았다. 원본(Python 저장소)에서 77행 앞에 `await page.waitForFunction(()=>document.activeElement===document.body)` 같은 대기를 넣는 것이 근본 해결이며, 그 전까지 `Browser checks`는 이 항목으로 간헐 실패할 수 있다(16 vCPU 측정 기준 실행당 대략 0~17 %, GitHub 러너에서는 미측정).
 
 ## 실행기 구조
 
@@ -57,7 +110,7 @@ Node 22가 PATH에 있어야 한다(`--node`로 지정 가능). 결과는 `--out
 - **Python 서버 자리(`hars_as_python.py` + `pyshim/`).** 테스트는 `RV_PYTHON -u -c PROGRAM`으로 서버를 띄운다. `hars_as_python.py`는 `PROGRAM`을 그대로 실행하되 `pyshim/`를 모듈 경로 맨 앞에 둔다. `sitecustomize.py`의 finder가 `server`, `werkzeug.serving`, `werkzeug.middleware.dispatcher`를 shim으로 돌린다(테스트가 `sys.path.insert(0,'roadviewer/app')`을 해도). `make_server`는 RV_DATA로 HARS를 띄우고 `/`와 `/api/hassio_ingress/test/` 둘 다에서 답하는 HTTP/1.0 프록시를 돌려준다. 그래서 `fake_drive.py`와 그 환경변수(`RV_GDRIVE_*`), 표준 입력 `grant` 명령 같은 테스트 자체의 fixture는 쓰인 그대로 돈다. HARS가 Python과 같은 이름의 시험용 변수(`RV_ARCHIVE_OPTIONS_JSON`, `RV_ARCHIVE_ALLOW_ANY_PATH`, `RV_GDRIVE_*`)를 읽는다.
 - **포트.** loopback 19000~19199만 쓴다. 병렬 슬롯마다 40개(19000+40k), 미러는 19180/19181. 한 테스트에 서버가 둘이면(`archive_status`, `gdrive_panel`) 포트 선택과 HARS listen 대기를 파일 잠금 하나로 묶는다.
 - **감독 프로세스.** 테스트마다 `run_browser_tests.py --supervise`(실행 시작 때 만든 사본)가 child subreaper가 되어 Node를 띄운다. Playwright는 브라우저를 새 세션(`detached`)으로 띄우므로 프로세스 그룹만으로는 브라우저가 빠진다. subreaper 아래에서는 어떻게 떨어져 나가도 감독의 자손으로 남으므로, 끝·실패·시간 초과·중단 때 `/proc`에서 자손 전체를 찾아 SIGKILL하고 거둔다. 정상 종료 뒤 3초 안에 남은 프로세스와 테스트가 지우지 않은 임시 항목을 `result.json`에 적는다.
-- **외부 차단.** 기본(`--isolate on`)으로 감독을 `unshare -rn`(새 사용자+네트워크 이름공간, loopback만)에서 띄운다. 감독이 `ip link set lo up`을 한다. Playwright는 Chromium에 `--no-sandbox`를 스스로 붙인다. `unshare`가 거부되면 실행기는 실패한다. `--isolate off`는 다른 방법으로 바깥이 막힌 곳에서만 쓴다.
+- **외부 차단.** 기본(`--isolate on`)으로 감독을 `unshare -rn`(새 사용자+네트워크 이름공간, loopback만)에서 띄운다. 감독이 `ip link set lo up`을 한 뒤 테스트 전에 스스로 검사한다: 네트워크 장치가 `lo` 하나뿐이고 바깥 주소(`1.1.1.1:443`) 연결이 `ENETUNREACH`로 실패해야 한다. 아니면 그 항목은 `isolation-failed`(게이트 실패). `--isolation-check`는 같은 검사만 하고 끝낸다(CI 사전 단계). Playwright는 Chromium에 `--no-sandbox`를 스스로 붙인다. `unshare`가 거부되면 실행기는 실패한다. `--isolate off`는 다른 방법으로 바깥이 막힌 곳에서만 쓴다.
 
 ## 대상과 세는 단위
 
@@ -89,7 +142,7 @@ fixture와 Python 의존:
 
 ## 분류표
 
-`5회`는 직렬 1회에 통과한 48개 항목을 직렬로 5번 반복한 결과다(240/240 통과, 2,756초). `4병렬`은 `--jobs 4` 전체 실행 3회의 통과 수다. `초`는 직렬 전체 실행 1회의 항목별 소요다. 숫자 원본은 `measurements/browser-tests.json`.
+이 표는 1단계(`5a2426f`, release 빌드, 2단계 수정 전) 측정이다. 분류는 `library_tabs`만 C → A로 바뀌었다(제품 수정 뒤 통과). 최종 수치는 [검증](#검증). `5회`는 직렬 1회에 통과한 48개 항목을 직렬로 5번 반복한 결과다(240/240 통과, 2,756초). `4병렬`은 `--jobs 4` 전체 실행 3회의 통과 수다. `초`는 직렬 전체 실행 1회의 항목별 소요다. 숫자 원본은 `measurements/browser-tests.json`.
 
 | 항목 | 기능 영역 | 단언 수 | 서버 획득 | 분류 | 5회(직렬) | 4병렬 | 초(직렬) |
 |---|---|---|---|---|---|---|---|
@@ -135,7 +188,7 @@ fixture와 Python 의존:
 | `device_test_page` | 장치 시험 페이지(HMAC, 조각 업로드) | 23 | 웹 파일+모킹 | A | 5/5 | 3/3 | 1.3 |
 | `replay_gzip` | gzip 재생 데이터와 대체 경로 | 13 | 웹 파일+모킹 | B | 5/5 | 3/3 | 2.7 |
 | `replay_format2` | 재생 데이터 형식 2 확장(Python compact 대조) | 6 | Node만 | F | - | 0/3 | 0.1 |
-| `library_tabs` | 라이브러리 탭, 헤더, 경로 카드, 좁은 화면 앱바 | 94 | Python 서버→shim | C | - | 0/3 | 15.4 |
+| `library_tabs` | 라이브러리 탭, 헤더, 경로 카드, 좁은 화면 앱바 | 94 | Python 서버→shim | C → A | - | 0/3 | 15.4 |
 | `replay_downloads` | 재생 화면 메뉴(다운로드·정보·삭제) | 32 | 웹 파일+모킹 | B | 5/5 | 3/3 | 5.4 |
 | `upload_mobile` | 모바일 업로드·정리 | 26 | 웹 파일+모킹 | A | 5/5 | 3/3 | 4.6 |
 | `maps[map_schemes=dark][map_parts=main]` | 지도(목록 카드 경로, 주행 지도, 영상 위 지도, 다수 주행, 누수) | 302 | Python 서버→shim | A | 5/5 | 3/3 | 63.4 |
@@ -162,15 +215,28 @@ fixture와 Python 의존:
 - 기대·실제: Python은 같은 테스트를 통과한다(`--python-baseline`, 1/1). HARS는 1/1 실패(직렬 전체 실행 2회 모두).
 - 원인 근거: `src/http.rs` `page_html`의 `html.replace("Road Viewer", "Road Viewer HARS")`가 `<h1>Road Viewer</h1>`도 바꾼다. 진단 실행에서 Python 서버 + 보존 원본 `library.html`의 `h1`만 `Road Viewer HARS`로 바꾼 임시 사본으로 돌리면 Python에서도 같은 183행에서 실패했다. 다른 차이는 없었다.
 - 183행 뒤의 단언: 진단 실행에서 HARS 미러의 `h1`만 `Road Viewer`로 되돌리면 HARS에서 파일 전체가 통과했다(`PASS: library tabs ...`, 서버 부분 포함). 이 결함 하나만 있다.
-- 고칠 곳(제안, 이번 단계에서 고치지 않음): 워드마크 `h1`은 원본 글자를 유지하거나, HARS 표기를 넣더라도 320px 앱바에서 60px 넘게 보이게 한다.
+- **고침(2단계, `af00194`).** `page_html`의 넓은 치환을 대상을 명시한 두 치환(`<title>Road Viewer ` → `<title>Road Viewer HARS `, `>Road Viewer <span class="app-version">` → `>Road Viewer HARS <span class="app-version">`)으로 바꿨다. 원본 CSS·웹 파일은 그대로다. 이전 치환이 닿던 곳과 판단:
 
-**D `replay_layout` — 프리릴리스 버전 표기.** 214행이 ⋯ 메뉴의 버전 줄을 `^v[0-9]+[.][0-9]+[.][0-9]+$`로 검사한다. HARS는 의도대로 자기 버전 `v2.0.0-alpha.4`를 내보낸다(`page_html`의 `>v{upstream}<` 치환). Python에서는 `v1.3.18`이라 통과한다. 원본 단언을 약화하지 않고 해소하는 길은 정식 버전(`2.0.0`)에서 다시 돌리는 것이다. 진단 실행에서 미러 `index.html`의 버전 줄만 `v2.0.0`으로 바꾸면 HARS에서 파일 전체가 통과했다. 214행 외의 차이는 없다.
+| 페이지(내보내는 경로) | 위치 | 이전 | 지금 | 이유 |
+|---|---|---|---|---|
+| `shell.html`(`/`, `/view/<id>/`) | `<title>` | HARS | HARS | 레이아웃 영향 없음, HARS 표시 |
+| `library.html`(`/?fragment=1`) | `<title>` | HARS | HARS | 같음 |
+| `library.html` | 워드마크 `<h1>Road Viewer</h1>` | HARS | **원본** | 결함. 320 px 앱바에 맞춘 글자 |
+| `library.html` | 저장공간 미터 `title` 툴팁 | HARS | 원본 | 설명 문구. `library.js`가 실행 중 원본 문구로 다시 쓴다 |
+| `library.html` | 설정 탭 버전 줄 `Road Viewer <span class="app-version">` | HARS | HARS | 버전 표시(`v2.0.0-alpha.4`) 옆 |
+| `library.html` | 장치 연결 안내 `장치의 Road Viewer 연결 화면` | HARS | 원본 | 장치(openpilot) 쪽 화면 이름. `storage-devices.js`도 원본 문구로 다시 쓴다 |
+| `index.html`(`/view/<id>/?fragment=1`) | `<title>` | HARS | HARS | 레이아웃 영향 없음 |
+| `index.html` | ⋯ 메뉴 버전 줄 | HARS | HARS | 버전 표시 옆 |
 
-**F `replay_format2` — Python 내부 모듈.** `from compact import compact_data,expand_frames`로 Python의 재생 형식 2 압축·확장 결과를 만들고 app.js의 `expandFlat`과 대조한다. HARS에는 이 Python 모듈이 없다(`ModuleNotFoundError: No module named 'compact'`). 서버도 브라우저도 쓰지 않는다. HARS의 Rust 변환기 출력과 app.js를 대조하는 검사는 이 파일로는 할 수 없다.
+`device-test.html`과 `/assets/*`는 `page_html`을 거치지 않아 원래부터 원본 그대로다. 재현 테스트 `tests/page_version.rs`(`pages_name_the_hars_version_only`)가 네 경로 모두에서 제목이 `Road Viewer HARS · Home Assistant`, `Road Viewer HARS` 등장 횟수(셸 1, 조각 2), 조각의 버전 줄, `/?fragment=1`의 `<h1>Road Viewer</h1>`를 고정한다. 원본 갱신으로 대상 문구가 사라지면 치환이 일어나지 않아 이 테스트가 실패한다. 수정 전 코드에서 `/?fragment=1: the wordmark keeps the preserved letters`로 실패했고, 수정 뒤 통과한다. `library_tabs.cjs`는 수정 뒤 표준 구성으로 통과한다(최종 직렬 5회 5/5).
+
+**D `replay_layout` — 프리릴리스 버전 표기.** 214행이 ⋯ 메뉴의 버전 줄을 `^v[0-9]+[.][0-9]+[.][0-9]+$`로 검사한다. HARS는 의도대로 자기 버전 `v2.0.0-alpha.4`를 내보낸다(`page_html`의 `>v{upstream}<` 치환). Python에서는 `v1.3.18`이라 통과한다. 원본 단언을 약화하지 않고 해소하는 길은 정식 버전(`2.0.0`)에서 다시 돌리는 것이다. 진단 실행에서 미러 `index.html`의 버전 줄만 `v2.0.0`으로 바꾸면 HARS에서 파일 전체가 통과했다. 214행 외의 차이는 없다. 2단계에서 이 둘을 게이트로 만들었다([게이트](#게이트)): 엄격한 예상 실패 + `replay_layout[release_version]`.
+
+**F `replay_format2` — Python 내부 모듈.** `from compact import compact_data,expand_frames`로 Python의 재생 형식 2 압축·확장 결과를 만들고 app.js의 `expandFlat`과 대조한다. HARS에는 이 Python 모듈이 없다(`ModuleNotFoundError: No module named 'compact'`). 서버도 브라우저도 쓰지 않는다. HARS의 Rust 변환기 출력과 app.js를 대조하는 검사는 이 파일로는 할 수 없다. 2단계에서 제외로 두고 대체 검증과 공백을 [게이트](#게이트)에 적었다.
 
 E는 없다. HARS 첫 전체 실행에서 실패한 6개(navigation, replay_layout, replay_format2, library_tabs, gdrive_panel, maps many·leak)를 Python 서버로 돌려 6/6 통과했다. 그중 3개는 실행기 결함(아래)과 `id` 대체를 고친 뒤 HARS에서도 통과했다.
 
-**병렬·부하에서의 간헐 실패(원본 테스트 쪽).** `video_overlay` 77행(`closing hands focus to nothing`, Escape로 대화상자를 닫은 직후 포커스가 `body`인지)은 직렬 6/6 통과, 4병렬 3회 중 2회 실패했다. 서버를 쓰지 않는 모킹형이다. 바쁜 루프 14개(16 vCPU)를 걸고 직렬로 돌리면 HARS 미러에서 2/8, Python 원본 웹 파일(`--python-baseline`)에서 3/8로 같은 행에서 실패했다. HARS와 무관한 원본 테스트의 부하 민감성이다. 직렬 분류는 A로 두고, 재시도로 숨기지 않는다.
+**병렬·부하에서의 간헐 실패(원본 테스트 쪽).** `video_overlay` 77행(`closing hands focus to nothing`, Escape로 대화상자를 닫은 직후 포커스가 `body`인지)은 직렬 6/6 통과, 4병렬 3회 중 2회 실패했다. 서버를 쓰지 않는 모킹형이다. 바쁜 루프 14개(16 vCPU)를 걸고 직렬로 돌리면 HARS 미러에서 2/8, Python 원본 웹 파일(`--python-baseline`)에서 3/8로 같은 행에서 실패했다. 2단계에서 원인을 밝혔다: [video_overlay 77행](#video_overlay-77행)(원본 테스트의 대기 조건 결함, 직렬에서도 간헐). 분류는 A로 두고, 재시도로 숨기지 않는다.
 
 ## 실행기에서 찾아 고친 결함
 
@@ -210,19 +276,60 @@ E는 없다. HARS 첫 전체 실행에서 실패한 6개(navigation, replay_layo
 
 빌드는 **debug**를 권한다. 테스트 시간이 같고 결과가 같으며 빌드가 짧다. HARS는 어느 테스트에서도 병목이 아니었다(서버형 항목 시간의 대부분은 브라우저 대기다).
 
-## CI 구성 제안
+## CI 구성
 
-- **버전 고정.** Node 22(원본 CI `actions/setup-node` `node-version: '22'`, 로컬 22.13.1). Playwright는 원본 CI가 고정하지 않았다(`npm install --no-save playwright`, 실행 시점 최신). 여기서는 1.64.1을 `integration/upstream_cjs/package.json`·`package-lock.json`으로 고정하고 `npm ci`를 쓴다. 이 버전은 이전 HARS 검사가 쓴 로컬 설치와 같다. 원본 CI가 1.3.18 시점에 실제로 받은 버전은 확인하지 않았다.
-- **캐시.** `~/.cache/ms-playwright`(키: OS·아키텍처·`package-lock.json` 해시, `--only-shell chromium`), npm 캐시(`package-lock.json`), Cargo(HARS debug 빌드). 원본 CI처럼 `--with-deps`는 쓰지 않는다(호스트 러너에 Chrome 공유 라이브러리가 있다는 원본 CI의 주석, 이번에 러너에서 확인하지 않음).
-- **분할.** 4병렬 대신 원본처럼 그룹 matrix(러너마다 직렬)를 권한다. `--only`로 묶음을 고를 수 있다. `browser-groups.json`의 9묶음을 그대로 쓰면 테스트 시간 합이 묶음마다 48~71초다(g1 61, g2 59, g3 69, g4 68, g5 48, g6 55, g7 71, g8 71, g9 60초, 직렬 1회 기준, 미러·설치 제외).
-- **외부 차단.** 1순위 `unshare -rn`. Ubuntu 24.04는 AppArmor의 `kernel.apparmor_restrict_unprivileged_userns`로 비특권 사용자 이름공간을 막을 수 있다. GitHub 러너의 실제 값은 확인하지 않았다(2단계). 안 되면: (1) `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` 후 `unshare -rn`, (2) `docker run --network none`으로 실행기 전체를 컨테이너 안에서(같은 이미지에 Node·Chromium 의존 라이브러리 필요), (3) `sudo unshare -n` 뒤 원래 사용자로 실행. Playwright 라우팅으로 막는 방법은 테스트 코드에 손대야 하므로 쓸 수 없고, 프록시 환경변수는 테스트의 `launch()`가 `proxy`를 넘기지 않으므로 Chromium이 따른다는 보장이 없어(확인하지 않음) 차단 수단으로 쓰지 않는다.
-- **게이트.** C·D·F 3개가 지금 실패하므로 `Browser checks`를 필수로 만들기 전에 C를 고치거나, 실패가 예상된 항목 목록(`classification.json`)과 결과를 대조해 "예상 밖 실패"만 실패로 보는 판정이 필요하다. 후자는 단언을 약화하지 않지만 F·D를 계속 실패로 기록한다.
+`.github/workflows/ci.yml`. 기존 `Rust checks`·`Container (amd64)`·`Container (aarch64)`와 병렬로 시작하고 `HARS required`가 `Browser checks`의 `success`를 요구한다.
+
+| 작업 | 하는 일 |
+|---|---|
+| `Browser build` | `Rust checks`와 같은 캐시 키·경로(`hars-rust-v2-…`)를 `actions/cache/restore`로 **복원만** 하고(저장하지 않으므로 캐시 항목은 하나), 같은 환경변수(`CARGO_INCREMENTAL=0`, `CARGO_PROFILE_DEV_DEBUG=line-tables-only`)로 `cargo build --locked --bin roadviewer-hars` 한 번. 실행 파일을 아티팩트 `hars-debug-bin`(1일)으로 넘긴다 |
+| `Browser shard 1~5` | matrix, 묶음마다 직렬. Node `22.13.1`(setup-node, npm 캐시), `npm ci`(Playwright 1.64.1, `package-lock.json`), `~/.cache/ms-playwright` 캐시(키: OS·아키텍처·`package-lock.json` 해시) + `playwright install --only-shell chromium`(chromium-headless-shell 1248 = Chromium 156.0.8078.4만). 공유 라이브러리는 설치하지 않고 `ldd`로 빠진 것이 없는지만 본다. `sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0` 뒤 `unshare -rn` 안에서 `--isolation-check`가 통과해야 진행. 실행기 종료 코드를 `exit-code`에 적는다 |
+| `Browser checks` | 묶음 요약을 모두 받아 `--aggregate`로 다시 판정. 필수 검사 이름은 이것 하나다 |
+
+묶음: `1` g7 g6, `2` g8 g5, `3` g3 g9, `4` g4 g2, `5` g1. 묶음 안 테스트 시간 합(직렬 5회 중앙값 합, 16 vCPU): 131, 141, 127, 127, 61초. CI 묶음 구성 3회의 묶음별 실행기 전체 시간: 133~135, 144~145, 129~131, 132~137, 62~65초.
+
+| 근거 | 값 |
+|---|---|
+| 기존 최장 작업 `Rust checks`(GitHub, 최근 3회) | 3분 37초 ~ 3분 57초 |
+| 같은 조건 debug 빌드(로컬 16 vCPU, 새 target) | 의존성 포함 38.6초, 의존성 캐시 뒤 크레이트만 22.4초. 실행 파일 99.5 MB(gzip 22.5 MB), target 957 MB |
+| 묶음 분할 수 | 3묶음이면 묶음당 약 190초, 9묶음(원본처럼 그룹마다)이면 최장 71초지만 작업마다 준비 시간(체크아웃, npm, 브라우저 캐시, 바이너리 받기: 추정 1~1.5분)이 9번 든다. 5묶음은 최장 약 145초 |
+| 예상 총 시간(추정, 러너 미측정) | `Browser build` 약 2~3.5분(캐시 복원 + 4 vCPU 빌드) + 묶음 약 3.5~4분 = 6~7.5분. `Rust checks`보다 2~3.5분 길다. 빌드를 묶음마다 하면 기다림은 없어지지만 빌드가 5번 중복되고, `Rust checks`가 만든 실행 파일을 쓰면 `Rust checks` 전체가 끝날 때까지 기다린다(약 4분 + 묶음) |
+
+아티팩트: 묶음마다 항상 `browser-summary-N`, 실패하면 `browser-artifacts-N`(7일), 집계 `browser-gate`(7일). 워크플로 문법은 `actionlint` 1.7.12로 통과.
+
+외부 차단은 `unshare -rn` 하나로 정했다. Ubuntu 24.04의 AppArmor가 비특권 사용자 이름공간을 제한하면 이름공간 안에서 `lo`를 올릴 권한이 없으므로 sysctl로 그 제한을 이 작업에서만 끈다. 러너에서 돌려 보지 않았다. 안 되면 대안은 `docker run --network none`으로 실행기 전체를 컨테이너 안에서 돌리는 것이다(같은 이미지에 Node·Chromium 의존 라이브러리 필요). Playwright 라우팅은 테스트 코드를 고쳐야 하고, 프록시 환경변수는 Chromium이 따른다는 보장이 없어 쓰지 않는다.
+
+## 검증
+
+2026-11-17, WSL2 Ubuntu 24.04, 16 vCPU, 부하 평균 1.2~3.0(다른 작업자가 같이 돌 수 있음). HARS debug 빌드, Node 22.13.1, Playwright 1.64.1, chromium-headless-shell 1248.
+
+| 실행 | 결과 |
+|---|---|
+| 직렬 전체 5회(`--repeat 5`) | 게이트 통과. 통과 245, 예상 실패 5(모두 214행), 제외 5, `replay_layout[release_version]` 5/5, 예상 밖 실패 0. 2,994초(반복당 항목 합 586~589초). 남은 프로세스 0, 모든 항목 `loopback only; outside address unreachable` |
+| 사전 로드 없는 전체 1회(`--no-failure-shots`) | 게이트 통과, 598초. 항목별 판정이 5회와 같음 |
+| CI 묶음 구성 3회(5묶음 각각 직렬, `--aggregate`) | 3/3 게이트 통과(매회 49 + 1 + 1 + 1) |
+| `video_overlay` | 위 실행 9회 모두 통과. 따로 30회 반복은 [video_overlay 77행](#video_overlay-77행) |
+
+게이트 우회 점검(각 1회, 모두 게이트가 실패해야 정상):
+
+| 일으킨 것 | 방법 | 결과 |
+|---|---|---|
+| 단언 하나가 실패하는 화면 | `--web`에 `library.html`의 워드마크만 `Road Viewer HARS`로 바꾼 사본 | 종료 1, `library_tabs fail`(183행). 수집용 재실행이 `collect/trace/trace-1.zip`·스크린샷을 남김 |
+| HARS 실행 파일 없음 | `--hars-bin /nonexistent/...` | 종료 2, 요약에 사유 |
+| 차단 실패 | `unshare`를 옵션을 버리고 그대로 실행하는 가짜로 바꿈 | 종료 1, `isolation-failed`(`lo, eth0, docker0`). 이름공간 밖 `--isolation-check` 종료 1, 안에서는 0 |
+| 테스트 0개 | `--only no_such_test.cjs`, `--only replay_format2.cjs`(제외만) | 둘 다 종료 1, `no test ran` |
+| 묶음 빠짐 | 5묶음 중 4개만 `--aggregate` | 종료 1, 7개 항목 누락 |
+| 묶음 중복 | 묶음 5를 두 번 | 종료 1, 중복 |
+| 결과 하나 삭제 | 묶음 5 요약에서 `upload_stall` 결과를 지움(요약의 gate·exit_code는 그대로) | 종료 1, 다시 계산한 판정과 요약 불일치 + 누락 |
+| 종료 코드 불일치 | 묶음 3의 `exit-code`를 1로(요약은 0) | 종료 1, 불일치 |
 
 ## 미검증과 남은 위험
 
-- GitHub 러너에서 실행하지 않았다(`unshare`, 공유 라이브러리, 시간).
-- 모킹형 39개는 HARS의 API를 검사하지 않는다. HARS가 내보내는 화면 파일만 검사한다. HARS API는 Python 서버형 8개 파일만 닿는다.
+- GitHub 러너에서 실행하지 않았다: `unshare`+sysctl, 공유 라이브러리(`ldd`), `actions/cache/restore` 키 공유, 시간. 위 시간은 추정이다.
+- `video_overlay` 77행 간헐 실패(원본 테스트 결함)로 `Browser checks`가 가끔 실패할 수 있다. 4 vCPU 러너에서의 비율은 모른다.
+- 모킹형 39개는 HARS의 API를 부르지 않는다. HARS가 내보내는 화면 파일(보존 원본 + 버전·제목 치환)만 검사한다. HARS API는 Python 서버형 8개 파일만 닿는다.
+- `replay_format2`의 공백: HARS 출력에 `app.js`의 형식 2 확장을 직접 돌리는 검사가 없다.
 - 미러는 HARS가 같은 URL에서 내보내는 내용이지만, Python이 `/view/<id>/` 등에서 붙이는 응답 헤더(CSP 등)는 모킹형 테스트에 가지 않는다(테스트가 자기 헤더로 `fulfill`한다). Python에서도 같다.
-- `maps[many,leak]`·`navigation`은 대체(재기동, `id` 채움)에 기대 통과한다. 재기동 뒤 HARS가 기록을 다시 읽는 시간은 테스트 시간에 들어간다.
-- 측정은 모두 1회(병렬 3회)다. 다른 작업자의 부하가 섞였을 수 있다.
+- `maps[many,leak]`·`navigation`은 대체(재기동, `id` 채움)에 기대 통과한다.
+- 스크린샷은 단언 실패와 Playwright 시간 초과에만 찍힌다. 다른 오류만으로 실패하면 수집용 재실행의 trace만 남는다.
 - Playwright 1.64.1이 원본 1.3.18 CI의 버전과 같은지 확인하지 않았다.

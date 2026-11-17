@@ -5,7 +5,7 @@
 
 - [진단](#진단)
 - [CI/CD](#cicd)
-- [웹 화면 검사 (브라우저, CI 밖)](#웹-화면-검사-브라우저-ci-밖)
+- [웹 화면 검사 (브라우저)](#웹-화면-검사-브라우저)
 - [재생 변환 비교](#재생-변환-비교)
 - [변환 성능 재현](#변환-성능-재현)
 <!-- /toc -->
@@ -54,7 +54,7 @@ Rust 구조화 로그는 요청 ID, 경로, 서버 진입, 인증/파일 락 대
 
 ## CI/CD
 
-`HARS CI`는 Rust 검사와 amd64/aarch64 네이티브 컨테이너 빌드·기동 검사를 실행한다. `HARS required`는 `always()`와 모든 의존 결과의 `success` 검사를 사용하므로 실패·취소·생략이 성공으로 바뀌지 않는다. 신규 저장소의 최초 조사에서는 ruleset이 없었고 main도 아직 생성 전이었다. 보호 규칙을 임의로 추가하지 않는다.
+`HARS CI`는 Rust 검사, amd64/aarch64 네이티브 컨테이너 빌드·기동 검사, 보존 원본 브라우저 테스트(`Browser build` → `Browser shard 1~5` → `Browser checks`)를 실행한다. `HARS required`는 `always()`와 모든 의존 결과의 `success` 검사를 사용하므로 실패·취소·생략이 성공으로 바뀌지 않는다. 신규 저장소의 최초 조사에서는 ruleset이 없었고 main도 아직 생성 전이었다. 보호 규칙을 임의로 추가하지 않는다.
 
 컨테이너 builder는 이미지에 들어 있는 Rust 1.100 stable compiler를 사용한다. root의 개발용 toolchain 설정은 builder에 복사하지 않아 별도 stable/rustfmt/clippy toolchain을 중복 다운로드하지 않는다. Rust CI는 최신 stable을 검증한다.
 
@@ -62,11 +62,13 @@ Rust 구조화 로그는 요청 ID, 경로, 서버 진입, 인증/파일 락 대
 
 한글 경로에서 네이티브 Python 로더가 비정상 종료하는 문제를 피하도록 비교 서버는 영문 임시 경로에서 실행한다. Rust의 Cargo 산출물은 WSL 영문 임시 디렉터리에 두어 Windows 파일 시스템의 빌드 비용을 줄일 수 있다.
 
-## 웹 화면 검사 (브라우저, CI 밖)
+## 웹 화면 검사 (브라우저)
 
-웹 파일은 `reference/python/roadviewer/app/web/`의 보존 원본을 그대로 쓴다. 원본을 새 릴리스로 올릴 때는 `scripts/verify_reference.py`의 `SOURCE`와 `scripts/inventory.py`의 기준을 함께 바꾼다. 페이지의 버전 치환은 브라우저 없이 `tests/page_version.rs`가 CI에서 지킨다(원본 릴리스 번호가 페이지에 남거나 치환 대상이 사라지면 실패).
+웹 파일은 `reference/python/roadviewer/app/web/`의 보존 원본을 그대로 쓴다. 원본을 새 릴리스로 올릴 때는 `scripts/verify_reference.py`의 `SOURCE`와 `scripts/inventory.py`의 기준을 함께 바꾼다. 페이지의 버전·제목 치환은 브라우저 없이 `tests/page_version.rs`가 CI에서 지킨다(원본 릴리스 번호가 페이지에 남거나, 치환 대상이 사라지거나, HARS 표기가 제목·버전 줄 밖으로 나가 워드마크 `<h1>`을 바꾸면 실패).
 
-아래 검사는 브라우저가 필요해 CI에 넣지 않았다. 새 임시 프로필의 headless Chromium 계열만 쓰고, 서버는 임시 데이터 폴더와 loopback 포트의 release 실행 파일이다. 대상 레코드는 영상과 GPS가 있고 같은 주행에 구간이 2개 이상 있어야 하므로 실주행 연속 구간 3개를 `/api/uploads`로 올려 변환한 뒤 쓴다(`integration/real_upload_smoke.py`와 같은 업로드 절차).
+**CI 안.** 보존 원본 브라우저 테스트 51개 항목(`reference/python/tests/*.cjs`)은 `HARS CI`의 `Browser checks`(필수)가 원본 파일 수정 없이 HARS debug 실행 파일과 HARS가 내보낸 화면에 붙여 돌린다. 게이트(예상 실패 1개·제외 1개는 `integration/upstream_cjs/expectations.json`), 실패 산출물, 묶음 구성, 알려진 간헐 실패(`video_overlay` 77행, 원본 테스트의 대기 조건)는 [BROWSER-TESTS.md](BROWSER-TESTS.md)에 있다. 로컬에서는 `python3 integration/upstream_cjs/run_browser_tests.py --hars-bin target/debug/roadviewer-hars --out /tmp/rv-browser`(Node 22, `npm ci --prefix integration/upstream_cjs`, `npx --prefix integration/upstream_cjs playwright install --only-shell chromium`).
+
+**CI 밖.** 아래 검사는 실주행 기록이 필요해 CI에 넣지 않았다. 새 임시 프로필의 headless Chromium 계열만 쓰고, 서버는 임시 데이터 폴더와 loopback 포트의 release 실행 파일이다. 대상 레코드는 영상과 GPS가 있고 같은 주행에 구간이 2개 이상 있어야 하므로 실주행 연속 구간 3개를 `/api/uploads`로 올려 변환한 뒤 쓴다(`integration/real_upload_smoke.py`와 같은 업로드 절차).
 
 ```sh
 HARS_DATA=/tmp/hars-ui HARS_INGRESS_ONLY=0 HARS_BIND=127.0.0.1:18760 HARS_DEVICE_BIND=127.0.0.1:18761 target/release/roadviewer-hars &
@@ -80,7 +82,7 @@ python3 integration/ui_view_check.py --browser EXE --profile NEW_DIR --port 1877
 
 `ui_sync_check.py`의 브라우저는 바깥 호스트 이름을 풀지 못하게 띄운다. 지도 타일을 받지 않으므로 실주행 위치가 밖으로 나가지 않는다. `ui_view_check.py`는 그렇게 하지 않으므로 실주행 데이터에서는 지도 타일 요청이 OpenFreeMap으로 나간다. 구간 카드 제스처는 원본 `tests/segment_peek.cjs`가 CDP로 보내는 터치 대신 같은 포인터·터치 이벤트를 스크립트로 보낸다.
 
-보존 원본 브라우저 테스트(`reference/python/tests/*.cjs`, Node + Playwright)는 원본 파일을 고치지 않고 HARS에 붙일 수 있다. 전체 실행기와 결과·분류는 [BROWSER-TESTS.md](BROWSER-TESTS.md)에 있다(`integration/upstream_cjs/run_browser_tests.py`). `segment_peek.cjs`는 API를 가짜로 채우고 화면 파일을 작업 폴더에서 읽으므로, `integration/upstream_cjs/mirror_web.py`로 HARS가 내보낸 페이지·자산을 영문 임시 폴더에 받아 그 폴더에서 실행한다. `maps.cjs`는 `RV_PYTHON`이 띄우는 서버를 쓰므로 `integration/upstream_cjs/hars_as_python.py`를 `RV_PYTHON`으로 준다. 이 래퍼는 테스트의 서버 프로그램을 그대로 실행하되 `pyshim/`의 `server`·`werkzeug.serving`이 HARS 기동 + `/api/hassio_ingress/test/` 접두사 제거 프록시가 되게 한다. 이 테스트는 Python 형식 기록 파일을 데이터 폴더에 직접 써 넣는다.
+보존 원본 브라우저 테스트를 실행기 없이 하나씩 손으로 돌리는 방법(진단용). `segment_peek.cjs`는 API를 가짜로 채우고 화면 파일을 작업 폴더에서 읽으므로, `integration/upstream_cjs/mirror_web.py`로 HARS가 내보낸 페이지·자산을 영문 임시 폴더에 받아 그 폴더에서 실행한다. `maps.cjs`는 `RV_PYTHON`이 띄우는 서버를 쓰므로 `integration/upstream_cjs/hars_as_python.py`를 `RV_PYTHON`으로 준다. 이 래퍼는 테스트의 서버 프로그램을 그대로 실행하되 `pyshim/`의 `server`·`werkzeug.serving`이 HARS 기동 + `/api/hassio_ingress/test/` 접두사 제거 프록시가 되게 한다. 이 테스트는 Python 형식 기록 파일을 데이터 폴더에 직접 써 넣는다.
 
 ```sh
 cd /tmp/peek && NODE_PATH=PLAYWRIGHT_NODE_MODULES node "$REPO/reference/python/tests/segment_peek.cjs"

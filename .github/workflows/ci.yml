@@ -123,7 +123,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # browser-groups.json groups, about 130 s of tests each (BROWSER-TESTS.md); each shard runs serially.
+        # browser-groups.json groups; each shard runs serially (video_overlay is not safe in parallel).
+        # Measured 62-145 s of tests per shard on 16 vCPU (BROWSER-TESTS.md).
         include:
           - shard: 1
             groups: g7 g6
