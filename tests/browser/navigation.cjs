@@ -1,7 +1,7 @@
 const fs=require('fs'),os=require('os'),path=require('path'),assert=require('node:assert/strict'),{spawn}=require('child_process'),{once,EventEmitter}=require('events'),{chromium}=require('playwright');
 (async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'rv-navigation-')),ids=['a'.repeat(32),'b'.repeat(32)];
- for(const id of ids){fs.mkdirSync(path.join(dir,id));fs.writeFileSync(path.join(dir,id,'meta.json'),JSON.stringify({status:'unconverted',auto_excluded:true,name:id,uploaded:1,files:{}}))}
+ for(const id of ids){fs.mkdirSync(path.join(dir,id));fs.writeFileSync(path.join(dir,id,'meta.json'),JSON.stringify({id,status:'unconverted',auto_excluded:true,name:id,uploaded:1,files:{}}))}
  const python=spawn(process.env.RV_PYTHON||'python',['-u','-c',`
 import sys
 sys.path.insert(0,'roadviewer/app')
