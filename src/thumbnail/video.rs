@@ -4,6 +4,7 @@
 use super::scale::{Image, Plane};
 use anyhow::{Context, bail, ensure};
 use std::{
+    cell::Cell,
     fs::File,
     io::{Read, Seek, SeekFrom},
     path::Path,
@@ -436,6 +437,52 @@ struct Sequence {
 
 fn h264_sequence(sps: &[u8]) -> anyhow::Result<Sequence> {
     let mut b = Bits::new(sps.get(1..).context("truncated parameter set")?);
+    let chroma = h264_until_references(&mut b)?;
+    b.ue()?;
+    b.bit()?;
+    let width_mbs = u64::from(b.ue()?) + 1;
+    let height_units = u64::from(b.ue()?) + 1;
+    let frames_only = b.bit()? == 1;
+    if !frames_only {
+        b.bit()?;
+    }
+    b.bit()?;
+    let fields = if frames_only { 1 } else { 2 };
+    let (unit_x, unit_y) = match chroma {
+        0 | 3 => (1, fields),
+        2 => (2, fields),
+        _ => (2, 2 * fields),
+    };
+    let mut crop = [0u64; 4];
+    if b.bit()? == 1 {
+        for c in &mut crop {
+            *c = u64::from(b.ue()?);
+        }
+    }
+    let width = (width_mbs * 16).saturating_sub(unit_x * (crop[0] + crop[1]));
+    let height = (height_units * 16 * fields).saturating_sub(unit_y * (crop[2] + crop[3]));
+    let mut full_range = false;
+    if b.bit()? == 1 {
+        if b.bit()? == 1 && b.bits(8)? == 255 {
+            b.bits(32)?;
+        }
+        if b.bit()? == 1 {
+            b.bit()?;
+        }
+        if b.bit()? == 1 {
+            b.bits(3)?;
+            full_range = b.bit()? == 1;
+        }
+    }
+    Ok(Sequence {
+        width,
+        height,
+        full_range,
+    })
+}
+
+/// Reads an SPS up to `max_num_ref_frames`; returns `chroma_format_idc`.
+fn h264_until_references(b: &mut Bits) -> anyhow::Result<u32> {
     let profile = b.bits(8)?;
     b.bits(16)?;
     b.ue()?;
@@ -483,47 +530,60 @@ fn h264_sequence(sps: &[u8]) -> anyhow::Result<Sequence> {
         }
         _ => {}
     }
-    b.ue()?;
-    b.bit()?;
-    let width_mbs = u64::from(b.ue()?) + 1;
-    let height_units = u64::from(b.ue()?) + 1;
-    let frames_only = b.bit()? == 1;
-    if !frames_only {
-        b.bit()?;
-    }
-    b.bit()?;
-    let fields = if frames_only { 1 } else { 2 };
-    let (unit_x, unit_y) = match chroma {
-        0 | 3 => (1, fields),
-        2 => (2, fields),
-        _ => (2, 2 * fields),
+    Ok(chroma)
+}
+
+/// Bytes of grey reference pictures a restart probe may make (`h264_probe_sps`), at least one
+/// picture: 5 at 1920x1080, 1 at 4096x2160, and the stream's own count at 526x330.
+const PROBE_REFERENCE_BYTES: u64 = 16 * 1024 * 1024;
+
+/// The SPS a restart probe (`finishes`) decodes with. `gaps_in_frame_num_value_allowed_flag` is
+/// set: a fresh `rusty_h264` decoder then gives a P picture grey pictures for the references it
+/// lacks, which it otherwise refuses; nothing else reads the flag. `max_num_ref_frames` is
+/// lowered so that those pictures take at most `PROBE_REFERENCE_BYTES`: with fewer references a
+/// slice decodes the same macroblocks or fails, never the other way round
+/// (docs/hars/THUMBNAIL-DECODER.md, "Memory").
+pub(super) fn h264_probe_sps(sps: &[u8]) -> Option<Vec<u8>> {
+    let mut b = Bits {
+        rbsp: h264_rbsp(sps.get(1..)?),
+        at: 0,
     };
-    let mut crop = [0u64; 4];
-    if b.bit()? == 1 {
-        for c in &mut crop {
-            *c = u64::from(b.ue()?);
+    h264_until_references(&mut b).ok()?;
+    let references_at = b.at;
+    let references = u64::from(b.ue().ok()?);
+    b.bit().ok()?;
+    let rest = b.at;
+    let width = u64::from(b.ue().ok()?) + 1;
+    let height = (u64::from(b.ue().ok()?) + 1) * if b.bit().ok()? == 1 { 1 } else { 2 };
+    let picture = width.saturating_mul(height).saturating_mul(16 * 16 * 3 / 2);
+    let references = references.min((PROBE_REFERENCE_BYTES / picture).max(1));
+    let bit = |i: usize| (b.rbsp[i / 8] >> (7 - i % 8)) & 1 == 1;
+    // The last set bit is the stop bit; nothing after it is read.
+    let end = (rest..b.rbsp.len() * 8).rev().find(|i| bit(*i))?;
+    let mut bits: Vec<bool> = (0..references_at).map(bit).collect();
+    let code = references + 1;
+    let length = 63 - code.leading_zeros();
+    bits.extend((0..length).map(|_| false));
+    bits.extend((0..=length).rev().map(|i| (code >> i) & 1 == 1));
+    bits.push(true);
+    bits.extend((rest..end).map(bit));
+    bits.push(true);
+    let rbsp = bits.chunks(8).map(|c| {
+        c.iter()
+            .enumerate()
+            .fold(0u8, |v, (i, set)| v | (u8::from(*set) << (7 - i)))
+    });
+    let mut out = vec![sps[0]];
+    let mut zeros = 0;
+    for v in rbsp {
+        if zeros >= 2 && v <= 3 {
+            out.push(3);
+            zeros = 0;
         }
+        out.push(v);
+        zeros = if v == 0 { zeros + 1 } else { 0 };
     }
-    let width = (width_mbs * 16).saturating_sub(unit_x * (crop[0] + crop[1]));
-    let height = (height_units * 16 * fields).saturating_sub(unit_y * (crop[2] + crop[3]));
-    let mut full_range = false;
-    if b.bit()? == 1 {
-        if b.bit()? == 1 && b.bits(8)? == 255 {
-            b.bits(32)?;
-        }
-        if b.bit()? == 1 {
-            b.bit()?;
-        }
-        if b.bit()? == 1 {
-            b.bits(3)?;
-            full_range = b.bit()? == 1;
-        }
-    }
-    Ok(Sequence {
-        width,
-        height,
-        full_range,
-    })
+    Some(out)
 }
 
 fn hevc_sequence(sps: &[u8]) -> anyhow::Result<Sequence> {
@@ -601,15 +661,361 @@ enum Decoder {
     Hevc(Box<rusty_h265::Decoder>),
 }
 
+fn new_decoder(track: &Track) -> anyhow::Result<Decoder> {
+    Ok(match track.codec {
+        Codec::H264 => Decoder::H264(Box::default()),
+        Codec::Hevc => {
+            let mut d = Box::new(rusty_h265::Decoder::new());
+            for set in &track.sets {
+                guarded(|| d.push_nal(set, None))?.map_err(|e| anyhow::anyhow!("{e}"))?;
+            }
+            Decoder::Hevc(d)
+        }
+    })
+}
+
+/// A picture presented this close before the time the caller wants is still decoded, so the
+/// rounding of the caller's own comparison cannot make a needed picture be skipped.
+const SKIP_MARGIN: f64 = 1e-3;
+
+/// How a decode went, for tests and measurements; the pictures do not depend on it.
+#[derive(Debug, Default)]
+pub struct Work {
+    /// Samples given to a decoder, a stretch decoded again counted again.
+    pub decoded: usize,
+    /// Samples read before decoding to check the stream (`shortcuts`), and to probe the sample
+    /// before each H.264 restart candidate.
+    pub surveyed: usize,
+    /// The samples a fresh decoder started at.
+    pub restarts: Vec<usize>,
+    pub flushes: usize,
+    /// Stretches decoded again after a flush.
+    pub replays: usize,
+}
+
+/// The RBSP `rusty_h264` reads (`rusty_h264_common::nal::emulation_unprevent`): an
+/// emulation-prevention byte is dropped only before a byte up to 3.
+pub(super) fn h264_rbsp(ebsp: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(ebsp.len());
+    let mut zeros = 0;
+    for (i, &b) in ebsp.iter().enumerate() {
+        if zeros >= 2 && b == 3 && ebsp.get(i + 1).is_some_and(|n| *n <= 3) {
+            zeros = 0;
+            continue;
+        }
+        out.push(b);
+        zeros = if b == 0 { zeros + 1 } else { 0 };
+    }
+    out
+}
+
+/// `first_mb_in_slice` and `slice_type` of an H.264 slice.
+fn h264_slice(nal: &[u8]) -> Option<(u32, u32)> {
+    let mut b = Bits {
+        rbsp: h264_rbsp(nal.get(1..nal.len().min(64))?),
+        at: 0,
+    };
+    Some((b.ue().ok()?, b.ue().ok()?))
+}
+
+/// `slice_type` of the first slice segment of a HEVC IRAP picture whose PPS adds `extra` bits.
+fn hevc_irap_slice_type(nal: &[u8], pps: u8, extra: u8) -> Option<u32> {
+    let mut b = Bits {
+        rbsp: rusty_h265::nal::unescape(nal.get(2..nal.len().min(64))?).data,
+        at: 0,
+    };
+    if b.bit().ok()? != 1 {
+        return None;
+    }
+    b.bit().ok()?;
+    if b.ue().ok()? != u32::from(pps) {
+        return None;
+    }
+    b.bits(u32::from(extra)).ok()?;
+    b.ue().ok()
+}
+
+/// The samples a fresh decoder can start at, `None` when neither a restart nor a HEVC flush may
+/// be used: decoding then goes through every sample in order. A restart at IDR sample `s` and a
+/// flush leave every picture the caller is given, its time and its order as decoding every
+/// sample gives them when (docs/hars/THUMBNAIL-DECODER.md, "When skipping is exact"):
+///
+/// 1. pictures come out in decode order: no composition offset, presentation times that only
+///    grow, and for HEVC `sps_max_num_reorder_pics` zero in every sub-layer (`rusty_h265` then
+///    outputs each picture when it is finished, whatever `sps_max_latency_increase_plus1` says);
+/// 2. the decoder that went through every sample holds the parameter sets a fresh one is given:
+///    one set of each kind in the track, every in-band set parsed to the same fields as it, and
+///    for H.264 no redundant pictures;
+/// 3. for HEVC every picture carries the time of its own sample and is finished by the next
+///    sample: every NAL header parses, and the first slice of each sample, only it, starts a
+///    picture;
+/// 4. sample `s` starts from nothing: every slice is IDR (HEVC: temporal layer 0), its first
+///    slice is an I slice starting the picture, and for H.264 every slice is a reference;
+/// 5. for H.264 sample `s - 1` ends with its picture finished, since `rusty_h264` refuses an IDR
+///    after an unfinished picture: it holds one picture whose first slice starts it, and a fresh
+///    decoder finishes it (`finishes`, run here for every candidate).
+///
+/// What this cannot see is a decoder panic in a skipped sample, which decoding every sample
+/// would have turned into a failure.
+fn shortcuts(file: &mut File, track: &Track, work: &mut Work) -> anyhow::Result<Option<Vec<bool>>> {
+    let hevc = track.codec == Codec::Hevc;
+    if track
+        .sets
+        .iter()
+        .any(|s| s.len() < if hevc { 3 } else { 2 })
+    {
+        return Ok(None);
+    }
+    let kind = |nal: &[u8]| {
+        if hevc {
+            (nal[0] >> 1) & 63
+        } else {
+            nal[0] & 31
+        }
+    };
+    let is_set = |t: u8| {
+        if hevc {
+            matches!(t, 32..=34)
+        } else {
+            matches!(t, 7 | 8)
+        }
+    };
+    let mut kinds: Vec<u8> = track.sets.iter().map(|s| kind(s)).collect();
+    kinds.sort_unstable();
+    let count = kinds.len();
+    kinds.dedup();
+    let set = |t: u8| track.sets.iter().find(|s| kind(s) == t);
+    if kinds.len() != count
+        || track.samples.iter().any(|s| s.3 != 0)
+        || track.samples.windows(2).any(|w| w[1].2 <= w[0].2)
+    {
+        return Ok(None);
+    }
+    // What the decoder keeps of a parameter set: its parsed fields (camera files repeat the
+    // track's sets in band without the trailing zero byte of `avcC`). A parser panic means no,
+    // and the decoder then meets it as before.
+    let parsed = |nal: &[u8]| -> Option<String> {
+        guarded(|| parsed_fields(track.codec, kind(nal), nal))
+            .ok()
+            .flatten()
+    };
+    fn parsed_fields(codec: Codec, kind: u8, nal: &[u8]) -> Option<String> {
+        Some(match (codec, kind) {
+            (Codec::H264, 7) => format!(
+                "{:?}",
+                rusty_h264_decoder::Sps::parse(&h264_rbsp(&nal[1..])).ok()?
+            ),
+            (Codec::H264, 8) => format!(
+                "{:?}",
+                rusty_h264_decoder::Pps::parse(&h264_rbsp(&nal[1..])).ok()?
+            ),
+            (Codec::Hevc, t @ 32..=34) => {
+                let rbsp = rusty_h265::nal::unescape(nal.get(2..)?).data;
+                match t {
+                    32 => format!("{:?}", rusty_h265::ps::parse_vps(&rbsp).ok()?),
+                    33 => format!("{:?}", rusty_h265::ps::parse_sps(&rbsp).ok()?),
+                    _ => format!("{:?}", rusty_h265::ps::parse_pps(&rbsp).ok()?),
+                }
+            }
+            _ => return None,
+        })
+    }
+    let mut fields = Vec::new();
+    for s in track.sets.iter().filter(|s| is_set(kind(s))) {
+        let Some(f) = parsed(s) else {
+            return Ok(None);
+        };
+        fields.push((kind(s), f));
+    }
+    let mut irap_pps = (0, 0);
+    match track.codec {
+        Codec::H264 => {
+            let Some(pps) =
+                set(8).and_then(|p| rusty_h264_decoder::Pps::parse(&h264_rbsp(&p[1..])).ok())
+            else {
+                return Ok(None);
+            };
+            // Kept though `rusty_h264` drops a redundant slice having changed only the POC
+            // state, which an IDR picture resets: no stream with such slices was ever compared.
+            if pps.redundant_pic_cnt_present_flag {
+                return Ok(None);
+            }
+        }
+        Codec::Hevc => {
+            let unescaped = |s: &[u8]| rusty_h265::nal::unescape(&s[2..]).data;
+            let (Some(sps), Some(pps)) = (
+                set(33).and_then(|s| rusty_h265::ps::parse_sps(&unescaped(s)).ok()),
+                set(34).and_then(|p| rusty_h265::ps::parse_pps(&unescaped(p)).ok()),
+            ) else {
+                return Ok(None);
+            };
+            let layers = usize::from(sps.max_sub_layers_minus1) + 1;
+            if sps
+                .ordering
+                .iter()
+                .take(layers)
+                .any(|o| o.max_num_reorder_pics != 0)
+            {
+                return Ok(None);
+            }
+            irap_pps = (pps.id, pps.num_extra_slice_header_bits);
+        }
+    }
+    let probe = if hevc {
+        None
+    } else {
+        set(7).and_then(|s| h264_probe_sps(s))
+    };
+    let len = file.metadata()?.len();
+    let mut bytes = Vec::new();
+    let mut starts = Vec::with_capacity(track.samples.len());
+    // H.264: the sample before holds one picture, which its first slice starts.
+    let mut one_picture = false;
+    for &(position, size, _, _) in &track.samples {
+        if position.checked_add(size).is_none_or(|end| end > len) {
+            break;
+        }
+        bytes.resize(usize::try_from(size)?, 0);
+        file.seek(SeekFrom::Start(position))?;
+        if file.read_exact(&mut bytes).is_err() {
+            break;
+        }
+        work.surveyed += 1;
+        let Ok(nals) = units(&bytes, track.length_size) else {
+            // Not decoded at all, as decoding every sample does with it.
+            starts.push(false);
+            one_picture = false;
+            continue;
+        };
+        for n in nals.iter().filter(|n| is_set(kind(n))) {
+            let same = |(k, f): &(u8, String)| *k == kind(n) && parsed(n).as_ref() == Some(f);
+            if !track.sets.iter().any(|s| s.as_slice() == *n) && !fields.iter().any(same) {
+                return Ok(None);
+            }
+        }
+        let start = match track.codec {
+            Codec::H264 => {
+                let slices: Vec<_> = nals
+                    .iter()
+                    .filter(|n| (1..=5).contains(&(n[0] & 31)))
+                    .collect();
+                let headers: Vec<_> = slices.iter().map(|n| h264_slice(n)).collect();
+                let idr = !slices.is_empty()
+                    && slices.iter().all(|n| n[0] & 31 == 5 && n[0] & 0x60 != 0)
+                    && headers
+                        .iter()
+                        .all(|h| h.is_some_and(|h| matches!(h.1, 2 | 7)))
+                    && headers[0].is_some_and(|h| h.0 == 0);
+                let start = idr && one_picture;
+                one_picture = !slices.is_empty()
+                    && slices.iter().all(|n| matches!(n[0] & 31, 1 | 5))
+                    && headers
+                        .iter()
+                        .enumerate()
+                        .all(|(i, h)| h.is_some_and(|h| (h.0 == 0) == (i == 0)));
+                start
+            }
+            Codec::Hevc => {
+                if nals
+                    .iter()
+                    .any(|n| n.len() < 2 || n[0] & 0x80 != 0 || n[1] & 7 == 0)
+                {
+                    return Ok(None);
+                }
+                let slices: Vec<_> = nals
+                    .iter()
+                    .filter(|n| (n[0] >> 1) & 63 <= 21 && n[0] & 1 == 0 && n[1] >> 3 == 0)
+                    .collect();
+                if slices.iter().any(|n| n.len() < 3)
+                    || slices
+                        .iter()
+                        .enumerate()
+                        .any(|(i, n)| (n[2] >> 7 == 1) != (i == 0))
+                {
+                    return Ok(None);
+                }
+                !slices.is_empty()
+                    && slices
+                        .iter()
+                        .all(|n| matches!((n[0] >> 1) & 63, 19 | 20) && n[1] & 7 == 1)
+                    && hevc_irap_slice_type(slices[0], irap_pps.0, irap_pps.1) == Some(2)
+            }
+        };
+        // Probed here, before any picture is decoded, so the probe never shares the memory
+        // limit with a decoder holding the stream's references.
+        let start = start
+            && match &probe {
+                None => track.codec == Codec::Hevc,
+                Some(sps) => {
+                    work.surveyed += 1;
+                    finishes(file, track, sps, starts.len() - 1, &mut bytes)?
+                }
+            };
+        starts.push(start);
+    }
+    Ok(Some(starts))
+}
+
+/// Whether a fresh `rusty_h264` decoder given `sps` (`h264_probe_sps`, missing references made
+/// grey) finishes the one picture of sample `index` without an error. Slices parse the same
+/// whatever reference pictures a decoder holds, so the decoder that went through every sample
+/// ends that sample with the picture finished or after an error that replaced it: either way it
+/// meets the next IDR picture as a fresh one does. `bytes` is the caller's sample buffer.
+fn finishes(
+    file: &mut File,
+    track: &Track,
+    sps: &[u8],
+    index: usize,
+    bytes: &mut Vec<u8>,
+) -> anyhow::Result<bool> {
+    let (position, size, _, _) = track.samples[index];
+    bytes.resize(usize::try_from(size)?, 0);
+    file.seek(SeekFrom::Start(position))?;
+    file.read_exact(bytes)?;
+    let mut au = Vec::with_capacity(bytes.len() + 64);
+    let sets = track.sets.iter().filter(|s| s[0] & 31 != 7);
+    for nal in std::iter::once(sps)
+        .chain(sets.map(Vec::as_slice))
+        .chain(units(bytes, track.length_size)?)
+    {
+        au.extend_from_slice(&[0, 0, 0, 1]);
+        au.extend_from_slice(nal);
+    }
+    let mut d = rusty_h264_decoder::Decoder::new();
+    Ok(matches!(guarded(|| d.decode(&au)), Ok(Ok(Some(_)))))
+}
+
+/// The sample a fresh decoder can start at instead of decoding `from..` in order: the last start
+/// (`shortcuts`) before the first sample presented at `wanted`, so the samples skipped present
+/// before it.
+fn restart(
+    track: &Track,
+    starts: &[bool],
+    from: usize,
+    wanted: f64,
+    time: impl Fn(i64) -> f64,
+) -> Option<usize> {
+    let needed = (from..track.samples.len())
+        .find(|i| time(track.samples[*i].2 + track.samples[*i].3) >= wanted - SKIP_MARGIN)?;
+    (from + 1..=needed)
+        .rev()
+        .find(|i| starts.get(*i) == Some(&true))
+}
+
 /// Decodes the first `limit` video samples of `path` and calls `each` with every picture FFmpeg
-/// would return, in its order, until `each` returns true. A sample that does not decode is
-/// skipped, as `avcodec_send_packet` failures are. When the limit is reached the picture of the
-/// last sample is not returned and nothing is flushed: frame threading with two threads holds it.
+/// would return, in its order, until `each` returns `None`. `Some(t)` says no picture presented
+/// before `t` is needed any more: when the stream allows it (`shortcuts`), the samples before
+/// the last IDR picture ahead of `t` are then not decoded, which leaves every picture from that
+/// IDR on as decoding all of them gives. A sample that does not decode is skipped, as
+/// `avcodec_send_packet` failures are. When the limit is reached the picture of the last sample
+/// is not returned and nothing is flushed: frame threading with two threads holds it.
+/// With `skip` false every sample is decoded in order, as before any skipping.
 pub fn decode(
     path: &Path,
     limit: usize,
-    mut each: impl FnMut(Frame) -> anyhow::Result<bool>,
-) -> anyhow::Result<()> {
+    skip: bool,
+    mut each: impl FnMut(Frame) -> anyhow::Result<Option<f64>>,
+) -> anyhow::Result<Work> {
     let mut file = File::open(path)?;
     let track = track(&mut file, limit)?;
     let sequence = match track.codec {
@@ -636,15 +1042,12 @@ pub fn decode(
         );
     }
     let full_range = sequence.is_some_and(|s| s.full_range);
-    let mut decoder = match track.codec {
-        Codec::H264 => Decoder::H264(Box::default()),
-        Codec::Hevc => {
-            let mut d = Box::new(rusty_h265::Decoder::new());
-            for set in &track.sets {
-                guarded(|| d.push_nal(set, None))?.map_err(|e| anyhow::anyhow!("{e}"))?;
-            }
-            Decoder::Hevc(d)
-        }
+    let mut decoder = new_decoder(&track)?;
+    let mut work = Work::default();
+    let starts = if skip {
+        shortcuts(&mut file, &track, &mut work)?
+    } else {
+        None
     };
     let reorder = track.samples.iter().any(|s| s.3 != 0);
     let mut pending: Vec<(i64, Image)> = Vec::new();
@@ -652,6 +1055,17 @@ pub fn decode(
     let limited = track.samples.len() == limit;
     let mut sample = Vec::new();
     let mut fresh = true;
+    let wanted = Cell::new(f64::NEG_INFINITY);
+    let mut planned = f64::NEG_INFINITY;
+    let mut each = |frame: Frame| -> anyhow::Result<bool> {
+        Ok(match each(frame)? {
+            None => true,
+            Some(t) => {
+                wanted.set(t);
+                false
+            }
+        })
+    };
     let emit = |pts: i64,
                 image: Image,
                 each: &mut dyn FnMut(Frame) -> anyhow::Result<bool>|
@@ -669,7 +1083,42 @@ pub fn decode(
             full_range,
         })
     };
-    for (index, &(position, size, dts, offset)) in track.samples.iter().enumerate() {
+    // HEVC finishes a picture when the next one starts; `flush` finishes it at once, but leaves
+    // a decoder that cannot go on. Used on a sample that may hold the wanted picture: when the
+    // caller then wants a time with an IDR picture ahead, the decoder is replaced anyway;
+    // otherwise the stretch from `began` is decoded again, its pictures not passed on twice.
+    let mut began = 0;
+    let mut flushed = None;
+    let mut shown = i64::MIN;
+    let mut early = true;
+    let mut next = 0;
+    while next < track.samples.len() {
+        if let Some(starts) = &starts
+            && wanted.get() > planned
+        {
+            planned = wanted.get();
+            if let Some(start) = restart(&track, starts, next, planned, time) {
+                next = start;
+                began = start;
+                decoder = new_decoder(&track)?;
+                fresh = true;
+                flushed = None;
+                early = true;
+                work.restarts.push(start);
+            }
+        }
+        if let Some(pts) = flushed.take() {
+            next = began;
+            decoder = new_decoder(&track)?;
+            fresh = true;
+            shown = pts;
+            early = false;
+            work.replays += 1;
+        }
+        let index = next;
+        next += 1;
+        work.decoded += 1;
+        let (position, size, dts, offset) = track.samples[index];
         let last = limited && index + 1 == limit;
         let pts = dts.checked_add(offset).context("invalid PTS/DTS")?;
         sample.resize(usize::try_from(size)?, 0);
@@ -717,8 +1166,19 @@ pub fn decode(
                 while let Ok(frame) = guarded(|| d.next_frame())? {
                     out.push((frame.pts.unwrap_or(pts), h265_image(&frame)?));
                 }
+                // No margin here: a picture just before the wanted time would only make the
+                // stretch be decoded again.
+                if early && starts.is_some() && !last && time(pts) >= wanted.get() {
+                    guarded(|| d.flush())?;
+                    while let Ok(frame) = guarded(|| d.next_frame())? {
+                        out.push((frame.pts.unwrap_or(pts), h265_image(&frame)?));
+                    }
+                    flushed = Some(pts);
+                    work.flushes += 1;
+                }
             }
         }
+        out.retain(|(pts, _)| reorder || *pts > shown);
         if last && matches!(decoder, Decoder::H264(_)) {
             out.clear();
         }
@@ -733,14 +1193,14 @@ pub fn decode(
                     .unwrap_or(0);
                 let (pts, image) = pending.swap_remove(at);
                 if emit(pts, image, &mut each)? {
-                    return Ok(());
+                    return Ok(work);
                 }
             } else if emit(pts, image, &mut each)? {
-                return Ok(());
+                return Ok(work);
             }
         }
         if last {
-            return Ok(());
+            return Ok(work);
         }
     }
     if let Decoder::Hevc(d) = &mut decoder {
@@ -750,8 +1210,8 @@ pub fn decode(
             let pts = frame.pts.unwrap_or(0);
             if reorder {
                 pending.push((pts, image));
-            } else if emit(pts, image, &mut each)? {
-                return Ok(());
+            } else if pts > shown && emit(pts, image, &mut each)? {
+                return Ok(work);
             }
         }
     }
@@ -761,5 +1221,5 @@ pub fn decode(
             break;
         }
     }
-    Ok(())
+    Ok(work)
 }

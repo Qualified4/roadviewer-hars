@@ -255,3 +255,31 @@ CI의 두 컨테이너 작업은 FFmpeg 없는 이미지 안에서 기동, TLS, 
 ### 미검증
 
 aarch64에서의 실제 디코딩·속도·메모리(CI는 컨테이너 기동·변환·크기만 확인), 실제 HAOS, 실주행 B-frame·interlaced 입력, 4 GiB 초과 내보내기, 카메라가 처음 쓴 TS(다른 muxer)와의 바이트 비교, 썸네일 디코더의 퍼징·적합성 시험 재현, Python 시절 `prepared/`의 이어받기.
+
+## 썸네일 최적화 (2026-11-17)
+
+브랜치 `perf/thumbnail`(기준 `b94d8a4`, 버전 2.0.0-alpha.4 그대로). 비교 기준은 `b94d8a4`의 release 실행 파일이다. 세부는 [THUMBNAIL-DECODER.md](THUMBNAIL-DECODER.md#speed-up-2026-11-17), 수치는 `measurements/thumbnail-performance-2026-11-17.json`.
+
+| 검증 | 결과 |
+|---|---|
+| 썸네일 85개(qcamera 74 + HEVC 대체 경로 11) | 종료 코드·stdout(고른 초, 점수)·`thumbnail.json`·해상도·JPEG 바이트 85/85 동일. 측정 빌드로 본 후보 5장과 밝기 보정 후 픽셀 85/85 동일. 새 worker가 내보낸 그림 2,918장(`8800338`: 4,052장) 모두 같은 시각의 alpha.4 그림과 같다 |
+| 디코딩 대조 36개 영상, 140패킷 창 | 내보낸 그림 5,004/5,004가 호스트 FFmpeg 6.1.1 `-threads 1` framemd5와 같다(영상당 139장: 제품 경로는 140번째 샘플의 그림을 원래 내보내지 않는다. 이전 기록의 5,040은 별도 harness로 그것까지 셌다) |
+| 줄인 범위에서 실제로 내보낸 그림 | 1,040/1,040 FFmpeg와 같다(`8800338`: 1,265/1,265). 건너뛰거나 flush로 버린 디코더에서 디코딩만 된 그림은 출력되지 않아 대조 대상이 아니다 |
+| 손상·잘림·비정상 해상도 40건(`integration/thumbnail_faults.py`, 시드 고정, `prlimit --as=2147483648`) | 성공/실패 40/40, 결과·JPEG까지 40/40 alpha.4와 같다. 만든 것 18/18, panic 0, 시한·메모리 초과 0, 실패 뒤 남은 파일 0 |
+| 독립 검토가 찾은 입력 4건(`8800338`에서 결과가 달랐다: 샘플 0의 다른 in-band PPS, IDR 직전 슬라이스 손실, HEVC 해석 불가 NAL 헤더, `ctts`를 숨긴 HEVC B-frame) | 4/4 `b94d8a4`와 고른 초·점수·JSON·JPEG 바이트 동일(검토자의 대조 입력 포함 9/9) |
+| 차등 퍼징(`integration/thumbnail_differential.py`, 시드 20261117, `prlimit --as=2147483648`): 합성 2 + 실주행 2개씩에서 만든 손상 입력 H.264 300 + HEVC 300 | 600/600 종료 코드·출력·`thumbnail.json`·JPEG 바이트가 `b94d8a4`와 같다(500건은 둘 다 썸네일 생성, 100건은 둘 다 실패) |
+| 두 번째 독립 검토(`d2637b2`): 4096x2160 H.264 `ref=16` 2건에서 확인용 디코더가 메모리를 두 배 가까이 쓰거나(251 → 477 MiB) 메모리 부족으로 abort(`b94d8a4`는 성공) | 수정(`bdd9d7d`) 뒤 검토 입력 5건 + 첫 검토 입력 12건 + 4096x2160 HEVC `ref=4` 1건 18/18 `b94d8a4`와 결과·JSON·JPEG 바이트 동일. Peak RSS 250.5 → 253.3 MiB, 306.3 → 339.6 MiB(1.11배, 차이는 glibc mmap 임계값: 고정하면 299.6 / 301.1 MiB), HEVC 4K 171.6 → 69.2 MiB |
+| 차등 퍼징 보강 뒤(`df2ed8e`): 합성 시드 추가(H.264 `ref=4`·`ref=16`·`slices=4`·1920x1080, HEVC `slices=4`)와 금지 비트가 켜진 비슬라이스 NAL 삽입 변형 | 시드 20261117 600/600(486건 둘 다 생성), 시드 20261118 300/300(249건) `b94d8a4`와 같다 |
+| 두 번째 검토 뒤 기존 검증 재실행(`df2ed8e`) | 썸네일 85/85(JPEG 바이트 포함), FFmpeg 대조 5,004/5,004·1,040/1,040, 손상 입력 40/40(panic 0), 원본 13구간 13/13 차이 없음 |
+| 단위 테스트(추가) | 건너뛰는 경로와 전부 디코딩하는 경로(`video::decode(.., skip: false, ..)`)의 썸네일과 필요한 그림이 같은지: 카메라형 H.264 GOP 15, HEVC GOP 20·21·30(flush 뒤 다시 디코딩), 위 4건, IDR 슬라이스의 비참조·SP 변형, CRA. 재시작이 거부되어야 하는 곳에서 재시작하지 않았는지도 확인. 변이 3건(IDR 판정 완화, `shown` 필터 제거, 파라미터 세트 검사 제거) 각각 시험이 실패로 잡았다(변이는 커밋하지 않음). 두 번째 검토 뒤 추가: 샘플 0 앞의 금지 비트 SEI(`ce 01 05 05 80`), 확인용 SPS의 참조 장수 상한(4096x2160 1, 1920x1080 5, 526x330 원래 값). 변이 2건(HEVC 금지 비트 검사 제거, 참조 장수 상한 제거)도 각각 잡혔다 |
+| worker 격리 | `main.rs`·`media.rs`·`pure_remux.rs` 변경 없음(메모리 상한 자기 크기 + 512 MiB, 180초, `PR_SET_PDEATHSIG`). 기존 worker 강제 종료 시험들 통과 |
+| aarch64 | 썸네일 모듈 3개 + 두 디코더의 `cargo check --target aarch64-unknown-linux-gnu` 통과(기본·SIMD 빌드 둘 다). 전체 크레이트는 aarch64 C 컴파일러가 없어 check 불가(`ring`, `zstd-sys`). qemu-aarch64가 없어 실행은 미검증 |
+| 원본 13구간 `real_conversion_compare.py --limit 13` | 13/13 차이 없음(검토 수정 뒤 다시 실행), 15,600프레임. 썸네일 메타데이터는 13/13 alpha.4와 같고, Python과는 10/13(5·6·7구간 점수 0.01 차이, alpha.4도 같음) |
+| 전체 변환 벤치마크 3구간 × 6회 | 매 회 Python과 동등, `thumbnail.json`·`thumbnail.jpg`가 alpha.4와 바이트 동일(스크립트 assert) |
+| 제품 경로(`8800338`에서 확인, 검토 수정 뒤 다시 하지 않음) | release 실행 파일, 임시 `HARS_DATA`, 포트 18724~18727, PATH에 ffmpeg·ffprobe 없음. 실제 2구간(3, 7) 업로드·자동 변환: 썸네일 API JPEG SHA-256이 alpha.4와 2/2 같고, 두 카메라 Range 206, `/original/<kind>`가 업로드와 같다 |
+| `cargo fmt --all --check`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked --all-targets` | 통과. 전체 테스트 2회 연속 308 통과, 0 실패(검토 수정 뒤, `8800338`에서는 304) |
+| amd64 이미지(`hars-tp-thumb:new`, push 없음) | `image_report.py --require-no-ffmpeg` 통과, 120.74 MB / gzip 46.11 MB, 패키지 107 |
+
+스레드를 도입하지 않아 썸네일 테스트 50회 반복은 하지 않았다. `integration/no_ffmpeg_product.py`는 alpha.4와 새 실행 파일 모두에서 `/api/logs/{id}/download?source=...&format=mp4`가 404라 첫 구간에서 멈춘다(이 변경과 무관, 고치지 않음). 제품 경로 확인은 같은 서버 도우미(`pure_default_product.py`)로 따로 했다.
+
+미검증: aarch64 실행, 썸네일 worker 자체를 SIGKILL하는 시험, IDR 간격이 1초보다 길거나 CRA만 있는 HEVC 실주행 입력, 14·47구간 전체 회귀(조정자). 건너뛴 샘플에서 디코더가 panic하는 입력(전부 디코딩하면 실패할 썸네일이 건너뛰면 만들어진다)은 구조 검사로 막지 못하며 차등 퍼징 1,500건(600 + 보강 뒤 600 + 300)에서는 나오지 않았다. 따라서 계약은 "디코더가 panic하지 않는 입력에서 `b94d8a4`와 같다"이다(THUMBNAIL-DECODER.md "What the equality covers"). 4096x2160 H.264의 메모리는 `cargo test`로 직접 시험하지 않고 고정 입력으로만 확인했다.

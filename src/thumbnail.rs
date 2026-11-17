@@ -82,11 +82,16 @@ fn level(image: &mut Image, (mean, _, low, high): (f64, f64, u8, u8)) {
 }
 
 pub fn make(source: &Path, output: &Path) -> anyhow::Result<Value> {
+    make_with(source, output, true).map(|(value, _)| value)
+}
+
+/// `make`, or with `skip` false from every sample decoded in order (`video::decode`).
+fn make_with(source: &Path, output: &Path, skip: bool) -> anyhow::Result<(Value, video::Work)> {
     let _profile = crate::profile::Scope::new("thumbnail_native");
     let mut candidates: Vec<(u8, Image)> = vec![];
     let mut first = None;
     let mut start = None;
-    video::decode(source, MAX_PACKETS, |frame| {
+    let work = video::decode(source, MAX_PACKETS, skip, |frame| {
         let t = frame.time;
         let start = *start.get_or_insert(t);
         if first.is_none() {
@@ -97,7 +102,9 @@ pub fn make(source: &Path, output: &Path) -> anyhow::Result<Value> {
                 candidates.push((second, scale::small(&frame.image, WIDTH, frame.full_range)?));
             }
         }
-        Ok(candidates.len() == 5)
+        Ok((1..=5u8)
+            .find(|second| !candidates.iter().any(|v| v.0 == *second))
+            .map(|second| start + f64::from(second)))
     })?;
     if candidates.is_empty()
         && let Some(first) = first
@@ -127,7 +134,7 @@ pub fn make(source: &Path, output: &Path) -> anyhow::Result<Value> {
     let temp = metadata.with_extension("json.tmp");
     std::fs::write(&temp, serde_json::to_vec(&meta)?)?;
     std::fs::rename(temp, metadata)?;
-    Ok(json!({"second":second,"score":meta["score"]}))
+    Ok((json!({"second":second,"score":meta["score"]}), work))
 }
 
 #[cfg(test)]
