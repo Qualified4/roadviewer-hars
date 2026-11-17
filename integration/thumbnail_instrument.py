@@ -26,8 +26,10 @@ sub('src/thumbnail.rs', '    level(&mut image, measured);\n',
     '    { let _s = %s("thumb_level"); level(&mut image, measured); }\n    dump(output, "levelled", &[(second, image.clone())]);\n' % S)
 sub('src/thumbnail.rs', '    let jpeg = jpeg::encode(&image)?;\n',
     '    let jpeg = { let _s = %s("thumb_jpeg"); jpeg::encode(&image)? };\n    let write_scope = %s("thumb_write");\n' % (S, S))
-sub('src/thumbnail.rs', '    Ok(json!({"second":second,"score":meta["score"]}))\n',
-    '    drop(write_scope);\n    Ok(json!({"second":second,"score":meta["score"]}))\n')
+done = '    Ok(json!({"second":second,"score":meta["score"]}))\n'
+if done not in (root / 'src/thumbnail.rs').read_text():
+    done = '    Ok((json!({"second":second,"score":meta["score"]}), work))\n'
+sub('src/thumbnail.rs', done, '    drop(write_scope);\n' + done)
 sub('src/thumbnail.rs', 'pub fn make(',
     '''fn dump(output: &Path, name: &str, images: &[(u8, Image)]) {
     if std::env::var_os("HARS_THUMB_DUMP").is_none() { return; }
@@ -58,6 +60,7 @@ sub('src/thumbnail/video.rs', '        if file.read_exact(&mut sample).is_err() 
     '        let read = { let _s = %s("thumb_read"); file.read_exact(&mut sample) };\n        if read.is_err() {\n' % S)
 new_api = 'Option<f64>' in (root / 'src/thumbnail/video.rs').read_text()
 keep_going = 'Some(f64::NEG_INFINITY)' if new_api else 'false'
+skip_arg = 'true, ' if 'skip: bool' in (root / 'src/thumbnail/video.rs').read_text() else ''
 sub('src/thumbnail.rs', '        let t = frame.time;\n',
     '        let t = frame.time;\n        frame_md5(&frame, "HARS_THUMB_FRAMES");\n')
 sub('src/thumbnail.rs', 'pub fn make(source: &Path, output: &Path) -> anyhow::Result<Value> {\n',
@@ -72,14 +75,15 @@ sub('src/thumbnail.rs', 'pub fn make(source: &Path, output: &Path) -> anyhow::Re
 }
 pub fn make(source: &Path, output: &Path) -> anyhow::Result<Value> {
     if std::env::var_os("HARS_THUMB_ALLFRAMES").is_some() {
-        video::decode(source, MAX_PACKETS, |frame| { frame_md5(&frame, "HARS_THUMB_ALLFRAMES"); Ok(%s) })?;
+        video::decode(source, MAX_PACKETS, %s|frame| { frame_md5(&frame, "HARS_THUMB_ALLFRAMES"); Ok(%s) })?;
         anyhow::bail!("all frames written");
     }
-''' % keep_going)
-early_flush = '                    guarded(|| d.flush())?;\n'
-if early_flush in (root / 'src/thumbnail/video.rs').read_text():
-    sub('src/thumbnail/video.rs', early_flush,
-        '                    let _f = %s("thumb_decode");\n' % S + early_flush)
+''' % (skip_arg, keep_going))
+# The early HEVC flush runs inside the sample's own `thumb_decode` scope already.
+survey = '        shortcuts(&mut file, &track, &mut work)?\n'
+if survey in (root / 'src/thumbnail/video.rs').read_text():
+    sub('src/thumbnail/video.rs', survey,
+        '        { let _s = %s("thumb_survey"); shortcuts(&mut file, &track, &mut work)? }\n' % S)
 sub('src/main.rs', '        roadviewer_hars::pure_remux::limit_memory(roadviewer_hars::thumbnail::MEMORY_BUDGET_MIB)?;\n',
     '        { let _s = roadviewer_hars::profile::Scope::new("thumb_limit_memory"); roadviewer_hars::pure_remux::limit_memory(roadviewer_hars::thumbnail::MEMORY_BUDGET_MIB)?; }\n')
 print('instrumented', root)
