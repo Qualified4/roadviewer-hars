@@ -73,7 +73,13 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   await setHeight(30);assert(await alphaAt(.65)>0);
   await setHeight(200);assert.equal(await page.locator('#overlayHeightValue').textContent(),'200 cm');
   await page.locator('#overlayHeightReset').click();assert.equal(await page.locator('#overlayHeightRange').inputValue(),'60');
-  await setHeight(75);await page.keyboard.press('Escape');await page.locator('#overlayHeightDialog').waitFor({state:'hidden'});
+  await setHeight(75);
+  // HARS: the dialog is hidden as soon as Escape closes it, but the app hands focus on from the dialog's close event,
+  // which comes a few ms later. Wait for that event (a listener added after the app's runs after it), then read once.
+  assert.equal(await page.evaluate(()=>document.activeElement.id),'overlayHeightReset','focus is inside the dialog before Escape');
+  await page.evaluate(()=>{window.hcHeightDialogClosed=false;document.getElementById('overlayHeightDialog').addEventListener('close',()=>{window.hcHeightDialogClosed=true},{once:true})});
+  await page.keyboard.press('Escape');await page.locator('#overlayHeightDialog').waitFor({state:'hidden'});
+  await page.waitForFunction(()=>window.hcHeightDialogClosed);
   assert(await page.evaluate(()=>document.activeElement===document.body),'closing hands focus to nothing');
   // CCNC display commands have their own toggle; unknown TrackID/speed are never invented.
   assert.equal(await page.locator('#ccncTargets').isChecked(),true);
