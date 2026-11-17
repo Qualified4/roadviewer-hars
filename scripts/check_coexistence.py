@@ -34,7 +34,7 @@ assert hars_roots == {"roadviewer-hars"} and python_roots == {"roadviewer"}
 
 # The device network panel reads and writes this app's own port mapping through Supervisor.
 assert hars.get("hassio_api") == "true" and python.get("hassio_api") == "true"
-assert hars["boot"] == "manual", "HARS must not start on boot before cutover is approved"
+assert hars["boot"] == "auto", "Road Viewer starts with the host, like the Python app it replaces"
 source = (ROOT / "src/main.rs").read_text(encoding="utf-8")
 assert '"/data/roadviewer-hars"' in source and '"/data/roadviewer"' not in source, "HARS default data root must be its own"
 print("HAOS coexistence invariants verified:", hars["slug"], "next to", python["slug"])

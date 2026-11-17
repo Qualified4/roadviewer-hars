@@ -1,14 +1,14 @@
 name: Road Viewer
-version: "2.0.0-alpha.6"
+version: "2.0.0"
 slug: roadviewer_hars
 image: ghcr.io/qualified4/roadviewer-hars
-description: Rust Road Viewer 2.x · 기능 이식 중인 독립 테스트용 alpha
+description: Rust로 다시 구현한 Road Viewer 2.x · Python Road Viewer 1.x의 후속
 url: https://github.com/Qualified4/roadviewer-hars
 arch:
   - amd64
   - aarch64
 startup: application
-boot: manual
+boot: auto
 init: false
 hassio_api: true
 ingress: true
@@ -32,7 +32,7 @@ schema:
 ports:
   8443/tcp: null
 ports_description:
-  8443/tcp: HARS 전용 HTTPS 테스트 포트 · 운영 포트 사용은 별도 승인 필요
+  8443/tcp: 장치 업로드용 HTTPS 포트
 map:
   - type: ssl
     read_only: true

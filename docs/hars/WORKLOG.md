@@ -187,6 +187,6 @@ Windows 작업 폴더 안의 소스를 WSL Ubuntu 24.04에서 빌드했다. Rust
 
 - 실제 HAOS(amd64 VM)의 HARS를 alpha.4에서 alpha.5로 업데이트했다. 테스트 기록 5개의 재생 데이터·썸네일·영상 응답이 업데이트 전후로 같았고, 격리 브라우저 검사(`integration/ui_sync_check.py`) 8/8을 통과했다.
 - 사용자가 운영을 HARS로 옮겼다: Python Road Viewer의 Drive 연결 해제, HARS에 Drive 클라이언트 설정 이전, 장치 수신 포트 8099 승계, Python 앱 중지 후 삭제(삭제 전 설정 백업). 장치는 NPM 프록시 `harv.prandiel.dev`(→ HAOS 8099)로 페어링과 업로드에 성공했다.
-- 결정(사용자): 앱 이름에서 HARS 접미사를 뺀다. `name`·`panel_title`·페이지 제목·버전 표시를 `Road Viewer`로 하고 2.0.0-alpha.6으로 낸다. slug, 이미지, 데이터 경로, Drive 폴더 이름은 기존 설치와 보관분을 유지하기 위해 그대로 둔다.
+- 결정(사용자): 앱 이름에서 HARS 접미사를 뺀다. `name`·`panel_title`·페이지 제목·버전 표시를 `Road Viewer`로 한다. 이 변경은 정식 2.0.0에 담는다. slug, 이미지, 데이터 경로, Drive 폴더 이름은 기존 설치와 보관분을 유지하기 위해 그대로 둔다.
 - `scripts/check_coexistence.py`는 표시 이름이 Python 앱과 달라야 한다는 조건만 뺐다. slug·이미지·URL·데이터 경로 분리 조건은 유지한다.
 - 미검증: 실제 Drive에서의 이동 모드 아카이빙 전 과정, Cloudflare 경유 대용량 업로드, HAOS 재부팅 뒤 자동 시작.

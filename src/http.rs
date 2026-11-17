@@ -407,9 +407,7 @@ async fn diagnostics(mut request: Request, next: Next) -> Response {
     response
 }
 async fn health() -> Json<Value> {
-    Json(
-        json!({"product":"Road Viewer HARS","version":env!("CARGO_PKG_VERSION"),"release_ready":false}),
-    )
+    Json(json!({"product":"Road Viewer","version":env!("CARGO_PKG_VERSION"),"release_ready":true}))
 }
 async fn page(
     State(app): State<App>,

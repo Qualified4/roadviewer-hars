@@ -2,7 +2,7 @@
 
 [한국어](README.md) · English
 
-> **A prerelease (alpha) of Road Viewer 2.x, rebuilt in Rust. It is not yet officially released, and cutover validation is in progress.** It is an independent app to install next to the existing Python Road Viewer 1.x for testing; the Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha) remains maintained separately. Do not move production uploads to it. External HTTPS is disabled by default.
+> **Road Viewer 2.x, rebuilt in Rust.** It succeeds the Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha), whose repository no longer receives new features. It is a separate app with a different slug from 1.x; to move from 1.x, see the [cutover procedure](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md) (Korean). External HTTPS is disabled by default. Unverified environments are listed in the [implementation and validation status](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) (Korean).
 >
 > [Implementation and validation status](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) · [Side-by-side install, cutover and rollback](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md) · [Real HAOS validation](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/HAOS-VALIDATION.md) (Korean)
 

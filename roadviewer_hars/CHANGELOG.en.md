@@ -4,16 +4,26 @@
 
 These are the English release notes from 0.13.0 on. Earlier release entries remain in the [original Korean history](CHANGELOG.md); they describe behavior at their release date, not necessarily current behavior. See the [current user guide](DOCS.en.md) for present settings and policies.
 
-## 2.0.0 (in preparation, not yet released)
+## 2.0.0
 
-Road Viewer 2.x, rebuilt in Rust. There is no stable 2.0.0 yet; test prereleases are published as `2.0.0-alpha.*` versions. Cutover validation is in progress, and Python Road Viewer 1.x remains maintained separately. See the [implementation and validation status](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) for the current state and the [work log](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/WORKLOG.md) for each alpha (Korean).
+The first stable release of Road Viewer rebuilt in Rust. It succeeds Python Road Viewer 1.x, whose repository no longer receives new features. See the [implementation and validation status](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) for unverified environments and remaining risks and the [work log](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/WORKLOG.md) for each alpha (Korean).
 
 - The server is reimplemented in Rust (Tokio/Axum). All 53 API routes of Python Road Viewer 1.3.16 are implemented, and no route returns `501 feature_not_ported` (the Python server code did not change up to 1.3.18, so the API baseline is the same).
-- The web UI uses the Python Road Viewer 1.3.18 (`d3de134`) web files unchanged; only the displayed name and version change to Road Viewer HARS and the HARS version.
+- The web UI uses the Python Road Viewer 1.3.18 (`d3de134`) web files unchanged; only the displayed version changes to this app's version. The app store, sidebar and page title name is **Road Viewer**.
 - FFmpeg (the CLI, `ffprobe`, `ffmpeg-next`, libav*) is removed from the product build, runtime and image. Remuxing, original-format export, upload video checks and thumbnails (decoder, scaling, JPEG) are pure Rust ([FFmpeg removal](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/FFMPEG-REMOVAL.md), Korean).
 - amd64 image size before and after removing FFmpeg (local measurement): unpacked layers 580.9 MB → 120.6 MB, registry blobs (gzip) 217.5 MB → 46.3 MB. aarch64 was not measured locally.
-- Installs next to the Python app with its own slug (`roadviewer_hars`), image (`ghcr.io/qualified4/roadviewer-hars`) and data path (`/data/roadviewer-hars`). The external HTTPS port is disabled (null) and automatic start is off (`boot: manual`) by default.
+- Installs next to the Python app with its own slug (`roadviewer_hars`), image (`ghcr.io/qualified4/roadviewer-hars`) and data path (`/data/roadviewer-hars`). The external HTTPS port is disabled (null) by default, and the app starts automatically with the host (`boot: auto`).
 - Every video format recorded by the comma device's loggerd is supported (HEVC Main 8-bit `fcamera.hevc`/`ecamera.hevc`, H.264 High `qcamera.ts`; for `qcamera.ts` with audio only the video is converted). Without the FFmpeg fallback, some inputs such as B-frame or interlaced TS and B-frame MP4 end in an explicit conversion failure and the original is kept. See [video format support](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/FORMAT-SUPPORT.md) and the [implementation and validation status](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) for the intentional compatibility changes and the full table (Korean).
+- Thumbnail generation is optimized.
+- The header wordmark no longer squashes on narrow screens (320 px) while upload progress is shown.
+- The browser UI tests (`tests/browser`) moved into this repository and run in the required CI check `Browser checks`.
+
+### Moving from 1.x
+
+- This app installs as a separate app with the slug `roadviewer_hars`. The 1.x app (`roadviewer`) is not updated to this version automatically; install this app instead.
+- Data is stored in `/data/roadviewer-hars`; the 1.x data folder is not shared.
+- Google Drive archiving writes to the `Road Viewer HARS` folder and imports files archived by 1.x read-only. Reading files archived by 1.x needs the same OAuth client ID as 1.x.
+- Follow the [cutover and rollback procedure](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md) (Korean) for the order of steps and how to go back.
 
 The entries below are the change history of Python Road Viewer 1.x.
 

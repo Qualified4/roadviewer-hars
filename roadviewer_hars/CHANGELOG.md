@@ -1,13 +1,23 @@
-## 2.0.0 (준비 중, 정식 출시 전)
+## 2.0.0
 
-Rust로 다시 구현한 Road Viewer 2.x입니다. 정식 2.0.0은 아직 없으며, 시험용 prerelease가 `2.0.0-alpha.*` 버전으로 게시됩니다. 운영 전환 검증이 진행 중이고 Python Road Viewer 1.x는 별도로 계속 유지됩니다. 현재 상태는 [구현·검증 현황](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md), alpha 단계별 작업 기록은 [작업 재개 기록](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/WORKLOG.md)을 참고하세요.
+Rust로 다시 구현한 Road Viewer의 첫 정식 버전입니다. Python Road Viewer 1.x를 잇는 후속 버전이며, 1.x 저장소에는 더 이상 새 기능이 추가되지 않습니다. 확인하지 못한 환경과 남은 위험은 [구현·검증 현황](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md), alpha 단계별 작업 기록은 [작업 재개 기록](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/WORKLOG.md)을 참고하세요.
 
 - 서버를 Rust(Tokio/Axum)로 다시 구현했습니다. Python Road Viewer 1.3.16의 API 라우트 53개를 모두 구현했고 `501 feature_not_ported`를 반환하는 경로는 없습니다(1.3.18까지 Python 서버 코드 변경이 없어 API 기준은 같습니다).
-- 웹 화면은 Python Road Viewer 1.3.18(`d3de134`)의 웹 파일을 그대로 사용합니다. 화면의 이름과 버전 표시만 Road Viewer HARS와 HARS 버전으로 바꿉니다.
+- 웹 화면은 Python Road Viewer 1.3.18(`d3de134`)의 웹 파일을 그대로 사용합니다. 화면의 버전 표시만 이 앱의 버전으로 바꿉니다. 앱 스토어·사이드바·페이지 제목의 이름은 **Road Viewer**입니다.
 - FFmpeg 의존성(CLI, `ffprobe`, `ffmpeg-next`, libav*)을 제품 빌드·실행·배포 이미지에서 제거했습니다. 영상 리먹싱, 원본 형식 내보내기, 업로드 영상 검사, 썸네일(디코더·축소·JPEG)을 순수 Rust로 처리합니다([FFmpeg 제거](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/FFMPEG-REMOVAL.md)).
 - FFmpeg 제거 전후 amd64 이미지 크기(로컬 측정): 풀린 레이어 580.9 MB → 120.6 MB, 레지스트리 blob(gzip) 217.5 MB → 46.3 MB. aarch64는 로컬에서 측정하지 않았습니다.
-- 기존 Python 앱 옆에 병행 설치할 수 있도록 별도 slug(`roadviewer_hars`), 이미지(`ghcr.io/qualified4/roadviewer-hars`), 데이터 경로(`/data/roadviewer-hars`)를 사용합니다. 외부 HTTPS 포트는 기본 비활성(null), 자동 시작은 기본 꺼짐(`boot: manual`)입니다.
+- 기존 Python 앱 옆에 병행 설치할 수 있도록 별도 slug(`roadviewer_hars`), 이미지(`ghcr.io/qualified4/roadviewer-hars`), 데이터 경로(`/data/roadviewer-hars`)를 사용합니다. 외부 HTTPS 포트는 기본 비활성(null)이고, 앱은 호스트와 함께 자동으로 시작합니다(`boot: auto`).
 - comma 장치의 loggerd가 기록하는 영상 형식(HEVC Main 8비트 `fcamera.hevc`·`ecamera.hevc`, H.264 High `qcamera.ts`, 오디오가 든 `qcamera.ts`는 영상만 변환)은 모두 지원합니다. FFmpeg 대체 경로가 없어져 B-frame·interlaced TS, B-frame MP4 같은 일부 입력은 명시적인 변환 실패로 끝나고 원본은 보존됩니다. 의도적인 호환성 변경과 전체 표는 [영상 형식 지원 범위](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/FORMAT-SUPPORT.md)와 [구현·검증 현황](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md)을 참고하세요.
+- 썸네일 생성을 최적화했습니다.
+- 폭이 좁은 화면(320px)에서 업로드 진행이 표시될 때 상단 워드마크가 찌그러지던 문제를 고쳤습니다.
+- 브라우저 화면 테스트(`tests/browser`)를 이 저장소로 옮겨 필수 CI `Browser checks`로 실행합니다.
+
+### 1.x에서 옮겨 오는 경우
+
+- 이 앱은 slug `roadviewer_hars`인 별도 앱으로 설치됩니다. 1.x 앱(`roadviewer`)은 이 버전으로 자동 업데이트되지 않으므로 새로 설치해야 합니다.
+- 데이터는 `/data/roadviewer-hars`에 저장하며 1.x의 데이터 폴더를 함께 쓰지 않습니다.
+- Google Drive 보관은 `Road Viewer HARS` 폴더에 쓰고, 1.x가 보관한 파일은 읽기 전용으로 가져옵니다. 1.x가 보관한 파일을 읽으려면 1.x와 같은 OAuth client ID가 필요합니다.
+- 전환 순서와 되돌리는 방법은 [전환·롤백 절차](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md)를 따르세요.
 
 아래는 Python Road Viewer 1.x의 변경 이력입니다.
 

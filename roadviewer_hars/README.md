@@ -2,7 +2,7 @@
 
 한국어 · [English](README.en.md)
 
-> **Rust 기반 Road Viewer 2.x의 prerelease(alpha)입니다. 아직 정식 출시 전이며 운영 전환 검증이 진행 중입니다.** 기존 Python Road Viewer 1.x와 병행 설치해 시험하는 독립 앱이며, Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)는 별도로 계속 유지됩니다. 운영 업로드를 전환하지 마세요. 외부 HTTPS는 기본적으로 비활성화되어 있습니다.
+> **Rust로 다시 구현한 Road Viewer 2.x입니다.** Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)의 후속이며, 1.x 저장소에는 더 이상 새 기능이 추가되지 않습니다. 1.x 앱과 slug가 다른 별도 앱이므로 1.x에서 옮겨 오려면 [전환 절차](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md)를 보세요. 외부 HTTPS는 기본적으로 비활성화되어 있습니다. 확인하지 못한 환경은 [구현·검증 현황](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md)에 있습니다.
 >
 > [구현·검증 현황](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) · [병행 설치·전환·롤백 절차](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md) · [실제 HAOS 검증](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/HAOS-VALIDATION.md)
 
