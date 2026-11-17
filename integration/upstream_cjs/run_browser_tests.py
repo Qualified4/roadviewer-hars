@@ -43,6 +43,8 @@ MIRROR_RANGE = range(19180, 19200)
 # Inside the namespace this must fail with "network unreachable"; outside it, it is an ordinary public address.
 OUTSIDE = ("1.1.1.1", 443)
 EXPECTATION_KEYS = {"about", "entries", "excluded", "restart_allowed"}
+# Fixtures the tests read by these names; a checkout without them fails before any test starts.
+FIXTURES = ("fixtures/black.mp4", "fixtures/ui-review-colour.mp4")
 
 
 def subreaper():
@@ -521,6 +523,13 @@ def main():
                                                       "reasons": [f"HARS executable {args.hars_bin} not found"]})
         print(f"HARS executable {args.hars_bin} not found", file=sys.stderr)
         sys.exit(write_summary(out, summary, 2))
+    missing = [f for f in [*FIXTURES, *(e["file"] for e in selected if e["label"] not in expectations["excluded"])]
+               if not (TESTS / f).is_file()]
+    if missing:
+        summary.update(excluded=[], results=[], gate={"ok": False, "counts": {},
+                                                      "reasons": [f"missing in {TESTS}: {missing}"]})
+        print(f"missing in {TESTS}: {missing}", file=sys.stderr)
+        sys.exit(write_summary(out, summary, 1))
     args.hars_bin = args.hars_bin or "-"
     args.node = str(Path(args.node).resolve())
     if args.isolate == "on" and subprocess.run(["unshare", "-rn", "true"], capture_output=True).returncode:

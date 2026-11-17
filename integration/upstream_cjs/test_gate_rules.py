@@ -49,6 +49,11 @@ class GateData(unittest.TestCase):
             if e["label"] not in EXPECTATIONS["excluded"]:
                 self.assertTrue((rb.TESTS / e["file"]).is_file(), e["file"])
 
+    def test_fixtures_are_checked_in(self):
+        # .gitignore has *.mp4: the fixtures were once copied but not committed. CI runs this in a fresh checkout.
+        for f in rb.FIXTURES:
+            self.assertTrue((rb.TESTS / f).is_file(), f)
+
     def test_ci_runs_every_group_once(self):
         import json, re
         ci = (rb.REPO / ".github/workflows/ci.yml").read_text()
