@@ -12,7 +12,7 @@
 
 빌드: Linux 또는 WSL에서 Rust stable, C 컴파일러(번들 zstd를 `cc`로 빌드), Cap'n Proto compiler(`capnp`)만 필요하다. 미디어 라이브러리·pkg-config·libclang은 필요 없다. 실행 파일은 libc·libm·libgcc_s만 링크한다.
 
-시험: 위에 더해 `ffmpeg`/`ffprobe` CLI가 있어야 한다. **개발 전용**이다: 시험이 합성 입력(lavfi + x264/x265)을 만들고, 독립 디코더·판독기(oracle)로 결과를 대조한다. 제품 실행 파일과 배포 이미지에는 없다(CI의 `Rust checks` 작업만 설치한다. 컨테이너 작업은 이미지에 FFmpeg 실행 파일·라이브러리·링크가 있으면 실패한다). 배포 컨테이너에는 Python 런타임도 없다. 비교용 Python 코드는 개발/테스트에만 사용한다.
+시험: 위에 더해 `ffmpeg`/`ffprobe` CLI가 있어야 한다. **개발 전용**이다: 시험이 합성 입력(lavfi + x264/x265)을 만들고, 독립 디코더·판독기(oracle)로 결과를 대조한다. 제품 실행 파일과 배포 이미지에는 없다(CI의 `Rust tests`와 `Compatibility` 작업만 설치한다. 컨테이너 작업은 이미지에 FFmpeg 실행 파일·라이브러리·링크가 있으면 실패한다). 배포 컨테이너에는 Python 런타임도 없다. 비교용 Python 코드는 개발/테스트에만 사용한다.
 
 ```sh
 cargo fmt --all --check
@@ -54,7 +54,9 @@ Rust 구조화 로그는 요청 ID, 경로, 서버 진입, 인증/파일 락 대
 
 ## CI/CD
 
-`HARS CI`는 Rust 검사, amd64/aarch64 네이티브 컨테이너 빌드·기동 검사, 보존 원본 브라우저 테스트(`Browser build` → `Browser shard 1~5` → `Browser checks`)를 실행한다. `HARS required`는 `always()`와 모든 의존 결과의 `success` 검사를 사용하므로 실패·취소·생략이 성공으로 바뀌지 않는다. 신규 저장소의 최초 조사에서는 ruleset이 없었고 main도 아직 생성 전이었다. 보호 규칙을 임의로 추가하지 않는다.
+`HARS CI`는 PR과 수동 실행(`workflow_dispatch`)에서 다음 작업을 병렬로 돌린다: `Rust lint`(fmt, clippy), `Rust tests`(nextest), `Compatibility`(`Browser build`의 debug 실행 파일로 `ccnc_compat.py`·`pipeline_contract.py`·`uploader_faults.py`), `Repository checks`(`verify_reference.py`·`check_release.py`·`check_coexistence.py`), amd64/aarch64 네이티브 컨테이너 빌드·기동 검사, 브라우저 테스트(`Browser build` → `Browser shard 1~9` → `Browser checks`). `HARS required`는 `always()`와 모든 의존 결과의 `success` 검사를 사용하므로 실패·취소·생략이 성공으로 바뀌지 않는다. 이 작업은 `push`가 아닌 모든 이벤트에서 돈다.
+
+`main` 푸시에서는 검사를 다시 돌리지 않는다(병합되는 트리는 PR에서 `HARS required`를 통과한 트리다). 대신 `Cache refresh (Rust lint)`·`Cache refresh (Rust tests)`·`Cache refresh (browser)`가 PR 작업이 복원하는 캐시를 같은 키·경로로 저장한다. PR은 자기 브랜치와 `main`의 캐시만 읽을 수 있기 때문이다. Rust 캐시는 `hars-rust-lint-v1-*`(clippy 산출물)와 `hars-rust-test-v1-*`(nextest 테스트 프로그램과 `Browser build`의 실행 파일) 두 개이고, 키는 `Cargo.lock`·`Cargo.toml`·`rust-toolchain.toml`의 해시다. 키가 이미 있으면 refresh 작업은 내려받지 않고 확인만 한 뒤 끝난다. PR과 수동 실행은 Rust 캐시를 복원만 하고 저장하지 않는다. 그래서 `Cargo.lock`을 바꾼 PR은 캐시 없이 처음부터 빌드한다(느려지기만 하고 실패하지는 않는다). 컨테이너 작업은 캐시를 쓰지 않는다. 신규 저장소의 최초 조사에서는 ruleset이 없었고 main도 아직 생성 전이었다. 보호 규칙을 임의로 추가하지 않는다.
 
 컨테이너 builder는 이미지에 들어 있는 Rust 1.100 stable compiler를 사용한다. root의 개발용 toolchain 설정은 builder에 복사하지 않아 별도 stable/rustfmt/clippy toolchain을 중복 다운로드하지 않는다. Rust CI는 최신 stable을 검증한다.
 
