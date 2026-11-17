@@ -49,6 +49,15 @@ class GateData(unittest.TestCase):
             if e["label"] not in EXPECTATIONS["excluded"]:
                 self.assertTrue((rb.TESTS / e["file"]).is_file(), e["file"])
 
+    def test_ci_runs_every_group_once(self):
+        import json, re
+        ci = (rb.REPO / ".github/workflows/ci.yml").read_text()
+        shards = re.findall(r"\{shard: (\d+), groups: ([^}]+)\}", ci)
+        groups = [g for _, gs in shards for g in gs.split()]
+        manifest = list(json.loads((rb.TESTS / "browser-groups.json").read_text()))
+        self.assertEqual(sorted(groups), sorted(manifest))
+        self.assertEqual([int(n) for n, _ in shards], list(range(1, len(shards) + 1)))
+
     def test_no_rerun_option(self):
         import inspect
         source = inspect.getsource(rb)

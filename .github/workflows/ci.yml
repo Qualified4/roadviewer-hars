@@ -123,19 +123,18 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # tests/browser/browser-groups.json groups; each shard runs serially.
-        # Measured 62-145 s of tests per shard on 16 vCPU (BROWSER-TESTS.md).
+        # One tests/browser/browser-groups.json group per shard, run serially. Five shards of two groups took
+        # 84-174 s on the runner, unevenly; one group each shortens the longest path (BROWSER-TESTS.md).
         include:
-          - shard: 1
-            groups: g7 g6
-          - shard: 2
-            groups: g8 g5
-          - shard: 3
-            groups: g3 g9
-          - shard: 4
-            groups: g4 g2
-          - shard: 5
-            groups: g1
+          - {shard: 1, groups: g1}
+          - {shard: 2, groups: g2}
+          - {shard: 3, groups: g3}
+          - {shard: 4, groups: g4}
+          - {shard: 5, groups: g5}
+          - {shard: 6, groups: g6}
+          - {shard: 7, groups: g7}
+          - {shard: 8, groups: g8}
+          - {shard: 9, groups: g9}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
