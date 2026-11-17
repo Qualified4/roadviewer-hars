@@ -771,15 +771,33 @@ pub fn decode(
             full_range,
         })
     };
+    // HEVC finishes a picture when the next one starts; `flush` finishes it at once, but leaves
+    // a decoder that cannot go on. Used on a sample that may hold the wanted picture: when the
+    // caller then wants a time with an IDR picture ahead, the decoder is replaced anyway;
+    // otherwise the stretch from `began` is decoded again, its pictures not passed on twice.
+    let mut began = 0;
+    let mut flushed = None;
+    let mut shown = i64::MIN;
+    let mut early = true;
     let mut next = 0;
     while next < track.samples.len() {
         if !reorder && wanted.get() > planned {
             planned = wanted.get();
             if let Some(start) = restart(&mut file, &track, next, planned, time)? {
                 next = start;
+                began = start;
                 decoder = new_decoder(&track)?;
                 fresh = true;
+                flushed = None;
+                early = true;
             }
+        }
+        if let Some(pts) = flushed.take() {
+            next = began;
+            decoder = new_decoder(&track)?;
+            fresh = true;
+            shown = pts;
+            early = false;
         }
         let index = next;
         next += 1;
@@ -831,8 +849,18 @@ pub fn decode(
                 while let Ok(frame) = guarded(|| d.next_frame())? {
                     out.push((frame.pts.unwrap_or(pts), h265_image(&frame)?));
                 }
+                // No margin here: a picture just before the wanted time would only make the
+                // stretch be decoded again.
+                if early && !reorder && !last && time(pts) >= wanted.get() {
+                    guarded(|| d.flush())?;
+                    while let Ok(frame) = guarded(|| d.next_frame())? {
+                        out.push((frame.pts.unwrap_or(pts), h265_image(&frame)?));
+                    }
+                    flushed = Some(pts);
+                }
             }
         }
+        out.retain(|(pts, _)| reorder || *pts > shown);
         if last && matches!(decoder, Decoder::H264(_)) {
             out.clear();
         }
@@ -864,7 +892,7 @@ pub fn decode(
             let pts = frame.pts.unwrap_or(0);
             if reorder {
                 pending.push((pts, image));
-            } else if emit(pts, image, &mut each)? {
+            } else if pts > shown && emit(pts, image, &mut each)? {
                 return Ok(());
             }
         }
