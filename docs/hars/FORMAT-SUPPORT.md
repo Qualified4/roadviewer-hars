@@ -133,7 +133,7 @@ upstream 대조(`git diff` 대신 `git show commaai/master:<path>`와 줄 끝을
 
 ### 오류 표시가 모호한 경우
 
-1. **원본 검사 worker의 실패**: 잘린 TS, PAT/PMT 손상 TS, B-frame MP4의 경고는 `qcamera 영상 준비 실패: native media validation failed (exit status: 1)`뿐이다. 무엇이 잘못됐는지(패킷 손실, PSI CRC 등) 알 수 없다. `__inspect` worker의 stderr를 버리기 때문이다(`media::run`, alpha.3과 같음). 엔진 worker가 거부한 경우(B-frame, interlaced, parameter set 변경, 프레임 수 불일치)는 이유가 경고에 나온다.
+1. **원본 검사 worker의 실패**: 잘린 TS, PAT/PMT 손상 TS, B-frame MP4의 경고는 `qcamera 영상 준비 실패: native media validation failed (exit status: 1)`뿐이다. 무엇이 잘못됐는지(패킷 손실, PSI CRC 등) 알 수 없다. `__inspect` worker의 stderr를 버리기 때문이다(`media::run`, alpha.3과 같음). 엔진 worker가 거부한 경우(B-frame, interlaced, parameter set 변경, 프레임 수 불일치)는 이유가 경고에 나온다. 이 측정 뒤에 문구를 `지원하지 않는 형식이거나 손상된 영상입니다 (media check exit status: 1)`로 바꿨다(신호로 끝난 worker는 `영상 검사 프로세스가 중단되었습니다`). 표와 측정 JSON의 문구는 측정 시점(`a5b1ce0`)의 것이다.
 2. **업로드 거부**: `invalid_file`(내용 검사 실패)과 `invalid_file_path`(받지 않는 파일 이름)는 `message` 없이 코드만 온다(Python과 같은 형식, `error.rs`). 0바이트·무작위 바이트·FFVHUFF·moov 없는 MP4가 모두 같은 `invalid_file`이다.
 3. B-frame MP4 기록의 원본 형식 ZIP은 `media_export_failed`로 통째로 실패한다. 어느 카메라 때문인지 응답에 없다.
 4. 위 셋은 코드 값과 응답 형식을 바꾸지 않고 문구만 고치기에는 worker stderr를 경로 없이 정리하는 작업(1)이나 응답에 새 필드를 넣는 일(2, 3)이 필요해 이번에 고치지 않았다.

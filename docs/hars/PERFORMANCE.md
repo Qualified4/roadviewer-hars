@@ -362,7 +362,7 @@ WSL2 Ubuntu 24.04, 같은 기계. 측정 원본은 `measurements/ffmpeg-image-am
 - alpha.3 이미지에서 `ffmpeg` 패키지 한 줄만 뺀 반사실 이미지는 125.2 MB / 46.5 MB였다. FFmpeg 자체(실행 파일과 libav*)는 32.9 MB이고 절감의 대부분은 전이 의존 공유 라이브러리 240개 431.5 MB(Mesa, LLVM 등)다.
 - 실행 파일은 썸네일 디코더·축소·JPEG로 약 1.5 MB 늘고 FFmpeg 연결 코드 제거와 strip으로 줄었다. strip은 디스크 6.4 MB, 압축 0.87 MB를 줄이며 panic 메시지와 위치는 남고 backtrace의 함수 이름만 없어진다.
 - 이전 기록의 "비압축 약 813 MB"는 containerd 저장소에서 `docker image inspect`의 Size가 압축 blob까지 더한 값이라 비압축 크기가 아니다.
-- aarch64 크기는 CI의 `Container (aarch64)` 작업 요약과 artifact에 남는다.
+- CI(PR #16, `a5b1ce0`) 측정: amd64 풀린 레이어 120.7 MB·gzip 46.1 MB·실행 파일 20.8 MB, aarch64 142.1 MB·45.3 MB·18.8 MB. 패키지는 둘 다 107개. aarch64의 alpha.3 기준 크기는 측정하지 않아 절감률은 amd64만 실측이다.
 
 ### 전체 변환과 업로드 검사
 

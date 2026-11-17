@@ -67,6 +67,8 @@ FFmpeg 대체 경로가 없어지면서 순수 엔진이 거부하는 입력은 
 | 여유 공간이 입력의 2배 + 100 MiB 미만 | FFmpeg 엔진이 변환 | 자원 실패 |
 | scrambling 플래그가 선 TS, 비영상 패킷에서 잘린 TS, moov가 mdat 뒤인 MP4, 오디오 트랙이 더 있는 MP4, hev1/avc3 MP4 입력 | FFmpeg 대체 또는 거부 | 순수 엔진이 변환 |
 
+openpilot loggerd가 기록하는 형식(1928×1208·1344×760 HEVC Main, 526×330 H.264 High, 오디오가 든 qcamera.ts)은 모두 지원된다. PC·시뮬레이터 출력(FFVHUFF/Matroska, libx264 기본 B-frame TS)은 받지 않는다. 썸네일을 만들지 못해도 기록은 `ready`가 되고 영상·로그·다운로드는 그대로 쓸 수 있다. 근거와 검증은 [FORMAT-SUPPORT.md](FORMAT-SUPPORT.md).
+
 ## 운영 전환 전 남은 위험
 
 1. 실제 HAOS에서 두 앱의 병행 설치, Ingress, 재시작, 포트 승계를 확인하지 못했다.
@@ -77,3 +79,5 @@ FFmpeg 대체 경로가 없어지면서 순수 엔진이 거부하는 입력은 
 6. 실제 차량 장치의 장시간·동시 업로드, 전원 차단, aarch64 실기기 재생은 확인하지 못했다.
 7. 썸네일 디코더(`rusty_h264-decoder`, `rusty_h265`)는 2026년에 나온 crate다. 별도 worker 프로세스에서 메모리·시간 상한 아래 돌고 실패는 썸네일 누락으로만 이어진다.
 8. TS 원본 검사와 리먹싱 엔진이 같은 `mpeg2ts` demuxer를 쓴다. 출력 MP4는 독립 판독기로 확인하지만 입력 판독의 독립 대조(이전의 libavformat)는 없어졌다.
+9. 녹음이 든 qcamera.ts는 원본 보존을 끄면 오디오가 남지 않는다(Python과 같음).
+10. 원본 형식 ZIP은 내보낼 수 없는 영상(예: B-frame MP4)이 하나라도 있으면 `media_export_failed`로 전체가 실패한다. 재생용 형식 다운로드와 개별 파일은 받을 수 있다.

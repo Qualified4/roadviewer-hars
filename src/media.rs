@@ -27,7 +27,17 @@ pub const RESOURCE_EXIT: i32 = 75;
 pub struct WorkerExit(pub std::process::ExitStatus);
 impl std::fmt::Display for WorkerExit {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "native media validation failed ({})", self.0)
+        // This text reaches the record's warnings. A worker that exits by itself reported an
+        // input it cannot read; one ended by a signal says nothing about the input.
+        if self.0.code().is_some() {
+            write!(
+                f,
+                "지원하지 않는 형식이거나 손상된 영상입니다 (media check {})",
+                self.0
+            )
+        } else {
+            write!(f, "영상 검사 프로세스가 중단되었습니다 ({})", self.0)
+        }
     }
 }
 impl std::error::Error for WorkerExit {}

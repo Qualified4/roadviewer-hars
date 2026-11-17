@@ -226,7 +226,31 @@ PR #15까지 병합한 `main`(`2a8474f`)을 포함한 통합 브랜치의 releas
 
 ### 최종 커밋 검증
 
-FINAL_PLACEHOLDER
+통합 커밋 `a5b1ce0`(버전 2.0.0-alpha.4)에서 조정자가 직접 실행했다. 이후 커밋은 형식 지원 문서, 썸네일 격리 테스트 1개, 경고 문구 1곳이다.
+
+| 항목 | 결과 |
+|---|---|
+| `cargo fmt --all --check`, `cargo clippy --locked --all-targets -- -D warnings` | 통과 |
+| `cargo test --locked --all-targets` | 302 통과, 0 실패(이후 썸네일 격리 테스트 추가로 303) |
+| `scripts/check_release.py`, `scripts/check_coexistence.py` | 통과 |
+| release 실행 파일 `ldd`의 libav·libsw | 0줄 |
+| 원본 13구간 | 13/13, 15,600프레임 |
+| 14구간 | 14/14, 16,350프레임 |
+| 47구간 | 47/47, 56,399프레임 |
+| `conversion_keep_previous` 50회 반복 | 0 실패(`1318f94`에서도 50/50) |
+| CI(PR #16) `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS required` | 통과 |
+
+CI의 두 컨테이너 작업은 FFmpeg 없는 이미지 안에서 기동, TLS, VFR HEVC·H.264 TS 변환, 원본 형식 내보내기, 썸네일을 확인하고 FFmpeg 잔존 검사(`image_report.py --require-no-ffmpeg`, FFmpeg 관련 파일 0바이트)를 통과했다. 이미지 크기는 amd64 120.7 MB(압축 46.1 MB), aarch64 142.1 MB(압축 45.3 MB), 설치 패키지는 둘 다 107개다.
+
+### openpilot 형식 대조와 실패 격리
+
+근거와 표는 [FORMAT-SUPPORT.md](FORMAT-SUPPORT.md), 측정은 `measurements/format-support-2026-11-17.json`이다.
+
+- 기준 소스: 로컬 openpilot fork `5c2a8c7f`(읽기 전용)이고, 이미 fetch된 upstream `070de2aef`와 녹화 파일 이름·인코더 설정·V4L2 제어값이 같음을 대조했다. 장치가 기록하는 형식은 HEVC Main level 5 8비트 4:2:0(B-frame 0, 1928×1208 또는 1344×760)과 H.264 High 526×330(CABAC, slice 1, 오디오 선택)이다.
+- 코퍼스 24파일은 모두 1344×760 HEVC와 526×330 H.264였다. 코퍼스가 덮지 않는 형식(1928×1208 fcamera·ecamera, 장치 바이트 그대로의 raw ecamera, AAC가 든 qcamera.ts)은 실제 서버(FFmpeg 없는 PATH)에서 업로드 수락, `ready`, Range 206, 썸네일, 내보내기 NAL 일치를 확인했다. 1928×1208과 오디오 TS는 소프트웨어 인코더로 만든 합성 입력이며 하드웨어 인코더의 tile 구성·rate control·SEI는 재현하지 못했다.
+- 미지원·손상 입력 12개 사례: 기록이 `error`가 된 경우 0, 서버 종료 0, 거부된 카메라의 원본 SHA-256 변화 0. 이전 게시 결과가 있던 8건은 MP4가 바이트 그대로 남았다.
+- 썸네일 격리: Main10 HEVC만 있는 구간이 `ready`, Range 206, `data`·`telemetry`·`track` 200, 목록·ZIP·내보내기 정상, 썸네일 API만 404. `tests/thumbnail_isolation.rs`가 이 성질을 지킨다(20회 반복 0 실패).
+- 남은 표시 문제: 업로드 거부는 `{"error":"invalid_file"}`만 오고 `message`가 없다(alpha.3과 같음). 원본 형식 ZIP은 내보낼 수 없는 영상이 하나 있으면 전체가 실패한다.
 
 ### 미검증
 
