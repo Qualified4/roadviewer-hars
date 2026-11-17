@@ -1,0 +1,206 @@
+{
+ "replay_coverage": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "display_preferences": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "concurrency": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "info_panels": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "archive_status": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "video_overlay": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "upload_stall": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "navigation": {
+  "class": "B",
+  "note": "fixture meta.json 2개에 id가 없어 HARS가 기동을 거부(src/store.rs:169). shim이 폴더 이름으로 id만 채움(Python이 쓰는 meta.json에는 항상 있음)"
+ },
+ "replay_play_request": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "recording_names": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "archive_settings": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "fullscreen_landscape": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "long_drive": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "lazy_rows": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "upload_drop": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "upload_parallel": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "video_sources": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "choices": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "conversion_controls": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "whole_video": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "motion": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "log_export": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "storage_devices": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "pairing_refresh": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "segment_peek": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "replay_rendering": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "replay_glass_capture": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "download_dialog": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "upload_timeout": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "tag_filter_fold": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "replay_end_seek": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "tags": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "bookmarks": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "camera_info": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "replay_layout": {
+  "class": "D",
+  "note": "214행이 버전을 ^v숫자.숫자.숫자$로 검사. HARS는 의도대로 자기 버전 v2.0.0-alpha.4를 표시(src/http.rs page_html). 프리릴리스 버전에서만 생기는 차이"
+ },
+ "disclosure_animation": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "lane_marking": {
+  "class": "B",
+  "note": "fixture를 tests/overlay_geometry_fixture.py가 보존 Python overlay.py·compact.py로 생성(서버와 무관, API는 모킹). HARS의 미러 웹 파일만 검사"
+ },
+ "replay_ready": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "bulk_actions": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "device_test_page": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "replay_gzip": {
+  "class": "B",
+  "note": "lane_marking과 같은 Python 생성 fixture 사용. HARS의 미러 웹 파일만 검사"
+ },
+ "replay_format2": {
+  "class": "F",
+  "note": "Python 내부 모듈 compact.py의 compact_data·expand_frames를 import해 app.js와 대조. HARS에는 Python 모듈이 없음(ModuleNotFoundError: compact). 서버를 쓰지 않음"
+ },
+ "library_tabs": {
+  "class": "C",
+  "note": "320px+업로드 표시에서 워드마크 폭<=60px(183행). HARS가 페이지의 'Road Viewer'를 'Road Viewer HARS'로 바꿈(src/http.rs:472). Python 원본 h1만 같은 글자로 바꾸면 Python에서도 같은 행에서 실패"
+ },
+ "replay_downloads": {
+  "class": "B",
+  "note": "roadviewer/config.yaml의 version을 읽음. reference/python에는 없어 작업 폴더에 HARS의 roadviewer_hars/config.yaml(2.0.0-alpha.4)을 둠"
+ },
+ "upload_mobile": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "maps[map_schemes=dark][map_parts=main]": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "ripple": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "maps[map_schemes=light][map_parts=main]": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "gdrive_panel": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ },
+ "maps[map_parts=many,leak]": {
+  "class": "B",
+  "note": "서버 실행 중 기록 폴더 100개를 직접 써 넣음. shim이 폴더 목록 변화를 보고 다음 요청 전에 HARS를 1회 재기동(Python은 요청마다 폴더를 읽음)"
+ },
+ "telemetry": {
+  "class": "A",
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+ }
+}

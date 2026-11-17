@@ -18,3 +18,4 @@ __pycache__/
 *.key
 /.devices.json
 /.uploads/
+/integration/upstream_cjs/node_modules/
