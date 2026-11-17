@@ -1,15 +1,18 @@
 """Differential fuzzing of the thumbnail worker: damaged and crafted camera MP4s through two
 `__thumbnail` workers (before and after a decoder change), compared case by case.
 
-    thumbnail_differential.py WORK OLD_BINARY NEW_BINARY --h264 MP4... --hevc MP4...
-        [--cases 300] [--seed 20261117] [--keep]
+    thumbnail_differential.py WORK OLD_BINARY NEW_BINARY [--h264 MP4...] [--hevc MP4...]
+        [--synthetic DIR] [--cases 300] [--seed 20261117] [--keep]
 
-Each seed MP4 (read only) is first rebuilt with only its first 150 samples in one `mdat`. A case
-applies one to three random changes to a seed of its codec: flipped bytes, NAL units deleted,
-duplicated or reordered, a slice deleted, a parameter set (the track's, damaged or not) put in
-band, junk NAL units, a box renamed, the file cut short. Both workers run under an address-space
-limit and a time limit; their exit status, output line, `thumbnail.json` and JPEG bytes must be
-the same. WORK receives `thumbnail-differential.json` and, with --keep, every case that differs.
+Each seed MP4 (read only) is first rebuilt with only its first 150 samples in one `mdat`. With
+--synthetic, seeds of other encoder structures are added (made in DIR with the host's FFmpeg when
+missing): H.264 with 4 and 16 reference pictures, with 4 slices, and at 1920x1080; HEVC with 4
+slices. A case applies one to three random changes to a seed of its codec: flipped bytes, NAL
+units deleted, duplicated or reordered, a slice deleted, a parameter set (the track's, damaged or
+not) put in band, junk NAL units, a NAL unit other than a slice with the forbidden bit set, a box
+renamed, the file cut short. Both workers run under an address-space limit and a time limit;
+their exit status, output line, `thumbnail.json` and JPEG bytes must be the same. WORK receives
+`thumbnail-differential.json` and, with --keep, every case that differs.
 """
 import argparse
 import hashlib
@@ -163,6 +166,32 @@ class Seed:
         self.bytes = rebuild(buf, self.samples)
 
 
+H264 = ['-c:v', 'libx264', '-bf', '0', '-g', '15', '-keyint_min', '15', '-sc_threshold', '0', '-forced-idr', '1']
+HEVC = ['-c:v', 'libx265', '-tag:v', 'hvc1', '-x265-params',
+        'pools=1:frame-threads=1:bframes=0:keyint=20:min-keyint=20:scenecut=0:open-gop=0:log-level=error']
+SYNTHETIC = {
+    'h264_ref4.mp4': (False, '526x330', H264 + ['-x264-params', 'ref=4']),
+    'h264_ref16.mp4': (False, '526x330', H264 + ['-x264-params', 'ref=16']),
+    'h264_slices4.mp4': (False, '526x330', H264 + ['-x264-params', 'slices=4']),
+    'h264_1080p.mp4': (False, '1920x1080', H264 + ['-x264-params', 'ref=4']),
+    'hevc_slices4.mp4': (True, '526x330', HEVC[:-1] + [HEVC[-1] + ':slices=4']),
+}
+
+
+def synthetic(directory):
+    """(hevc, path) of the synthetic seeds, encoded into `directory` when missing."""
+    directory.mkdir(parents=True, exist_ok=True)
+    out = []
+    for name, (hevc, size, codec) in SYNTHETIC.items():
+        path = directory / name
+        if not path.exists():
+            subprocess.run(['ffmpeg', '-v', 'error', '-nostdin', '-y', '-f', 'lavfi', '-i',
+                            'testsrc2=size=%s:rate=20' % size, '-t', '7', '-an', '-threads', '1',
+                            '-pix_fmt', 'yuv420p', *codec, '-movflags', '+faststart', str(path)], check=True)
+        out.append((hevc, path))
+    return out
+
+
 def vcl(nal, hevc):
     return nal is not None and len(nal) > 1 and (((nal[0] >> 1) & 63) < 32 if hevc else 1 <= (nal[0] & 31) <= 5)
 
@@ -182,7 +211,7 @@ def mutate(seed, rng):
     file_changes = []
     for _ in range(rng.choice([1, 1, 2, 3])):
         what = rng.choice(['flip', 'flip', 'delete', 'duplicate', 'reorder', 'slice', 'set', 'junk', 'header',
-                           'rename', 'truncate', 'swap'])
+                           'forbidden', 'rename', 'truncate', 'swap'])
         i = pick()
         s = samples[i]
         if what == 'flip' and s:
@@ -216,6 +245,14 @@ def mutate(seed, rng):
             j = rng.randrange(len(s))
             if s[j]:
                 s[j] = bytes([rng.randrange(256)]) + s[j][1:]
+        elif what == 'forbidden':
+            # SEI, access unit delimiter or filler data, long enough to pass for a whole unit.
+            if seed.hevc:
+                head = bytes([0x80 | (rng.choice([35, 38, 39, 40]) << 1), 0x01])
+            else:
+                head = bytes([0x80 | rng.choice([6, 9, 12])])
+            nal = head + bytes(rng.randrange(1, 256) for _ in range(rng.choice([1, 3, 12])))
+            s.insert(rng.choice([0, rng.randrange(len(s) + 1)]), nal)
         else:
             file_changes.append(what)
         done.append(what)
@@ -254,8 +291,9 @@ def main():
     a.add_argument('work')
     a.add_argument('old')
     a.add_argument('new')
-    a.add_argument('--h264', nargs='+', required=True)
-    a.add_argument('--hevc', nargs='+', required=True)
+    a.add_argument('--h264', nargs='+', default=[])
+    a.add_argument('--hevc', nargs='+', default=[])
+    a.add_argument('--synthetic', type=Path, help='directory of the synthetic seeds')
     a.add_argument('--cases', type=int, default=300, help='per codec')
     a.add_argument('--seed', type=int, default=20261117)
     a.add_argument('--keep', action='store_true')
@@ -263,6 +301,10 @@ def main():
     work = Path(args.work)
     work.mkdir(parents=True, exist_ok=True)
     seeds = {False: [Seed(p, False) for p in args.h264], True: [Seed(p, True) for p in args.hevc]}
+    for hevc, path in synthetic(args.synthetic) if args.synthetic else []:
+        seeds[hevc].append(Seed(path, hevc))
+    if not seeds[False] or not seeds[True]:
+        a.error('no seed for one of the codecs')
     rows, differ = [], 0
     for codec in (False, True):
         for k in range(args.cases):
