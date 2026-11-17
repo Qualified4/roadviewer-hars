@@ -6,7 +6,7 @@
 
 ## 충돌 점검 (저장소 기준, 2026-11-17)
 
-`scripts/check_coexistence.py`가 CI에서 매 커밋 확인한다. Python 쪽 값은 보존된 `reference/python/roadviewer/config.yaml.reference`(1.3.16) 기준이며, 운영 중인 Python 앱의 실제 설정과 같은지는 HAOS에서 확인해야 한다.
+`scripts/check_coexistence.py`가 CI에서 매 커밋 확인한다. Python 쪽 값은 보존된 `reference/python/roadviewer/config.yaml.reference`(1.3.18, `d3de134`) 기준이며, 운영 중인 Python 앱의 실제 설정과 같은지는 HAOS에서 확인해야 한다.
 
 | 항목 | Python 1.x | HARS 2.x | 충돌 |
 |---|---|---|---|
@@ -98,7 +98,7 @@ HARS는 기본 설정에서 Python의 데이터·포트·인증·원격 저장�
 | Python Road Viewer | 1.3.18, 실행 중, 자동 시작, 컨테이너 8443 → 호스트 포트 사용 중, 기록 795개 모두 `ready`, 진행 중인 업로드·변환·보관 없음 |
 | HARS | 2.0.0-alpha.4, 기본 옵션, 호스트 포트 없음(`8443/tcp: null`), `boot: manual`, 보관 미설정 |
 
-저장소에 보존된 Python 설정은 1.3.16이고 운영 중인 것은 1.3.18이다. slug, 이미지, 데이터 경로가 달라 병행 설치에는 영향이 없었다.
+이 검증 당시 저장소에 보존된 Python 설정은 1.3.16이고 운영 중인 것은 1.3.18이었다. slug, 이미지, 데이터 경로가 달라 병행 설치에는 영향이 없었다. 이후 보존 원본을 1.3.18(`d3de134`)로 올려 지금은 둘이 같다(설정 차이는 `version` 한 줄이었다).
 
 ### 기능별 결과
 

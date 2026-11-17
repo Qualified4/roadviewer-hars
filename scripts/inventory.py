@@ -20,7 +20,7 @@ for path in sorted(BASE.glob("*.py")):
             for row in node.value.elts:
                 if isinstance(row, ast.Tuple) and isinstance(row.elts[0], ast.Constant):
                     routes.append({"path": row.elts[0].value, "methods": ast.literal_eval(row.elts[-1]), "source": path.name, "line": row.lineno})
-out = {"python_commit": "71add1a04ed505fc2cb6982052db4a9945d0808f", "python_version": "1.3.16",
+out = {"python_commit": "d3de13472ea242dab9866d485b5777ad67d5b1dd", "python_version": "1.3.18",
        "uploader_commit": "5c2a8c7f6e14dac82678a390e408ef7a9c73eefa", "modules": modules,
        "routes": sorted(routes, key=lambda r: r["path"]),
        "tests": sorted(str(p.relative_to(ROOT / "reference/python")) for p in (ROOT / "reference/python/tests").glob("*" ) if p.is_file()),

@@ -431,16 +431,45 @@ async fn page_body(app: &App, replay: bool, fragment: bool) -> Result<Response> 
     } else {
         "shell.html"
     };
-    let html = tokio::fs::read_to_string(app.web.join(name))
-        .await?
+    let template = tokio::fs::read_to_string(app.web.join(name)).await?;
+    let library = if name == "library.html" {
+        template.clone()
+    } else {
+        tokio::fs::read_to_string(app.web.join("library.html")).await?
+    };
+    let upstream = upstream_version(&library);
+    if upstream.is_none() {
+        tracing::warn!(
+            "library.html names no assets/style.css?v= release; Python version strings are served as is"
+        );
+    }
+    let html = page_html(&template, upstream, replay);
+    Ok(([(h::CONTENT_TYPE, "text/html; charset=utf-8")], html).into_response())
+}
+/// Python's own release, read where Python reads it (`server.page_response`): the `?v=` of
+/// `assets/style.css` in `library.html`.
+fn upstream_version(library: &str) -> Option<&str> {
+    const MARK: &str = "assets/style.css?v=";
+    let rest = &library[library.find(MARK)? + MARK.len()..];
+    Some(&rest[..rest.find(['"', '&'])?]).filter(|v| !v.is_empty())
+}
+/// The preserved pages stamp Python's release into asset URLs (`?v=`) and the version label
+/// (`>v…<`). HARS serves them under its own version so a HARS release, not a Python one,
+/// renews the year-long asset cache. Other version-like text (the font file name) is kept.
+fn page_html(template: &str, upstream: Option<&str>, replay: bool) -> String {
+    const VERSION: &str = env!("CARGO_PKG_VERSION");
+    let mut html = template
         .replace(
             "__ASSETS__",
             if replay { "../../assets/" } else { "assets/" },
         )
-        .replace("__VERSION__", env!("CARGO_PKG_VERSION"))
-        .replace("1.3.16", env!("CARGO_PKG_VERSION"))
-        .replace("Road Viewer", "Road Viewer HARS");
-    Ok(([(h::CONTENT_TYPE, "text/html; charset=utf-8")], html).into_response())
+        .replace("__VERSION__", VERSION);
+    if let Some(upstream) = upstream {
+        html = html
+            .replace(&format!("?v={upstream}"), &format!("?v={VERSION}"))
+            .replace(&format!(">v{upstream}<"), &format!(">v{VERSION}<"));
+    }
+    html.replace("Road Viewer", "Road Viewer HARS")
 }
 async fn asset(
     State(app): State<App>,
