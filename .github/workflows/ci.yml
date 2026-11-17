@@ -123,7 +123,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # browser-groups.json groups; each shard runs serially (video_overlay is not safe in parallel).
+        # tests/browser/browser-groups.json groups; each shard runs serially.
         # Measured 62-145 s of tests per shard on 16 vCPU (BROWSER-TESTS.md).
         include:
           - shard: 1
@@ -186,7 +186,7 @@ jobs:
           retention-days: 7
           if-no-files-found: warn
       - name: Keep the test logs, screenshots and traces
-        if: ${{ failure() }}
+        if: ${{ !success() }}
         uses: actions/upload-artifact@v4
         with:
           name: browser-artifacts-${{ matrix.shard }}
@@ -200,6 +200,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+      # The gate data (excluded set exactly replay_format2, restart only for maps many/leak, no rerun kinds) and
+      # the verdict rules, without a browser.
+      - name: Gate rules
+        run: python3 integration/upstream_cjs/test_gate_rules.py
       - uses: actions/download-artifact@v4
         with:
           pattern: browser-summary-*
