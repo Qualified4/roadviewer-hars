@@ -7,7 +7,8 @@ PROGRAM runs unchanged: its own fixtures (tests/fake_drive.py and the environmen
 as the test's DispatcherMiddleware does.
 
 Environment: HARS_BIN, HARS_WEB (required); HARS_PORT_RANGE=first-last (loopback ports to use, default: any free);
-HARS_SHIM_LOG (HARS output, appended)."""
+HARS_SHIM_LOG (HARS output, appended); HARS_SHIM_RESTART=1 (the runner sets it only for the entries expectations.json
+allows: restart HARS when the recording folders change under it)."""
 import atexit, fcntl, json, http.client, os, signal, socket, subprocess, sys, threading, time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -59,6 +60,32 @@ def free_port(taken=()):
     sys.exit(f"no free loopback port in {os.environ['HARS_PORT_RANGE']}")
 
 
+def listening_owner(port):
+    """The pid whose socket listens on 127.0.0.1:`port` (from /proc/net/tcp and /proc/<pid>/fd), or None. A connect
+    alone could reach another runner's HARS on the same machine."""
+    inodes = set()
+    try:
+        with open("/proc/net/tcp") as f:
+            for line in f.readlines()[1:]:
+                fields = line.split()
+                if fields[1] == f"0100007F:{port:04X}" and fields[3] == "0A":
+                    inodes.add(f"socket:[{fields[9]}]")
+    except OSError:
+        return None
+    for pid in filter(str.isdigit, os.listdir("/proc")):
+        try:
+            fds = os.listdir(f"/proc/{pid}/fd")
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                if os.readlink(f"/proc/{pid}/fd/{fd}") in inodes:
+                    return int(pid)
+            except OSError:
+                continue
+    return None
+
+
 def note(line):
     """Adapter events, in the HARS log so they read in order with HARS's own lines."""
     path = os.environ.get("HARS_SHIM_LOG")
@@ -73,24 +100,7 @@ class Hars:
         self.log = open(os.environ.get("HARS_SHIM_LOG", os.devnull), "ab")
         self.proc = None
 
-    def name_recordings(self):
-        """Every meta.json the Python server writes carries its folder's `id` (server.py, upload commit); a test
-        fixture that leaves it out (navigation.cjs, whose list is mocked) is one Python never reads, but HARS checks
-        every recording at start and refuses to start on it (store.rs). The id is filled in, nothing else changes."""
-        for meta in self.data.glob("*/meta.json"):
-            try:
-                m = json.loads(meta.read_text())
-            except (OSError, ValueError):
-                continue
-            if isinstance(m, dict) and "id" not in m:
-                m["id"] = meta.parent.name
-                tmp = meta.with_suffix(".shim-tmp")
-                tmp.write_text(json.dumps(m))
-                tmp.replace(meta)
-                note(f"filled id of {meta.parent.name}")
-
     def start(self, taken=()):
-        self.name_recordings()
         with _PortLock():
             self.ui = free_port(taken)
             self.device = free_port({*taken, self.ui})
@@ -102,13 +112,11 @@ class Hars:
             self.proc = subprocess.Popen([os.environ["HARS_BIN"]], env=env, stdout=self.log, stderr=self.log,
                                          stdin=subprocess.DEVNULL)
             for _ in range(300):
-                try:
-                    socket.create_connection(("127.0.0.1", self.ui), timeout=.2).close()
+                if self.proc.poll() is not None:
+                    sys.exit(f"HARS exited with {self.proc.returncode}")
+                if listening_owner(self.ui) == self.proc.pid:
                     return
-                except OSError:
-                    if self.proc.poll() is not None:
-                        sys.exit(f"HARS exited with {self.proc.returncode}")
-                    time.sleep(.1)
+                time.sleep(.1)
             sys.exit("HARS did not listen")
 
     def halt(self):
@@ -144,8 +152,11 @@ class Front:
         # 'many' part) writes recording folders straight into RV_DATA while the server runs, which the Python server
         # sees because it lists the folder on every request. A request that finds the folder changed restarts HARS
         # first, after the requests in flight have finished, so HARS starts on what the test wrote.
+        # Only maps[map_parts=many,leak] needs this (expectations.json restart_allowed); anywhere else a changed folder
+        # (say, a GET between a POST's write and its answer) would restart HARS and could hide a product defect.
         gate = threading.Condition()
         state = {"known": on_disk(), "active": 0, "restarting": False}
+        restart_allowed = os.environ.get("HARS_SHIM_RESTART") == "1"
         hars = self.hars
 
         class Proxy(BaseHTTPRequestHandler):
@@ -164,7 +175,12 @@ class Front:
                     while state["restarting"]:
                         gate.wait()
                     now = on_disk()
-                    if now != state["known"]:
+                    if now != state["known"] and not restart_allowed:
+                        # Seen and recorded, not acted on: the runner fails the gate on it.
+                        note(f"restart refused: {len(now - state['known'])} recordings added, "
+                             f"{len(state['known'] - now)} gone")
+                        state["known"] = now
+                    elif now != state["known"]:
                         note(f"restart: {len(now - state['known'])} recordings added, {len(state['known'] - now)} gone")
                         state["restarting"] = True
                         while state["active"]:
@@ -209,9 +225,14 @@ class Front:
 
             do_GET = do_HEAD = do_POST = do_PUT = do_DELETE = do_PATCH = handle_one
 
+        class Server(ThreadingHTTPServer):
+            # werkzeug listens with a backlog of 128; the default 5 drops connection attempts (one per request here)
+            # under load, and a dropped SYN is retried after about a second.
+            request_queue_size = 128
+
         with _PortLock():
             front_port = free_port({hars.ui, hars.device}) if port == 0 else port
-            self.http = ThreadingHTTPServer((host, front_port), Proxy)
+            self.http = Server((host, front_port), Proxy)
         self.http.daemon_threads = True
         self.server_port = self.http.server_port
         atexit.register(self.hars.halt)
