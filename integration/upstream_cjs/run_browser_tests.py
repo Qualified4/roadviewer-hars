@@ -92,14 +92,25 @@ def reap():
             return
 
 
+def exited(pid):
+    """A process that has ended and only waits to be reaped (or is already gone): not something left running."""
+    try:
+        with open(f"/proc/{pid}/stat") as f:
+            return f.read().rsplit(")", 1)[1].split()[0] in "ZX"
+    except (OSError, IndexError):
+        return True
+
+
 def kill_tree(root=None):
-    """SIGKILL everything below `root` (default: this process) until nothing is left; returns what was found first."""
+    """SIGKILL everything below `root` (default: this process) until nothing is left; returns what was still
+    running when it was called. Children that had already exited are reaped, not reported."""
     root = root or os.getpid()
     first = None
     for _ in range(100):
+        reap()
         alive = descendants(root)
         if first is None:
-            first = [(pid, command_of(pid)) for pid in alive]
+            first = [(pid, command_of(pid)) for pid in alive if not exited(pid)]
         if not alive:
             break
         for pid in alive:
