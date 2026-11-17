@@ -1,11 +1,11 @@
 //! Pure Rust lossless remux engine for raw camera originals (H.264 MPEG-TS and
 //! raw HEVC), the default engine. Every failure carries a `FailureClass`;
-//! `media` decides from it alone whether the FFmpeg engine may try the input.
+//! `media` logs it and the conversion decides from it what the record keeps.
 pub(crate) mod annexb;
-mod hevc;
+pub(crate) mod hevc;
 mod mp4;
 pub mod readback;
-mod ts;
+pub(crate) mod ts;
 
 use crate::media::{Inspection, Signature};
 use anyhow::ensure;
@@ -278,7 +278,7 @@ fn verify(output: &Path, hevc: bool, job: &Job, input: Signature) -> anyhow::Res
         "unexpected MP4 layout"
     );
     // This engine writes no composition offsets, so its media ends with its last sample. Not a check for any
-    // MP4: FFmpeg's copy of a B-frame input ends its media at the last presentation time instead.
+    // MP4: a copy of a B-frame input ends its media at the last presentation time instead.
     ensure!(
         layout.media_duration == layout.durations.iter().sum::<u64>(),
         "MP4 media duration disagrees with its samples"

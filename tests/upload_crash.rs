@@ -547,3 +547,91 @@ async fn sigkill_during_camera_addition_converges_on_restart() {
         assert_eq!(finish(server.device, &session, &all).await, (200, result));
     }
 }
+
+/// The server's children running the upload check.
+fn probe_workers(server: u32) -> Vec<i32> {
+    std::fs::read_dir(format!("/proc/{server}/task"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .flat_map(|task| {
+            std::fs::read_to_string(task.path().join("children"))
+                .unwrap_or_default()
+                .split_whitespace()
+                .map(|c| c.parse::<i32>().unwrap())
+                .collect::<Vec<_>>()
+        })
+        .filter(|pid| {
+            std::fs::read(format!("/proc/{pid}/cmdline"))
+                .is_ok_and(|c| c.windows(7).any(|w| w == b"__probe"))
+        })
+        .collect()
+}
+
+/// The upload check of a camera file runs in its own worker process, as ffprobe did: a worker that
+/// dies (an abort on a hostile file, the OOM killer) refuses that file and the server goes on.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_dead_upload_check_worker_refuses_the_file_and_the_server_goes_on() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = quiet(&temp);
+    let marker = temp.path().join("marker");
+    let hevc = temp.path().join("fcamera.hevc");
+    assert!(
+        Command::new("ffmpeg")
+            .args(["-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i"])
+            .arg("testsrc2=size=160x96:rate=10")
+            .args(["-t", "1", "-an", "-threads", "1", "-pix_fmt", "yuv420p"])
+            .args(["-c:v", "libx265", "-x265-params"])
+            .arg("pools=1:frame-threads=1:bframes=0:keyint=10:log-level=error")
+            .args(["-f", "hevc"])
+            .arg(&hevc)
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .unwrap()
+            .success()
+    );
+    let video = std::fs::read(&hevc).unwrap();
+    let (log, _) = segment(27, 64 * KIB);
+    let all = files(&log, &video);
+    let manifest = batch(
+        "probe_worker_000001",
+        27,
+        &[("rlog.zst", &log), ("fcamera.hevc", &video)],
+    );
+    let mut server = start(&root, Some(("native_probe", &marker))).await;
+    let creds = pair(server.ui, server.device).await;
+    let session = begin(server.device, &creds, &manifest).await;
+    upload_all(server.device, &session, &all, 64 * KIB).await;
+    let dev = server.device;
+    let pending = {
+        let (session, log, video) = (session.clone(), log.clone(), video.clone());
+        tokio::spawn(async move { finish(dev, &session, &[&log, &video]).await })
+    };
+    crashed(&marker, "native_probe").await;
+    let workers = probe_workers(server.child.id());
+    assert_eq!(workers.len(), 1, "one upload check worker runs");
+    // SAFETY: plain kill(2) on the worker pid read from /proc just now.
+    assert_eq!(unsafe { libc::kill(workers[0], libc::SIGKILL) }, 0);
+    let (code, body) = pending.await.unwrap();
+    assert_eq!((code, body["error"].as_str()), (400, Some("invalid_file")));
+    assert!(server.child.try_wait().unwrap().is_none(), "server alive");
+    assert_eq!(http(server.ui, "GET", "/health", &[], b"").await.0, 200);
+    assert!(probe_workers(server.child.id()).is_empty());
+    invariants(
+        &root,
+        server.ui,
+        Expect {
+            registered: &[],
+            sessions: 0,
+        },
+    )
+    .await;
+    server.kill();
+
+    let server = start(&root, None).await;
+    let session = begin(server.device, &creds, &manifest).await;
+    upload_all(server.device, &session, &all, 64 * KIB).await;
+    let (code, result) = finish(server.device, &session, &all).await;
+    assert_eq!(code, 201, "{result}");
+}

@@ -1,0 +1,7492 @@
+{
+ "date": "2026-11-17",
+ "binary": "release build of feat/pure-reverse",
+ "host": "WSL2 Ubuntu 24.04 x86_64, 16 logical CPU, system FFmpeg 6.1.1 (oracle and fallback only)",
+ "original13_round_trip": [
+  {
+   "segment": 1,
+   "kind": "fcamera.hevc",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 37527338,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 37527398,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 37527398,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 1,
+   "kind": "qcamera.ts",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 2311836,
+    "frames": 1200,
+    "ts": {
+     "packets": 12297,
+     "pids": {
+      "0x11": 113,
+      "0x0": 487,
+      "0x1000": 487,
+      "0x100": 11210
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 2311836,
+    "frames": 1200,
+    "ts": {
+     "packets": 12297,
+     "pids": {
+      "0x11": 113,
+      "0x0": 487,
+      "0x1000": 487,
+      "0x100": 11210
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 2308264,
+    "frames": 1200,
+    "ts": {
+     "packets": 12278,
+     "pids": {
+      "0x11": 113,
+      "0x0": 487,
+      "0x1000": 487,
+      "0x100": 11191
+     },
+     "pcr": 640,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "ts_container(pids,pcr, -3572 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "ts_container(pids,pcr, +3572 bytes)",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 2,
+   "kind": "fcamera.hevc",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 37516708,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 37516768,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 37516768,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 2,
+   "kind": "qcamera.ts",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 2319356,
+    "frames": 1200,
+    "ts": {
+     "packets": 12337,
+     "pids": {
+      "0x11": 113,
+      "0x0": 491,
+      "0x1000": 491,
+      "0x100": 11242
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 2319356,
+    "frames": 1200,
+    "ts": {
+     "packets": 12337,
+     "pids": {
+      "0x11": 113,
+      "0x0": 491,
+      "0x1000": 491,
+      "0x100": 11242
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 2316724,
+    "frames": 1200,
+    "ts": {
+     "packets": 12323,
+     "pids": {
+      "0x11": 113,
+      "0x0": 491,
+      "0x1000": 491,
+      "0x100": 11228
+     },
+     "pcr": 643,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "ts_container(pids,pcr, -2632 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "ts_container(pids,pcr, +2632 bytes)",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 3,
+   "kind": "fcamera.hevc",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 37742379,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 37742439,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 37742439,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 3,
+   "kind": "qcamera.ts",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 2315596,
+    "frames": 1200,
+    "ts": {
+     "packets": 12317,
+     "pids": {
+      "0x11": 113,
+      "0x0": 490,
+      "0x1000": 490,
+      "0x100": 11224
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 2315596,
+    "frames": 1200,
+    "ts": {
+     "packets": 12317,
+     "pids": {
+      "0x11": 113,
+      "0x0": 490,
+      "0x1000": 490,
+      "0x100": 11224
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 2310520,
+    "frames": 1200,
+    "ts": {
+     "packets": 12290,
+     "pids": {
+      "0x11": 113,
+      "0x0": 490,
+      "0x1000": 490,
+      "0x100": 11197
+     },
+     "pcr": 648,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "ts_container(pids,pcr, -5076 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "ts_container(pids,pcr, +5076 bytes)",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 4,
+   "kind": "fcamera.hevc",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 37504477,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 37504537,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 37504537,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 4,
+   "kind": "qcamera.ts",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 2314092,
+    "frames": 1200,
+    "ts": {
+     "packets": 12309,
+     "pids": {
+      "0x11": 111,
+      "0x0": 482,
+      "0x1000": 482,
+      "0x100": 11234
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 2314092,
+    "frames": 1200,
+    "ts": {
+     "packets": 12309,
+     "pids": {
+      "0x11": 111,
+      "0x0": 482,
+      "0x1000": 482,
+      "0x100": 11234
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 2309956,
+    "frames": 1200,
+    "ts": {
+     "packets": 12287,
+     "pids": {
+      "0x11": 111,
+      "0x0": 482,
+      "0x1000": 482,
+      "0x100": 11212
+     },
+     "pcr": 640,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "ts_container(pids,pcr, -4136 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "ts_container(pids,pcr, +4136 bytes)",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 5,
+   "kind": "fcamera.hevc",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 37503962,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 37504022,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 37504022,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 5,
+   "kind": "qcamera.ts",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 2284576,
+    "frames": 1200,
+    "ts": {
+     "packets": 12152,
+     "pids": {
+      "0x11": 112,
+      "0x0": 490,
+      "0x1000": 490,
+      "0x100": 11060
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 2284576,
+    "frames": 1200,
+    "ts": {
+     "packets": 12152,
+     "pids": {
+      "0x11": 112,
+      "0x0": 490,
+      "0x1000": 490,
+      "0x100": 11060
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 2279312,
+    "frames": 1200,
+    "ts": {
+     "packets": 12124,
+     "pids": {
+      "0x11": 112,
+      "0x0": 490,
+      "0x1000": 490,
+      "0x100": 11032
+     },
+     "pcr": 641,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "ts_container(pids,pcr, -5264 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "ts_container(pids,pcr, +5264 bytes)",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 6,
+   "kind": "fcamera.hevc",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 37591266,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 37591326,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 37591326,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 6,
+   "kind": "qcamera.ts",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 2314468,
+    "frames": 1200,
+    "ts": {
+     "packets": 12311,
+     "pids": {
+      "0x11": 113,
+      "0x0": 482,
+      "0x1000": 482,
+      "0x100": 11234
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 2314468,
+    "frames": 1200,
+    "ts": {
+     "packets": 12311,
+     "pids": {
+      "0x11": 113,
+      "0x0": 482,
+      "0x1000": 482,
+      "0x100": 11234
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 2309768,
+    "frames": 1200,
+    "ts": {
+     "packets": 12286,
+     "pids": {
+      "0x11": 113,
+      "0x0": 482,
+      "0x1000": 482,
+      "0x100": 11209
+     },
+     "pcr": 635,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "ts_container(pids,pcr, -4700 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "ts_container(pids,pcr, +4700 bytes)",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 7,
+   "kind": "fcamera.hevc",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 37501166,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 37501226,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 37501226,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 7,
+   "kind": "qcamera.ts",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 2318416,
+    "frames": 1200,
+    "ts": {
+     "packets": 12332,
+     "pids": {
+      "0x11": 112,
+      "0x0": 490,
+      "0x1000": 490,
+      "0x100": 11240
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 2318416,
+    "frames": 1200,
+    "ts": {
+     "packets": 12332,
+     "pids": {
+      "0x11": 112,
+      "0x0": 490,
+      "0x1000": 490,
+      "0x100": 11240
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 2313904,
+    "frames": 1200,
+    "ts": {
+     "packets": 12308,
+     "pids": {
+      "0x11": 112,
+      "0x0": 490,
+      "0x1000": 490,
+      "0x100": 11216
+     },
+     "pcr": 635,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "ts_container(pids,pcr, -4512 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "ts_container(pids,pcr, +4512 bytes)",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 8,
+   "kind": "fcamera.hevc",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 37840893,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 37840953,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 37840953,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 8,
+   "kind": "qcamera.ts",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 2325748,
+    "frames": 1200,
+    "ts": {
+     "packets": 12371,
+     "pids": {
+      "0x11": 113,
+      "0x0": 502,
+      "0x1000": 502,
+      "0x100": 11254
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 2325748,
+    "frames": 1200,
+    "ts": {
+     "packets": 12371,
+     "pids": {
+      "0x11": 113,
+      "0x0": 502,
+      "0x1000": 502,
+      "0x100": 11254
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 2325748,
+    "frames": 1200,
+    "ts": {
+     "packets": 12371,
+     "pids": {
+      "0x11": 113,
+      "0x0": 502,
+      "0x1000": 502,
+      "0x100": 11254
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 9,
+   "kind": "fcamera.hevc",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 37769645,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 37769705,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 37769705,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 9,
+   "kind": "qcamera.ts",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 2337592,
+    "frames": 1200,
+    "ts": {
+     "packets": 12434,
+     "pids": {
+      "0x11": 115,
+      "0x0": 540,
+      "0x1000": 540,
+      "0x100": 11239
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 2337592,
+    "frames": 1200,
+    "ts": {
+     "packets": 12434,
+     "pids": {
+      "0x11": 115,
+      "0x0": 540,
+      "0x1000": 540,
+      "0x100": 11239
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 2337592,
+    "frames": 1200,
+    "ts": {
+     "packets": 12434,
+     "pids": {
+      "0x11": 115,
+      "0x0": 540,
+      "0x1000": 540,
+      "0x100": 11239
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 10,
+   "kind": "fcamera.hevc",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 37605832,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 37605892,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 37605892,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 10,
+   "kind": "qcamera.ts",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 2324056,
+    "frames": 1200,
+    "ts": {
+     "packets": 12362,
+     "pids": {
+      "0x11": 116,
+      "0x0": 514,
+      "0x1000": 514,
+      "0x100": 11218
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 2324056,
+    "frames": 1200,
+    "ts": {
+     "packets": 12362,
+     "pids": {
+      "0x11": 116,
+      "0x0": 514,
+      "0x1000": 514,
+      "0x100": 11218
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 2324056,
+    "frames": 1200,
+    "ts": {
+     "packets": 12362,
+     "pids": {
+      "0x11": 116,
+      "0x0": 514,
+      "0x1000": 514,
+      "0x100": 11218
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 11,
+   "kind": "fcamera.hevc",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 37637289,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 37637349,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 37637349,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 11,
+   "kind": "qcamera.ts",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 2325560,
+    "frames": 1200,
+    "ts": {
+     "packets": 12370,
+     "pids": {
+      "0x11": 116,
+      "0x0": 499,
+      "0x1000": 499,
+      "0x100": 11256
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 2325560,
+    "frames": 1200,
+    "ts": {
+     "packets": 12370,
+     "pids": {
+      "0x11": 116,
+      "0x0": 499,
+      "0x1000": 499,
+      "0x100": 11256
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 2325560,
+    "frames": 1200,
+    "ts": {
+     "packets": 12370,
+     "pids": {
+      "0x11": 116,
+      "0x0": 499,
+      "0x1000": 499,
+      "0x100": 11256
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 12,
+   "kind": "fcamera.hevc",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 37541006,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 37541066,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 37541066,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 12,
+   "kind": "qcamera.ts",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 2326124,
+    "frames": 1200,
+    "ts": {
+     "packets": 12373,
+     "pids": {
+      "0x11": 116,
+      "0x0": 506,
+      "0x1000": 506,
+      "0x100": 11245
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 2326124,
+    "frames": 1200,
+    "ts": {
+     "packets": 12373,
+     "pids": {
+      "0x11": 116,
+      "0x0": 506,
+      "0x1000": 506,
+      "0x100": 11245
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 2326124,
+    "frames": 1200,
+    "ts": {
+     "packets": 12373,
+     "pids": {
+      "0x11": 116,
+      "0x0": 506,
+      "0x1000": 506,
+      "0x100": 11245
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 13,
+   "kind": "fcamera.hevc",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 37614444,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 37614504,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 37614504,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180,
+    "keyframe_count": 60,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": null,
+     "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical",
+    "framemd5_equal": true
+   }
+  },
+  {
+   "segment": 13,
+   "kind": "qcamera.ts",
+   "events": {
+    "remux": [
+     {
+      "event": "remux_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "original": {
+    "bytes": 2314844,
+    "frames": 1200,
+    "ts": {
+     "packets": 12313,
+     "pids": {
+      "0x11": 112,
+      "0x0": 483,
+      "0x1000": 483,
+      "0x100": 11235
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200
+   },
+   "pure": {
+    "bytes": 2314844,
+    "frames": 1200,
+    "ts": {
+     "packets": 12313,
+     "pids": {
+      "0x11": 112,
+      "0x0": 483,
+      "0x1000": 483,
+      "0x100": 11235
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "identical",
+     "framemd5_equal": true
+    }
+   },
+   "ffmpeg": {
+    "bytes": 2310520,
+    "frames": 1200,
+    "ts": {
+     "packets": 12290,
+     "pids": {
+      "0x11": 112,
+      "0x0": 483,
+      "0x1000": 483,
+      "0x100": 11212
+     },
+     "pcr": 637,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160,
+    "keyframe_count": 80,
+    "decoded_frames": 1200,
+    "vs_original": {
+     "normalized_nal_equal": true,
+     "frames_equal": true,
+     "keyframes_equal": true,
+     "parameter_sets_equal": true,
+     "clocks_equal": true,
+     "bytes": "ts_container(pids,pcr, -4324 bytes)",
+     "framemd5_equal": true
+    }
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "ts_container(pids,pcr, +4324 bytes)",
+    "framemd5_equal": true
+   }
+  }
+ ],
+ "mp4_samples": [
+  {
+   "label": "c14-a-q",
+   "kind": "qcamera.ts",
+   "events": {
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "pure": {
+    "bytes": 2320672,
+    "frames": 1200,
+    "ts": {
+     "packets": 12344,
+     "pids": {
+      "0x11": 117,
+      "0x0": 521,
+      "0x1000": 521,
+      "0x100": 11185
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "ts_container(pids,pcr, +4700 bytes)"
+   },
+   "framemd5": {
+    "decoded_frames": {
+     "mp4": 1200,
+     "pure": 1200,
+     "ffmpeg": 1200
+    },
+    "pure_equals_mp4": true,
+    "pure_equals_ffmpeg": true,
+    "ffmpeg_equals_mp4": true
+   }
+  },
+  {
+   "label": "c14-a-f",
+   "kind": "fcamera.hevc",
+   "events": {
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "pure": {
+    "bytes": 37433823,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical"
+   },
+   "framemd5": {
+    "decoded_frames": {
+     "mp4": 1200,
+     "pure": 1200,
+     "ffmpeg": 1200
+    },
+    "pure_equals_mp4": true,
+    "pure_equals_ffmpeg": true,
+    "ffmpeg_equals_mp4": true
+   }
+  },
+  {
+   "label": "c14-b-q",
+   "kind": "qcamera.ts",
+   "events": {
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "pure": {
+    "bytes": 2337216,
+    "frames": 1200,
+    "ts": {
+     "packets": 12432,
+     "pids": {
+      "0x11": 117,
+      "0x0": 541,
+      "0x1000": 541,
+      "0x100": 11233
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "identical"
+   },
+   "framemd5": {
+    "decoded_frames": {
+     "mp4": 1200,
+     "pure": 1200,
+     "ffmpeg": 1200
+    },
+    "pure_equals_mp4": true,
+    "pure_equals_ffmpeg": true,
+    "ffmpeg_equals_mp4": true
+   }
+  },
+  {
+   "label": "c14-c-f",
+   "kind": "fcamera.hevc",
+   "events": {
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "pure": {
+    "bytes": 37625452,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical"
+   },
+   "framemd5": {
+    "decoded_frames": {
+     "mp4": 1200,
+     "pure": 1200,
+     "ffmpeg": 1200
+    },
+    "pure_equals_mp4": true,
+    "pure_equals_ffmpeg": true,
+    "ffmpeg_equals_mp4": true
+   }
+  },
+  {
+   "label": "c14-d-q",
+   "kind": "qcamera.ts",
+   "events": {
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "pure": {
+    "bytes": 2328944,
+    "frames": 1200,
+    "ts": {
+     "packets": 12388,
+     "pids": {
+      "0x11": 114,
+      "0x0": 513,
+      "0x1000": 513,
+      "0x100": 11248
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "ts_container(pcr, +0 bytes)"
+   },
+   "framemd5": {
+    "decoded_frames": {
+     "mp4": 1200,
+     "pure": 1200,
+     "ffmpeg": 1200
+    },
+    "pure_equals_mp4": true,
+    "pure_equals_ffmpeg": true,
+    "ffmpeg_equals_mp4": true
+   }
+  },
+  {
+   "label": "c14-d-f",
+   "kind": "fcamera.hevc",
+   "events": {
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "pure": {
+    "bytes": 37938340,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical"
+   },
+   "framemd5": {
+    "decoded_frames": {
+     "mp4": 1200,
+     "pure": 1200,
+     "ffmpeg": 1200
+    },
+    "pure_equals_mp4": true,
+    "pure_equals_ffmpeg": true,
+    "ffmpeg_equals_mp4": true
+   }
+  },
+  {
+   "label": "c47-a-e",
+   "kind": "ecamera.hevc",
+   "events": {
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "pure": {
+    "bytes": 37560070,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical"
+   },
+   "framemd5": {
+    "decoded_frames": {
+     "mp4": 1200,
+     "pure": 1200,
+     "ffmpeg": 1200
+    },
+    "pure_equals_mp4": true,
+    "pure_equals_ffmpeg": true,
+    "ffmpeg_equals_mp4": true
+   }
+  },
+  {
+   "label": "c47-b-q",
+   "kind": "qcamera.ts",
+   "events": {
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "pure": {
+    "bytes": 2342292,
+    "frames": 1200,
+    "ts": {
+     "packets": 12459,
+     "pids": {
+      "0x11": 118,
+      "0x0": 560,
+      "0x1000": 560,
+      "0x100": 11221
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "ts_container(pids,pcr, +188 bytes)"
+   },
+   "framemd5": {
+    "decoded_frames": {
+     "mp4": 1200,
+     "pure": 1200,
+     "ffmpeg": 1200
+    },
+    "pure_equals_mp4": true,
+    "pure_equals_ffmpeg": true,
+    "ffmpeg_equals_mp4": true
+   }
+  },
+  {
+   "label": "c47-b-f",
+   "kind": "fcamera.hevc",
+   "events": {
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "pure": {
+    "bytes": 37934967,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical"
+   },
+   "framemd5": {
+    "decoded_frames": {
+     "mp4": 1200,
+     "pure": 1200,
+     "ffmpeg": 1200
+    },
+    "pure_equals_mp4": true,
+    "pure_equals_ffmpeg": true,
+    "ffmpeg_equals_mp4": true
+   }
+  },
+  {
+   "label": "c47-c-q",
+   "kind": "qcamera.ts",
+   "events": {
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "pure": {
+    "bytes": 2311272,
+    "frames": 1200,
+    "ts": {
+     "packets": 12294,
+     "pids": {
+      "0x11": 116,
+      "0x0": 508,
+      "0x1000": 508,
+      "0x100": 11162
+     },
+     "pcr": 1200,
+     "rai": 80
+    },
+    "nal_units": 2560,
+    "parameter_sets": 2,
+    "parameter_sets_in_band": 160
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": true,
+    "bytes": "ts_container(pcr, +0 bytes)"
+   },
+   "framemd5": {
+    "decoded_frames": {
+     "mp4": 1200,
+     "pure": 1200,
+     "ffmpeg": 1200
+    },
+    "pure_equals_mp4": true,
+    "pure_equals_ffmpeg": true,
+    "ffmpeg_equals_mp4": true
+   }
+  },
+  {
+   "label": "c47-d-e",
+   "kind": "ecamera.hevc",
+   "events": {
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "pure": {
+    "bytes": 37538561,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical"
+   },
+   "framemd5": {
+    "decoded_frames": {
+     "mp4": 1200,
+     "pure": 1200,
+     "ffmpeg": 1200
+    },
+    "pure_equals_mp4": true,
+    "pure_equals_ffmpeg": true,
+    "ffmpeg_equals_mp4": true
+   }
+  },
+  {
+   "label": "c47-e-f",
+   "kind": "fcamera.hevc",
+   "events": {
+    "pure": [
+     {
+      "event": "reverse_engine",
+      "engine": "pure",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ],
+    "ffmpeg": [
+     {
+      "event": "reverse_engine",
+      "engine": "ffmpeg",
+      "failure_class": null,
+      "reason_code": null
+     }
+    ]
+   },
+   "pure": {
+    "bytes": 38285628,
+    "frames": 1200,
+    "nal_units": 2580,
+    "parameter_sets": 3,
+    "parameter_sets_in_band": 180
+   },
+   "pure_vs_ffmpeg": {
+    "normalized_nal_equal": true,
+    "frames_equal": true,
+    "keyframes_equal": true,
+    "parameter_sets_equal": true,
+    "clocks_equal": null,
+    "bytes": "identical"
+   },
+   "framemd5": {
+    "decoded_frames": {
+     "mp4": 1200,
+     "pure": 1200,
+     "ffmpeg": 1200
+    },
+    "pure_equals_mp4": true,
+    "pure_equals_ffmpeg": true,
+    "ffmpeg_equals_mp4": true
+   }
+  }
+ ],
+ "product_path": {
+  "segments": 2,
+  "records": [
+   {
+    "status": "ready",
+    "states": [
+     "unconverted",
+     "processing",
+     "ready"
+    ],
+    "uploaded_originals_left": [],
+    "qcamera.ts": {
+     "status": 200,
+     "bytes": 2315596,
+     "disposition": true,
+     "ranges": {
+      "start": {
+       "status": 206,
+       "equal": true,
+       "content_range": true
+      },
+      "middle": {
+       "status": 206,
+       "equal": true,
+       "content_range": true
+      },
+      "suffix": {
+       "status": 206,
+       "equal": true,
+       "content_range": true
+      }
+     },
+     "vs_upload": {
+      "bytes": "identical",
+      "normalized_nal_equal": true,
+      "frames_equal": true,
+      "keyframes_equal": true,
+      "clocks_equal": true
+     },
+     "vs_ffmpeg_engine": {
+      "bytes": "ts_container(pids,pcr, +5264 bytes)",
+      "normalized_nal_equal": true,
+      "frames_equal": true,
+      "keyframes_equal": true,
+      "parameter_sets_equal": true,
+      "clocks_equal": true
+     }
+    },
+    "fcamera.hevc": {
+     "status": 200,
+     "bytes": 37742439,
+     "disposition": true,
+     "ranges": {
+      "start": {
+       "status": 206,
+       "equal": true,
+       "content_range": true
+      },
+      "middle": {
+       "status": 206,
+       "equal": true,
+       "content_range": true
+      },
+      "suffix": {
+       "status": 206,
+       "equal": true,
+       "content_range": true
+      }
+     },
+     "vs_upload": {
+      "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+      "normalized_nal_equal": true,
+      "frames_equal": true,
+      "keyframes_equal": true,
+      "clocks_equal": null
+     },
+     "vs_ffmpeg_engine": {
+      "bytes": "identical",
+      "normalized_nal_equal": true,
+      "frames_equal": true,
+      "keyframes_equal": true,
+      "parameter_sets_equal": true,
+      "clocks_equal": null
+     }
+    },
+    "zip": {
+     "members": 3,
+     "qcamera.ts_equals_original_route": true,
+     "fcamera.hevc_equals_original_route": true
+    }
+   },
+   {
+    "status": "ready",
+    "states": [
+     "unconverted",
+     "processing",
+     "ready"
+    ],
+    "uploaded_originals_left": [],
+    "qcamera.ts": {
+     "status": 200,
+     "bytes": 2318416,
+     "disposition": true,
+     "ranges": {
+      "start": {
+       "status": 206,
+       "equal": true,
+       "content_range": true
+      },
+      "middle": {
+       "status": 206,
+       "equal": true,
+       "content_range": true
+      },
+      "suffix": {
+       "status": 206,
+       "equal": true,
+       "content_range": true
+      }
+     },
+     "vs_upload": {
+      "bytes": "identical",
+      "normalized_nal_equal": true,
+      "frames_equal": true,
+      "keyframes_equal": true,
+      "clocks_equal": true
+     },
+     "vs_ffmpeg_engine": {
+      "bytes": "ts_container(pids,pcr, +5264 bytes)",
+      "normalized_nal_equal": true,
+      "frames_equal": true,
+      "keyframes_equal": true,
+      "parameter_sets_equal": true,
+      "clocks_equal": true
+     }
+    },
+    "fcamera.hevc": {
+     "status": 200,
+     "bytes": 37501226,
+     "disposition": true,
+     "ranges": {
+      "start": {
+       "status": 206,
+       "equal": true,
+       "content_range": true
+      },
+      "middle": {
+       "status": 206,
+       "equal": true,
+       "content_range": true
+      },
+      "suffix": {
+       "status": 206,
+       "equal": true,
+       "content_range": true
+      }
+     },
+     "vs_upload": {
+      "bytes": "zero_bytes_between_units(60 places, +60 bytes)",
+      "normalized_nal_equal": true,
+      "frames_equal": true,
+      "keyframes_equal": true,
+      "clocks_equal": null
+     },
+     "vs_ffmpeg_engine": {
+      "bytes": "identical",
+      "normalized_nal_equal": true,
+      "frames_equal": true,
+      "keyframes_equal": true,
+      "parameter_sets_equal": true,
+      "clocks_equal": null
+     }
+    },
+    "zip": {
+     "members": 3,
+     "qcamera.ts_equals_original_route": true,
+     "fcamera.hevc_equals_original_route": true
+    }
+   }
+  ],
+  "pure_server_events": [
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "qcamera.ts"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "qcamera.ts"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "qcamera.ts"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "qcamera.ts"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "fcamera.hevc"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "fcamera.hevc"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "fcamera.hevc"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "fcamera.hevc"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "fcamera.hevc"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "qcamera.ts"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "qcamera.ts"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "qcamera.ts"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "qcamera.ts"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "qcamera.ts"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "fcamera.hevc"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "fcamera.hevc"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "fcamera.hevc"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "fcamera.hevc"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "fcamera.hevc"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "pure",
+    "kind": "qcamera.ts"
+   }
+  ],
+  "ffmpeg_server_events": [
+   {
+    "event": "reverse_engine",
+    "engine": "ffmpeg",
+    "kind": "qcamera.ts"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "ffmpeg",
+    "kind": "fcamera.hevc"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "ffmpeg",
+    "kind": "qcamera.ts"
+   },
+   {
+    "event": "reverse_engine",
+    "engine": "ffmpeg",
+    "kind": "fcamera.hevc"
+   }
+  ]
+ },
+ "faults": {
+  "summary": {
+   "cases": 300,
+   "seed": 20261117,
+   "bases": 3,
+   "by_outcome": {
+    "invalid": 258,
+    "done": 37,
+    "verification": 5
+   },
+   "by_mutation": {
+    "sample_table": {
+     "invalid": 35,
+     "done": 2
+    },
+    "moov_flips": {
+     "invalid": 26,
+     "done": 2
+    },
+    "random_bytes": {
+     "invalid": 29
+    },
+    "config_counts": {
+     "invalid": 38,
+     "done": 1
+    },
+    "payload_flips": {
+     "done": 29
+    },
+    "empty_track": {
+     "invalid": 24
+    },
+    "truncate": {
+     "invalid": 28
+    },
+    "oversized": {
+     "invalid": 25,
+     "done": 3,
+     "verification": 5
+    },
+    "garbage_box": {
+     "invalid": 33
+    },
+    "box_size": {
+     "invalid": 20
+    }
+   },
+   "panics": 0,
+   "abnormal_exits": 0,
+   "outputs_left_on_failure": 0,
+   "peak_rss_kib_max": 38156,
+   "elapsed_s_max": 0.047
+  },
+  "cases": [
+   {
+    "case": 0,
+    "base": 0,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34052,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 1,
+    "base": 1,
+    "mutation": "moov_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33940,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 2,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33932,
+    "elapsed_s": 0.025
+   },
+   {
+    "case": 3,
+    "base": 0,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33784,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 4,
+    "base": 1,
+    "mutation": "config_counts",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33876,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 5,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34604,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 6,
+    "base": 0,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33552,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 7,
+    "base": 1,
+    "mutation": "payload_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35340,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 8,
+    "base": 2,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33748,
+    "elapsed_s": 0.032
+   },
+   {
+    "case": 9,
+    "base": 0,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33756,
+    "elapsed_s": 0.029
+   },
+   {
+    "case": 10,
+    "base": 1,
+    "mutation": "empty_track",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33916,
+    "elapsed_s": 0.028
+   },
+   {
+    "case": 11,
+    "base": 2,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33988,
+    "elapsed_s": 0.025
+   },
+   {
+    "case": 12,
+    "base": 0,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33988,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 13,
+    "base": 1,
+    "mutation": "config_counts",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33992,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 14,
+    "base": 2,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33408,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 15,
+    "base": 0,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35712,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 16,
+    "base": 1,
+    "mutation": "payload_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35272,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 17,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33564,
+    "elapsed_s": 0.026
+   },
+   {
+    "case": 18,
+    "base": 0,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34744,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 19,
+    "base": 1,
+    "mutation": "oversized",
+    "kind": "fcamera.hevc",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 34916,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 20,
+    "base": 2,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34116,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 21,
+    "base": 0,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33320,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 22,
+    "base": 1,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33840,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 23,
+    "base": 2,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33524,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 24,
+    "base": 0,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34080,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 25,
+    "base": 1,
+    "mutation": "box_size",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33684,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 26,
+    "base": 2,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 37908,
+    "elapsed_s": 0.041
+   },
+   {
+    "case": 27,
+    "base": 0,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33420,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 28,
+    "base": 1,
+    "mutation": "empty_track",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34220,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 29,
+    "base": 2,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33648,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 30,
+    "base": 0,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33416,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 31,
+    "base": 1,
+    "mutation": "random_bytes",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33636,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 32,
+    "base": 2,
+    "mutation": "box_size",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33708,
+    "elapsed_s": 0.018
+   },
+   {
+    "case": 33,
+    "base": 0,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33468,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 34,
+    "base": 1,
+    "mutation": "garbage_box",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33244,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 35,
+    "base": 2,
+    "mutation": "garbage_box",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33660,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 36,
+    "base": 0,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33512,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 37,
+    "base": 1,
+    "mutation": "config_counts",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33696,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 38,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "verification",
+    "code": "readback_mismatch",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 36724,
+    "elapsed_s": 0.037
+   },
+   {
+    "case": 39,
+    "base": 0,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34124,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 40,
+    "base": 1,
+    "mutation": "oversized",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33796,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 41,
+    "base": 2,
+    "mutation": "box_size",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33816,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 42,
+    "base": 0,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33160,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 43,
+    "base": 1,
+    "mutation": "random_bytes",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34080,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 44,
+    "base": 2,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33468,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 45,
+    "base": 0,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33688,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 46,
+    "base": 1,
+    "mutation": "sample_table",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34032,
+    "elapsed_s": 0.024
+   },
+   {
+    "case": 47,
+    "base": 2,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 37868,
+    "elapsed_s": 0.038
+   },
+   {
+    "case": 48,
+    "base": 0,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33564,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 49,
+    "base": 1,
+    "mutation": "sample_table",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34156,
+    "elapsed_s": 0.025
+   },
+   {
+    "case": 50,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33612,
+    "elapsed_s": 0.029
+   },
+   {
+    "case": 51,
+    "base": 0,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33736,
+    "elapsed_s": 0.025
+   },
+   {
+    "case": 52,
+    "base": 1,
+    "mutation": "empty_track",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34132,
+    "elapsed_s": 0.024
+   },
+   {
+    "case": 53,
+    "base": 2,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33436,
+    "elapsed_s": 0.026
+   },
+   {
+    "case": 54,
+    "base": 0,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33568,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 55,
+    "base": 1,
+    "mutation": "garbage_box",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34216,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 56,
+    "base": 2,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 37700,
+    "elapsed_s": 0.035
+   },
+   {
+    "case": 57,
+    "base": 0,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33756,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 58,
+    "base": 1,
+    "mutation": "moov_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33804,
+    "elapsed_s": 0.018
+   },
+   {
+    "case": 59,
+    "base": 2,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34176,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 60,
+    "base": 0,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35744,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 61,
+    "base": 1,
+    "mutation": "truncate",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33432,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 62,
+    "base": 2,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33680,
+    "elapsed_s": 0.018
+   },
+   {
+    "case": 63,
+    "base": 0,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33936,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 64,
+    "base": 1,
+    "mutation": "payload_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35376,
+    "elapsed_s": 0.018
+   },
+   {
+    "case": 65,
+    "base": 2,
+    "mutation": "box_size",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33604,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 66,
+    "base": 0,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34008,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 67,
+    "base": 1,
+    "mutation": "moov_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33652,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 68,
+    "base": 2,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33940,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 69,
+    "base": 0,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33932,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 70,
+    "base": 1,
+    "mutation": "config_counts",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33788,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 71,
+    "base": 2,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33812,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 72,
+    "base": 0,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34748,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 73,
+    "base": 1,
+    "mutation": "truncate",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33380,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 74,
+    "base": 2,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33844,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 75,
+    "base": 0,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34172,
+    "elapsed_s": 0.018
+   },
+   {
+    "case": 76,
+    "base": 1,
+    "mutation": "truncate",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33816,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 77,
+    "base": 2,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34248,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 78,
+    "base": 0,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34004,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 79,
+    "base": 1,
+    "mutation": "random_bytes",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33268,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 80,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33556,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 81,
+    "base": 0,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35564,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 82,
+    "base": 1,
+    "mutation": "random_bytes",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33668,
+    "elapsed_s": 0.018
+   },
+   {
+    "case": 83,
+    "base": 2,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33668,
+    "elapsed_s": 0.018
+   },
+   {
+    "case": 84,
+    "base": 0,
+    "mutation": "box_size",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34048,
+    "elapsed_s": 0.018
+   },
+   {
+    "case": 85,
+    "base": 1,
+    "mutation": "random_bytes",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33812,
+    "elapsed_s": 0.017
+   },
+   {
+    "case": 86,
+    "base": 2,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 38068,
+    "elapsed_s": 0.031
+   },
+   {
+    "case": 87,
+    "base": 0,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33452,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 88,
+    "base": 1,
+    "mutation": "config_counts",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33908,
+    "elapsed_s": 0.018
+   },
+   {
+    "case": 89,
+    "base": 2,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33964,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 90,
+    "base": 0,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33516,
+    "elapsed_s": 0.017
+   },
+   {
+    "case": 91,
+    "base": 1,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33952,
+    "elapsed_s": 0.018
+   },
+   {
+    "case": 92,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33788,
+    "elapsed_s": 0.017
+   },
+   {
+    "case": 93,
+    "base": 0,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34388,
+    "elapsed_s": 0.024
+   },
+   {
+    "case": 94,
+    "base": 1,
+    "mutation": "box_size",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33692,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 95,
+    "base": 2,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33544,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 96,
+    "base": 0,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33708,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 97,
+    "base": 1,
+    "mutation": "box_size",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34748,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 98,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33552,
+    "elapsed_s": 0.018
+   },
+   {
+    "case": 99,
+    "base": 0,
+    "mutation": "config_counts",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33692,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 100,
+    "base": 1,
+    "mutation": "garbage_box",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33848,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 101,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33828,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 102,
+    "base": 0,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33528,
+    "elapsed_s": 0.025
+   },
+   {
+    "case": 103,
+    "base": 1,
+    "mutation": "sample_table",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33960,
+    "elapsed_s": 0.026
+   },
+   {
+    "case": 104,
+    "base": 2,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 37908,
+    "elapsed_s": 0.038
+   },
+   {
+    "case": 105,
+    "base": 0,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33920,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 106,
+    "base": 1,
+    "mutation": "sample_table",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34544,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 107,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34156,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 108,
+    "base": 0,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33844,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 109,
+    "base": 1,
+    "mutation": "moov_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33756,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 110,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34904,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 111,
+    "base": 0,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33828,
+    "elapsed_s": 0.018
+   },
+   {
+    "case": 112,
+    "base": 1,
+    "mutation": "box_size",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33412,
+    "elapsed_s": 0.018
+   },
+   {
+    "case": 113,
+    "base": 2,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33980,
+    "elapsed_s": 0.018
+   },
+   {
+    "case": 114,
+    "base": 0,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33712,
+    "elapsed_s": 0.017
+   },
+   {
+    "case": 115,
+    "base": 1,
+    "mutation": "garbage_box",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33836,
+    "elapsed_s": 0.018
+   },
+   {
+    "case": 116,
+    "base": 2,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33492,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 117,
+    "base": 0,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33196,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 118,
+    "base": 1,
+    "mutation": "config_counts",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33328,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 119,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33884,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 120,
+    "base": 0,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35508,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 121,
+    "base": 1,
+    "mutation": "sample_table",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33468,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 122,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 38156,
+    "elapsed_s": 0.032
+   },
+   {
+    "case": 123,
+    "base": 0,
+    "mutation": "moov_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33604,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 124,
+    "base": 1,
+    "mutation": "config_counts",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33820,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 125,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33964,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 126,
+    "base": 0,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34028,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 127,
+    "base": 1,
+    "mutation": "payload_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35120,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 128,
+    "base": 2,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34604,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 129,
+    "base": 0,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35736,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 130,
+    "base": 1,
+    "mutation": "box_size",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33620,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 131,
+    "base": 2,
+    "mutation": "box_size",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33700,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 132,
+    "base": 0,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33952,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 133,
+    "base": 1,
+    "mutation": "truncate",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33716,
+    "elapsed_s": 0.03
+   },
+   {
+    "case": 134,
+    "base": 2,
+    "mutation": "box_size",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33748,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 135,
+    "base": 0,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33284,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 136,
+    "base": 1,
+    "mutation": "garbage_box",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33996,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 137,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33632,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 138,
+    "base": 0,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35500,
+    "elapsed_s": 0.025
+   },
+   {
+    "case": 139,
+    "base": 1,
+    "mutation": "empty_track",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34160,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 140,
+    "base": 2,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34112,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 141,
+    "base": 0,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33520,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 142,
+    "base": 1,
+    "mutation": "truncate",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33328,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 143,
+    "base": 2,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33808,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 144,
+    "base": 0,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "verification",
+    "code": "readback_mismatch",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 35284,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 145,
+    "base": 1,
+    "mutation": "config_counts",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33704,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 146,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34080,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 147,
+    "base": 0,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33748,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 148,
+    "base": 1,
+    "mutation": "oversized",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33648,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 149,
+    "base": 2,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33880,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 150,
+    "base": 0,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33308,
+    "elapsed_s": 0.024
+   },
+   {
+    "case": 151,
+    "base": 1,
+    "mutation": "config_counts",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33416,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 152,
+    "base": 2,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33764,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 153,
+    "base": 0,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33808,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 154,
+    "base": 1,
+    "mutation": "payload_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35272,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 155,
+    "base": 2,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 37880,
+    "elapsed_s": 0.036
+   },
+   {
+    "case": 156,
+    "base": 0,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34688,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 157,
+    "base": 1,
+    "mutation": "moov_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33720,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 158,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34800,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 159,
+    "base": 0,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34048,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 160,
+    "base": 1,
+    "mutation": "moov_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34412,
+    "elapsed_s": 0.025
+   },
+   {
+    "case": 161,
+    "base": 2,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33780,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 162,
+    "base": 0,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33832,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 163,
+    "base": 1,
+    "mutation": "moov_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33720,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 164,
+    "base": 2,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33916,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 165,
+    "base": 0,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33832,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 166,
+    "base": 1,
+    "mutation": "garbage_box",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33676,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 167,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34396,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 168,
+    "base": 0,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34096,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 169,
+    "base": 1,
+    "mutation": "sample_table",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34152,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 170,
+    "base": 2,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33692,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 171,
+    "base": 0,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33520,
+    "elapsed_s": 0.027
+   },
+   {
+    "case": 172,
+    "base": 1,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33356,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 173,
+    "base": 2,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33740,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 174,
+    "base": 0,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33648,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 175,
+    "base": 1,
+    "mutation": "oversized",
+    "kind": "fcamera.hevc",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35292,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 176,
+    "base": 2,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 38148,
+    "elapsed_s": 0.047
+   },
+   {
+    "case": 177,
+    "base": 0,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35860,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 178,
+    "base": 1,
+    "mutation": "truncate",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33792,
+    "elapsed_s": 0.025
+   },
+   {
+    "case": 179,
+    "base": 2,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33508,
+    "elapsed_s": 0.025
+   },
+   {
+    "case": 180,
+    "base": 0,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33316,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 181,
+    "base": 1,
+    "mutation": "moov_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34608,
+    "elapsed_s": 0.029
+   },
+   {
+    "case": 182,
+    "base": 2,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33960,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 183,
+    "base": 0,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35540,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 184,
+    "base": 1,
+    "mutation": "garbage_box",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34348,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 185,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34540,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 186,
+    "base": 0,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33800,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 187,
+    "base": 1,
+    "mutation": "garbage_box",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34364,
+    "elapsed_s": 0.024
+   },
+   {
+    "case": 188,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34840,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 189,
+    "base": 0,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34588,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 190,
+    "base": 1,
+    "mutation": "payload_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35308,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 191,
+    "base": 2,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33944,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 192,
+    "base": 0,
+    "mutation": "box_size",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33596,
+    "elapsed_s": 0.027
+   },
+   {
+    "case": 193,
+    "base": 1,
+    "mutation": "config_counts",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33456,
+    "elapsed_s": 0.025
+   },
+   {
+    "case": 194,
+    "base": 2,
+    "mutation": "box_size",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33604,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 195,
+    "base": 0,
+    "mutation": "config_counts",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33860,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 196,
+    "base": 1,
+    "mutation": "random_bytes",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33708,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 197,
+    "base": 2,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33516,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 198,
+    "base": 0,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33776,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 199,
+    "base": 1,
+    "mutation": "empty_track",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34008,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 200,
+    "base": 2,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33640,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 201,
+    "base": 0,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33792,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 202,
+    "base": 1,
+    "mutation": "truncate",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33568,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 203,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34244,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 204,
+    "base": 0,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33816,
+    "elapsed_s": 0.024
+   },
+   {
+    "case": 205,
+    "base": 1,
+    "mutation": "payload_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 34868,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 206,
+    "base": 2,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33764,
+    "elapsed_s": 0.024
+   },
+   {
+    "case": 207,
+    "base": 0,
+    "mutation": "random_bytes",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33740,
+    "elapsed_s": 0.029
+   },
+   {
+    "case": 208,
+    "base": 1,
+    "mutation": "sample_table",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34484,
+    "elapsed_s": 0.024
+   },
+   {
+    "case": 209,
+    "base": 2,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33476,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 210,
+    "base": 0,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34148,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 211,
+    "base": 1,
+    "mutation": "garbage_box",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34288,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 212,
+    "base": 2,
+    "mutation": "box_size",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33820,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 213,
+    "base": 0,
+    "mutation": "box_size",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33920,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 214,
+    "base": 1,
+    "mutation": "random_bytes",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33196,
+    "elapsed_s": 0.024
+   },
+   {
+    "case": 215,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34236,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 216,
+    "base": 0,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34032,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 217,
+    "base": 1,
+    "mutation": "garbage_box",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34644,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 218,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "verification",
+    "code": "readback_mismatch",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 36636,
+    "elapsed_s": 0.036
+   },
+   {
+    "case": 219,
+    "base": 0,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "verification",
+    "code": "readback_mismatch",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 35420,
+    "elapsed_s": 0.028
+   },
+   {
+    "case": 220,
+    "base": 1,
+    "mutation": "truncate",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33352,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 221,
+    "base": 2,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33516,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 222,
+    "base": 0,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35188,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 223,
+    "base": 1,
+    "mutation": "random_bytes",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33628,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 224,
+    "base": 2,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33688,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 225,
+    "base": 0,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33852,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 226,
+    "base": 1,
+    "mutation": "random_bytes",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33876,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 227,
+    "base": 2,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34356,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 228,
+    "base": 0,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35808,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 229,
+    "base": 1,
+    "mutation": "truncate",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33496,
+    "elapsed_s": 0.024
+   },
+   {
+    "case": 230,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34448,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 231,
+    "base": 0,
+    "mutation": "moov_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33288,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 232,
+    "base": 1,
+    "mutation": "sample_table",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34480,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 233,
+    "base": 2,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33604,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 234,
+    "base": 0,
+    "mutation": "box_size",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34024,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 235,
+    "base": 1,
+    "mutation": "box_size",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34068,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 236,
+    "base": 2,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33644,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 237,
+    "base": 0,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33404,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 238,
+    "base": 1,
+    "mutation": "truncate",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33660,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 239,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34228,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 240,
+    "base": 0,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34068,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 241,
+    "base": 1,
+    "mutation": "oversized",
+    "kind": "fcamera.hevc",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35312,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 242,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33524,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 243,
+    "base": 0,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33360,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 244,
+    "base": 1,
+    "mutation": "truncate",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33776,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 245,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33888,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 246,
+    "base": 0,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33456,
+    "elapsed_s": 0.025
+   },
+   {
+    "case": 247,
+    "base": 1,
+    "mutation": "oversized",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33680,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 248,
+    "base": 2,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33788,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 249,
+    "base": 0,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35580,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 250,
+    "base": 1,
+    "mutation": "moov_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33664,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 251,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34332,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 252,
+    "base": 0,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33092,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 253,
+    "base": 1,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33356,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 254,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "verification",
+    "code": "readback_mismatch",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 36828,
+    "elapsed_s": 0.031
+   },
+   {
+    "case": 255,
+    "base": 0,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35788,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 256,
+    "base": 1,
+    "mutation": "sample_table",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34228,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 257,
+    "base": 2,
+    "mutation": "sample_table",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 37860,
+    "elapsed_s": 0.037
+   },
+   {
+    "case": 258,
+    "base": 0,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33644,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 259,
+    "base": 1,
+    "mutation": "sample_table",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34304,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 260,
+    "base": 2,
+    "mutation": "moov_flips",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33444,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 261,
+    "base": 0,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35708,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 262,
+    "base": 1,
+    "mutation": "sample_table",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33984,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 263,
+    "base": 2,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33744,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 264,
+    "base": 0,
+    "mutation": "box_size",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33416,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 265,
+    "base": 1,
+    "mutation": "payload_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35300,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 266,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33652,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 267,
+    "base": 0,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34084,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 268,
+    "base": 1,
+    "mutation": "empty_track",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34072,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 269,
+    "base": 2,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33872,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 270,
+    "base": 0,
+    "mutation": "random_bytes",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33652,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 271,
+    "base": 1,
+    "mutation": "sample_table",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33936,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 272,
+    "base": 2,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 37928,
+    "elapsed_s": 0.034
+   },
+   {
+    "case": 273,
+    "base": 0,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34404,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 274,
+    "base": 1,
+    "mutation": "garbage_box",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33836,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 275,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34540,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 276,
+    "base": 0,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33776,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 277,
+    "base": 1,
+    "mutation": "truncate",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33548,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 278,
+    "base": 2,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 38008,
+    "elapsed_s": 0.033
+   },
+   {
+    "case": 279,
+    "base": 0,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33996,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 280,
+    "base": 1,
+    "mutation": "garbage_box",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34036,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 281,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34648,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 282,
+    "base": 0,
+    "mutation": "empty_track",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33924,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 283,
+    "base": 1,
+    "mutation": "config_counts",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33408,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 284,
+    "base": 2,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33328,
+    "elapsed_s": 0.02
+   },
+   {
+    "case": 285,
+    "base": 0,
+    "mutation": "oversized",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34428,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 286,
+    "base": 1,
+    "mutation": "config_counts",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33644,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 287,
+    "base": 2,
+    "mutation": "box_size",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34348,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 288,
+    "base": 0,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35476,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 289,
+    "base": 1,
+    "mutation": "empty_track",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 34188,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 290,
+    "base": 2,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33932,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 291,
+    "base": 0,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33732,
+    "elapsed_s": 0.019
+   },
+   {
+    "case": 292,
+    "base": 1,
+    "mutation": "moov_flips",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33628,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 293,
+    "base": 2,
+    "mutation": "garbage_box",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33880,
+    "elapsed_s": 0.022
+   },
+   {
+    "case": 294,
+    "base": 0,
+    "mutation": "payload_flips",
+    "kind": "qcamera.ts",
+    "outcome": "done",
+    "failure_class": null,
+    "code": null,
+    "left_output_on_failure": null,
+    "peak_rss_kib": 35700,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 295,
+    "base": 1,
+    "mutation": "config_counts",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33660,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 296,
+    "base": 2,
+    "mutation": "box_size",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33844,
+    "elapsed_s": 0.023
+   },
+   {
+    "case": 297,
+    "base": 0,
+    "mutation": "truncate",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33652,
+    "elapsed_s": 0.024
+   },
+   {
+    "case": 298,
+    "base": 1,
+    "mutation": "oversized",
+    "kind": "fcamera.hevc",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33520,
+    "elapsed_s": 0.021
+   },
+   {
+    "case": 299,
+    "base": 2,
+    "mutation": "config_counts",
+    "kind": "qcamera.ts",
+    "outcome": "failed",
+    "failure_class": "invalid",
+    "code": "invalid_input",
+    "left_output_on_failure": false,
+    "peak_rss_kib": 33600,
+    "elapsed_s": 0.019
+   }
+  ]
+ },
+ "performance": {
+  "runs": 5,
+  "warmups": 1,
+  "order": "rotated and alternately reversed per round",
+  "impls": {
+   "ffmpeg": "binary@ffmpeg",
+   "pure": "binary@pure",
+   "worker": "worker"
+  },
+  "loadavg_1_5_15_per_round": [
+   [
+    8.73,
+    7.2,
+    4.36
+   ],
+   [
+    8.51,
+    7.18,
+    4.37
+   ],
+   [
+    8.31,
+    7.16,
+    4.38
+   ],
+   [
+    8.31,
+    7.16,
+    4.38
+   ],
+   [
+    8.29,
+    7.17,
+    4.4
+   ],
+   [
+    8.34,
+    7.2,
+    4.42
+   ],
+   [
+    8.08,
+    7.17,
+    4.43
+   ]
+  ],
+  "cpu_count": 16,
+  "summary": {
+   "ffmpeg/qcamera.ts": {
+    "videos": 3,
+    "per_video": {
+     "3": {
+      "elapsed_s_median": 0.4494,
+      "elapsed_s_range": [
+       0.428,
+       0.4834
+      ],
+      "cpu_s_median": 0.5771,
+      "peak_rss_kib_max": 55864
+     },
+     "7": {
+      "elapsed_s_median": 0.442,
+      "elapsed_s_range": [
+       0.4385,
+       0.5198
+      ],
+      "cpu_s_median": 0.5702,
+      "peak_rss_kib_max": 55868
+     },
+     "9": {
+      "elapsed_s_median": 0.4622,
+      "elapsed_s_range": [
+       0.4371,
+       0.5104
+      ],
+      "cpu_s_median": 0.589,
+      "peak_rss_kib_max": 55696
+     }
+    },
+    "elapsed_s_median": 0.4494,
+    "elapsed_s_range": [
+     0.428,
+     0.5198
+    ],
+    "cpu_s_median": 0.5771,
+    "peak_rss_kib_max": 55868,
+    "peak_rss_kib_median": 55648
+   },
+   "ffmpeg/fcamera.hevc": {
+    "videos": 3,
+    "per_video": {
+     "3": {
+      "elapsed_s_median": 0.4374,
+      "elapsed_s_range": [
+       0.4144,
+       0.4957
+      ],
+      "cpu_s_median": 0.67,
+      "peak_rss_kib_max": 76128
+     },
+     "7": {
+      "elapsed_s_median": 0.4427,
+      "elapsed_s_range": [
+       0.4263,
+       0.4564
+      ],
+      "cpu_s_median": 0.6803,
+      "peak_rss_kib_max": 76084
+     },
+     "9": {
+      "elapsed_s_median": 0.4294,
+      "elapsed_s_range": [
+       0.4088,
+       0.4529
+      ],
+      "cpu_s_median": 0.6602,
+      "peak_rss_kib_max": 76352
+     }
+    },
+    "elapsed_s_median": 0.4374,
+    "elapsed_s_range": [
+     0.4088,
+     0.4957
+    ],
+    "cpu_s_median": 0.6648,
+    "peak_rss_kib_max": 76352,
+    "peak_rss_kib_median": 76084
+   },
+   "pure/qcamera.ts": {
+    "videos": 3,
+    "per_video": {
+     "3": {
+      "elapsed_s_median": 0.0671,
+      "elapsed_s_range": [
+       0.0663,
+       0.0736
+      ],
+      "cpu_s_median": 0.062,
+      "peak_rss_kib_max": 37988
+     },
+     "7": {
+      "elapsed_s_median": 0.07,
+      "elapsed_s_range": [
+       0.0624,
+       0.1657
+      ],
+      "cpu_s_median": 0.0657,
+      "peak_rss_kib_max": 38076
+     },
+     "9": {
+      "elapsed_s_median": 0.0755,
+      "elapsed_s_range": [
+       0.0689,
+       0.078
+      ],
+      "cpu_s_median": 0.0702,
+      "peak_rss_kib_max": 37936
+     }
+    },
+    "elapsed_s_median": 0.0691,
+    "elapsed_s_range": [
+     0.0624,
+     0.1657
+    ],
+    "cpu_s_median": 0.0643,
+    "peak_rss_kib_max": 38076,
+    "peak_rss_kib_median": 37840
+   },
+   "pure/fcamera.hevc": {
+    "videos": 3,
+    "per_video": {
+     "3": {
+      "elapsed_s_median": 0.1315,
+      "elapsed_s_range": [
+       0.1294,
+       0.1462
+      ],
+      "cpu_s_median": 0.1266,
+      "peak_rss_kib_max": 37608
+     },
+     "7": {
+      "elapsed_s_median": 0.1408,
+      "elapsed_s_range": [
+       0.1288,
+       0.1412
+      ],
+      "cpu_s_median": 0.1356,
+      "peak_rss_kib_max": 37540
+     },
+     "9": {
+      "elapsed_s_median": 0.1383,
+      "elapsed_s_range": [
+       0.1279,
+       0.1489
+      ],
+      "cpu_s_median": 0.1334,
+      "peak_rss_kib_max": 37732
+     }
+    },
+    "elapsed_s_median": 0.135,
+    "elapsed_s_range": [
+     0.1279,
+     0.1489
+    ],
+    "cpu_s_median": 0.1293,
+    "peak_rss_kib_max": 37732,
+    "peak_rss_kib_median": 37452
+   },
+   "worker/qcamera.ts": {
+    "videos": 3,
+    "per_video": {
+     "3": {
+      "elapsed_s_median": 0.0376,
+      "elapsed_s_range": [
+       0.034,
+       0.039
+      ],
+      "cpu_s_median": 0.0373,
+      "peak_rss_kib_max": 38196
+     },
+     "7": {
+      "elapsed_s_median": 0.0372,
+      "elapsed_s_range": [
+       0.0329,
+       0.0467
+      ],
+      "cpu_s_median": 0.0369,
+      "peak_rss_kib_max": 38164
+     },
+     "9": {
+      "elapsed_s_median": 0.0405,
+      "elapsed_s_range": [
+       0.0365,
+       0.0413
+      ],
+      "cpu_s_median": 0.0402,
+      "peak_rss_kib_max": 37960
+     }
+    },
+    "elapsed_s_median": 0.0378,
+    "elapsed_s_range": [
+     0.0329,
+     0.0467
+    ],
+    "cpu_s_median": 0.0373,
+    "peak_rss_kib_max": 38196,
+    "peak_rss_kib_median": 37912
+   },
+   "worker/fcamera.hevc": {
+    "videos": 3,
+    "per_video": {
+     "3": {
+      "elapsed_s_median": 0.1042,
+      "elapsed_s_range": [
+       0.0973,
+       0.1091
+      ],
+      "cpu_s_median": 0.1039,
+      "peak_rss_kib_max": 37548
+     },
+     "7": {
+      "elapsed_s_median": 0.1048,
+      "elapsed_s_range": [
+       0.097,
+       0.1139
+      ],
+      "cpu_s_median": 0.1058,
+      "peak_rss_kib_max": 37608
+     },
+     "9": {
+      "elapsed_s_median": 0.1025,
+      "elapsed_s_range": [
+       0.0961,
+       0.1149
+      ],
+      "cpu_s_median": 0.1021,
+      "peak_rss_kib_max": 37528
+     }
+    },
+    "elapsed_s_median": 0.1042,
+    "elapsed_s_range": [
+     0.0961,
+     0.1149
+    ],
+    "cpu_s_median": 0.1039,
+    "peak_rss_kib_max": 37608,
+    "peak_rss_kib_median": 37404
+   }
+  }
+ }
+}

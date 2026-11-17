@@ -415,17 +415,34 @@ impl Jobs {
             .await
             .context("conversion summary missing")?;
         atomic_json(&staging.join(".generation"), &generation).await?;
+        // MP4s of the published result this one took over: the journal carries the list, so
+        // `prepared/` keeps the layout it always has.
+        let carried_path = staging.join(crate::convert::CARRIED_PREVIOUS);
+        // Only an absent list means nothing was taken over. A list that cannot be read must stop
+        // the publication: read as empty, a carried MP4 would count as produced and, with originals
+        // not retained, replace the original the engine refused.
+        let carried = match read_json::<Value>(&carried_path).await {
+            Ok(list) => {
+                tokio::fs::remove_file(&carried_path).await?;
+                list
+            }
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => json!([]),
+            Err(e) => return Err(e).context("carried camera list unreadable"),
+        };
         // The MP4s this generation wrote, by size: a resumed publication tells one it moved next to
         // its original from a stored MP4 that was there before (a conversion of MP4 inputs writes none).
         let mut produced = serde_json::Map::new();
         for (_, _, mp4) in CAMERA_FILES {
+            if is_listed(&carried, mp4) {
+                continue;
+            }
             if let Ok(stat) = tokio::fs::metadata(staging.join(mp4)).await {
                 produced.insert(mp4.into(), json!(stat.len()));
             }
         }
         atomic_json(
             &folder.join(".conversion.json"),
-            &json!({"generation":generation,"produced":produced}),
+            &json!({"generation":generation,"produced":produced,"carried":carried}),
         )
         .await?;
         self.publish(record, generation).await
@@ -520,7 +537,10 @@ impl Jobs {
                 && folder.join(raw).is_file()
                 && std::fs::metadata(folder.join(mp4))
                     .is_ok_and(|m| m.is_file() && journal["produced"][mp4] == json!(m.len()));
-            if !keep && !archived && (moved || prepared.join(mp4).is_file()) {
+            // A camera taken over from the previous result was not converted by this generation:
+            // its MP4 and its original stay as that result left them.
+            let carried = is_listed(&journal["carried"], mp4);
+            if !keep && !archived && !carried && (moved || prepared.join(mp4).is_file()) {
                 // An MP4 removed by archive cleanup exists again, locally: the index must not hide it.
                 if index::location(&meta, mp4) == "removed"
                     && let Some(storage) = meta["storage"].as_object_mut()
@@ -616,6 +636,10 @@ impl Jobs {
         }
         Ok(())
     }
+}
+
+fn is_listed(list: &Value, name: &str) -> bool {
+    list.as_array().is_some_and(|l| l.iter().any(|k| k == name))
 }
 
 const CAMERA_FILES: [(&str, &str, &str); 3] = [

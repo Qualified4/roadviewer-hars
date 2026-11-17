@@ -14,8 +14,8 @@ use std::{io::Read, path::Path};
 pub const TIMESCALE: u32 = 1_000_000;
 const READ_CHUNK: usize = 1024 * 1024;
 
-/// `sps_max_num_reorder_pics` of the highest sub-layer, which FFmpeg exposes
-/// as `has_b_frames` and the FFmpeg engine requires to be zero.
+/// `sps_max_num_reorder_pics` of the highest sub-layer (a reader's
+/// `has_b_frames`); this engine maps one picture per clock entry, so it must be zero.
 pub fn reorder_pictures(sps: &[u8]) -> anyhow::Result<u32> {
     ensure!(sps.len() > 2, "truncated SPS");
     let mut r = Bits::new(&sps[2..]);
@@ -173,6 +173,49 @@ fn entry(sets: &[(u8, Vec<u8>)]) -> anyhow::Result<SampleEntry> {
     .map_err(|e| anyhow::anyhow!("invalid HEVC decoder configuration: {e}"))?;
     super::mp4::check_dimensions(entry.visual.width, entry.visual.height)?;
     Ok(SampleEntry::Hvc1(entry))
+}
+
+/// The upload check of a raw HEVC original: the size its first SPS states, from the parameter
+/// sets before its first picture. Reads no further than that picture, within the NAL bound.
+pub fn probe(source: &Path) -> anyhow::Result<serde_json::Value> {
+    let mut sets = Sets::default();
+    let picture = std::cell::Cell::new(false);
+    let mut on = |u: Unit<'_>| -> anyhow::Result<()> {
+        if picture.get() {
+            return Ok(());
+        }
+        let kind = kind(u.raw, true)?;
+        if is_parameter_set(kind, true) {
+            sets.add(kind, u.raw)?;
+        } else if kind < 32 {
+            picture.set(true);
+        }
+        Ok(())
+    };
+    let mut file = std::fs::File::open(source)?;
+    let mut scanner = Scanner::new();
+    let mut chunk = vec![0u8; READ_CHUNK];
+    let mut read = 0;
+    while !picture.get() {
+        let n = file.read(&mut chunk)?;
+        if n == 0 {
+            break;
+        }
+        read += n;
+        ensure!(
+            read <= super::annexb::NAL_LIMIT + READ_CHUNK,
+            "no HEVC picture within the NAL bound"
+        );
+        scanner.push(&chunk[..n], &mut on)?;
+    }
+    if !picture.get() {
+        scanner.finish(&mut on)?;
+    }
+    ensure!(picture.get(), "missing pictures or decoder configuration");
+    let (width, height) = super::annexb::picture_size(true, &sets.configuration())?;
+    Ok(
+        serde_json::json!({"streams":[{"codec_type":"video","codec_name":"hevc","width":width,"height":height}]}),
+    )
 }
 
 /// One read of the Annex B input hashes it with the independent `NalHasher`

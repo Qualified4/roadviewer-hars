@@ -1,0 +1,2340 @@
+{
+ "date": "2026-11-17",
+ "binary": "release a5b1ce0 (docs/format-support)",
+ "server_path": "nice, ionice, shell tools; no ffmpeg/ffprobe",
+ "corpus_measured": {
+  "roadviewer-13-segments-original": {
+   "fcamera.hevc": [
+    {
+     "container": "hevc",
+     "codec": "hevc",
+     "profile": "Main",
+     "level": 150,
+     "size": "1344x760",
+     "coded": "1344x768",
+     "pix_fmt": "yuv420p",
+     "field_order": null,
+     "has_b_frames": 0,
+     "r_frame_rate": "1000000000/50000001",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      20
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "tiles_enabled_flag": "1",
+      "num_tile_columns_minus1": "1",
+      "num_tile_rows_minus1": "0",
+      "entropy_coding_sync_enabled_flag": "0",
+      "general_tier_flag": "0",
+      "general_level_idc": "150",
+      "bit_depth_luma_minus8": "0",
+      "chroma_format_idc": "1",
+      "sps_max_num_reorder_pics[0]": null,
+      "vui_timing_info_present_flag": "1",
+      "conf_win_bottom_offset": "4",
+      "slice_segments_first3": 8,
+      "nal_types_first3": [
+       "1",
+       "19"
+      ],
+      "vps_count_first3": 2
+     }
+    },
+    {
+     "container": "hevc",
+     "codec": "hevc",
+     "profile": "Main",
+     "level": 150,
+     "size": "1344x760",
+     "coded": "1344x768",
+     "pix_fmt": "yuv420p",
+     "field_order": null,
+     "has_b_frames": 0,
+     "r_frame_rate": "1000000000/50000001",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      20
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "tiles_enabled_flag": "1",
+      "num_tile_columns_minus1": "1",
+      "num_tile_rows_minus1": "0",
+      "entropy_coding_sync_enabled_flag": "0",
+      "general_tier_flag": "0",
+      "general_level_idc": "150",
+      "bit_depth_luma_minus8": "0",
+      "chroma_format_idc": "1",
+      "sps_max_num_reorder_pics[0]": null,
+      "vui_timing_info_present_flag": "1",
+      "conf_win_bottom_offset": "4",
+      "slice_segments_first3": 8,
+      "nal_types_first3": [
+       "1",
+       "19"
+      ],
+      "vps_count_first3": 2
+     }
+    },
+    {
+     "container": "hevc",
+     "codec": "hevc",
+     "profile": "Main",
+     "level": 150,
+     "size": "1344x760",
+     "coded": "1344x768",
+     "pix_fmt": "yuv420p",
+     "field_order": null,
+     "has_b_frames": 0,
+     "r_frame_rate": "1000000000/50000001",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      20
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "tiles_enabled_flag": "1",
+      "num_tile_columns_minus1": "1",
+      "num_tile_rows_minus1": "0",
+      "entropy_coding_sync_enabled_flag": "0",
+      "general_tier_flag": "0",
+      "general_level_idc": "150",
+      "bit_depth_luma_minus8": "0",
+      "chroma_format_idc": "1",
+      "sps_max_num_reorder_pics[0]": null,
+      "vui_timing_info_present_flag": "1",
+      "conf_win_bottom_offset": "4",
+      "slice_segments_first3": 8,
+      "nal_types_first3": [
+       "1",
+       "19"
+      ],
+      "vps_count_first3": 2
+     }
+    }
+   ],
+   "qcamera.ts": [
+    {
+     "container": "mpegts",
+     "codec": "h264",
+     "profile": "High",
+     "level": 21,
+     "size": "526x330",
+     "coded": "526x330",
+     "pix_fmt": "yuv420p",
+     "field_order": "progressive",
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "profile_idc": "100",
+      "level_idc": "21",
+      "entropy_coding_mode_flag": "1",
+      "frame_mbs_only_flag": "1",
+      "chroma_format_idc": "1",
+      "bit_depth_luma_minus8": "0",
+      "seq_scaling_matrix_present_flag": "0",
+      "pic_order_cnt_type": "2",
+      "num_slice_groups_minus1": "0",
+      "max_num_reorder_frames": "0",
+      "slices_first3": 4
+     }
+    },
+    {
+     "container": "mpegts",
+     "codec": "h264",
+     "profile": "High",
+     "level": 21,
+     "size": "526x330",
+     "coded": "526x330",
+     "pix_fmt": "yuv420p",
+     "field_order": "progressive",
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "profile_idc": "100",
+      "level_idc": "21",
+      "entropy_coding_mode_flag": "1",
+      "frame_mbs_only_flag": "1",
+      "chroma_format_idc": "1",
+      "bit_depth_luma_minus8": "0",
+      "seq_scaling_matrix_present_flag": "0",
+      "pic_order_cnt_type": "2",
+      "num_slice_groups_minus1": "0",
+      "max_num_reorder_frames": "0",
+      "slices_first3": 4
+     }
+    },
+    {
+     "container": "mpegts",
+     "codec": "h264",
+     "profile": "High",
+     "level": 21,
+     "size": "526x330",
+     "coded": "526x330",
+     "pix_fmt": "yuv420p",
+     "field_order": "progressive",
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "profile_idc": "100",
+      "level_idc": "21",
+      "entropy_coding_mode_flag": "1",
+      "frame_mbs_only_flag": "1",
+      "chroma_format_idc": "1",
+      "bit_depth_luma_minus8": "0",
+      "seq_scaling_matrix_present_flag": "0",
+      "pic_order_cnt_type": "2",
+      "num_slice_groups_minus1": "0",
+      "max_num_reorder_frames": "0",
+      "slices_first3": 4
+     }
+    }
+   ]
+  },
+  "roadviewer-14-segments-mp4": {
+   "fcamera.mp4": [
+    {
+     "container": "mov,mp4,m4a,3gp,3g2,mj2",
+     "codec": "hevc",
+     "profile": "Main",
+     "level": 150,
+     "size": "1344x760",
+     "coded": "1344x768",
+     "pix_fmt": "yuv420p",
+     "field_order": null,
+     "has_b_frames": 0,
+     "r_frame_rate": "240/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      20
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "tiles_enabled_flag": "1",
+      "num_tile_columns_minus1": "1",
+      "num_tile_rows_minus1": "0",
+      "entropy_coding_sync_enabled_flag": "0",
+      "general_tier_flag": "0",
+      "general_level_idc": "150",
+      "bit_depth_luma_minus8": "0",
+      "chroma_format_idc": "1",
+      "sps_max_num_reorder_pics[0]": null,
+      "vui_timing_info_present_flag": "1",
+      "conf_win_bottom_offset": "4",
+      "slice_segments_first3": 8,
+      "nal_types_first3": [
+       "1",
+       "19"
+      ],
+      "vps_count_first3": 1
+     }
+    },
+    {
+     "container": "mov,mp4,m4a,3gp,3g2,mj2",
+     "codec": "hevc",
+     "profile": "Main",
+     "level": 150,
+     "size": "1344x760",
+     "coded": "1344x768",
+     "pix_fmt": "yuv420p",
+     "field_order": null,
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      20
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "tiles_enabled_flag": "1",
+      "num_tile_columns_minus1": "1",
+      "num_tile_rows_minus1": "0",
+      "entropy_coding_sync_enabled_flag": "0",
+      "general_tier_flag": "0",
+      "general_level_idc": "150",
+      "bit_depth_luma_minus8": "0",
+      "chroma_format_idc": "1",
+      "sps_max_num_reorder_pics[0]": null,
+      "vui_timing_info_present_flag": "1",
+      "conf_win_bottom_offset": "4",
+      "slice_segments_first3": 8,
+      "nal_types_first3": [
+       "1",
+       "19"
+      ],
+      "vps_count_first3": 1
+     }
+    },
+    {
+     "container": "mov,mp4,m4a,3gp,3g2,mj2",
+     "codec": "hevc",
+     "profile": "Main",
+     "level": 150,
+     "size": "1344x760",
+     "coded": "1344x768",
+     "pix_fmt": "yuv420p",
+     "field_order": null,
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      20
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "tiles_enabled_flag": "1",
+      "num_tile_columns_minus1": "1",
+      "num_tile_rows_minus1": "0",
+      "entropy_coding_sync_enabled_flag": "0",
+      "general_tier_flag": "0",
+      "general_level_idc": "150",
+      "bit_depth_luma_minus8": "0",
+      "chroma_format_idc": "1",
+      "sps_max_num_reorder_pics[0]": null,
+      "vui_timing_info_present_flag": "1",
+      "conf_win_bottom_offset": "4",
+      "slice_segments_first3": 8,
+      "nal_types_first3": [
+       "1",
+       "19"
+      ],
+      "vps_count_first3": 1
+     }
+    }
+   ],
+   "qcamera.mp4": [
+    {
+     "container": "mov,mp4,m4a,3gp,3g2,mj2",
+     "codec": "h264",
+     "profile": "High",
+     "level": 21,
+     "size": "526x330",
+     "coded": "526x330",
+     "pix_fmt": "yuv420p",
+     "field_order": "progressive",
+     "has_b_frames": 0,
+     "r_frame_rate": "240/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      15
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "profile_idc": "100",
+      "level_idc": "21",
+      "entropy_coding_mode_flag": "1",
+      "frame_mbs_only_flag": "1",
+      "chroma_format_idc": "1",
+      "bit_depth_luma_minus8": "0",
+      "seq_scaling_matrix_present_flag": "0",
+      "pic_order_cnt_type": "2",
+      "num_slice_groups_minus1": "0",
+      "max_num_reorder_frames": "0",
+      "slices_first3": 4
+     }
+    },
+    {
+     "container": "mov,mp4,m4a,3gp,3g2,mj2",
+     "codec": "h264",
+     "profile": "High",
+     "level": 21,
+     "size": "526x330",
+     "coded": "526x330",
+     "pix_fmt": "yuv420p",
+     "field_order": "progressive",
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      15
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "profile_idc": "100",
+      "level_idc": "21",
+      "entropy_coding_mode_flag": "1",
+      "frame_mbs_only_flag": "1",
+      "chroma_format_idc": "1",
+      "bit_depth_luma_minus8": "0",
+      "seq_scaling_matrix_present_flag": "0",
+      "pic_order_cnt_type": "2",
+      "num_slice_groups_minus1": "0",
+      "max_num_reorder_frames": "0",
+      "slices_first3": 4
+     }
+    },
+    {
+     "container": "mov,mp4,m4a,3gp,3g2,mj2",
+     "codec": "h264",
+     "profile": "High",
+     "level": 21,
+     "size": "526x330",
+     "coded": "526x330",
+     "pix_fmt": "yuv420p",
+     "field_order": "progressive",
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      15
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "profile_idc": "100",
+      "level_idc": "21",
+      "entropy_coding_mode_flag": "1",
+      "frame_mbs_only_flag": "1",
+      "chroma_format_idc": "1",
+      "bit_depth_luma_minus8": "0",
+      "seq_scaling_matrix_present_flag": "0",
+      "pic_order_cnt_type": "2",
+      "num_slice_groups_minus1": "0",
+      "max_num_reorder_frames": "0",
+      "slices_first3": 4
+     }
+    }
+   ]
+  },
+  "roadviewer-47-segments-mp4": {
+   "ecamera.mp4": [
+    {
+     "container": "mov,mp4,m4a,3gp,3g2,mj2",
+     "codec": "hevc",
+     "profile": "Main",
+     "level": 150,
+     "size": "1344x760",
+     "coded": "1344x768",
+     "pix_fmt": "yuv420p",
+     "field_order": null,
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      20
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "tiles_enabled_flag": "1",
+      "num_tile_columns_minus1": "1",
+      "num_tile_rows_minus1": "0",
+      "entropy_coding_sync_enabled_flag": "0",
+      "general_tier_flag": "0",
+      "general_level_idc": "150",
+      "bit_depth_luma_minus8": "0",
+      "chroma_format_idc": "1",
+      "sps_max_num_reorder_pics[0]": null,
+      "vui_timing_info_present_flag": "1",
+      "conf_win_bottom_offset": "4",
+      "slice_segments_first3": 8,
+      "nal_types_first3": [
+       "1",
+       "19"
+      ],
+      "vps_count_first3": 1
+     }
+    },
+    {
+     "container": "mov,mp4,m4a,3gp,3g2,mj2",
+     "codec": "hevc",
+     "profile": "Main",
+     "level": 150,
+     "size": "1344x760",
+     "coded": "1344x768",
+     "pix_fmt": "yuv420p",
+     "field_order": null,
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      20
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "tiles_enabled_flag": "1",
+      "num_tile_columns_minus1": "1",
+      "num_tile_rows_minus1": "0",
+      "entropy_coding_sync_enabled_flag": "0",
+      "general_tier_flag": "0",
+      "general_level_idc": "150",
+      "bit_depth_luma_minus8": "0",
+      "chroma_format_idc": "1",
+      "sps_max_num_reorder_pics[0]": null,
+      "vui_timing_info_present_flag": "1",
+      "conf_win_bottom_offset": "4",
+      "slice_segments_first3": 10,
+      "nal_types_first3": [
+       "1",
+       "19"
+      ],
+      "vps_count_first3": 1
+     }
+    },
+    {
+     "container": "mov,mp4,m4a,3gp,3g2,mj2",
+     "codec": "hevc",
+     "profile": "Main",
+     "level": 150,
+     "size": "1344x760",
+     "coded": "1344x768",
+     "pix_fmt": "yuv420p",
+     "field_order": null,
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      20
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "tiles_enabled_flag": "1",
+      "num_tile_columns_minus1": "1",
+      "num_tile_rows_minus1": "0",
+      "entropy_coding_sync_enabled_flag": "0",
+      "general_tier_flag": "0",
+      "general_level_idc": "150",
+      "bit_depth_luma_minus8": "0",
+      "chroma_format_idc": "1",
+      "sps_max_num_reorder_pics[0]": null,
+      "vui_timing_info_present_flag": "1",
+      "conf_win_bottom_offset": "4",
+      "slice_segments_first3": 8,
+      "nal_types_first3": [
+       "1",
+       "19"
+      ],
+      "vps_count_first3": 1
+     }
+    }
+   ],
+   "fcamera.mp4": [
+    {
+     "container": "mov,mp4,m4a,3gp,3g2,mj2",
+     "codec": "hevc",
+     "profile": "Main",
+     "level": 150,
+     "size": "1344x760",
+     "coded": "1344x768",
+     "pix_fmt": "yuv420p",
+     "field_order": null,
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      20
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "tiles_enabled_flag": "1",
+      "num_tile_columns_minus1": "1",
+      "num_tile_rows_minus1": "0",
+      "entropy_coding_sync_enabled_flag": "0",
+      "general_tier_flag": "0",
+      "general_level_idc": "150",
+      "bit_depth_luma_minus8": "0",
+      "chroma_format_idc": "1",
+      "sps_max_num_reorder_pics[0]": null,
+      "vui_timing_info_present_flag": "1",
+      "conf_win_bottom_offset": "4",
+      "slice_segments_first3": 8,
+      "nal_types_first3": [
+       "1",
+       "19"
+      ],
+      "vps_count_first3": 1
+     }
+    },
+    {
+     "container": "mov,mp4,m4a,3gp,3g2,mj2",
+     "codec": "hevc",
+     "profile": "Main",
+     "level": 150,
+     "size": "1344x760",
+     "coded": "1344x768",
+     "pix_fmt": "yuv420p",
+     "field_order": null,
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      20
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "tiles_enabled_flag": "1",
+      "num_tile_columns_minus1": "1",
+      "num_tile_rows_minus1": "0",
+      "entropy_coding_sync_enabled_flag": "0",
+      "general_tier_flag": "0",
+      "general_level_idc": "150",
+      "bit_depth_luma_minus8": "0",
+      "chroma_format_idc": "1",
+      "sps_max_num_reorder_pics[0]": null,
+      "vui_timing_info_present_flag": "1",
+      "conf_win_bottom_offset": "4",
+      "slice_segments_first3": 8,
+      "nal_types_first3": [
+       "1",
+       "19"
+      ],
+      "vps_count_first3": 1
+     }
+    },
+    {
+     "container": "mov,mp4,m4a,3gp,3g2,mj2",
+     "codec": "hevc",
+     "profile": "Main",
+     "level": 150,
+     "size": "1344x760",
+     "coded": "1344x768",
+     "pix_fmt": "yuv420p",
+     "field_order": null,
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      20
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "tiles_enabled_flag": "1",
+      "num_tile_columns_minus1": "1",
+      "num_tile_rows_minus1": "0",
+      "entropy_coding_sync_enabled_flag": "0",
+      "general_tier_flag": "0",
+      "general_level_idc": "150",
+      "bit_depth_luma_minus8": "0",
+      "chroma_format_idc": "1",
+      "sps_max_num_reorder_pics[0]": null,
+      "vui_timing_info_present_flag": "1",
+      "conf_win_bottom_offset": "4",
+      "slice_segments_first3": 8,
+      "nal_types_first3": [
+       "1",
+       "19"
+      ],
+      "vps_count_first3": 1
+     }
+    }
+   ],
+   "qcamera.mp4": [
+    {
+     "container": "mov,mp4,m4a,3gp,3g2,mj2",
+     "codec": "h264",
+     "profile": "High",
+     "level": 21,
+     "size": "526x330",
+     "coded": "526x330",
+     "pix_fmt": "yuv420p",
+     "field_order": "progressive",
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      15
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "profile_idc": "100",
+      "level_idc": "21",
+      "entropy_coding_mode_flag": "1",
+      "frame_mbs_only_flag": "1",
+      "chroma_format_idc": "1",
+      "bit_depth_luma_minus8": "0",
+      "seq_scaling_matrix_present_flag": "0",
+      "pic_order_cnt_type": "2",
+      "num_slice_groups_minus1": "0",
+      "max_num_reorder_frames": "0",
+      "slices_first3": 4
+     }
+    },
+    {
+     "container": "mov,mp4,m4a,3gp,3g2,mj2",
+     "codec": "h264",
+     "profile": "High",
+     "level": 21,
+     "size": "526x330",
+     "coded": "526x330",
+     "pix_fmt": "yuv420p",
+     "field_order": "progressive",
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      15
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "profile_idc": "100",
+      "level_idc": "21",
+      "entropy_coding_mode_flag": "1",
+      "frame_mbs_only_flag": "1",
+      "chroma_format_idc": "1",
+      "bit_depth_luma_minus8": "0",
+      "seq_scaling_matrix_present_flag": "0",
+      "pic_order_cnt_type": "2",
+      "num_slice_groups_minus1": "0",
+      "max_num_reorder_frames": "0",
+      "slices_first3": 4
+     }
+    },
+    {
+     "container": "mov,mp4,m4a,3gp,3g2,mj2",
+     "codec": "h264",
+     "profile": "High",
+     "level": 21,
+     "size": "526x330",
+     "coded": "526x330",
+     "pix_fmt": "yuv420p",
+     "field_order": "progressive",
+     "has_b_frames": 0,
+     "r_frame_rate": "20/1",
+     "other_streams": [],
+     "packets": 1200,
+     "keyframe_gaps": [
+      15
+     ],
+     "pts_ne_dts": false,
+     "bitstream": {
+      "profile_idc": "100",
+      "level_idc": "21",
+      "entropy_coding_mode_flag": "1",
+      "frame_mbs_only_flag": "1",
+      "chroma_format_idc": "1",
+      "bit_depth_luma_minus8": "0",
+      "seq_scaling_matrix_present_flag": "0",
+      "pic_order_cnt_type": "2",
+      "num_slice_groups_minus1": "0",
+      "max_num_reorder_frames": "0",
+      "slices_first3": 4
+     }
+    }
+   ]
+  }
+ },
+ "cases": {
+  "B1_fcamera_1928x1208": {
+   "upload": {
+    "accepted": true,
+    "finish": {
+     "duplicates": [],
+     "updated": []
+    }
+   },
+   "states": [
+    "unconverted",
+    "processing",
+    "ready"
+   ],
+   "status": "ready",
+   "cameras": [
+    "front"
+   ],
+   "warnings": [],
+   "error": null,
+   "row_fields": {
+    "status": "ready",
+    "thumbnail": true,
+    "warnings": [],
+    "error": null
+   },
+   "events": [],
+   "originals": {
+    "rlog.zst": "unchanged",
+    "fcamera.hevc": "gone"
+   },
+   "play": {
+    "front": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    }
+   },
+   "thumbnail": {
+    "status": 200,
+    "jpeg": true
+   },
+   "thumbnail_failed_marker": false,
+   "export": {
+    "fcamera.hevc": {
+     "status": 200,
+     "bytes_equal_upload": false,
+     "normalized_nal_equal": true,
+     "nal_units_equal": false,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2560,
+      2560
+     ]
+    }
+   },
+   "apis": {
+    "data": 200,
+    "telemetry": 200,
+    "track": 200
+   },
+   "zip": {
+    "status": 200,
+    "members": 2
+   },
+   "list": {
+    "status": 200,
+    "has_record": true
+   },
+   "server_running": true,
+   "server_running_at_end": true
+  },
+  "B2_ecamera_1928x1208": {
+   "upload": {
+    "accepted": true,
+    "finish": {
+     "duplicates": [],
+     "updated": []
+    }
+   },
+   "states": [
+    "unconverted",
+    "processing",
+    "ready"
+   ],
+   "status": "ready",
+   "cameras": [
+    "wide"
+   ],
+   "warnings": [],
+   "error": null,
+   "row_fields": {
+    "status": "ready",
+    "thumbnail": true,
+    "warnings": [],
+    "error": null
+   },
+   "events": [],
+   "originals": {
+    "rlog.zst": "unchanged",
+    "ecamera.hevc": "gone"
+   },
+   "play": {
+    "wide": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    }
+   },
+   "thumbnail": {
+    "status": 200,
+    "jpeg": true
+   },
+   "thumbnail_failed_marker": false,
+   "export": {
+    "ecamera.hevc": {
+     "status": 200,
+     "bytes_equal_upload": false,
+     "normalized_nal_equal": true,
+     "nal_units_equal": false,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2560,
+      2560
+     ]
+    }
+   },
+   "apis": {
+    "data": 200,
+    "telemetry": 200,
+    "track": 200
+   },
+   "zip": {
+    "status": 200,
+    "members": 2
+   },
+   "list": {
+    "status": 200,
+    "has_record": true
+   },
+   "server_running": true,
+   "server_running_at_end": true
+  },
+  "B3_ecamera_device_1344x760": {
+   "upload": {
+    "accepted": true,
+    "finish": {
+     "duplicates": [],
+     "updated": []
+    }
+   },
+   "states": [
+    "unconverted",
+    "processing",
+    "ready"
+   ],
+   "status": "ready",
+   "cameras": [
+    "wide"
+   ],
+   "warnings": [],
+   "error": null,
+   "row_fields": {
+    "status": "ready",
+    "thumbnail": true,
+    "warnings": [],
+    "error": null
+   },
+   "events": [],
+   "originals": {
+    "rlog.zst": "unchanged",
+    "ecamera.hevc": "gone"
+   },
+   "play": {
+    "wide": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    }
+   },
+   "thumbnail": {
+    "status": 200,
+    "jpeg": true
+   },
+   "thumbnail_failed_marker": false,
+   "export": {
+    "ecamera.hevc": {
+     "status": 200,
+     "bytes_equal_upload": false,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2580,
+      2580
+     ]
+    }
+   },
+   "apis": {
+    "data": 200,
+    "telemetry": 200,
+    "track": 200
+   },
+   "zip": {
+    "status": 200,
+    "members": 2
+   },
+   "list": {
+    "status": 200,
+    "has_record": true
+   },
+   "server_running": true,
+   "server_running_at_end": true
+  },
+  "B4_dcamera": {
+   "upload": {
+    "refused": {
+     "step": "manifest",
+     "status": 400,
+     "error": "invalid_file_path",
+     "message": null
+    }
+   },
+   "server_running_at_end": true
+  },
+  "B5_qcamera_with_aac": {
+   "upload": {
+    "accepted": true,
+    "finish": {
+     "duplicates": [],
+     "updated": []
+    }
+   },
+   "states": [
+    "unconverted",
+    "processing",
+    "ready"
+   ],
+   "status": "ready",
+   "cameras": [
+    "front",
+    "qcamera"
+   ],
+   "warnings": [],
+   "error": null,
+   "row_fields": {
+    "status": "ready",
+    "thumbnail": true,
+    "warnings": [],
+    "error": null
+   },
+   "events": [],
+   "originals": {
+    "rlog.zst": "unchanged",
+    "fcamera.hevc": "gone",
+    "qcamera.ts": "gone"
+   },
+   "play": {
+    "front": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    },
+    "qcamera": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    }
+   },
+   "thumbnail": {
+    "status": 200,
+    "jpeg": true
+   },
+   "thumbnail_failed_marker": false,
+   "export": {
+    "fcamera.hevc": {
+     "status": 200,
+     "bytes_equal_upload": false,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2580,
+      2580
+     ]
+    },
+    "qcamera.ts": {
+     "status": 200,
+     "bytes_equal_upload": false,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2560,
+      2560
+     ]
+    }
+   },
+   "apis": {
+    "data": 200,
+    "telemetry": 200,
+    "track": 200
+   },
+   "zip": {
+    "status": 200,
+    "members": 3
+   },
+   "list": {
+    "status": 200,
+    "has_record": true
+   },
+   "server_running": true,
+   "server_running_at_end": true
+  },
+  "B6_pc_qcamera_libx264_defaults": {
+   "upload": {
+    "accepted": true,
+    "finish": {
+     "duplicates": [],
+     "updated": []
+    }
+   },
+   "states": [
+    "unconverted",
+    "processing",
+    "ready"
+   ],
+   "status": "ready",
+   "cameras": [
+    "front"
+   ],
+   "warnings": [
+    "qcamera 영상 준비 실패: unsupported: reading the camera original: unsupported by pure remux: H.264 picture reordering in TS"
+   ],
+   "error": null,
+   "row_fields": {
+    "status": "ready",
+    "thumbnail": true,
+    "warnings": [
+     "qcamera 영상 준비 실패: unsupported: reading the camera original: unsupported by pure remux: H.264 picture reordering in TS"
+    ],
+    "error": null
+   },
+   "events": [
+    {
+     "event": "remux_failure",
+     "engine": "pure",
+     "kind": "qcamera.ts",
+     "failure_class": "unsupported",
+     "reason_code": "unsupported",
+     "fallback": false
+    }
+   ],
+   "originals": {
+    "rlog.zst": "unchanged",
+    "fcamera.hevc": "gone",
+    "qcamera.ts": "unchanged"
+   },
+   "play": {
+    "front": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    }
+   },
+   "thumbnail": {
+    "status": 200,
+    "jpeg": true
+   },
+   "thumbnail_failed_marker": false,
+   "export": {
+    "fcamera.hevc": {
+     "status": 200,
+     "bytes_equal_upload": false,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2580,
+      2580
+     ]
+    },
+    "qcamera.ts": {
+     "status": 200,
+     "bytes_equal_upload": true,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2411,
+      2411
+     ]
+    }
+   },
+   "apis": {
+    "data": 200,
+    "telemetry": 200,
+    "track": 200
+   },
+   "zip": {
+    "status": 200,
+    "members": 3
+   },
+   "list": {
+    "status": 200,
+    "has_record": true
+   },
+   "server_running": true,
+   "server_running_at_end": true
+  },
+  "B7_pc_fcamera_ffvhuff_matroska": {
+   "upload": {
+    "refused": {
+     "step": "finish",
+     "status": 400,
+     "error": "invalid_file",
+     "message": null
+    }
+   },
+   "server_running_at_end": true
+  },
+  "C01_bframe_ts": {
+   "upload": {
+    "accepted": true,
+    "finish": {
+     "duplicates": [],
+     "updated": []
+    }
+   },
+   "states": [
+    "unconverted",
+    "queued",
+    "processing",
+    "ready"
+   ],
+   "status": "ready",
+   "cameras": [
+    "front"
+   ],
+   "warnings": [
+    "qcamera 영상 준비 실패: unsupported: reading the camera original: unsupported by pure remux: H.264 picture reordering in TS"
+   ],
+   "error": null,
+   "row_fields": {
+    "status": "ready",
+    "thumbnail": true,
+    "warnings": [
+     "qcamera 영상 준비 실패: unsupported: reading the camera original: unsupported by pure remux: H.264 picture reordering in TS"
+    ],
+    "error": null
+   },
+   "events": [
+    {
+     "event": "remux_failure",
+     "engine": "pure",
+     "kind": "qcamera.ts",
+     "failure_class": "unsupported",
+     "reason_code": "unsupported",
+     "fallback": false
+    }
+   ],
+   "originals": {
+    "rlog.zst": "unchanged",
+    "fcamera.hevc": "gone",
+    "qcamera.ts": "unchanged"
+   },
+   "play": {
+    "front": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    }
+   },
+   "thumbnail": {
+    "status": 200,
+    "jpeg": true
+   },
+   "thumbnail_failed_marker": false,
+   "export": {
+    "fcamera.hevc": {
+     "status": 200,
+     "bytes_equal_upload": false,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2580,
+      2580
+     ]
+    },
+    "qcamera.ts": {
+     "status": 200,
+     "bytes_equal_upload": true,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2561,
+      2561
+     ]
+    }
+   },
+   "apis": {
+    "data": 200,
+    "telemetry": 200,
+    "track": 200
+   },
+   "zip": {
+    "status": 200,
+    "members": 3
+   },
+   "list": {
+    "status": 200,
+    "has_record": true
+   },
+   "server_running": true,
+   "server_running_at_end": true,
+   "with_previous_result": {
+    "status": "ready",
+    "cameras": [
+     "front",
+     "qcamera"
+    ],
+    "warnings": [
+     "qcamera 영상 준비 실패: unsupported: reading the camera original: unsupported by pure remux: H.264 picture reordering in TS (이전 변환 결과 유지)"
+    ],
+    "error": null,
+    "previous_mp4_bytes_kept": true,
+    "refused_original_unchanged": true,
+    "play": {
+     "front": true,
+     "qcamera": true
+    },
+    "server_running": true,
+    "events": [
+     {
+      "event": "remux_failure",
+      "engine": "pure",
+      "kind": "qcamera.ts",
+      "failure_class": "unsupported",
+      "reason_code": "unsupported",
+      "fallback": false
+     }
+    ]
+   }
+  },
+  "C02_interlaced_ts": {
+   "upload": {
+    "accepted": true,
+    "finish": {
+     "duplicates": [],
+     "updated": []
+    }
+   },
+   "states": [
+    "unconverted",
+    "processing",
+    "ready"
+   ],
+   "status": "ready",
+   "cameras": [
+    "front"
+   ],
+   "warnings": [
+    "qcamera 영상 준비 실패: unsupported: reading the camera original: unsupported by pure remux: interlaced H.264"
+   ],
+   "error": null,
+   "row_fields": {
+    "status": "ready",
+    "thumbnail": true,
+    "warnings": [
+     "qcamera 영상 준비 실패: unsupported: reading the camera original: unsupported by pure remux: interlaced H.264"
+    ],
+    "error": null
+   },
+   "events": [
+    {
+     "event": "remux_failure",
+     "engine": "pure",
+     "kind": "qcamera.ts",
+     "failure_class": "unsupported",
+     "reason_code": "unsupported",
+     "fallback": false
+    }
+   ],
+   "originals": {
+    "rlog.zst": "unchanged",
+    "fcamera.hevc": "gone",
+    "qcamera.ts": "unchanged"
+   },
+   "play": {
+    "front": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    }
+   },
+   "thumbnail": {
+    "status": 200,
+    "jpeg": true
+   },
+   "thumbnail_failed_marker": false,
+   "export": {
+    "fcamera.hevc": {
+     "status": 200,
+     "bytes_equal_upload": false,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2580,
+      2580
+     ]
+    },
+    "qcamera.ts": {
+     "status": 200,
+     "bytes_equal_upload": true,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      3761,
+      3761
+     ]
+    }
+   },
+   "apis": {
+    "data": 200,
+    "telemetry": 200,
+    "track": 200
+   },
+   "zip": {
+    "status": 200,
+    "members": 3
+   },
+   "list": {
+    "status": 200,
+    "has_record": true
+   },
+   "server_running": true,
+   "server_running_at_end": true,
+   "with_previous_result": {
+    "status": "ready",
+    "cameras": [
+     "front",
+     "qcamera"
+    ],
+    "warnings": [
+     "qcamera 영상 준비 실패: unsupported: reading the camera original: unsupported by pure remux: interlaced H.264 (이전 변환 결과 유지)"
+    ],
+    "error": null,
+    "previous_mp4_bytes_kept": true,
+    "refused_original_unchanged": true,
+    "play": {
+     "front": true,
+     "qcamera": true
+    },
+    "server_running": true,
+    "events": [
+     {
+      "event": "remux_failure",
+      "engine": "pure",
+      "kind": "qcamera.ts",
+      "failure_class": "unsupported",
+      "reason_code": "unsupported",
+      "fallback": false
+     }
+    ]
+   }
+  },
+  "C03_bframe_hevc": {
+   "upload": {
+    "accepted": true,
+    "finish": {
+     "duplicates": [],
+     "updated": []
+    }
+   },
+   "states": [
+    "unconverted",
+    "processing",
+    "ready"
+   ],
+   "status": "ready",
+   "cameras": [
+    "qcamera"
+   ],
+   "warnings": [
+    "fcamera.hevc 영상 준비 실패: unsupported: reading the camera original: unsupported by pure remux: HEVC B frame mapping is not supported"
+   ],
+   "error": null,
+   "row_fields": {
+    "status": "ready",
+    "thumbnail": true,
+    "warnings": [
+     "fcamera.hevc 영상 준비 실패: unsupported: reading the camera original: unsupported by pure remux: HEVC B frame mapping is not supported"
+    ],
+    "error": null
+   },
+   "events": [
+    {
+     "event": "remux_failure",
+     "engine": "pure",
+     "kind": "fcamera.hevc",
+     "failure_class": "unsupported",
+     "reason_code": "unsupported",
+     "fallback": false
+    }
+   ],
+   "originals": {
+    "rlog.zst": "unchanged",
+    "qcamera.ts": "gone",
+    "fcamera.hevc": "unchanged"
+   },
+   "play": {
+    "qcamera": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    }
+   },
+   "thumbnail": {
+    "status": 200,
+    "jpeg": true
+   },
+   "thumbnail_failed_marker": false,
+   "export": {
+    "qcamera.ts": {
+     "status": 200,
+     "bytes_equal_upload": true,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2560,
+      2560
+     ]
+    },
+    "fcamera.hevc": {
+     "status": 200,
+     "bytes_equal_upload": true,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      1440,
+      1440
+     ]
+    }
+   },
+   "apis": {
+    "data": 200,
+    "telemetry": 200,
+    "track": 200
+   },
+   "zip": {
+    "status": 200,
+    "members": 3
+   },
+   "list": {
+    "status": 200,
+    "has_record": true
+   },
+   "server_running": true,
+   "server_running_at_end": true,
+   "with_previous_result": {
+    "status": "ready",
+    "cameras": [
+     "front",
+     "qcamera"
+    ],
+    "warnings": [
+     "fcamera.hevc 영상 준비 실패: unsupported: reading the camera original: unsupported by pure remux: HEVC B frame mapping is not supported (이전 변환 결과 유지)"
+    ],
+    "error": null,
+    "previous_mp4_bytes_kept": true,
+    "refused_original_unchanged": true,
+    "play": {
+     "front": true,
+     "qcamera": true
+    },
+    "server_running": true,
+    "events": [
+     {
+      "event": "remux_failure",
+      "engine": "pure",
+      "kind": "fcamera.hevc",
+      "failure_class": "unsupported",
+      "reason_code": "unsupported",
+      "fallback": false
+     }
+    ]
+   }
+  },
+  "C04_parameter_sets_change_hevc": {
+   "upload": {
+    "accepted": true,
+    "finish": {
+     "duplicates": [],
+     "updated": []
+    }
+   },
+   "states": [
+    "unconverted",
+    "processing",
+    "ready"
+   ],
+   "status": "ready",
+   "cameras": [
+    "qcamera"
+   ],
+   "warnings": [
+    "fcamera.hevc 영상 준비 실패: unsupported: reading the camera original: unsupported by pure remux: HEVC parameter sets change mid-stream"
+   ],
+   "error": null,
+   "row_fields": {
+    "status": "ready",
+    "thumbnail": true,
+    "warnings": [
+     "fcamera.hevc 영상 준비 실패: unsupported: reading the camera original: unsupported by pure remux: HEVC parameter sets change mid-stream"
+    ],
+    "error": null
+   },
+   "events": [
+    {
+     "event": "remux_failure",
+     "engine": "pure",
+     "kind": "fcamera.hevc",
+     "failure_class": "unsupported",
+     "reason_code": "unsupported",
+     "fallback": false
+    }
+   ],
+   "originals": {
+    "rlog.zst": "unchanged",
+    "qcamera.ts": "gone",
+    "fcamera.hevc": "unchanged"
+   },
+   "play": {
+    "qcamera": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    }
+   },
+   "thumbnail": {
+    "status": 200,
+    "jpeg": true
+   },
+   "thumbnail_failed_marker": false,
+   "export": {
+    "qcamera.ts": {
+     "status": 200,
+     "bytes_equal_upload": true,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2560,
+      2560
+     ]
+    },
+    "fcamera.hevc": {
+     "status": 200,
+     "bytes_equal_upload": true,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1220,
+      1220
+     ],
+     "units": [
+      2604,
+      2604
+     ]
+    }
+   },
+   "apis": {
+    "data": 200,
+    "telemetry": 200,
+    "track": 200
+   },
+   "zip": {
+    "status": 200,
+    "members": 3
+   },
+   "list": {
+    "status": 200,
+    "has_record": true
+   },
+   "server_running": true,
+   "server_running_at_end": true,
+   "with_previous_result": {
+    "status": "ready",
+    "cameras": [
+     "front",
+     "qcamera"
+    ],
+    "warnings": [
+     "fcamera.hevc 영상 준비 실패: unsupported: reading the camera original: unsupported by pure remux: HEVC parameter sets change mid-stream (이전 변환 결과 유지)"
+    ],
+    "error": null,
+    "previous_mp4_bytes_kept": true,
+    "refused_original_unchanged": true,
+    "play": {
+     "front": true,
+     "qcamera": true
+    },
+    "server_running": true,
+    "events": [
+     {
+      "event": "remux_failure",
+      "engine": "pure",
+      "kind": "fcamera.hevc",
+      "failure_class": "unsupported",
+      "reason_code": "unsupported",
+      "fallback": false
+     }
+    ]
+   }
+  },
+  "C05_truncated_ts_in_video_payload": {
+   "upload": {
+    "accepted": true,
+    "finish": {
+     "duplicates": [],
+     "updated": []
+    }
+   },
+   "states": [
+    "unconverted",
+    "processing",
+    "ready"
+   ],
+   "status": "ready",
+   "cameras": [
+    "front"
+   ],
+   "warnings": [
+    "qcamera 영상 준비 실패: native media validation failed (exit status: 1)"
+   ],
+   "error": null,
+   "row_fields": {
+    "status": "ready",
+    "thumbnail": true,
+    "warnings": [
+     "qcamera 영상 준비 실패: native media validation failed (exit status: 1)"
+    ],
+    "error": null
+   },
+   "events": [],
+   "originals": {
+    "rlog.zst": "unchanged",
+    "fcamera.hevc": "gone",
+    "qcamera.ts": "unchanged"
+   },
+   "play": {
+    "front": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    }
+   },
+   "thumbnail": {
+    "status": 200,
+    "jpeg": true
+   },
+   "thumbnail_failed_marker": false,
+   "export": {
+    "fcamera.hevc": {
+     "status": 200,
+     "bytes_equal_upload": false,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2580,
+      2580
+     ]
+    },
+    "qcamera.ts": {
+     "status": 200,
+     "bytes_equal_upload": true,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      721,
+      721
+     ],
+     "units": [
+      1540,
+      1540
+     ]
+    }
+   },
+   "apis": {
+    "data": 200,
+    "telemetry": 200,
+    "track": 200
+   },
+   "zip": {
+    "status": 200,
+    "members": 3
+   },
+   "list": {
+    "status": 200,
+    "has_record": true
+   },
+   "server_running": true,
+   "server_running_at_end": true,
+   "with_previous_result": {
+    "status": "ready",
+    "cameras": [
+     "front",
+     "qcamera"
+    ],
+    "warnings": [
+     "qcamera 영상 준비 실패: native media validation failed (exit status: 1) (이전 변환 결과 유지)"
+    ],
+    "error": null,
+    "previous_mp4_bytes_kept": true,
+    "refused_original_unchanged": true,
+    "play": {
+     "front": true,
+     "qcamera": true
+    },
+    "server_running": true,
+    "events": []
+   }
+  },
+  "C06_truncated_hevc": {
+   "upload": {
+    "accepted": true,
+    "finish": {
+     "duplicates": [],
+     "updated": []
+    }
+   },
+   "states": [
+    "unconverted",
+    "processing",
+    "ready"
+   ],
+   "status": "ready",
+   "cameras": [
+    "qcamera"
+   ],
+   "warnings": [
+    "fcamera.hevc 영상 준비 실패: invalid: reading the camera original: HEVC frame count differs from logged clock"
+   ],
+   "error": null,
+   "row_fields": {
+    "status": "ready",
+    "thumbnail": true,
+    "warnings": [
+     "fcamera.hevc 영상 준비 실패: invalid: reading the camera original: HEVC frame count differs from logged clock"
+    ],
+    "error": null
+   },
+   "events": [
+    {
+     "event": "remux_failure",
+     "engine": "pure",
+     "kind": "fcamera.hevc",
+     "failure_class": "invalid",
+     "reason_code": "invalid_input",
+     "fallback": false
+    }
+   ],
+   "originals": {
+    "rlog.zst": "unchanged",
+    "qcamera.ts": "gone",
+    "fcamera.hevc": "unchanged"
+   },
+   "play": {
+    "qcamera": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    }
+   },
+   "thumbnail": {
+    "status": 200,
+    "jpeg": true
+   },
+   "thumbnail_failed_marker": false,
+   "export": {
+    "qcamera.ts": {
+     "status": 200,
+     "bytes_equal_upload": true,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2560,
+      2560
+     ]
+    },
+    "fcamera.hevc": {
+     "status": 200,
+     "bytes_equal_upload": true,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      700,
+      700
+     ],
+     "units": [
+      1504,
+      1504
+     ]
+    }
+   },
+   "apis": {
+    "data": 200,
+    "telemetry": 200,
+    "track": 200
+   },
+   "zip": {
+    "status": 200,
+    "members": 3
+   },
+   "list": {
+    "status": 200,
+    "has_record": true
+   },
+   "server_running": true,
+   "server_running_at_end": true,
+   "with_previous_result": {
+    "status": "ready",
+    "cameras": [
+     "front",
+     "qcamera"
+    ],
+    "warnings": [
+     "fcamera.hevc 영상 준비 실패: invalid: reading the camera original: HEVC frame count differs from logged clock (이전 변환 결과 유지)"
+    ],
+    "error": null,
+    "previous_mp4_bytes_kept": true,
+    "refused_original_unchanged": true,
+    "play": {
+     "front": true,
+     "qcamera": true
+    },
+    "server_running": true,
+    "events": [
+     {
+      "event": "remux_failure",
+      "engine": "pure",
+      "kind": "fcamera.hevc",
+      "failure_class": "invalid",
+      "reason_code": "invalid_input",
+      "fallback": false
+     }
+    ]
+   }
+  },
+  "C07_empty_hevc": {
+   "upload": {
+    "refused": {
+     "step": "manifest",
+     "status": 400,
+     "error": "invalid_file",
+     "message": null
+    }
+   },
+   "server_running_at_end": true
+  },
+  "C08_random_bytes_hevc": {
+   "upload": {
+    "refused": {
+     "step": "finish",
+     "status": 400,
+     "error": "invalid_file",
+     "message": null
+    }
+   },
+   "server_running_at_end": true
+  },
+  "C09_pat_pmt_damaged_ts": {
+   "upload": {
+    "accepted": true,
+    "finish": {
+     "duplicates": [],
+     "updated": []
+    }
+   },
+   "states": [
+    "unconverted",
+    "processing",
+    "ready"
+   ],
+   "status": "ready",
+   "cameras": [
+    "front"
+   ],
+   "warnings": [
+    "qcamera 영상 준비 실패: native media validation failed (exit status: 1)"
+   ],
+   "error": null,
+   "row_fields": {
+    "status": "ready",
+    "thumbnail": true,
+    "warnings": [
+     "qcamera 영상 준비 실패: native media validation failed (exit status: 1)"
+    ],
+    "error": null
+   },
+   "events": [],
+   "originals": {
+    "rlog.zst": "unchanged",
+    "fcamera.hevc": "gone",
+    "qcamera.ts": "unchanged"
+   },
+   "play": {
+    "front": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    }
+   },
+   "thumbnail": {
+    "status": 200,
+    "jpeg": true
+   },
+   "thumbnail_failed_marker": false,
+   "export": {
+    "fcamera.hevc": {
+     "status": 200,
+     "bytes_equal_upload": false,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2580,
+      2580
+     ]
+    },
+    "qcamera.ts": {
+     "status": 200,
+     "bytes_equal_upload": true,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2560,
+      2560
+     ]
+    }
+   },
+   "apis": {
+    "data": 200,
+    "telemetry": 200,
+    "track": 200
+   },
+   "zip": {
+    "status": 200,
+    "members": 3
+   },
+   "list": {
+    "status": 200,
+    "has_record": true
+   },
+   "server_running": true,
+   "server_running_at_end": true,
+   "with_previous_result": {
+    "status": "ready",
+    "cameras": [
+     "front",
+     "qcamera"
+    ],
+    "warnings": [
+     "qcamera 영상 준비 실패: native media validation failed (exit status: 1) (이전 변환 결과 유지)"
+    ],
+    "error": null,
+    "previous_mp4_bytes_kept": true,
+    "refused_original_unchanged": true,
+    "play": {
+     "front": true,
+     "qcamera": true
+    },
+    "server_running": true,
+    "events": []
+   }
+  },
+  "C10_bframe_mp4_edit_list": {
+   "upload": {
+    "accepted": true,
+    "finish": {
+     "duplicates": [],
+     "updated": []
+    }
+   },
+   "states": [
+    "unconverted",
+    "processing",
+    "ready"
+   ],
+   "status": "ready",
+   "cameras": [
+    "front"
+   ],
+   "warnings": [
+    "qcamera 영상 준비 실패: native media validation failed (exit status: 1)"
+   ],
+   "error": null,
+   "row_fields": {
+    "status": "ready",
+    "thumbnail": true,
+    "warnings": [
+     "qcamera 영상 준비 실패: native media validation failed (exit status: 1)"
+    ],
+    "error": null
+   },
+   "events": [],
+   "originals": {
+    "rlog.zst": "unchanged",
+    "fcamera.mp4": "unchanged",
+    "qcamera.mp4": "unchanged"
+   },
+   "stored_files": [
+    "camera.mp4",
+    "fcamera.mp4",
+    "meta.json",
+    "rlog.zst"
+   ],
+   "play": {
+    "front": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    }
+   },
+   "thumbnail": {
+    "status": 200,
+    "jpeg": true
+   },
+   "thumbnail_failed_marker": false,
+   "export": {},
+   "apis": {
+    "data": 200,
+    "telemetry": 200,
+    "track": 200
+   },
+   "zip": {
+    "status": 400,
+    "members": 0,
+    "error": "media_export_failed",
+    "message": null
+   },
+   "list": {
+    "status": 200,
+    "has_record": true
+   },
+   "server_running": true,
+   "server_running_at_end": true,
+   "with_previous_result": {
+    "skipped": "mp4 input"
+   }
+  },
+  "C11_mp4_without_moov": {
+   "upload": {
+    "refused": {
+     "step": "finish",
+     "status": 400,
+     "error": "invalid_file",
+     "message": null
+    }
+   },
+   "server_running_at_end": true
+  },
+  "C12_main10_hevc": {
+   "upload": {
+    "accepted": true,
+    "finish": {
+     "duplicates": [],
+     "updated": []
+    }
+   },
+   "states": [
+    "unconverted",
+    "processing",
+    "ready"
+   ],
+   "status": "ready",
+   "cameras": [
+    "front",
+    "qcamera"
+   ],
+   "warnings": [],
+   "error": null,
+   "row_fields": {
+    "status": "ready",
+    "thumbnail": true,
+    "warnings": [],
+    "error": null
+   },
+   "events": [],
+   "originals": {
+    "rlog.zst": "unchanged",
+    "qcamera.ts": "gone",
+    "fcamera.hevc": "gone"
+   },
+   "play": {
+    "front": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    },
+    "qcamera": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    }
+   },
+   "thumbnail": {
+    "status": 200,
+    "jpeg": true
+   },
+   "thumbnail_failed_marker": false,
+   "export": {
+    "qcamera.ts": {
+     "status": 200,
+     "bytes_equal_upload": true,
+     "normalized_nal_equal": true,
+     "nal_units_equal": true,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      2560,
+      2560
+     ]
+    },
+    "fcamera.hevc": {
+     "status": 200,
+     "bytes_equal_upload": false,
+     "normalized_nal_equal": true,
+     "nal_units_equal": false,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      1440,
+      1440
+     ]
+    }
+   },
+   "apis": {
+    "data": 200,
+    "telemetry": 200,
+    "track": 200
+   },
+   "zip": {
+    "status": 200,
+    "members": 3
+   },
+   "list": {
+    "status": 200,
+    "has_record": true
+   },
+   "server_running": true,
+   "server_running_at_end": true
+  },
+  "D_main10_hevc_only": {
+   "upload": {
+    "accepted": true,
+    "finish": {
+     "duplicates": [],
+     "updated": []
+    }
+   },
+   "states": [
+    "unconverted",
+    "processing",
+    "ready"
+   ],
+   "status": "ready",
+   "cameras": [
+    "front"
+   ],
+   "warnings": [],
+   "error": null,
+   "row_fields": {
+    "status": "ready",
+    "warnings": [],
+    "error": null
+   },
+   "events": [],
+   "originals": {
+    "rlog.zst": "unchanged",
+    "fcamera.hevc": "gone"
+   },
+   "play": {
+    "front": {
+     "range206": true,
+     "mp4": true,
+     "range_bytes_equal": true
+    }
+   },
+   "thumbnail": {
+    "status": 404,
+    "jpeg": false,
+    "error": "not_found",
+    "message": null
+   },
+   "thumbnail_failed_marker": true,
+   "export": {
+    "fcamera.hevc": {
+     "status": 200,
+     "bytes_equal_upload": false,
+     "normalized_nal_equal": true,
+     "nal_units_equal": false,
+     "pictures": [
+      1200,
+      1200
+     ],
+     "units": [
+      1440,
+      1440
+     ]
+    }
+   },
+   "apis": {
+    "data": 200,
+    "telemetry": 200,
+    "track": 200
+   },
+   "zip": {
+    "status": 200,
+    "members": 2
+   },
+   "list": {
+    "status": 200,
+    "has_record": true
+   },
+   "server_running": true,
+   "server_running_at_end": true
+  }
+ }
+}

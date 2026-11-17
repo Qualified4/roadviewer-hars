@@ -1,0 +1,65 @@
+{
+ "uptime_before": [
+  "1.45",
+  "2.20",
+  "2.43"
+ ],
+ "conversion_seconds": {
+  "alpha3": {
+   "3": {
+    "median": 2.568,
+    "min": 2.537,
+    "max": 2.703
+   },
+   "7": {
+    "median": 2.672,
+    "min": 2.604,
+    "max": 2.754
+   },
+   "9": {
+    "median": 2.574,
+    "min": 2.539,
+    "max": 2.673
+   }
+  },
+  "alpha4": {
+   "3": {
+    "median": 2.568,
+    "min": 2.459,
+    "max": 2.827
+   },
+   "7": {
+    "median": 2.548,
+    "min": 2.505,
+    "max": 2.572
+   },
+   "9": {
+    "median": 2.572,
+    "min": 2.446,
+    "max": 2.585
+   }
+  }
+ },
+ "conversion_total_median": {
+  "alpha3": 7.813,
+  "alpha4": 7.688
+ },
+ "upload_finish_seconds_37MB_hevc": {
+  "alpha3": {
+   "median": 0.135,
+   "min": 0.132,
+   "max": 0.139
+  },
+  "alpha4": {
+   "median": 0.064,
+   "min": 0.063,
+   "max": 0.066
+  }
+ },
+ "alpha3_ffprobe_check_alone_seconds_mean5": 0.083,
+ "uptime_after": [
+  "2.13",
+  "2.17",
+  "2.39"
+ ]
+}

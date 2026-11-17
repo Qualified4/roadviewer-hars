@@ -45,7 +45,7 @@ impl Payload {
             !unit.is_empty() && unit.len() <= NAL_LIMIT,
             "NAL unit exceeds bounded memory limit"
         );
-        // Refused before the bytes are staged, so a large input is handed to FFmpeg early.
+        // Refused before the bytes are staged, so a large input fails early.
         if self.len + 4 + unit.len() as u64 >= self.limit {
             return Err(Unsupported("output beyond 3 GiB").into());
         }
@@ -199,8 +199,8 @@ mod tests {
     use super::*;
     use crate::pure_remux::{Failure, FailureClass};
 
-    /// The output bound stops staging at the unit that would cross it, as an unsupported input
-    /// (FFmpeg copies it), without writing the input out first.
+    /// The output bound stops staging at the unit that would cross it, as an unsupported input,
+    /// without writing the input out first.
     #[test]
     fn the_output_bound_refuses_early_as_unsupported() {
         let dir = tempfile::tempdir().unwrap();
@@ -220,6 +220,5 @@ mod tests {
         assert!(error.downcast_ref::<Unsupported>().is_some(), "{error:#}");
         let failure = Failure::classify(&error.context(crate::pure_remux::Stage::Read));
         assert_eq!(failure.class, FailureClass::Unsupported);
-        assert!(crate::media::falls_back(failure.class));
     }
 }

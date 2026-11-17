@@ -345,3 +345,56 @@ HEVC에서 기존 FFmpeg6 출력은 샘플 안의 VPS/SPS/PPS와 hvcC를 함께 
 - 동시 변환: 변환당 CPU와 로그 분석 메모리.
 
 미측정: HAOS·aarch64, cold cache, 최종 커밋(쓰기 먼저 시작)에서의 전체 변환, 리먹싱 단독과 전체 변환의 구현별 최고 RSS 집계.
+
+## FFmpeg 제거 전후 (2.0.0-alpha.3 → alpha.4, 2026-11-17)
+
+WSL2 Ubuntu 24.04, 같은 기계. 측정 원본은 `measurements/ffmpeg-image-amd64-2026-11-17.json`, `no-ffmpeg-*.json`, `pure-reverse-2026-11-17.json`, `thumbnail-decoder-2026-11-17.json`이다.
+
+### 배포 이미지 (amd64, 로컬 빌드, `scripts/image_report.py`)
+
+| | alpha.3 | alpha.4 | 절감 |
+|---|---|---|---|
+| 풀린 레이어 합 | 580.9 MB | 120.6 MB | 460.3 MB (79.2 %) |
+| 레지스트리 레이어 blob(압축) | 217.5 MB | 46.3 MB | 171.2 MB (78.7 %) |
+| 설치 패키지 | 299 | 107 | 192 |
+| HARS 실행 파일 | 25.3 MB | 20.7 MB(strip) | |
+
+- alpha.3 이미지에서 `ffmpeg` 패키지 한 줄만 뺀 반사실 이미지는 125.2 MB / 46.5 MB였다. FFmpeg 자체(실행 파일과 libav*)는 32.9 MB이고 절감의 대부분은 전이 의존 공유 라이브러리 240개 431.5 MB(Mesa, LLVM 등)다.
+- 실행 파일은 썸네일 디코더·축소·JPEG로 약 1.5 MB 늘고 FFmpeg 연결 코드 제거와 strip으로 줄었다. strip은 디스크 6.4 MB, 압축 0.87 MB를 줄이며 panic 메시지와 위치는 남고 backtrace의 함수 이름만 없어진다.
+- 이전 기록의 "비압축 약 813 MB"는 containerd 저장소에서 `docker image inspect`의 Size가 압축 blob까지 더한 값이라 비압축 크기가 아니다.
+- CI(PR #16, `a5b1ce0`) 측정: amd64 풀린 레이어 120.7 MB·gzip 46.1 MB·실행 파일 20.8 MB, aarch64 142.1 MB·45.3 MB·18.8 MB. 패키지는 둘 다 107개. aarch64의 alpha.3 기준 크기는 측정하지 않아 절감률은 amd64만 실측이다.
+
+### 전체 변환과 업로드 검사
+
+| 항목 | alpha.3 | alpha.4 | 조건 |
+|---|---|---|---|
+| 전체 변환 3구간 합(중앙값) | 7.81 s | 7.69 s | warmup 1 + 교차 5회, load 1.45~2.13. 차이는 실행 간 범위 안 |
+| 업로드 finish, HEVC 37.7 MB | 0.135 s | 0.0735 s | worker 프로세스 검사. 서버 안 검사 대비 +5.8 ms |
+| 업로드 finish, qcamera MP4 1.9 MB | | 0.0105 s | 서버 안 검사 대비 +3.1 ms |
+
+### 원본 형식 내보내기 (영상당 중앙값, warmup 1 + 교차 5회)
+
+| | alpha.3(FFmpeg CLI) | alpha.4(순수) |
+|---|---|---|
+| H.264 TS | 0.449 s | 0.069 s |
+| HEVC Annex B | 0.437 s | 0.135 s |
+| worker Peak RSS | | 약 37 MiB |
+
+측정 중 load가 8.1~8.7이었다(다른 작업의 인코딩이 동시에 돌았다). 교차 측정이라 비율은 볼 수 있지만 절대값은 부하가 없을 때보다 크다.
+
+### 썸네일 1건 (중앙값, warmup 1 + 교차 5회, load 2.80 → 1.83)
+
+| 입력 | alpha.3 | alpha.4 | worker Peak RSS |
+|---|---|---|---|
+| H.264 qcamera | 48~53 ms | 122~144 ms | 47.7 → 36.9 MiB |
+| HEVC(qcamera가 없는 구간) | 499~520 ms | 1.94~2.10 s | 63.5 → 43.1 MiB |
+
+alpha.4가 2.5~4.2배 느리다. alpha.3은 2스레드와 SIMD를 썼고, 새 디코더는 `unsafe` 없는 단일 스레드 구성이다. 모든 구간이 H.264 경로를 지나므로 구간당 약 0.07~0.09초가 늘지만 전체 변환 합에서는 실행 간 범위 안이다. 4096x2160 HEVC의 썸네일 Peak RSS는 168 → 332 MiB로 커졌다(512 MiB 상한 안).
+
+### 무엇이 수치를 제한하는가
+
+- 이미지 크기: 이제 기반 이미지(`debian:bookworm-slim`)와 nginx가 대부분이다. musl·distroless 전환은 검증 비용 때문에 하지 않았다.
+- 썸네일: 디코더의 단일 스레드 스칼라 연산.
+- 전체 변환: alpha.3과 같다(로그 해석, 텔레메트리, 로그 분석).
+
+미측정: aarch64 실행 속도·메모리, cold cache, HAOS.

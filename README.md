@@ -1,6 +1,6 @@
 # Road Viewer HARS
 
-Rust 기반 Road Viewer 2.x의 독립 개발 저장소입니다. 현재 버전은 **2.0.0-alpha.3**이며, 전체 기능 이식과 운영 전환 검증은 진행 중입니다. 정식 릴리스와 운영 전환을 수행하지 않았습니다.
+Rust 기반 Road Viewer 2.x의 독립 개발 저장소입니다. 현재 버전은 **2.0.0-alpha.4**이며, 전체 기능 이식과 운영 전환 검증은 진행 중입니다. 정식 릴리스와 운영 전환을 수행하지 않았습니다.
 
 Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)는 별도 제품으로 계속 유지됩니다. 해당 저장소를 수정하지 않습니다. 원본 이력과 MIT 라이선스를 유지하고, 기준 코드·테스트·스키마·UI는 `reference/python`에 보존합니다. 제품 컨테이너는 Python을 설치하지 않습니다.
 
@@ -11,7 +11,7 @@ Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)는 별도 
 - [실행 및 테스트](docs/hars/DEVELOPMENT.md)
 - [검증 증거](docs/hars/VALIDATION.md) · [API 예비 측정](docs/hars/PERFORMANCE.md)
 
-개발 실행(Linux/WSL, Rust stable 및 `capnproto`, `ffmpeg` 필요):
+개발 실행(Linux/WSL, Rust stable 및 `capnproto` 필요. `ffmpeg`은 제품에는 쓰이지 않고 테스트의 합성 입력 생성과 독립 대조에만 필요):
 
 ```sh
 cargo test --locked

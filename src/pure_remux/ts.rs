@@ -3,11 +3,11 @@ use super::{
     annexb::{Bits, Sets, for_each_nal, is_parameter_set, kind},
     mp4::{Payload, Plan},
 };
-use crate::media::{NalHasher, Signature};
+use crate::media::{Inspection, NalHasher, Signature};
 use anyhow::{Context, bail, ensure};
 use mpeg2ts::{
     es::StreamType,
-    ts::{ReadTsPacket, TransportScramblingControl, TsPacketReader, TsPayload},
+    ts::{ReadTsPacket, TsPacketReader, TsPayload},
 };
 use shiguredo_mp4::{
     bitstream::h264::{H264SampleEntryConfig, LengthSize, build_avc1_box},
@@ -61,20 +61,40 @@ impl Clock {
     }
 }
 
-struct Pes {
-    pts: u64,
-    dts: u64,
+pub(crate) struct Pes {
+    pub pts: u64,
+    pub dts: u64,
+    /// `random_access_indicator` of the packet that starts this PES.
+    pub random_access: bool,
     expected: Option<usize>,
-    data: Vec<u8>,
+    pub data: Vec<u8>,
 }
 
 /// One complete PES of the single H.264 elementary stream: clocks are raw
-/// 33-bit values. Conditions FFmpeg tolerates silently (lost packets,
-/// scrambling, transport errors, missing PTS) are refused as unsupported so
-/// the FFmpeg engine handles them instead of a different guess here.
-fn demux(source: &Path, each: impl FnMut(Pes) -> anyhow::Result<()>) -> anyhow::Result<()> {
+/// 33-bit values. A lost packet, a transport error or a PES without PTS fails
+/// the read: guessing the missing bytes or clock would change the stream. The
+/// scrambling bits are ignored, as the Python reference's demuxer ignores
+/// them: the payload is copied as it is and the read-back compares it byte for
+/// byte. A final packet shorter than 188 bytes is left out unless it holds
+/// video payload, which fails the read (`truncated_video_payload`). Returns
+/// the video PID.
+pub(crate) fn demux(
+    source: &Path,
+    each: impl FnMut(Pes) -> anyhow::Result<()>,
+) -> anyhow::Result<u16> {
+    use std::io::Read;
     let file = std::fs::File::open(source)?;
-    demux_from(BufReader::with_capacity(1024 * 1024, file), each)
+    let length = file.metadata()?.len();
+    let whole = length - length % 188;
+    let pid = demux_from(
+        BufReader::with_capacity(1024 * 1024, file).take(whole),
+        each,
+    )?;
+    ensure!(
+        !truncated_video_payload(source, pid)?,
+        "the last MPEG-TS packet is cut inside video payload"
+    );
+    Ok(pid)
 }
 
 /// Keeps the reader's own error: the packet reader reports it as text only, and a failing disk
@@ -98,10 +118,19 @@ impl<R: std::io::Read> std::io::Read for Watched<R> {
     }
 }
 
+/// The packet reader's message ends with where in its source it failed, a path into the build
+/// machine's crate registry; the reason ends up in records and logs without it.
+fn packet_error(error: &impl std::fmt::Display) -> anyhow::Error {
+    let text = error.to_string();
+    let first = text.lines().next().unwrap_or_default();
+    let reason = first.split(" (at ").next().unwrap_or_default();
+    anyhow::anyhow!("invalid MPEG-TS packet: {reason}")
+}
+
 fn demux_from(
     input: impl std::io::Read,
     mut each: impl FnMut(Pes) -> anyhow::Result<()>,
-) -> anyhow::Result<()> {
+) -> anyhow::Result<u16> {
     let failed = std::rc::Rc::default();
     let mut reader = TsPacketReader::new(Watched {
         inner: input,
@@ -118,7 +147,7 @@ fn demux_from(
     };
     while let Some(packet) = reader.read_ts_packet().map_err(|e| match failed.take() {
         Some(io) => anyhow::Error::new(io).context("reading MPEG-TS"),
-        None => anyhow::anyhow!("invalid MPEG-TS packet: {e}"),
+        None => packet_error(&e),
     })? {
         if packet.header.transport_error_indicator {
             bail!("MPEG-TS transport error");
@@ -144,14 +173,15 @@ fn demux_from(
             Some(payload) if Some(pid) == video => payload,
             _ => continue,
         };
-        if packet.header.transport_scrambling_control != TransportScramblingControl::NotScrambled {
-            return Err(Unsupported("scrambled MPEG-TS").into());
-        }
         let counter = packet.header.continuity_counter.as_u8();
         let resync = packet
             .adaptation_field
             .as_ref()
             .is_some_and(|a| a.discontinuity_indicator);
+        let random_access = packet
+            .adaptation_field
+            .as_ref()
+            .is_some_and(|a| a.random_access_indicator);
         if !(resync || continuity.is_none_or(|c| (c + 1) & 15 == counter)) {
             bail!("MPEG-TS continuity error (missing packet)");
         }
@@ -179,6 +209,7 @@ fn demux_from(
                 pes = Some(Pes {
                     pts,
                     dts,
+                    random_access,
                     expected,
                     data: start.data.to_vec(),
                 });
@@ -194,7 +225,112 @@ fn demux_from(
             _ => bail!("unexpected payload on video PID"),
         }
     }
-    finish(pes.context("missing pictures or decoder configuration")?)
+    finish(pes.context("missing pictures or decoder configuration")?)?;
+    video.context("expected one video stream")
+}
+
+/// A final packet shorter than 188 bytes is dropped by the packet reader. When it carries payload
+/// of the video stream, the last picture would lose bytes that are in the file, so the read refuses
+/// it. A cut at a packet boundary, or inside the first four bytes, drops nothing the file holds.
+fn truncated_video_payload(source: &Path, pid: u16) -> anyhow::Result<bool> {
+    use std::io::{Read, Seek, SeekFrom};
+    let mut file = std::fs::File::open(source)?;
+    let length = file.metadata()?.len();
+    let partial = (length % 188) as usize;
+    if partial < 4 {
+        return Ok(false);
+    }
+    file.seek(SeekFrom::Start(length - partial as u64))?;
+    let mut tail = vec![0; partial];
+    file.read_exact(&mut tail)?;
+    // Not a packet start: the file is not 188-byte framed from its first byte,
+    // so what the reader drops is unknown.
+    if tail[0] != 0x47 {
+        return Ok(true);
+    }
+    if (u16::from(tail[1] & 0x1f) << 8 | u16::from(tail[2])) != pid || tail[3] & 0x10 == 0 {
+        return Ok(false);
+    }
+    let payload = if tail[3] & 0x20 != 0 {
+        5 + usize::from(tail.get(4).copied().unwrap_or(183))
+    } else {
+        4
+    };
+    Ok(partial > payload)
+}
+
+/// Width and height the first access unit's SPS states, cropped; its SPS and PPS must precede
+/// its picture, as the conversion's decoder configuration is taken from there.
+fn first_picture_size(data: &[u8]) -> anyhow::Result<(u16, u16)> {
+    let mut sets = Sets::default();
+    for_each_nal(data, |unit| {
+        let kind = kind(unit.raw, false)?;
+        if is_parameter_set(kind, false) {
+            sets.add(kind, unit.raw)?;
+        }
+        Ok(())
+    })?;
+    super::annexb::picture_size(false, &sets.configuration())
+}
+
+fn stream_info(width: u16, height: u16) -> serde_json::Value {
+    serde_json::json!({"codec_type":"video","codec_name":"h264","width":width,"height":height,"time_base":format!("1/{TIMESCALE}")})
+}
+
+/// The camera original as the conversion reads it before either step: its one video stream, the
+/// clock of every PES (33-bit clocks unwrapped), the signature of its elementary stream and the
+/// size its first SPS states.
+pub fn inspect(source: &Path) -> anyhow::Result<Inspection> {
+    let mut hash = NalHasher::new(false);
+    let (mut pts_clock, mut dts_clock) = (Clock::default(), Clock::default());
+    let mut packets = Vec::new();
+    let mut size = None;
+    let unit = 1f64 / f64::from(TIMESCALE);
+    demux(source, |pes| {
+        ensure!(
+            packets.len() < PACKET_LIMIT,
+            "invalid video packet or inspection limit"
+        );
+        if size.is_none() {
+            size = Some(first_picture_size(&pes.data)?);
+        }
+        hash.feed(&pes.data)?;
+        let pts = i64::try_from(pts_clock.unwrap(pes.pts))?;
+        let dts = i64::try_from(dts_clock.unwrap(pes.dts))?;
+        let time = |s: i64| (s as f64 * unit).to_string();
+        packets.push(serde_json::json!({"codec_type":"video","pts":pts,"dts":dts,"pts_time":time(pts),"dts_time":time(dts)}));
+        Ok(())
+    })?;
+    let (width, height) = size.context("missing pictures or decoder configuration")?;
+    Ok(Inspection {
+        info: serde_json::json!({"streams":[stream_info(width, height)],"packets":packets}),
+        signature: hash.finish()?,
+    })
+}
+
+/// The upload check of a TS original: its stream table and first access unit only, as a probe
+/// reads the start of a file.
+pub fn probe(source: &Path) -> anyhow::Result<serde_json::Value> {
+    #[derive(Debug)]
+    struct Enough;
+    impl std::fmt::Display for Enough {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            f.write_str("first access unit read")
+        }
+    }
+    impl std::error::Error for Enough {}
+    let mut size = None;
+    let result = demux(source, |pes| {
+        size = Some(first_picture_size(&pes.data)?);
+        Err(Enough.into())
+    });
+    match result {
+        Err(e) if e.downcast_ref::<Enough>().is_some() => {}
+        Err(e) => return Err(e),
+        Ok(_) => {}
+    }
+    let (width, height) = size.context("missing pictures or decoder configuration")?;
+    Ok(serde_json::json!({"streams":[stream_info(width, height)]}))
 }
 
 /// `frame_mbs_only_flag`: field-coded pictures may span two PES packets that
@@ -369,8 +505,8 @@ mod tests {
         (failure.class, failure.code)
     }
 
-    /// Memory is the machine (no FFmpeg retry of the same read); a bad sector, a denied read or a
-    /// damaged file fails every attempt, so it is the input's.
+    /// Memory is the machine (a later attempt may pass); a bad sector, a denied read or a damaged
+    /// file fails every attempt, so it is the input's.
     #[test]
     fn only_clearing_os_errors_are_resource_failures_and_garbage_stays_invalid() {
         struct Failing(i32);

@@ -1,6 +1,17 @@
 # 개발·검증
 
-Linux 또는 WSL에서 Rust stable, C/C++ 빌드 도구, Cap'n Proto compiler, FFmpeg/ffprobe, pkg-config, libclang-dev, libavformat-dev, libavcodec-dev, libavutil-dev, libswscale-dev가 필요하다. 배포 컨테이너에는 Python 런타임이 없다. 비교용 Python 코드는 개발/테스트에만 사용한다.
+<!-- toc -->
+**목차**
+
+- [진단](#진단)
+- [CI/CD](#cicd)
+- [재생 변환 비교](#재생-변환-비교)
+- [변환 성능 재현](#변환-성능-재현)
+<!-- /toc -->
+
+빌드: Linux 또는 WSL에서 Rust stable, C 컴파일러(번들 zstd를 `cc`로 빌드), Cap'n Proto compiler(`capnp`)만 필요하다. 미디어 라이브러리·pkg-config·libclang은 필요 없다. 실행 파일은 libc·libm·libgcc_s만 링크한다.
+
+시험: 위에 더해 `ffmpeg`/`ffprobe` CLI가 있어야 한다. **개발 전용**이다: 시험이 합성 입력(lavfi + x264/x265)을 만들고, 독립 디코더·판독기(oracle)로 결과를 대조한다. 제품 실행 파일과 배포 이미지에는 없다(CI의 `Rust checks` 작업만 설치한다. 컨테이너 작업은 이미지에 FFmpeg 실행 파일·라이브러리·링크가 있으면 실패한다). 배포 컨테이너에는 Python 런타임도 없다. 비교용 Python 코드는 개발/테스트에만 사용한다.
 
 ```sh
 cargo fmt --all --check
@@ -9,10 +20,13 @@ cargo test --locked --all-targets
 python3 scripts/verify_reference.py
 python3 scripts/check_release.py
 docker build -t roadviewer-hars:test .
+python3 scripts/image_report.py roadviewer-hars:test --require-no-ffmpeg > image-report.json
 python3 scripts/container_smoke.py roadviewer-hars:test
 ```
 
-`cargo test`의 HMAC 비교 케이스는 개발 환경의 Python 표준 라이브러리를 사용한다. 제품 Rust 실행 파일은 Python을 호출하지 않는다. 테스트 영상 인코딩은 합성 입력 생성용이며, 제품 리먹싱은 스트림 복사만 수행한다.
+`cargo test`의 HMAC 비교 케이스는 개발 환경의 Python 표준 라이브러리를 사용한다. 제품 Rust 실행 파일은 Python도, 외부 미디어 도구도 호출하지 않는다. 테스트 영상 인코딩은 합성 입력 생성용이며, 제품 리먹싱은 스트림 복사만 수행한다. `scripts/container_smoke.py`는 저장소의 합성 클립(`scripts/smoke/`, 10프레임 160x96, 만든 명령은 스크립트 머리말)으로 FFmpeg 없는 이미지 안에서 변환·원본 형식 내보내기·썸네일을 확인한다.
+
+배포 이미지의 실행 파일은 `strip`한다(약 27.2 MB → 20.7 MB). 심볼 표가 없어도 panic은 메시지와 소스 위치(`파일:줄:열`)를 그대로 출력한다. `RUST_BACKTRACE=1`의 backtrace에는 함수 이름 대신 주소만 남으므로, 함수 이름이 필요하면 같은 커밋을 strip 없이 빌드해 주소를 대조한다.
 
 개발 서버:
 

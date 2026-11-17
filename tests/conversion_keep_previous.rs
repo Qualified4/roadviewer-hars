@@ -189,7 +189,28 @@ impl Server {
             .unwrap_or_default();
         (parse_response(&raw).0, body)
     }
+    /// The server's own view of the record reaches `ready`. `wait_status` reads `meta.json`, which
+    /// the server renames into place (and syncs) before it updates the record it answers from, so
+    /// the file can say `ready` a moment before the API does.
+    async fn ready(&self, id: &str) {
+        let start = Instant::now();
+        loop {
+            let (status, body) = http(self.ui, "GET", "/api/logs", &[], b"").await;
+            let row = body["logs"]
+                .as_array()
+                .and_then(|logs| logs.iter().find(|r| r["id"] == id).cloned());
+            if status == 200 && row.as_ref().is_some_and(|r| r["status"] == "ready") {
+                return;
+            }
+            assert!(
+                start.elapsed() < Duration::from_secs(10),
+                "the server did not report ready: {status} {row:?}"
+            );
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    }
     async fn plays(&self, id: &str, source: &str, file: &Path) {
+        self.ready(id).await;
         let (status, body) = self.range(id, source).await;
         assert_eq!(status, 206, "{source}");
         assert_eq!(body, std::fs::read(file).unwrap()[..100], "{source}");
@@ -744,6 +765,141 @@ async fn a_restored_original_next_to_a_stored_mp4_survives_a_resumed_publication
     );
     no_attempts(&r.folder);
     drop(server);
+}
+
+/// A published camera whose original the engine refuses on every attempt (here B-frames in the TS,
+/// standing in for an input an earlier version published) does not hold the record back: a camera
+/// added later is converted and published, the refused camera stays as it was published, MP4 and
+/// summary entry, with a warning, and its original stays. With retention off at that point the
+/// new camera's MP4 goes next to its original as usual, and the carried one is neither moved
+/// nor its original deleted. Converting again ends in the same state.
+/// The state is built by hand (files moved, record requeued): the upload path that adds a camera
+/// clears `prepared/` first and so never reaches the takeover.
+#[tokio::test(flavor = "multi_thread")]
+async fn a_camera_the_engine_refuses_keeps_its_published_video_and_a_new_camera_publishes() {
+    for keep in [true, false] {
+        let r = recording(true);
+        let front = r.folder.with_extension("fcamera.hevc");
+        std::fs::rename(r.folder.join("fcamera.hevc"), &front).unwrap();
+        let mut m = meta(&r.folder);
+        m["files"].as_object_mut().unwrap().remove("fcamera.hevc");
+        std::fs::write(r.folder.join("meta.json"), m.to_string()).unwrap();
+        let server = start(&r.root, Fault::None, 0).await;
+        let published = wait_status(&r.folder, "ready");
+        assert_eq!(
+            published["videos"]["qcamera"]["frames"], FRAMES,
+            "{published}"
+        );
+        assert!(published["videos"].get("front").is_none(), "{published}");
+        drop(server);
+        let camera = std::fs::read(r.folder.join("prepared/camera.mp4")).unwrap();
+        // Where the video starts on the log's clock, which a carried entry must keep.
+        let offset = |m: &Value| {
+            let data =
+                roadviewer_hars::logs::read_gzip(&r.folder.join("prepared/data.json.gz")).unwrap();
+            m["videos"]["qcamera"]["start"].as_f64().unwrap() - data["logStart"].as_f64().unwrap()
+        };
+        let published_offset = offset(&published);
+
+        encode(
+            &[
+                "-c:v", "libx264", "-bf", "2", "-g", "20", "-qp", "12", "-pix_fmt", "yuv420p",
+                "-f", "mpegts",
+            ],
+            &r.folder.join("qcamera.ts"),
+        );
+        let refused = std::fs::read(r.folder.join("qcamera.ts")).unwrap();
+        std::fs::rename(&front, r.folder.join("fcamera.hevc")).unwrap();
+        let mut m = meta(&r.folder);
+        m["files"]["fcamera.hevc"] = json!("fcamera.hevc");
+        std::fs::write(r.folder.join("meta.json"), m.to_string()).unwrap();
+        std::fs::write(
+            r.root.join(".processing-settings.json"),
+            json!({"auto_convert":false,"keep_original_video":keep}).to_string(),
+        )
+        .unwrap();
+
+        let mut previous = None;
+        for attempt in 0..2 {
+            r.requeue();
+            let server = start(&r.root, Fault::None, 0).await;
+            let m = wait_status(&r.folder, "ready");
+            assert_eq!(m["error"], Value::Null, "{keep} {attempt}");
+            assert_eq!(
+                m["videos"]["front"]["frames"], FRAMES,
+                "{keep} {attempt} {m}"
+            );
+            assert!(
+                (offset(&m) - published_offset).abs() < 2e-6,
+                "{keep} {attempt}: {} {published_offset}",
+                offset(&m)
+            );
+            for key in [
+                "frames",
+                "duration",
+                "width",
+                "height",
+                "codec",
+                "sourcePts",
+                "timestampSpreadMs",
+            ] {
+                assert_eq!(
+                    m["videos"]["qcamera"][key], published["videos"]["qcamera"][key],
+                    "{keep} {attempt} {key}"
+                );
+            }
+            let warnings = m["warnings"].as_array().unwrap();
+            assert_eq!(warnings.len(), 1, "{keep} {attempt} {m}");
+            let warning = warnings[0].as_str().unwrap();
+            assert!(
+                warning.starts_with("qcamera 영상 준비 실패: ")
+                    && !warning.contains("resource (")
+                    && warning.ends_with("(이전 변환 결과 유지)"),
+                "{warning}"
+            );
+            assert_eq!(
+                std::fs::read(r.folder.join("prepared/camera.mp4")).unwrap(),
+                camera,
+                "{keep} {attempt}"
+            );
+            assert_eq!(
+                std::fs::read(r.folder.join("qcamera.ts")).unwrap(),
+                refused,
+                "{keep} {attempt}"
+            );
+            assert!(!r.folder.join("camera.mp4").exists(), "{keep} {attempt}");
+            let front_mp4 = if keep {
+                assert_eq!(
+                    std::fs::read(r.folder.join("fcamera.hevc")).unwrap(),
+                    r.originals["fcamera.hevc"]
+                );
+                r.folder.join("prepared/fcamera.mp4")
+            } else {
+                assert!(!r.folder.join("fcamera.hevc").exists(), "{attempt}");
+                r.folder.join("fcamera.mp4")
+            };
+            assert!(
+                !r.folder
+                    .join("prepared")
+                    .join(roadviewer_hars::convert::CARRIED_PREVIOUS)
+                    .exists()
+            );
+            server
+                .plays(&r.id, "qcamera", &r.folder.join("prepared/camera.mp4"))
+                .await;
+            server.plays(&r.id, "front", &front_mp4).await;
+            assert!(server.log().contains("conversion_carried_previous"));
+            assert!(!server.log().contains("conversion_kept_previous"));
+            no_attempts(&r.folder);
+            let state = ["videos", "video", "duration", "warnings", "video_downloads"]
+                .map(|k| m[k].clone());
+            if let Some(previous) = &previous {
+                assert_eq!(&state, previous, "{keep}: a second conversion converges");
+            }
+            previous = Some(state);
+            drop(server);
+        }
+    }
 }
 
 /// A warning naming the resource class for each camera label.

@@ -182,3 +182,76 @@ PR #15까지 병합한 `main`(`2a8474f`)을 포함한 통합 브랜치의 releas
 ### 미검증 요약
 
 실제 HAOS(설치, Ingress, 재시작, 포트 승계, aarch64 실기기 재생), 실제 Google Drive와 SMB 마운트, 실제 Supervisor, 실제 차량 장치의 장시간·동시 업로드, 전원 차단과 OS 크래시, Safari·Firefox, 실주행 B-frame·interlaced 영상, 4 GiB 초과 ZIP.
+
+## alpha.4 FFmpeg 완전 제거 (2026-11-17)
+
+기준은 `main` `d846fc6`(2.0.0-alpha.3)이다. 설계와 세부 수치는 [FFMPEG-REMOVAL.md](FFMPEG-REMOVAL.md), [THUMBNAIL-DECODER.md](THUMBNAIL-DECODER.md), 측정 원본은 `measurements/pure-reverse-2026-11-17.json`, `thumbnail-decoder-2026-11-17.json`, `upload-check-compare-2026-11-17.json`, `ffmpeg-image-amd64-2026-11-17.json`, `no-ffmpeg-*.json`에 있다. 호스트의 FFmpeg 6.1.1은 대조 도구로만 썼다.
+
+### 잔존 검사
+
+- `Cargo.toml`, `Cargo.lock`, `Dockerfile`에 FFmpeg 참조 0건. `cargo tree`에 `ffmpeg-next`·`ffmpeg-sys-next` 없음. release 실행 파일의 `ldd`에 libav*·libsw* 0줄.
+- `src/`에 남은 문자열은 세 종류다: 옛 설정값 `HARS_REMUX_ENGINE=ffmpeg`을 알아보는 코드(경고 후 순수 엔진), 원본 TS에 들어 있어 내보내기가 재현해야 하는 서비스 제공자 이름 `FFmpeg`, 바이트 단위로 맞춘 FFmpeg 규칙을 가리키는 주석.
+- `PATH`에 `ffmpeg`·`ffprobe`가 없는 환경에서 서버 기동, 변환, 썸네일, 원본 형식 내보내기, ZIP을 확인했다. CI의 두 컨테이너 작업은 이미지에 FFmpeg 실행 파일·공유 라이브러리·동적 링크가 있으면 실패한다.
+- 테스트의 합성 입력 생성과 독립 대조에 쓰는 `ffmpeg` CLI는 개발 전용으로 CI의 `Rust checks`에만 설치한다.
+
+### 원본 형식 내보내기(순수 Rust)
+
+- 계약 확인: 코드·테스트·문서·Python 참조 어디에도 "원본과 바이트 동일" 계약은 없다. alpha.3이 확인하던 것은 정규화 서명 일치와 TS PTS ±2 ms였고, 새 구현은 PES별 PTS/DTS 정확 일치, 키프레임, 프레임 수, 입력 구조를 확인한다.
+- 원본 13구간 26영상 왕복(원본 → MP4 → 내보내기): 정규화 NAL SHA-256, 프레임 수, 키프레임 위치, 파라미터 세트, PES별 PTS/DTS, 디코딩 프레임 MD5가 26/26 원본과 같다. qcamera TS 13개는 파일 바이트까지 같다. fcamera HEVC 13개는 PPS 뒤 0 바이트 60개(영상당 +60 B)만 다르고, 이는 MP4에 남지 않는 정보라 alpha.3의 FFmpeg 내보내기 결과와는 바이트가 같다.
+- 14·47구간 MP4 표본 12개(qcamera 5, fcamera 5, ecamera 2): alpha.3 FFmpeg 내보내기와 비교 항목·디코딩 MD5 12/12 동일. 바이트는 HEVC 7/7 동일, TS는 1개 동일하고 4개는 PCR 배치만 다르다.
+- 손상·무작위 변형 300건(시드 고정, 2 GiB 상한): panic 0, 비정상 종료 0, 실패 뒤 남은 출력 0. 최고 RSS 37.3 MiB.
+- 제품 경로: `/original/<kind>` 전체 4/4, Range(앞·중간·끝) 12/12가 206, ZIP 안 원본 형식 파일 4/4가 같은 결과.
+
+### 썸네일(순수 Rust 디코더)
+
+- 디코딩 비트 정확성: 36개 영상(13구간 camera.mp4, 14·47구간 표본의 H.264·HEVC)의 5,040/5,040 프레임이 호스트 FFmpeg 디코딩 MD5와 같다.
+- 동등성: 85개 입력(qcamera 74 + HEVC 대체 경로 11)에서 고른 초, 점수, `thumbnail.json`, 해상도, 후보 5장의 축소 결과, 밝기 보정 이미지가 85/85 alpha.3과 같다. JPEG 바이트는 0/85 같다(DCT 구현 차이). alpha.3 JPEG 대비 PSNR 52.1/55.0/58.7 dB(최소/중앙/최대), 원본 대비 충실도는 42.34 dB → 42.40 dB(중앙값).
+- 실패 사례 40건(2 GiB 상한): panic 0, 자원 초과 0, 남은 파일 0. alpha.3과 성공/실패가 같은 것은 31/40이고, 갈린 9건은 STATUS의 지원 범위 표에 있는 픽셀 형식 6종과 메타데이터 3종(moov 16 MiB 초과, 부모보다 큰 box, timescale 0)이다.
+
+### 업로드·원본 검사(순수 Rust)
+
+- alpha.3의 `ffprobe` 검사와 138건(실주행 38, 합성·손상 100) 대조: 업로드 검사는 둘 다 수락 78, 둘 다 거부 20, 새 검사만 수락 0, 새 검사만 거부 4. 원본 검사는 85/43/0/10. 새 검사만 거부한 것은 손상 합성 파일과 B-frame MP4다. 실주행 38개는 모두 양쪽 수락.
+- MP4의 영상 크기는 `stsd`가 아니라 SPS에서 읽는다(`stsd`만 고친 과대 해상도 H.264·HEVC 거부 시험). 실주행 MP4 40개에서 두 값은 모두 같았다.
+- 검사는 `__probe` worker 프로세스(주소 공간 상한, 180초, 부모 종료 시 함께 종료)에서 돈다. worker를 SIGKILL로 죽이면 그 파일만 거부되고 서버는 계속 도는 것을 시험으로 확인한다.
+
+### 실패 처리와 데이터 보호
+
+- 대체 엔진이 없으므로 모든 실패 분류가 재시도 없이 끝난다. 자원 실패는 alpha.3과 같다(게시 결과 유지, 변환 중단). 자원이 아닌 실패는 `prepared/`의 게시 결과가 그 카메라를 재생하면 그 카메라만 이어받고 나머지는 변환·게시한다(원본 보존 켬·끔, Range 206, 2회 수렴 시험). 이어받은 카메라 목록을 읽지 못하면 게시를 중단한다.
+- 여유 공간이 입력의 2배 + 100 MiB 미만이면 쓰기 전에 자원 실패로 끝난다. 검사를 우회하면 순수 엔진이 그 공간에서 끝내지 못하는 것을 실측했다.
+- 불안정 테스트 2건의 원인: `boundary_inputs_…`는 프로세스 전역 카운터로 판정하던 테스트 결함(카운터 제거, 50/50). `a_resource_failure_keeps_…`는 서버가 `meta.json`을 쓴 뒤 메모리 기록을 갱신하는 사이를 테스트가 파일로 기다리던 경합이며 alpha.3에서도 20회 중 2회 실패했다(서버가 `ready`를 답할 때까지 기다리도록 수정, 조정자 50/50). API로 `ready`를 본 클라이언트는 이 사이에 409를 받지 않는다.
+
+### 독립 검토
+
+2회(전체 변경, 수정분). 차단 사유 없음. 반영한 지적: 자원이 아닌 실패에서 변환 전체를 멈추던 정책, MP4 크기를 `stsd`로 판정하던 검사 약화(재현됨), 업로드 검사의 프로세스 격리, TS 오류 문자열의 빌드 경로, 이어받기 목록 읽기 실패 처리. 반영하지 않고 기록만 한 것: 첫 SPS만 판정(이전 `stsd`도 입력이 정하는 값이었다), `internal` 분류에 일시적 원인이 섞임, TS 원본 검사와 엔진이 같은 demuxer를 씀.
+
+### 최종 커밋 검증
+
+통합 커밋 `a5b1ce0`(버전 2.0.0-alpha.4)에서 조정자가 직접 실행했다. 이후 커밋은 형식 지원 문서, 썸네일 격리 테스트 1개, 경고 문구 1곳이다.
+
+| 항목 | 결과 |
+|---|---|
+| `cargo fmt --all --check`, `cargo clippy --locked --all-targets -- -D warnings` | 통과 |
+| `cargo test --locked --all-targets` | 302 통과, 0 실패(이후 썸네일 격리 테스트 추가로 303) |
+| `scripts/check_release.py`, `scripts/check_coexistence.py` | 통과 |
+| release 실행 파일 `ldd`의 libav·libsw | 0줄 |
+| 원본 13구간 | 13/13, 15,600프레임 |
+| 14구간 | 14/14, 16,350프레임 |
+| 47구간 | 47/47, 56,399프레임 |
+| `conversion_keep_previous` 50회 반복 | 0 실패(`1318f94`에서도 50/50) |
+| CI(PR #16) `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS required` | 통과 |
+
+CI의 두 컨테이너 작업은 FFmpeg 없는 이미지 안에서 기동, TLS, VFR HEVC·H.264 TS 변환, 원본 형식 내보내기, 썸네일을 확인하고 FFmpeg 잔존 검사(`image_report.py --require-no-ffmpeg`, FFmpeg 관련 파일 0바이트)를 통과했다. 이미지 크기는 amd64 120.7 MB(압축 46.1 MB), aarch64 142.1 MB(압축 45.3 MB), 설치 패키지는 둘 다 107개다.
+
+### openpilot 형식 대조와 실패 격리
+
+근거와 표는 [FORMAT-SUPPORT.md](FORMAT-SUPPORT.md), 측정은 `measurements/format-support-2026-11-17.json`이다.
+
+- 기준 소스: 로컬 openpilot fork `5c2a8c7f`(읽기 전용)이고, 이미 fetch된 upstream `070de2aef`와 녹화 파일 이름·인코더 설정·V4L2 제어값이 같음을 대조했다. 장치가 기록하는 형식은 HEVC Main level 5 8비트 4:2:0(B-frame 0, 1928×1208 또는 1344×760)과 H.264 High 526×330(CABAC, slice 1, 오디오 선택)이다.
+- 코퍼스 24파일은 모두 1344×760 HEVC와 526×330 H.264였다. 코퍼스가 덮지 않는 형식(1928×1208 fcamera·ecamera, 장치 바이트 그대로의 raw ecamera, AAC가 든 qcamera.ts)은 실제 서버(FFmpeg 없는 PATH)에서 업로드 수락, `ready`, Range 206, 썸네일, 내보내기 NAL 일치를 확인했다. 1928×1208과 오디오 TS는 소프트웨어 인코더로 만든 합성 입력이며 하드웨어 인코더의 tile 구성·rate control·SEI는 재현하지 못했다.
+- 미지원·손상 입력 12개 사례: 기록이 `error`가 된 경우 0, 서버 종료 0, 거부된 카메라의 원본 SHA-256 변화 0. 이전 게시 결과가 있던 8건은 MP4가 바이트 그대로 남았다.
+- 썸네일 격리: Main10 HEVC만 있는 구간이 `ready`, Range 206, `data`·`telemetry`·`track` 200, 목록·ZIP·내보내기 정상, 썸네일 API만 404. `tests/thumbnail_isolation.rs`가 이 성질을 지킨다(20회 반복 0 실패).
+- 남은 표시 문제: 업로드 거부는 `{"error":"invalid_file"}`만 오고 `message`가 없다(alpha.3과 같음). 원본 형식 ZIP은 내보낼 수 없는 영상이 하나 있으면 전체가 실패한다.
+
+### 미검증
+
+aarch64에서의 실제 디코딩·속도·메모리(CI는 컨테이너 기동·변환·크기만 확인), 실제 HAOS, 실주행 B-frame·interlaced 입력, 4 GiB 초과 내보내기, 카메라가 처음 쓴 TS(다른 muxer)와의 바이트 비교, 썸네일 디코더의 퍼징·적합성 시험 재현, Python 시절 `prepared/`의 이어받기.

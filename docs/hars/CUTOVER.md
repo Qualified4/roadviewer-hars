@@ -17,7 +17,7 @@
 | 인증 상태 | 해당 데이터 루트/.devices.json | 해당 데이터 루트/.devices.json |
 | 아카이브 쓰기 위치 | Drive 폴더 `Road Viewer`, NAS sentinel owner `roadviewer` | Drive 폴더 `Road Viewer HARS`(`hars_owner=roadviewer-hars`), NAS sentinel owner `roadviewer-hars` |
 | Supervisor API | `hassio_api: true` | `hassio_api: true`(자기 앱의 포트 매핑 조회·변경·재시작만 호출) |
-| 리먹싱 엔진 | PyAV | 순수 Rust(기본), `HARS_REMUX_ENGINE=ffmpeg`으로 FFmpeg 엔진 선택 |
+| 리먹싱 엔진 | PyAV | 순수 Rust만(2.0.0-alpha.4부터 FFmpeg 없음. `HARS_REMUX_ENGINE=ffmpeg`은 경고 후 순수 엔진 사용) |
 
 ## 같은 Drive 계정·NAS를 함께 쓸 때
 

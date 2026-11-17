@@ -1,5 +1,5 @@
 name: Road Viewer HARS
-version: "2.0.0-alpha.3"
+version: "2.0.0-alpha.4"
 slug: roadviewer_hars
 image: ghcr.io/qualified4/roadviewer-hars
 description: Rust Road Viewer 2.x · 기능 이식 중인 독립 테스트용 alpha

@@ -9,13 +9,14 @@ use std::{net::SocketAddr, path::PathBuf};
 const SHUTDOWN_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
 /// Commands whose standard output is their one JSON result, so their log goes to stderr. The server and
 /// `convert-log` keep logging to stdout: the conversion process's log lines are relayed by `jobs` from there.
-const RESULT_ON_STDOUT: [&str; 10] = [
+const RESULT_ON_STDOUT: [&str; 11] = [
     "__inspect",
+    "__probe",
     "__thumbnail",
-    "__native-hevc",
     "__pure-remux",
-    "__native-ts",
+    "__pure-reverse",
     "remux",
+    "reverse",
     "track-log",
     "analyze-log",
     "import-auth",
@@ -36,7 +37,7 @@ fn main() -> anyhow::Result<()> {
     runtime.shutdown_timeout(SHUTDOWN_LIMIT);
     if worker
         && let Err(error) = &result
-        && roadviewer_hars::native_video::resource_error(error)
+        && roadviewer_hars::media::resource_error(error)
     {
         eprintln!("Error: {error:?}");
         std::process::exit(roadviewer_hars::media::RESOURCE_EXIT);
@@ -65,13 +66,22 @@ async fn run() -> anyhow::Result<()> {
     if args.get(1).is_some_and(|v| v == "__inspect") {
         anyhow::ensure!(args.len() == 4, "invalid internal inspection job");
         let result =
-            roadviewer_hars::native_video::inspect(std::path::Path::new(&args[2]), &args[3])?;
+            roadviewer_hars::media::inspect_file(std::path::Path::new(&args[2]), &args[3])?;
+        println!("{}", serde_json::to_string(&result)?);
+        roadviewer_hars::profile::finish();
+        return Ok(());
+    }
+    if args.get(1).is_some_and(|v| v == "__probe") {
+        anyhow::ensure!(args.len() == 4, "invalid internal probe job");
+        roadviewer_hars::pure_remux::limit_memory(worker_budget())?;
+        let result = roadviewer_hars::media::probe_file(std::path::Path::new(&args[2]), &args[3])?;
         println!("{}", serde_json::to_string(&result)?);
         roadviewer_hars::profile::finish();
         return Ok(());
     }
     if args.get(1).is_some_and(|v| v == "__thumbnail") {
         anyhow::ensure!(args.len() == 4, "invalid internal thumbnail job");
+        roadviewer_hars::pure_remux::limit_memory(roadviewer_hars::thumbnail::MEMORY_BUDGET_MIB)?;
         let result = roadviewer_hars::thumbnail::make(
             std::path::Path::new(&args[2]),
             std::path::Path::new(&args[3]),
@@ -80,35 +90,11 @@ async fn run() -> anyhow::Result<()> {
         roadviewer_hars::profile::finish();
         return Ok(());
     }
-    if args.get(1).is_some_and(|v| v == "__native-hevc") {
-        anyhow::ensure!(args.len() == 6, "invalid internal media job");
-        let clock: Vec<f64> =
-            roadviewer_hars::store::read_json(std::path::Path::new(&args[3])).await?;
-        let signature = roadviewer_hars::native_video::remux_hevc(
-            std::path::Path::new(&args[2]),
-            std::path::Path::new(&args[4]),
-            &clock,
-            args[5].parse()?,
-        )?;
-        println!("{}", serde_json::to_string(&signature)?);
-        roadviewer_hars::profile::finish();
-        return Ok(());
-    }
     if args.get(1).is_some_and(|v| v == "__pure-remux") {
         anyhow::ensure!(args.len() == 5, "invalid internal media job");
         let job: roadviewer_hars::pure_remux::Job =
             roadviewer_hars::store::read_json(std::path::Path::new(&args[3])).await?;
-        // A test setting, as the media deadline's: a release build always uses the budget the bounds need.
-        let budget = cfg!(debug_assertions)
-            .then(|| {
-                std::env::var("HARS_PURE_WORKER_MEMORY_MB")
-                    .ok()?
-                    .parse()
-                    .ok()
-            })
-            .flatten()
-            .unwrap_or(roadviewer_hars::pure_remux::MEMORY_BUDGET_MIB);
-        roadviewer_hars::pure_remux::limit_memory(budget)?;
+        roadviewer_hars::pure_remux::limit_memory(worker_budget())?;
         let reply = roadviewer_hars::pure_remux::Reply::from(roadviewer_hars::pure_remux::remux(
             std::path::Path::new(&args[2]),
             std::path::Path::new(&args[4]),
@@ -118,18 +104,24 @@ async fn run() -> anyhow::Result<()> {
         roadviewer_hars::profile::finish();
         return Ok(());
     }
-    if args.get(1).is_some_and(|v| v == "__native-ts") {
+    if args.get(1).is_some_and(|v| v == "__pure-reverse") {
         anyhow::ensure!(args.len() == 6, "invalid internal media job");
-        roadviewer_hars::native_video::remux_ts(
-            std::path::Path::new(&args[2]),
-            std::path::Path::new(&args[3]),
-            args[4].parse()?,
-            args[5].parse()?,
-        )?;
+        let job = roadviewer_hars::pure_reverse::Job {
+            kind: args[3].clone(),
+            offset: args[4].parse()?,
+        };
+        roadviewer_hars::pure_remux::limit_memory(worker_budget())?;
+        let reply =
+            roadviewer_hars::pure_reverse::Reply::from(roadviewer_hars::pure_reverse::reverse(
+                std::path::Path::new(&args[2]),
+                std::path::Path::new(&args[5]),
+                &job,
+            ));
+        println!("{}", serde_json::to_string(&reply)?);
         roadviewer_hars::profile::finish();
         return Ok(());
     }
-    roadviewer_hars::media::Engine::configured()?;
+    roadviewer_hars::media::check_engine_setting()?;
     roadviewer_hars::media::set_worker_executable(std::env::current_exe()?)?;
     if args.get(1).is_some_and(|v| v == "convert-log") {
         anyhow::ensure!(
@@ -204,6 +196,24 @@ async fn run() -> anyhow::Result<()> {
         println!(
             "{}",
             serde_json::json!({"validated":true,"frames":times.len(),"reencoded":false})
+        );
+        return Ok(());
+    }
+    if args.get(1).is_some_and(|v| v == "reverse") {
+        anyhow::ensure!(
+            args.len() == 6,
+            "usage: roadviewer-hars reverse MP4 ORIGINAL_KIND NEW_OUTPUT SOURCE_PTS"
+        );
+        roadviewer_hars::media::reverse(
+            std::path::Path::new(&args[2]),
+            &args[3],
+            std::path::Path::new(&args[4]),
+            args[5].parse()?,
+        )
+        .await?;
+        println!(
+            "{}",
+            serde_json::json!({"exported":true,"engine":"pure","reencoded":false})
         );
         return Ok(());
     }
@@ -326,6 +336,20 @@ async fn run() -> anyhow::Result<()> {
     tokio::select! {result=async {tokio::try_join!(ui,device)}=>{result?;},result=native_exit=>{result?;}}
     Ok(())
 }
+/// Address space a pure worker may add. A test setting, as the media deadline's: a release build
+/// always uses the budget the bounds need.
+fn worker_budget() -> u64 {
+    cfg!(debug_assertions)
+        .then(|| {
+            std::env::var("HARS_PURE_WORKER_MEMORY_MB")
+                .ok()?
+                .parse()
+                .ok()
+        })
+        .flatten()
+        .unwrap_or(roadviewer_hars::pure_remux::MEMORY_BUDGET_MIB)
+}
+
 async fn shutdown() {
     #[cfg(unix)]
     {

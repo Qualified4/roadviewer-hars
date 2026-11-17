@@ -1,0 +1,69 @@
+{
+ "tag": "hars-a4-remove:new",
+ "architecture": "amd64",
+ "uncompressed_bytes": 120607744,
+ "docker_inspect_size_bytes": 175848490,
+ "compressed_layers_gzip6_bytes": 46053061,
+ "layer_blobs_bytes": 46332953,
+ "docker_save_bytes": 46353408,
+ "docker_save_gzip6_bytes": 45979882,
+ "layers": [
+  {
+   "index": 0,
+   "blob_bytes": 28247982,
+   "blob_media": "gzip",
+   "bytes": 77946880,
+   "gzip6_bytes": 28387365,
+   "created_by": "# debian.sh --arch 'amd64' out/ 'bookworm' '@1793827419'"
+  },
+  {
+   "index": 1,
+   "blob_bytes": 6628888,
+   "blob_media": "gzip",
+   "bytes": 17508864,
+   "gzip6_bytes": 6446527,
+   "created_by": "RUN |2 BUILD_VERSION=2.0.0-alpha.3 BUILD_ARCH=amd64 /bin/sh -c apt-get update && apt-get install -y --no-install-recommends nginx ca-certificates && rm -rf /var"
+  },
+  {
+   "index": 2,
+   "blob_bytes": 8727215,
+   "blob_media": "gzip",
+   "bytes": 20748800,
+   "gzip6_bytes": 8497330,
+   "created_by": "COPY /build/target/release/roadviewer-hars /usr/local/bin/roadviewer-hars # buildkit"
+  },
+  {
+   "index": 3,
+   "blob_bytes": 2728868,
+   "blob_media": "gzip",
+   "bytes": 4403200,
+   "gzip6_bytes": 2721839,
+   "created_by": "COPY reference/python/roadviewer/app/web /app/web # buildkit"
+  }
+ ],
+ "binary": {
+  "path": "/usr/local/bin/roadviewer-hars",
+  "bytes": 20745232,
+  "elf": true,
+  "symtab": false,
+  "debug_section_bytes": 0,
+  "debug_sections": [],
+  "stripped": true
+ },
+ "binary_dynamic_links": [
+  "linux-vdso.so.1",
+  "libgcc_s.so.1",
+  "libm.so.6",
+  "libc.so.6",
+  "/lib64/ld-linux-x86-64.so.2"
+ ],
+ "binary_ffmpeg_links": [],
+ "ffmpeg_files": [],
+ "ffmpeg_loadable_libraries": [],
+ "executables_on_path": [],
+ "ffmpeg_file_bytes": 0,
+ "ffmpeg_packages": [],
+ "packages": 107,
+ "packages_installed_kib": 135567,
+ "ffmpeg_found": {}
+}

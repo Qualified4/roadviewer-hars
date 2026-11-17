@@ -2,7 +2,8 @@
 //! tree and sample tables itself, without `shiguredo_mp4` (which wrote them)
 //! or the writer's Annex B splitting, and hashes the samples with
 //! `media::NalHasher`, the splitter that also hashed the input. Shared with
-//! the writer: only `mp4::check_dimensions` (the same size rule both apply).
+//! the writer: only `mp4::check_dimensions` (the same size rule both apply)
+//! and `annexb::picture_size` (the size the SPS states, which a decoder uses).
 use crate::media::{Inspection, NalHasher};
 use anyhow::{Context, bail, ensure};
 use serde_json::json;
@@ -16,7 +17,7 @@ const MOOV_LIMIT: u64 = 16 * 1024 * 1024;
 const SAMPLE_LIMIT: u64 = 32 * 1024 * 1024;
 const COUNT_LIMIT: usize = 262_144;
 
-/// What the read-back saw besides the FFmpeg-shaped `Inspection`.
+/// What the read-back saw besides the probe-shaped `Inspection`.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct Layout {
     pub top_level: Vec<String>,
@@ -151,6 +152,55 @@ fn sets_avcc(payload: &[u8]) -> anyhow::Result<(u8, Vec<Vec<u8>>)> {
         sets.push(r.take(n)?.to_vec());
     }
     Ok((length, sets))
+}
+
+/// The picture size the first SPS states (`annexb::picture_size`), not the sample entry's
+/// width and height, which a decoder ignores: a file whose entry understates its pictures is
+/// judged by the pictures. hev1/avc3 may leave the parameter sets in band, so the first sample's
+/// count when the configuration lacks them.
+fn sps_size(
+    file: &mut File,
+    hevc: bool,
+    config: &[Vec<u8>],
+    length: u8,
+    first: Option<(u64, u64)>,
+) -> anyhow::Result<(u16, u16)> {
+    let parameter_sets = |units: &[&[u8]]| -> anyhow::Result<Vec<(u8, Vec<u8>)>> {
+        let mut sets = Vec::new();
+        for unit in units {
+            let kind = super::annexb::kind(unit, hevc)?;
+            if super::annexb::is_parameter_set(kind, hevc) {
+                sets.push((kind, unit.to_vec()));
+            }
+        }
+        Ok(sets)
+    };
+    let mut sets = parameter_sets(&config.iter().map(Vec::as_slice).collect::<Vec<_>>())?;
+    let required: &[u8] = if hevc { &[32, 33, 34] } else { &[7, 8] };
+    if !required.iter().all(|k| sets.iter().any(|(s, _)| s == k))
+        && let Some((position, size)) = first
+    {
+        ensure!(
+            size > 0 && size <= SAMPLE_LIMIT,
+            "invalid video packet or inspection limit"
+        );
+        let mut sample = vec![0u8; usize::try_from(size)?];
+        file.seek(SeekFrom::Start(position))?;
+        file.read_exact(&mut sample)?;
+        let n = usize::from(length);
+        let (mut rest, mut units) = (&sample[..], Vec::new());
+        while !rest.is_empty() {
+            ensure!(rest.len() >= n, "truncated MP4 sample");
+            let len = rest[..n]
+                .iter()
+                .fold(0usize, |a, b| (a << 8) | usize::from(*b));
+            ensure!(len > 0 && len <= rest.len() - n, "truncated MP4 sample");
+            units.push(&rest[n..n + len]);
+            rest = &rest[n + len..];
+        }
+        sets.extend(parameter_sets(&units)?);
+    }
+    super::annexb::picture_size(hevc, &sets)
 }
 
 fn sets_hvcc(payload: &[u8]) -> anyhow::Result<(u8, Vec<Vec<u8>>)> {
@@ -371,18 +421,105 @@ fn tables(stbl: &[([u8; 4], &[u8])]) -> anyhow::Result<Tables> {
     })
 }
 
+/// The upload check of an MP4: its stream table as a probe reads it. The `moov` box must be whole
+/// and its sample tables consistent; the media data may be cut short (a later read of the samples
+/// decides), other tracks may sit beside the one video track, and `moov` may follow `mdat`.
+pub fn probe(path: &Path) -> anyhow::Result<serde_json::Value> {
+    let mut file = File::open(path)?;
+    let len = file.metadata()?.len();
+    let mut at = 0;
+    let mut moov = None;
+    while at < len && len - at >= 8 {
+        file.seek(SeekFrom::Start(at))?;
+        let mut header = [0u8; 16];
+        file.read_exact(&mut header[..8])?;
+        let small = u32::from_be_bytes(header[..4].try_into()?);
+        let (size, prefix) = match small {
+            1 => {
+                ensure!(len - at >= 16, "truncated MP4 box");
+                file.read_exact(&mut header[8..])?;
+                (u64::from_be_bytes(header[8..].try_into()?), 16)
+            }
+            0 => (len - at, 8),
+            n => (u64::from(n), 8),
+        };
+        ensure!(size >= prefix, "invalid MP4 box size");
+        if &header[4..8] == b"moov" {
+            ensure!(
+                moov.is_none() && size <= MOOV_LIMIT && size <= len - at,
+                "MP4 metadata exceeds limit"
+            );
+            moov = Some((at + prefix, size - prefix));
+        }
+        at = at.saturating_add(size);
+    }
+    let (moov_at, moov_len) = moov.context("missing MP4 moov box")?;
+    let mut bytes = vec![0u8; usize::try_from(moov_len)?];
+    file.seek(SeekFrom::Start(moov_at))?;
+    file.read_exact(&mut bytes)?;
+    let moov = children(&bytes)?;
+    header_clock(one(&moov, b"mvhd")?)?;
+    let mut streams = Vec::new();
+    for (_, trak) in moov.iter().filter(|(k, _)| k == b"trak") {
+        let trak = children(trak)?;
+        let mdia = children(one(&trak, b"mdia")?)?;
+        let hdlr = full(one(&mdia, b"hdlr")?)?.1;
+        if hdlr.get(4..8) != Some(b"vide") {
+            streams.push(json!({"codec_type":"other"}));
+            continue;
+        }
+        let (timescale, _) = header_clock(one(&mdia, b"mdhd")?)?;
+        ensure!(timescale > 0, "invalid stream time base");
+        let stbl = children(one(&children(one(&mdia, b"minf")?)?, b"stbl")?)?;
+        let mut r = Reader::new(full(one(&stbl, b"stsd")?)?.1);
+        ensure!(r.u32()? >= 1, "missing MP4 sample entry");
+        let entries = children(r.rest())?;
+        let (tag, entry) = *entries.first().context("missing MP4 sample entry")?;
+        let t = tables(&stbl)?;
+        let (codec, config_box) = match &tag {
+            b"avc1" | b"avc3" => ("h264", b"avcC"),
+            b"hvc1" | b"hev1" => ("hevc", b"hvcC"),
+            _ => {
+                streams.push(json!({"codec_type":"video","codec_name":"other","codec_tag_string":String::from_utf8_lossy(&tag)}));
+                continue;
+            }
+        };
+        let hevc = codec == "hevc";
+        let mut r = Reader::new(entry);
+        r.take(78)?;
+        let config = one(&children(r.rest())?, config_box)?;
+        let (length, sets) = if hevc {
+            sets_hvcc(config)?
+        } else {
+            sets_avcc(config)?
+        };
+        let first = t.positions.first().copied().zip(t.sizes.first().copied());
+        let (width, height) = sps_size(&mut file, hevc, &sets, length, first)?;
+        streams.push(json!({"codec_type":"video","codec_name":codec,"codec_tag_string":String::from_utf8_lossy(&tag),"width":width,"height":height,"time_base":format!("1/{timescale}")}));
+    }
+    Ok(json!({"streams":streams}))
+}
+
 /// Reads `path` as the converted camera MP4 of `hevc` or H.264 and returns
-/// the same `Inspection` shape the FFmpeg inspector produces, plus layout.
+/// the same `Inspection` shape the input inspection produces, plus layout.
 pub fn inspect(path: &Path, hevc: bool) -> anyhow::Result<(Inspection, Layout)> {
     read(path, hevc, false)
 }
 
-/// [`inspect`] for FFmpeg's copy: one H.264 sample is one access unit, a field pair included.
+/// [`inspect`] for an MP4 another muxer wrote (an input, or the MP4 an export reads): one H.264
+/// sample is one access unit, a field pair included; `moov` may follow `mdat`, and tracks other
+/// than the one video track are left out.
 pub fn inspect_copy(path: &Path, hevc: bool) -> anyhow::Result<(Inspection, Layout)> {
-    read(path, hevc, !hevc)
+    read(path, hevc, true)
 }
 
-fn read(path: &Path, hevc: bool, fields: bool) -> anyhow::Result<(Inspection, Layout)> {
+fn is_video(trak: &[([u8; 4], &[u8])]) -> anyhow::Result<bool> {
+    let mdia = children(one(trak, b"mdia")?)?;
+    Ok(full(one(&mdia, b"hdlr")?)?.1.get(4..8) == Some(b"vide"))
+}
+
+fn read(path: &Path, hevc: bool, copy: bool) -> anyhow::Result<(Inspection, Layout)> {
+    let fields = copy && !hevc;
     let mut file = File::open(path)?;
     let len = file.metadata()?.len();
     let mut at = 0;
@@ -430,7 +567,7 @@ fn read(path: &Path, hevc: bool, fields: bool) -> anyhow::Result<(Inspection, La
         .zip(mdat)
         .context("missing faststart/decoder configuration")?;
     ensure!(
-        moov_at < data_start,
+        copy || moov_at < data_start,
         "missing faststart/decoder configuration"
     );
     let mut bytes = vec![0u8; usize::try_from(moov_len)?];
@@ -442,12 +579,22 @@ fn read(path: &Path, hevc: bool, fields: bool) -> anyhow::Result<(Inspection, La
     let traks = moov
         .iter()
         .filter(|(k, _)| k == b"trak")
-        .collect::<Vec<_>>();
-    ensure!(traks.len() == 1, "expected one video stream");
-    let trak = children(traks[0].1)?;
-    let track_duration = tkhd_duration(one(&trak, b"tkhd")?)?;
+        .map(|(_, body)| children(body))
+        .collect::<anyhow::Result<Vec<_>>>()?;
+    let mut videos = Vec::new();
+    for trak in &traks {
+        if is_video(trak)? {
+            videos.push(trak);
+        }
+    }
+    ensure!(
+        videos.len() == 1 && (copy || traks.len() == 1),
+        "expected one video stream"
+    );
+    let trak = videos[0];
+    let track_duration = tkhd_duration(one(trak, b"tkhd")?)?;
     let mut edit_list = Vec::new();
-    if let Some(edts) = optional(&trak, b"edts")? {
+    if let Some(edts) = optional(trak, b"edts")? {
         let (version, body) = full(one(&children(edts)?, b"elst")?)?;
         let mut r = Reader::new(body);
         for _ in 0..counted(r.u32()?)? {
@@ -460,7 +607,7 @@ fn read(path: &Path, hevc: bool, fields: bool) -> anyhow::Result<(Inspection, La
             edit_list.push(entry);
         }
     }
-    let mdia = children(one(&trak, b"mdia")?)?;
+    let mdia = children(one(trak, b"mdia")?)?;
     let (timescale, media_duration) = header_clock(one(&mdia, b"mdhd")?)?;
     ensure!(
         timescale > 0 && movie_timescale > 0,
@@ -481,10 +628,13 @@ fn read(path: &Path, hevc: bool, fields: bool) -> anyhow::Result<(Inspection, La
     } else {
         (b"avc1", b"avcC")
     };
-    ensure!(&tag == expected_tag, "camera codec mismatch");
+    // hev1/avc3 may also carry parameter sets inside the samples; another muxer's file may use
+    // them, the engine writes hvc1/avc1 only.
+    let in_band = copy && &tag == if hevc { b"hev1" } else { b"avc3" };
+    ensure!(&tag == expected_tag || in_band, "camera codec mismatch");
     let mut r = Reader::new(entry);
     r.take(24)?;
-    let (width, height) = (r.u16()?, r.u16()?);
+    let entry_size = (r.u16()?, r.u16()?);
     r.take(50)?;
     let inner = children(r.rest())?;
     let config = one(&inner, config_box)?;
@@ -493,10 +643,17 @@ fn read(path: &Path, hevc: bool, fields: bool) -> anyhow::Result<(Inspection, La
     } else {
         sets_avcc(config)?
     };
-    super::mp4::check_dimensions(width, height)?;
     ensure!(length == 4, "unsupported NAL length size");
 
     let t = tables(&stbl)?;
+    let first = t.positions.first().copied().zip(t.sizes.first().copied());
+    let (width, height) = sps_size(&mut file, hevc, &sets, length, first)?;
+    super::mp4::check_dimensions(width, height)?;
+    // The engine writes its sample entry from the same SPS.
+    ensure!(
+        copy || entry_size == (width, height),
+        "MP4 sample entry size disagrees with its SPS"
+    );
     let count = t.sizes.len();
     ensure!(count > 0, "missing pictures or decoder configuration");
     let keyframes = t.sync.clone().unwrap_or_else(|| (0..count).collect());
@@ -543,7 +700,7 @@ fn read(path: &Path, hevc: bool, fields: bool) -> anyhow::Result<(Inspection, La
             let nal = &rest[4..4 + n];
             let kind = pictures.unit(nal)?;
             ensure!(
-                !(hevc && matches!(kind, 32..=34)),
+                in_band || !(hevc && matches!(kind, 32..=34)),
                 "hvc1 parameter sets must be out of band"
             );
             access.add(hevc, kind, nal)?;
@@ -594,7 +751,7 @@ mod tests {
 
     /// An IDR frame coded as two field pictures: both slices start a picture.
     #[test]
-    fn a_field_pair_is_one_sample_only_in_an_ffmpeg_copy() {
+    fn a_field_pair_is_one_sample_only_in_another_muxers_copy() {
         let field: &[u8] = &[0x65, 0x88, 0x84];
         let pair = sample(&[field, field]);
         assert!(pair.check(true, false).is_err());
