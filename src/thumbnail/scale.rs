@@ -189,14 +189,19 @@ fn increment(src: usize, dst: usize) -> i64 {
 
 /// `hScale8To15_c`, then `lumRangeToJpeg_c` / `chrRangeToJpeg_c` when the source is limited range.
 fn horizontal(row: &[u8], f: &Filter, out: &mut [i16], convert: Option<bool>) {
-    for (i, value) in out.iter_mut().enumerate() {
+    for (i, (value, taps)) in out.iter_mut().zip(f.coeff.chunks_exact(f.size)).enumerate() {
         let start = f.pos[i] as usize;
-        let mut acc = 0i32;
-        for (j, &c) in f.coeff[i * f.size..(i + 1) * f.size].iter().enumerate() {
-            if c != 0 {
-                acc += i32::from(row.get(start + j).copied().unwrap_or(0)) * i32::from(c);
-            }
-        }
+        let dot = |src: &[u8]| -> i32 {
+            src.iter()
+                .zip(taps)
+                .map(|(&s, &c)| i32::from(s) * i32::from(c))
+                .sum()
+        };
+        // `filter` keeps every window inside the row; past its end a sample counts as 0.
+        let acc = match row.get(start..start + f.size) {
+            Some(src) => dot(src),
+            None => dot(row.get(start..).unwrap_or(&[])),
+        };
         let v = (acc >> 7).min((1 << 15) - 1);
         *value = match convert {
             None => v,
@@ -208,22 +213,30 @@ fn horizontal(row: &[u8], f: &Filter, out: &mut [i16], convert: Option<bool>) {
 
 /// One output row from the horizontally scaled rows `rows` (`None` past the source's end, whose
 /// weight is always zero). `simd`: the x86 `yuv2yuvX` rounding, else `yuv2planeX_8_c`.
+/// Row by row rather than pixel by pixel: the sums are integer (wrapping for `simd`), so their
+/// order does not change them, and a row pass vectorises.
 fn vertical(rows: &[Option<&[i16]>], taps: &[i16], out: &mut [u8], simd: bool) {
-    for (i, value) in out.iter_mut().enumerate() {
-        let sample = |j: usize| rows[j].map_or(0, |r| i32::from(r[i]));
-        *value = if simd {
-            let mut acc = ((DITHER + 8 * (taps.len() as i32 - 1)) >> 4) as i16;
-            for (j, &c) in taps.iter().enumerate() {
-                acc = acc.wrapping_add(((sample(j) * i32::from(c)) >> 16) as i16);
+    let present = || rows.iter().zip(taps).filter_map(|(r, &c)| Some(((*r)?, c)));
+    if simd {
+        let mut acc = vec![((DITHER + 8 * (taps.len() as i32 - 1)) >> 4) as i16; out.len()];
+        for (row, c) in present() {
+            for (a, &s) in acc.iter_mut().zip(row) {
+                *a = a.wrapping_add(((i32::from(s) * i32::from(c)) >> 16) as i16);
             }
-            (acc >> 3).clamp(0, 255) as u8
-        } else {
-            let mut acc = DITHER << 12;
-            for (j, &c) in taps.iter().enumerate() {
-                acc += sample(j) * i32::from(c);
+        }
+        for (value, a) in out.iter_mut().zip(acc) {
+            *value = (a >> 3).clamp(0, 255) as u8;
+        }
+    } else {
+        let mut acc = vec![DITHER << 12; out.len()];
+        for (row, c) in present() {
+            for (a, &s) in acc.iter_mut().zip(row) {
+                *a += i32::from(s) * i32::from(c);
             }
-            (acc >> 19).clamp(0, 255) as u8
-        };
+        }
+        for (value, a) in out.iter_mut().zip(acc) {
+            *value = (a >> 19).clamp(0, 255) as u8;
+        }
     }
 }
 
