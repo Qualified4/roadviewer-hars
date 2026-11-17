@@ -251,7 +251,7 @@ async fn run() -> anyhow::Result<()> {
         if ha_mode {
             "/app/web"
         } else {
-            "reference/python/roadviewer/app/web"
+            "web"
         }
         .into()
     }));

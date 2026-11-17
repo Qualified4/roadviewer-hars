@@ -38,7 +38,7 @@ pub struct Env {
 }
 
 fn web() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("reference/python/roadviewer/app/web")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web")
 }
 
 pub fn http() -> Arc<Http> {

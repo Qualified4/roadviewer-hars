@@ -2,7 +2,7 @@
 """Runs HARS's browser tests (tests/browser/*.cjs, Node + Playwright, copied from Python Road Viewer 1.3.18 and owned
 by HARS since) against a HARS executable and the web files HARS serves, and judges the run (the gate).
 
-Each test runs in its own working folder: roadviewer/app/web holds what HARS served for every preserved web file
+Each test runs in its own working folder: roadviewer/app/web holds what HARS served for every HARS-owned web file
 (mirror_web.py), roadviewer/config.yaml is HARS's add-on config, and tests/ links to tests/browser (its fixtures and
 Python helpers). Tests that start the Python server get hars_as_python.py as RV_PYTHON (pyshim/). TMPDIR points into
 the working folder, so the test's own temporary folders and the browser profile go with it. HARS_EXPECTED_VERSION is
@@ -33,7 +33,7 @@ from pathlib import Path
 HERE = Path(os.environ.get("HARS_BROWSER_RUNNER_HOME") or Path(__file__).resolve().parent)
 REPO = HERE.parents[1]
 TESTS = REPO / "tests/browser"
-WEB = REPO / "reference/python/roadviewer/app/web"
+WEB = REPO / "web"
 sys.path.insert(0, str(HERE / "pyshim"))
 from hars_shim import listening_owner  # noqa: E402
 

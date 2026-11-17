@@ -20,7 +20,7 @@ use std::{
 use tower::ServiceExt;
 
 fn web() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("reference/python/roadviewer/app/web")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web")
 }
 async fn app(root: &std::path::Path) -> App {
     let a = App::open(root.to_path_buf(), web(), false, 512)

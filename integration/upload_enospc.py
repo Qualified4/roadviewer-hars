@@ -70,7 +70,7 @@ async def main(args):
             data = mount / "data"
             data.mkdir()
             (data / ".processing-settings.json").write_text(json.dumps({"auto_convert": False}))
-            env = {**os.environ, "HARS_DATA": str(data), "HARS_WEB": str(ROOT / "reference/python/roadviewer/app/web"),
+            env = {**os.environ, "HARS_DATA": str(data), "HARS_WEB": str(ROOT / "web"),
                    "HARS_INGRESS_ONLY": "0", "HARS_BIND": f"127.0.0.1:{ports[0]}",
                    "HARS_DEVICE_BIND": f"127.0.0.1:{ports[1]}", "RUST_LOG": "off"}
             start = lambda: subprocess.Popen([args.rust], env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

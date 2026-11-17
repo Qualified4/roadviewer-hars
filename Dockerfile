@@ -18,7 +18,7 @@ LABEL io.hass.version="${BUILD_VERSION}" \
       org.opencontainers.image.source="https://github.com/Qualified4/roadviewer-hars"
 RUN apt-get update && apt-get install -y --no-install-recommends nginx ca-certificates && rm -rf /var/lib/apt/lists/*
 COPY --from=builder /build/target/release/roadviewer-hars /usr/local/bin/roadviewer-hars
-COPY reference/python/roadviewer/app/web /app/web
+COPY web /app/web
 ENV HARS_DATA=/data/roadviewer-hars HARS_WEB=/app/web HARS_INGRESS_ONLY=1
 EXPOSE 8099 8443
 STOPSIGNAL SIGTERM
