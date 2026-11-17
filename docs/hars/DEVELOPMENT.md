@@ -66,7 +66,7 @@ Rust 구조화 로그는 요청 ID, 경로, 서버 진입, 인증/파일 락 대
 
 웹 파일은 `reference/python/roadviewer/app/web/`의 보존 원본을 그대로 쓴다. 원본을 새 릴리스로 올릴 때는 `scripts/verify_reference.py`의 `SOURCE`와 `scripts/inventory.py`의 기준을 함께 바꾼다. 페이지의 버전·제목 치환은 브라우저 없이 `tests/page_version.rs`가 CI에서 지킨다(원본 릴리스 번호가 페이지에 남거나, 치환 대상이 사라지거나, HARS 표기가 제목·버전 줄 밖으로 나가 워드마크 `<h1>`을 바꾸면 실패).
 
-**CI 안.** 보존 원본 브라우저 테스트 51개 항목(`reference/python/tests/*.cjs`)은 `HARS CI`의 `Browser checks`(필수)가 원본 파일 수정 없이 HARS debug 실행 파일과 HARS가 내보낸 화면에 붙여 돌린다. 게이트(예상 실패 1개·제외 1개는 `integration/upstream_cjs/expectations.json`), 실패 산출물, 묶음 구성, 알려진 간헐 실패(`video_overlay` 77행, 원본 테스트의 대기 조건)는 [BROWSER-TESTS.md](BROWSER-TESTS.md)에 있다. 로컬에서는 `python3 integration/upstream_cjs/run_browser_tests.py --hars-bin target/debug/roadviewer-hars --out /tmp/rv-browser`(Node 22, `npm ci --prefix integration/upstream_cjs`, `npx --prefix integration/upstream_cjs playwright install --only-shell chromium`).
+**CI 안.** 브라우저 테스트 51개 항목(`tests/browser/*.cjs`, Python Road Viewer 1.3.18에서 복사해 HARS가 소유)은 `HARS CI`의 `Browser checks`(필수)가 HARS debug 실행 파일과 HARS가 내보낸 화면에 붙여 돌린다. 게이트(제외 1개 `replay_format2`, 재시도·예상 실패 없음, `integration/upstream_cjs/expectations.json`), 실패 산출물, 9묶음 구성, HARS가 고친 대기 지점은 [BROWSER-TESTS.md](BROWSER-TESTS.md)에 있다. 로컬에서는 `python3 integration/upstream_cjs/run_browser_tests.py --hars-bin target/debug/roadviewer-hars --out /tmp/rv-browser`(Node 22, `npm ci --prefix integration/upstream_cjs`, `npx --prefix integration/upstream_cjs playwright install --only-shell chromium`).
 
 **CI 밖.** 아래 검사는 실주행 기록이 필요해 CI에 넣지 않았다. 새 임시 프로필의 headless Chromium 계열만 쓰고, 서버는 임시 데이터 폴더와 loopback 포트의 release 실행 파일이다. 대상 레코드는 영상과 GPS가 있고 같은 주행에 구간이 2개 이상 있어야 하므로 실주행 연속 구간 3개를 `/api/uploads`로 올려 변환한 뒤 쓴다(`integration/real_upload_smoke.py`와 같은 업로드 절차).
 
@@ -82,15 +82,16 @@ python3 integration/ui_view_check.py --browser EXE --profile NEW_DIR --port 1877
 
 `ui_sync_check.py`의 브라우저는 바깥 호스트 이름을 풀지 못하게 띄운다. 지도 타일을 받지 않으므로 실주행 위치가 밖으로 나가지 않는다. `ui_view_check.py`는 그렇게 하지 않으므로 실주행 데이터에서는 지도 타일 요청이 OpenFreeMap으로 나간다. 구간 카드 제스처는 원본 `tests/segment_peek.cjs`가 CDP로 보내는 터치 대신 같은 포인터·터치 이벤트를 스크립트로 보낸다.
 
-보존 원본 브라우저 테스트를 실행기 없이 하나씩 손으로 돌리는 방법(진단용). `segment_peek.cjs`는 API를 가짜로 채우고 화면 파일을 작업 폴더에서 읽으므로, `integration/upstream_cjs/mirror_web.py`로 HARS가 내보낸 페이지·자산을 영문 임시 폴더에 받아 그 폴더에서 실행한다. `maps.cjs`는 `RV_PYTHON`이 띄우는 서버를 쓰므로 `integration/upstream_cjs/hars_as_python.py`를 `RV_PYTHON`으로 준다. 이 래퍼는 테스트의 서버 프로그램을 그대로 실행하되 `pyshim/`의 `server`·`werkzeug.serving`이 HARS 기동 + `/api/hassio_ingress/test/` 접두사 제거 프록시가 되게 한다. 이 테스트는 Python 형식 기록 파일을 데이터 폴더에 직접 써 넣는다.
+브라우저 테스트(`tests/browser`)를 실행기 없이 하나씩 손으로 돌리는 방법(진단용). `segment_peek.cjs`는 API를 가짜로 채우고 화면 파일을 작업 폴더에서 읽으므로, `integration/upstream_cjs/mirror_web.py`로 HARS가 내보낸 페이지·자산을 영문 임시 폴더에 받아 그 폴더에서 실행한다. `maps.cjs`는 `RV_PYTHON`이 띄우는 서버를 쓰므로 `integration/upstream_cjs/hars_as_python.py`를 `RV_PYTHON`으로 준다. 이 래퍼는 테스트의 서버 프로그램을 그대로 실행하되 `pyshim/`의 `server`·`werkzeug.serving`이 HARS 기동 + `/api/hassio_ingress/test/` 접두사 제거 프록시가 되게 한다. 이 테스트는 Python 형식 기록 파일을 데이터 폴더에 직접 써 넣는다.
 
 ```sh
-cd /tmp/peek && NODE_PATH=PLAYWRIGHT_NODE_MODULES node "$REPO/reference/python/tests/segment_peek.cjs"
-cd "$REPO/reference/python" && HARS_BIN=... HARS_WEB=... RV_PYTHON="$REPO/integration/upstream_cjs/hars_as_python.py" \
+cd /tmp/peek && NODE_PATH=PLAYWRIGHT_NODE_MODULES node "$REPO/tests/browser/segment_peek.cjs"
+# maps.cjs: 작업 폴더에 roadviewer/app/web(미러)과 tests -> $REPO/tests/browser 링크를 두고 그 폴더에서
+cd /tmp/maps && HARS_BIN=... HARS_WEB=... RV_PYTHON="$REPO/integration/upstream_cjs/hars_as_python.py" \
   RV_TEST_VIDEO=SYNTHETIC.mp4 NODE_PATH=PLAYWRIGHT_NODE_MODULES node tests/maps.cjs
 ```
 
-어댑터는 Python 서버와 같은 조건을 두 가지 만든다.
+어댑터는 Python 서버와 같은 조건을 두 가지 만든다. 둘째(재기동)는 `HARS_SHIM_RESTART=1`일 때만 하고, 실행기는 그것을 `maps[map_parts=many,leak]`에만 준다(다른 항목에서 폴더가 바뀌면 `restart refused`로 기록되고 게이트 실패). 연결 대기열은 werkzeug와 같은 128이다.
 
 - 요청마다 연결을 닫는다(HTTP/1.0). 테스트의 werkzeug 서버가 `Connection: close`로 답하기 때문이다. 목록 카드의 지도 버튼은 `/api/tracks` 응답 전에 먼저 나타나고(maps.js의 의도된 대기 상태), 경로 선은 응답을 받은 뒤 그려진다. 110행은 버튼이 보이자마자 선을 센다. keep-alive 프록시에서는 그 사이에 세는 경우가 30회 페이지 열기 중 2~5회 나왔다. Python 서버를 같은 프록시 뒤에 두어도 3/30이었고, Python 직접 연결과 HTTP/1.0 프록시(Python·HARS 모두)에서는 0/30이었다.
 - 데이터 폴더의 기록 폴더 목록이 바뀌면 다음 요청 전에 HARS를 다시 띄운다. HARS는 기록을 시작할 때 한 번 읽고 그 뒤에는 자기 API로만 새 기록을 알게 되는데, 테스트의 `many` 부분은 서버가 도는 중에 기록 100개를 폴더에 직접 써 넣는다(Python은 요청마다 폴더를 읽는다).

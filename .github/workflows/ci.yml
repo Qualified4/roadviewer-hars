@@ -85,7 +85,7 @@ jobs:
           if-no-files-found: warn
       - name: Boot container, verify HTTP and isolated TLS device listener
         run: python3 scripts/container_smoke.py hars-ci
-  # The preserved Python browser tests against HARS (docs/hars/BROWSER-TESTS.md). The HARS executable is built
+  # HARS's browser tests (tests/browser, docs/hars/BROWSER-TESTS.md) against HARS. The HARS executable is built
   # once, from the Rust checks job's dependency cache (restored, never saved: one cache entry), and handed to
   # the shards.
   browser-build:
