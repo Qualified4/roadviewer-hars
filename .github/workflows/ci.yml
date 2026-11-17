@@ -85,14 +85,144 @@ jobs:
           if-no-files-found: warn
       - name: Boot container, verify HTTP and isolated TLS device listener
         run: python3 scripts/container_smoke.py hars-ci
+  # The preserved Python browser tests against HARS (docs/hars/BROWSER-TESTS.md). The HARS executable is built
+  # once, from the Rust checks job's dependency cache (restored, never saved: one cache entry), and handed to
+  # the shards.
+  browser-build:
+    name: Browser build
+    runs-on: ubuntu-24.04
+    env:
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+    steps:
+      - uses: actions/checkout@v7
+      - name: Native build dependency
+        run: |
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends capnproto
+      - run: rustup update stable --no-self-update
+      - uses: actions/cache/restore@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: hars-rust-v2-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
+      - run: cargo build --locked --bin roadviewer-hars
+      - uses: actions/upload-artifact@v4
+        with:
+          name: hars-debug-bin
+          path: target/debug/roadviewer-hars
+          retention-days: 1
+          if-no-files-found: error
+  browser-shards:
+    name: Browser shard ${{ matrix.shard }}
+    needs: [browser-build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        # browser-groups.json groups, about 130 s of tests each (BROWSER-TESTS.md); each shard runs serially.
+        include:
+          - shard: 1
+            groups: g7 g6
+          - shard: 2
+            groups: g8 g5
+          - shard: 3
+            groups: g3 g9
+          - shard: 4
+            groups: g4 g2
+          - shard: 5
+            groups: g1
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22.13.1'
+          cache: npm
+          cache-dependency-path: integration/upstream_cjs/package-lock.json
+      - run: npm ci --prefix integration/upstream_cjs
+      - uses: actions/cache@v6
+        with:
+          path: ~/.cache/ms-playwright
+          key: playwright-shell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('integration/upstream_cjs/package-lock.json') }}
+      - run: npx --prefix integration/upstream_cjs playwright install --only-shell chromium
+      # No `playwright install-deps`: the hosted runner already has Chromium's shared libraries (it ships Google
+      # Chrome). If an image update removes one, this fails here instead of in every test.
+      - name: Browser shared libraries are present
+        run: |
+          shell=$(ls ~/.cache/ms-playwright/chromium_headless_shell-*/chrome-headless-shell-linux64/chrome-headless-shell)
+          ! ldd "$shell" | grep 'not found'
+      - uses: actions/download-artifact@v4
+        with:
+          name: hars-debug-bin
+          path: hars-bin
+      - run: chmod +x hars-bin/roadviewer-hars
+      # Every test runs in a user+network namespace with only loopback (unshare -rn). Ubuntu 24.04's AppArmor
+      # restriction on unprivileged user namespaces would leave the namespace without the capability to bring lo
+      # up; it is lifted for this job. The check fails the job unless an outside address is unreachable inside.
+      - name: Loopback-only network namespace
+        run: |
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+          unshare -rn sh -c 'ip link set lo up && python3 integration/upstream_cjs/run_browser_tests.py --isolation-check'
+      - name: Browser tests
+        run: |
+          set +e
+          python3 integration/upstream_cjs/run_browser_tests.py --hars-bin hars-bin/roadviewer-hars \
+            --out browser-out --groups ${{ matrix.groups }}
+          code=$?
+          echo "$code" > browser-out/exit-code
+          exit "$code"
+      - name: Keep the shard summary
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-summary-${{ matrix.shard }}
+          path: |
+            browser-out/summary.json
+            browser-out/exit-code
+          retention-days: 7
+          if-no-files-found: warn
+      - name: Keep the test logs, screenshots and traces
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-artifacts-${{ matrix.shard }}
+          path: browser-out
+          retention-days: 7
+          if-no-files-found: warn
+  browser:
+    name: Browser checks
+    if: ${{ always() }}
+    needs: [browser-shards]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: browser-summary-*
+          path: shards
+      # Recomputed from the shards' results: all 51 entries once, each shard's exit status agreeing with its summary.
+      - name: Gate over every shard
+        run: python3 integration/upstream_cjs/run_browser_tests.py --aggregate shards/* --out browser-gate
+      - name: Keep the gate summary
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: browser-gate
+          path: browser-gate/summary.json
+          retention-days: 7
+          if-no-files-found: warn
   required:
     name: HARS required
     if: ${{ always() }}
-    needs: [rust, container]
+    needs: [rust, container, browser]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every check and architecture
         env:
           RUST_RESULT: ${{ needs.rust.result }}
           CONTAINER_RESULT: ${{ needs.container.result }}
-        run: test "$RUST_RESULT" = success && test "$CONTAINER_RESULT" = success
+          BROWSER_RESULT: ${{ needs.browser.result }}
+        run: test "$RUST_RESULT" = success && test "$CONTAINER_RESULT" = success && test "$BROWSER_RESULT" = success
