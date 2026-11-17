@@ -1479,7 +1479,7 @@
   "binary_bytes": 20880528
  },
  "review_fixes": {
-  "commit": "68a56e0",
+  "commit": "a13a995 for review_inputs, differential_fuzzing, thumbnails_85, failure_cases; 68a56e0 (same but no catch_unwind around the parameter-set parsers) for frames_vs_ffmpeg, real13, benchmark, stages",
   "against": "b94d8a4 release binary",
   "premise": "docs/hars/THUMBNAIL-DECODER.md, \"When skipping is exact\" (video::shortcuts, video::finishes)",
   "review_inputs": {
@@ -1555,12 +1555,12 @@
      "new": 18
     },
     "peak_rss_kib_max": {
-     "base": 121504,
-     "new": 123048
+     "base": 121940,
+     "new": 122416
     },
     "seconds_max": {
-     "base": 1.94,
-     "new": 1.76
+     "base": 1.97,
+     "new": 1.69
     }
    }
   },
@@ -2179,8 +2179,9 @@
    "h264_probe": "one P picture per restart, about 1 ms"
   },
   "binary_bytes": {
-   "unstripped": 27394760,
-   "stripped": 20887032
+   "commit": "a13a995",
+   "unstripped": 27405752,
+   "stripped": 20896704
   }
  }
 }

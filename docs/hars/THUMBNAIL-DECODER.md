@@ -464,15 +464,18 @@ files every IDR sample (0, 20, ..., 120) is a restart point. For the other 70 qc
 was not printed; the decoded-sample counts below and the 2,918 pictures output by the 85 (8800338:
 4,052) show restarts happen.
 
-Results after the fixes (`68a56e0` against `b94d8a4` unless said):
+Results after the fixes, against `b94d8a4`. The review inputs, the fuzzing, the 85 thumbnails,
+the 40 failure cases and the tests ran on `a13a995`; the FFmpeg frame comparison, the 13 segments
+and the timings on `68a56e0`, which differs only in not catching a panic of the crates'
+parameter-set parsers during the check:
 
 | check | result |
 |---|---|
 | the review's four inputs (plus its controls and the second junk-NAL variant), `prlimit --as=2147483648` | 4/4 (9/9 with the others) same second, score, JSON and JPEG bytes as `b94d8a4`; `8800338` differed on all four |
-| differential fuzzing, `integration/thumbnail_differential.py`, seed 20261117: 300 H.264 + 300 HEVC damaged inputs from 2 synthetic and 2 real camera files per codec (bit flips, NAL units deleted, duplicated, reordered, samples swapped, slices deleted, parameter sets put in band intact or damaged or with trailing zeros, junk and rewritten NAL headers, boxes renamed, files cut) | 600/600 same exit status, output line, `thumbnail.json` and JPEG bytes; 500 made a thumbnail in both, 100 failed in both |
+| differential fuzzing, `integration/thumbnail_differential.py`, seed 20261117: 300 H.264 + 300 HEVC damaged inputs from 2 synthetic and 2 real camera files per codec (bit flips, NAL units deleted, duplicated, reordered, samples swapped, slices deleted, parameter sets put in band intact or damaged or with trailing zeros, junk and rewritten NAL headers, boxes renamed, files cut) | 600/600 same exit status, output line, `thumbnail.json` and JPEG bytes; 500 made a thumbnail in both, 100 failed in both. The same 600 cases against `8800338`: 3 differ (two HEVC with a NAL unit deleted, one with a rewritten NAL header and a parameter set in band), so the fuzzer does reach the kind of input the review found, if rarely |
 | 85 thumbnails, as before | 85/85 exit, stdout, JSON, size, JPEG bytes, candidates and levelled picture equal; 2,918 pictures output, each equal to the alpha.4 picture of its time (alpha.4: 8,622) |
 | 36 videos against `ffmpeg -threads 1` | window 5,004/5,004 MD5 equal; pictures a thumbnail run outputs 1,040/1,040 |
-| 40 failure cases | 40/40 same outcome, result and JPEG; 18 made by each; panics 0; killed 0; files left 0; peak RSS 118.7 / 120.2 MiB (`b94d8a4` / new) |
+| 40 failure cases | 40/40 same outcome, result and JPEG; 18 made by each; panics 0; killed 0; files left 0; peak RSS 119.1 / 119.5 MiB (`b94d8a4` / new) |
 | `integration/real_conversion_compare.py`, 13 original segments | 13/13 without differences |
 
 Speed after the fixes, worker spawn to exit, median (range) of 7 alternating rounds of the three
