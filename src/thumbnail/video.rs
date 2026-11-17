@@ -648,21 +648,16 @@ fn restart(
         file.read_exact(bytes)?;
         Ok(true)
     };
-    let kind = |nal: &[u8]| match track.codec {
-        Codec::H264 => nal[0] & 31,
-        Codec::Hevc => (nal[0] >> 1) & 63,
-    };
-    let (vcl, idr, sets): (fn(u8) -> bool, fn(u8) -> bool, fn(u8) -> bool) = match track.codec {
-        Codec::H264 => (
-            |t| (1..=5).contains(&t),
-            |t| t == 5,
-            |t| matches!(t, 7 | 8 | 13 | 15),
-        ),
-        Codec::Hevc => (
-            |t| t < 32,
-            |t| matches!(t, 19 | 20),
-            |t| matches!(t, 32..=34),
-        ),
+    // (picture, IDR picture, parameter set) for a NAL unit.
+    let class = |nal: &[u8]| match track.codec {
+        Codec::H264 => {
+            let t = nal[0] & 31;
+            ((1..=5).contains(&t), t == 5, matches!(t, 7 | 8 | 13 | 15))
+        }
+        Codec::Hevc => {
+            let t = (nal[0] >> 1) & 63;
+            (t < 32, matches!(t, 19 | 20), matches!(t, 32..=34))
+        }
     };
     let mut start = None;
     for index in (from + 1..=needed).rev() {
@@ -672,8 +667,13 @@ fn restart(
         let Ok(nals) = units(&bytes, track.length_size) else {
             continue;
         };
-        let pictures: Vec<u8> = nals.iter().map(|n| kind(n)).filter(|t| vcl(*t)).collect();
-        if !pictures.is_empty() && pictures.into_iter().all(idr) {
+        let pictures: Vec<bool> = nals
+            .iter()
+            .map(|n| class(n))
+            .filter(|c| c.0)
+            .map(|c| c.1)
+            .collect();
+        if !pictures.is_empty() && pictures.into_iter().all(|idr| idr) {
             start = Some(index);
             break;
         }
@@ -690,7 +690,7 @@ fn restart(
         };
         if nals
             .iter()
-            .any(|n| sets(kind(n)) && !track.sets.iter().any(|s| s.as_slice() == *n))
+            .any(|n| class(n).2 && !track.sets.iter().any(|s| s.as_slice() == *n))
         {
             return Ok(None);
         }
