@@ -18,6 +18,7 @@
   - [Correctness](#correctness)
   - [After](#after)
   - [What limits it now](#what-limits-it-now)
+  - [When skipping is exact (review fixes)](#when-skipping-is-exact-review-fixes)
   - [Not verified](#not-verified)
 <!-- /toc -->
 
@@ -313,13 +314,12 @@ camera files have an IDR picture every 15 samples (qcamera, 0.75 s) and every 20
 ### What was changed
 
 1. Decoding starts at the IDR picture before each wanted time (`video::restart`). The callback
-   now returns the time before which it needs no picture; without B-frames the samples before
-   the last IDR picture at or before the first sample presented at that time (1 ms margin) are
-   not decoded and a fresh decoder starts there. Allowed only when every skipped sample lies
-   inside the file (a file cut short still stops where it did), carries no parameter set other
-   than the track's own, and the restart sample's pictures are all IDR (H.264 type 5, HEVC
-   19/20; not CRA). A picture from that IDR on references nothing before it, so it is the one
-   sequential decoding gives. Samples decoded: H.264 101 -> 37-59, HEVC 102 -> 12-17.
+   now returns the time before which it needs no picture; the samples before the last IDR
+   picture at or before the first sample presented at that time (1 ms margin) are not decoded
+   and a fresh decoder starts there. The conditions first written here (no B-frames by `ctts`,
+   no other parameter set in the skipped samples, IDR NAL types) were not enough; an independent
+   review found four inputs where the result differed. The conditions that hold now are in
+   "When skipping is exact" below. Samples decoded: H.264 101 -> 37-59, HEVC 102 -> 12-17.
 2. HEVC: `rusty_h265` finishes a picture only when the next one starts, so each candidate IDR
    cost the following P picture. A sample at or after the wanted time is now flushed. When the
    caller then wants a time with an IDR ahead, the flushed decoder is replaced anyway; otherwise
@@ -391,6 +391,84 @@ total (medians; the per-segment ranges overlap). amd64 image 120.74 MB unpacked,
 - HEVC: decoding the 6-11 pictures, about 60% of it IDR pictures (inverse transform, CABAC).
 - SIMD would roughly halve both (measured above); not applied for the reasons above.
 
+### When skipping is exact (review fixes)
+
+An independent review of `8800338` against `b94d8a4` produced four inputs where the thumbnail
+(seconds, score or JPEG) differed:
+
+| # | input | why the shortcut differed | fix |
+|---|---|---|---|
+| 1 | H.264, a PPS other than `avcC`'s in band in sample 0 | the check covered only the skipped samples; the decoder had already taken the set from sample 0, a fresh one had not | every parameter set in the 140-sample window must parse to the fields of the track's set of its kind, or nothing is skipped in the file |
+| 2 | H.264, one of two slices removed from the sample before an IDR picture | `rusty_h264` answers an IDR slice after an unfinished picture with `Truncated` and the sequential path resets, losing that GOP; a fresh decoder decodes it | restart only after a sample that holds one picture which a fresh decoder finishes (below) |
+| 3 | HEVC, a NAL unit whose header does not parse (`80 01`) before the IDR picture | `rusty_h265::push_nal` returns before recording the sample's time, so the picture gets the time of the sample during which it is output, which differs between the paths | every NAL header in the window must parse, and each sample's first slice, only it, starts a picture; else no restart and no flush |
+| 4 | HEVC with B-frames, `ctts` renamed to `free` | reordering was judged from `ctts` alone; the flush then outputs the DPB in POC order at once | also `sps_max_num_reorder_pics == 0` in every sub-layer |
+
+Rather than four patches, the premise is now written down and checked in one place,
+`video::shortcuts`, before decoding (it reads the window's samples once). A restart at IDR sample
+`s` and an early HEVC flush give the caller every picture, time and order that decoding every
+sample gives when all of these hold; anything not shown counts as not holding, and the file is
+then decoded sample by sample exactly as in `b94d8a4`:
+
+1. Pictures come out in decode order with their own sample's time: no composition offset,
+   decode times that strictly grow, and for HEVC `sps_max_num_reorder_pics` zero in every
+   sub-layer. `sps_max_latency_increase_plus1` is not required to be zero (the review suggested
+   it): `rusty_h265` outputs a picture as soon as more than `sps_max_num_reorder_pics` wait, so
+   with zero each picture leaves when it is finished whatever the latency; x265 writes 1 there.
+2. The decoder that went through every sample holds the parameter sets a fresh one is given: at
+   most one set of each kind in the track, each in-band set parsing (with the decoder crate's own
+   parser and RBSP rules) to the same fields as it, and no H.264 redundant pictures. Fields, not
+   bytes: the camera qcamera files repeat the PPS in band without the trailing zero byte of
+   `avcC` (`68ee06e2c0` against `68ee06e2c000`), which `8800338` treated as different whenever
+   the skipped stretch held an IDR sample. The fields are compared through the crates' `Debug`
+   output (their structs have no `PartialEq`).
+3. HEVC: every NAL header parses (forbidden bit 0, `nuh_temporal_id_plus1 > 0`, two bytes), and
+   in every sample the first base-layer slice, and only it, has
+   `first_slice_segment_in_pic_flag`. Then every picture carries its own sample's time
+   (`pending_pts`), is complete when its sample ends, and the next sample cannot change it before
+   it is output, so a flush gives the same picture the next sample's first slice would.
+4. The restart sample starts from nothing: all its base-layer slices are IDR (H.264 type 5 with
+   `nal_ref_idc != 0`; HEVC 19/20 with temporal layer 0), the first starts the picture
+   (`first_mb_in_slice == 0` / first-slice flag) and is an I slice (every slice for H.264). An
+   IDR that is no reference would leave `prev_ref_frame_num` and the POC state of the pictures
+   before it in the sequential decoder; one that is a P slice would build its list from the old
+   DPB (`rusty_h264` makes the list before it empties the DPB). CRA is never a restart point.
+5. H.264 only: the sample before the restart ends with its picture finished. Its first slice
+   starts its only picture (later slices `first_mb_in_slice != 0`), and at the restart a fresh
+   decoder decodes it (`video::finishes`) and must return the picture without an error. Slices
+   parse the same whatever references a decoder holds, so the sequential decoder then either
+   finished that picture too, or met an error and was reset; either way it meets the IDR slice
+   as a fresh decoder does. A fresh decoder refuses P macroblocks without a reference
+   ("inter without reference"), so the probe's SPS has `gaps_in_frame_num_value_allowed_flag`
+   set: the decoder then makes grey placeholder references, and nothing else reads that flag.
+
+HEVC needs no step 5: `rusty_h265` finishes an unfinished picture when the next starts, without
+an error, and clears the blocks no slice covered (`clear_uncovered`), so an IDR picture decodes the
+same after it. H.264 needs no reorder condition: `rusty_h264::Decoder::decode` returns pictures in
+decode order with no DPB output delay, and the worker gives each its sample's time, whatever POC
+type, VUI `max_num_reorder_frames` or B slices the stream has; B-frames with `ctts` were already
+decoded sample by sample, and `ctts` hidden only removes that ordering for both paths alike.
+
+What the check cannot see: a decoder panic or other internal error inside a skipped sample, which
+sequential decoding would turn into a failed thumbnail. It also relies on two properties of the
+pinned crates read from their source, not proved: slice parsing in `rusty_h264` does not depend
+on the reference pictures, and the per-decoder pools of both crates (`GridPool`, picture and state
+pools) do not change pixels.
+
+Measured cost of the check on the camera files is in the table below; it reads every sample of the
+window once (a few MB of page cache for fcamera) and decodes one P picture per H.264 restart.
+
+Tests (`src/thumbnail/tests.rs`) compare the skipping path with `video::decode(.., skip: false, ..)`,
+the sequential path kept for this: the thumbnail (result, JPEG, JSON) and the pictures a caller
+needs when it keeps wanting a time for a few pictures after reaching it, which exercises a flush
+followed by a stretch decoded again. Inputs: camera-like H.264 GOP 15 and HEVC GOP 20, 21 (an IDR
+right after a candidate) and 30 (a flushed stretch decoded again); a different PPS in sample 0;
+two-slice H.264 with the second slice of sample 29 removed; IDR slices made non-reference or SP;
+a `80 01` NAL in HEVC sample 19; HEVC B-frames with and without `ctts`; open-GOP (CRA) HEVC. Each
+also asserts where a restart must not happen (`video::Work`). Three mutations, not committed, were
+each caught: any slice counted as IDR (4 tests fail), the `shown` filter removed (the "needed
+pictures" comparison fails; the thumbnail alone did not show it, since the repeated pictures
+precede the wanted time), the parameter-set check removed (the sample-0 PPS test fails).
+
 ### Not verified
 
 - aarch64: `cargo check --target aarch64-unknown-linux-gnu` of the thumbnail modules with both
@@ -401,6 +479,8 @@ total (medians; the per-segment ranges overlap). amd64 image 120.74 MB unpacked,
 - A SIGKILL of the `__thumbnail` worker itself was not run separately; the worker start, its
   limit, deadline and `PR_SET_PDEATHSIG` (`main.rs`, `media.rs`, `pure_remux.rs`) are unchanged,
   and the existing worker-kill tests pass.
-- Streams with an IDR picture farther than 1 s apart, CRA-only HEVC, or in-band parameter sets
-  that differ from the track's decode sequentially as before; only the unit test and the corpus
-  cover the restart.
+- Streams with an IDR picture farther than 1 s apart and CRA-only HEVC decode sequentially until
+  an IDR picture lies ahead of the wanted time. Until the review fixes (below), an in-band
+  parameter set that differed from the track's was checked only in the skipped samples, so one
+  in sample 0 (or anywhere the decoder had passed before the restart) changed the result; now any
+  such set anywhere in the 140-sample window turns skipping off for the whole file.
