@@ -19,6 +19,8 @@
   - [After](#after)
   - [What limits it now](#what-limits-it-now)
   - [When skipping is exact (review fixes)](#when-skipping-is-exact-review-fixes)
+  - [Memory of the restart probe (second review)](#memory-of-the-restart-probe-second-review)
+  - [What the equality covers](#what-the-equality-covers)
   - [Not verified](#not-verified)
 <!-- /toc -->
 
@@ -433,13 +435,15 @@ then decoded sample by sample exactly as in `b94d8a4`:
    before it in the sequential decoder; one that is a P slice would build its list from the old
    DPB (`rusty_h264` makes the list before it empties the DPB). CRA is never a restart point.
 5. H.264 only: the sample before the restart ends with its picture finished. Its first slice
-   starts its only picture (later slices `first_mb_in_slice != 0`), and at the restart a fresh
-   decoder decodes it (`video::finishes`) and must return the picture without an error. Slices
-   parse the same whatever references a decoder holds, so the sequential decoder then either
-   finished that picture too, or met an error and was reset; either way it meets the IDR slice
-   as a fresh decoder does. A fresh decoder refuses P macroblocks without a reference
+   starts its only picture (later slices `first_mb_in_slice != 0`), and during the survey a
+   fresh decoder decodes it (`video::finishes`) and must return the picture without an error.
+   Slices parse the same whatever references a decoder holds, so the sequential decoder then
+   either finished that picture too, or met an error and was reset; either way it meets the IDR
+   slice as a fresh decoder does. A fresh decoder refuses P macroblocks without a reference
    ("inter without reference"), so the probe's SPS has `gaps_in_frame_num_value_allowed_flag`
    set: the decoder then makes grey placeholder references, and nothing else reads that flag.
+   Its `max_num_ref_frames` is lowered so that those placeholders stay small (see "Memory of
+   the restart probe" below).
 
 HEVC needs no step 5: `rusty_h265` finishes an unfinished picture when the next starts, without
 an error, and clears the blocks no slice covered (`clear_uncovered`), so an IDR picture decodes the
@@ -448,15 +452,17 @@ decode order with no DPB output delay, and the worker gives each its sample's ti
 type, VUI `max_num_reorder_frames` or B slices the stream has; B-frames with `ctts` were already
 decoded sample by sample, and `ctts` hidden only removes that ordering for both paths alike.
 
-What the check cannot see: a decoder panic or other internal error inside a skipped sample, which
-sequential decoding would turn into a failed thumbnail. It also relies on two properties of the
-pinned crates read from their source, not proved: slice parsing in `rusty_h264` does not depend
-on the reference pictures, and the per-decoder pools of both crates (`GridPool`, picture and state
-pools) do not change pixels.
+What the check cannot see: a decoder panic inside a skipped sample, which sequential decoding
+would turn into a failed thumbnail (see "What the equality covers" below; a decoder error, unlike
+a panic, only resets the decoder). It also relies on two properties of the pinned crates read
+from their source, not proved: slice parsing in `rusty_h264` does not depend on the reference
+pictures, and the per-decoder pools of both crates (`GridPool`, picture and state pools) do not
+change pixels.
 
 Cost of the check on the camera files (measurement build, median of 5, inputs on local ext4):
 0.22-0.30 ms (H.264) and 0.48-0.61 ms (HEVC) to read and inspect the 140 samples, plus one P
-picture decoded per H.264 restart (about 1 ms each, 5 per qcamera thumbnail). On the 9P mount of
+picture decoded per H.264 restart (about 1 ms each, 5 per qcamera thumbnail; since the second
+review one per candidate during the survey, see below). On the 9P mount of
 the Windows drive the same reads took 21-31 ms, so a worker reading from such a mount pays that.
 The camera files inspected one by one pass it: in 4 qcamera files (14-0, 14-5, 47-3, 47-20) the
 probe finished every sample before a restart (samples 14, 29, 59, 74, 89), and in all 11 fcamera
@@ -515,6 +521,174 @@ also asserts where a restart must not happen (`video::Work`). Three mutations, n
 each caught: any slice counted as IDR (4 tests fail), the `shown` filter removed (the "needed
 pictures" comparison fails; the thumbnail alone did not show it, since the repeated pictures
 precede the wanted time), the parameter-set check removed (the sample-0 PPS test fails).
+
+### Memory of the restart probe (second review)
+
+A second independent review of `d2637b2` found that the shortcut could need far more memory than
+decoding every sample. On two 4096x2160 H.264 streams (x264 ultrafast, level 6.0, `ref=16`, no
+B-frames, IDR every 25 pictures), inside what HARS accepts (4096x2160 at most, samples up to
+32 MiB):
+
+| input | `b94d8a4` | `d2637b2` (review) | now |
+|---|---|---|---|
+| `h264_4k_ref16` (testsrc2) | 250.5 MiB, `{"score":64.35,"second":1}` | 477 MiB, same result | 253.3 MiB, same result, JSON and JPEG bytes |
+| `h264_4k_noise` (noise, `qp 4`, samples of about 18 MB) | 306.3 MiB, `{"score":63.71,"second":1}` | `memory allocation of 8847360 bytes failed`, exit 134 | 339.6 MiB, same result, JSON and JPEG bytes |
+
+Peak RSS from `/usr/bin/time -v`, both under `prlimit --as=2147483648` and the worker's own limit
+(its size + 512 MiB `RLIMIT_AS`, unchanged); the `d2637b2` column is the review's.
+
+Cause. `finishes` ran at the restart, while the decoder that had gone through the samples before
+it still held its references (16 pictures of 12.9 MiB with padding at 4096x2160). It made a
+second `rusty_h264` decoder, whose SPS had `gaps_in_frame_num_value_allowed_flag` set; for the P
+picture before the IDR picture, `insert_frame_num_gaps` then made min(frame_num gap,
+`max_num_ref_frames`) grey placeholder pictures, here 16 more. On top of that came the probe's
+copy of the sample, its Annex-B copy and the crate's RBSP copy of each NAL unit.
+
+Fix (`bdd9d7d`), both parts structural:
+
+1. The probe runs in `shortcuts`, during the survey, before the first picture is decoded, once for
+   every restart candidate (an IDR sample after a one-picture sample); `restart` only picks from
+   the answers. The only other decoder then alive is the empty one `decode` made (a `rusty_h264`
+   decoder holds no picture before its first slice). The probe reads into the survey's sample
+   buffer. Probing every candidate instead of only the chosen ones costs one P picture per
+   candidate (up to 9 in a 140-sample qcamera window, IDR every 15, instead of the 5 a
+   thumbnail restarts at), and a candidate refused now leaves
+   an earlier one usable; neither changes a result, since each answer depends only on the file.
+2. `h264_probe_sps` also lowers `max_num_ref_frames` to max(1, 16 MiB / picture bytes), picture
+   bytes being coded macroblocks x 384: 1 at 4096x2160, 5 at 1920x1080, and at 526x330 (63) the
+   stream's own count, so the camera files probe as before. The SPS is rewritten bit by bit (the
+   `ue(v)` gets shorter) up to its stop bit and escaped again; a test checks that the crate's own
+   parser reads it back with only those two fields changed.
+
+What is alive at once:
+
+| phase | buffers | decoders |
+|---|---|---|
+| survey (H.264 probe) | one sample (at most 32 MiB), the probe's Annex-B copy (the sample plus the parameter sets), the crate's RBSP copy of one NAL unit | the empty `decode` decoder; the probe: at most `PROBE_REFERENCE_BYTES` of placeholders or one picture, the picture being decoded, its reference copy and the returned picture |
+| decoding (both codecs, as `b94d8a4`) | one sample, its Annex-B copy (H.264), the crate's RBSP copy | one decoder; a restart, an HEVC replay and the H.264 reset after an error build the new decoder before the assignment drops the old one, but a new decoder holds no picture (H.264) or only its parameter sets (`rusty_h265::Decoder::new` plus VPS/SPS/PPS: `dpb`, `pic_pool` empty) until its first slice |
+
+So the peak is the larger of the survey and of decoding, and decoding never holds more than
+`b94d8a4` does (the same decoder over fewer samples). At 4096x2160 the probe holds one
+placeholder and about three pictures besides, some 52 MiB, plus at most three 32 MiB buffers:
+about 150 MiB in the worst case (an estimate from the crate source, not a measurement). A
+decoder going through every sample of that stream holds at least one reference, the picture
+being decoded and the same buffers, so the survey stays near what `b94d8a4` needs for one P
+picture; smaller pictures may keep up to 16 placeholders, but those then take at most 16 MiB.
+
+The 33 MiB more on `h264_4k_noise` is the allocator, not live data: with glibc's dynamic mmap
+threshold fixed (`MALLOC_MMAP_THRESHOLD_=131072`) the same run peaks at 299.6 MiB for `b94d8a4`
+and 301.1 MiB now, and with `MALLOC_TRIM_THRESHOLD_=0` at 299.4 and 300.3 MiB (one run each). The
+probe frees its 13 MiB pictures, which raises glibc's mmap threshold to that size, so the main
+decoder's pictures then come from the heap, where freed ones stay resident. Changing that would
+need `mallopt` through FFI (`unsafe`), so it is left; 339.6 / 306.3 is 1.11.
+
+Other inputs, same comparison (one run each): `h264_4k_ref4` 95.1 / 97.5 MiB; HEVC 4096x2160
+(x265 ultrafast, `ref=4`, no B-frames, IDR every 20) 171.6 / 69.2 MiB, 3.9 s / 0.5 s; x264
+1920x1080 `ref=4` 40.2 / 41.1 MiB; x264 526x330 `ref=16` 16.7 / 17.7 MiB. All gave the same
+result, JSON and JPEG bytes as `b94d8a4`, as did the review's other new inputs and the 12 of the
+first review (18/18 in all, `__thumbnail` run directly).
+
+The probe and the decoder that goes through every sample. What a restart needs is that, when
+that decoder ends sample `s - 1` without an error, its picture is finished; the probe returning
+the picture shows it. In `rusty_h264` how far a slice gets depends on the bitstream alone: the
+slice header, `num_ref_idx_active` from the PPS or the header (`read_ref_idx(r,
+self.num_ref_active)` picks the `te(v)`/`ue(v)` form), CABAC contexts from syntax already read.
+The reference pictures enter only through checks that fail:
+
+- `apply_list_modification`: `Truncated` when a modification names a picture not in the DPB;
+- P and B partitions: `ref_idx >= refs.len()` is `Truncated` (`mb16.rs`, both CAVLC sites and
+  `read_b_ref`);
+- an empty list: "inter without reference", "P_Skip without reference", "B without references".
+
+Motion compensation from an index past the list is skipped (`self.refs.get(..) else continue`),
+and the probe's pixels are not used. So two decoders with different DPBs read the same
+macroblocks of a sample, and each either fails one of these checks or reaches the same count.
+When the probe finishes, the sequential decoder finishes too or fails, is reset by the worker
+(`Decoder::new()`, parameter sets again), and meets the IDR picture as a fresh decoder: the case
+"probe succeeds, sequential decoder fails" (for example an MMCO or long-term reference left the
+real DPB without a picture a placeholder stands for) is harmless. With fewer placeholders the
+probe's DPB is the first `k` entries of what it was with `max_num_ref_frames` (the placeholders
+get the most recent `frame_num`s, and the P list is sorted by descending `PicNum`), so each check
+above can only fail more often: `ref_idx >= k`, a modification naming an older picture, a B list
+left shorter or empty. The probe is then stricter, and a refused probe only means no restart at
+that IDR picture. On the 4096x2160 H.264 inputs (`ref=4` and `ref=16`, so one placeholder) every
+probe is refused and the worker decodes 101 samples, as `b94d8a4` does (measurement build; why
+each probe fails, presumably `ref_idx >= 1`, was not traced). At 1920x1080 `ref=4` (four
+placeholders) restarts happen: 36 samples decoded. A probe that panics counts as refused
+(`guarded`).
+
+### What the equality covers
+
+The thumbnail (success or failure, second, score, `thumbnail.json`, JPEG bytes) is the same as
+`b94d8a4`'s **for every input on which the decoders do not panic**. Decoding every sample, a
+decoder panic is caught (`catch_unwind`) and fails the whole thumbnail; a panic in a sample the
+shortcut does not decode is never reached, so on such an input `b94d8a4` fails and the shortcut
+may make a thumbnail. Closing that would mean decoding the skipped samples, which is the work
+the shortcut removes, so it is accepted:
+
+- the thumbnail does not depend on those pictures: they are presented before the wanted time, and
+  the restart and flush conditions above make every picture the caller is given the same;
+- it needs a panic of `rusty_h264` or `rusty_h265`, that is a decoder defect, inside the skipped
+  stretch only; a decoder error (not a panic) just resets the decoder in both paths, and the
+  worker's own errors on a decoded picture (pixel format, crop, size) depend only on the
+  parameter sets, which condition 2 makes the same for the restart picture;
+- none was found: the review ran 2,203 damaged inputs through `b94d8a4` with 0 panics, the 40
+  failure cases have 0, and the differential fuzzing below found no such input.
+
+The H.264 probe panicking is not this case: it counts as refused and the file is decoded
+sample by sample.
+
+Fixes for the review's other points:
+
+- The HEVC NAL header check had no test that failed without it: `80 01` is type 0 and so counted
+  as a slice, which the length check refuses first. The test now also puts a prefix SEI with the
+  forbidden bit set (`ce 01 05 05 80`, type 39, longer than three bytes) first in sample 0;
+  without the forbidden-bit check the thumbnail differs (second 2 instead of 5, the review's
+  `hevc_badhdr_sei_s0`) and the test fails.
+- The H.264 `redundant_pic_cnt_present_flag` refusal is kept, with its reason in the code:
+  `rusty_h264` drops a redundant slice having changed only its POC state, which an IDR picture
+  resets, so it looks unnecessary, but no stream with redundant slices was ever compared.
+- `integration/thumbnail_differential.py --synthetic DIR` adds seeds with other encoder structure
+  (H.264 `ref=4`, `ref=16`, `slices=4`, 1920x1080 `ref=4`; HEVC `slices=4`), and a change that
+  inserts a NAL unit other than a slice with the forbidden bit set (H.264 SEI, AUD, filler; HEVC
+  AUD, filler, prefix and suffix SEI). 4096x2160 is checked with the fixed inputs above, not fuzzed.
+
+Mutations, not committed: removing the HEVC forbidden-bit check makes
+`hevc_skipping_needs_parsable_nal_units_and_no_reordering` fail ("thumbnail differs"); removing
+the reference cap makes `the_h264_restart_probe_holds_few_grey_references_on_large_pictures`
+fail. Moving the probe back to the restart is not caught by a test (4096x2160 runs are too slow
+and large for `cargo test`); the fixed inputs above are the check for it.
+
+Results on `df2ed8e` (code as `bdd9d7d`), against `b94d8a4`:
+
+| check | result |
+|---|---|
+| the second review's 5 inputs, the first review's 12, HEVC 4096x2160 `ref=4` | 18/18 same exit status, output line, `thumbnail.json` and JPEG bytes; peak RSS above |
+| differential fuzzing, seed 20261117, 8 H.264 and 5 HEVC seeds (4 synthetic added), `prlimit --as=2147483648` | 600/600 same; 486 made a thumbnail in both |
+| differential fuzzing, seed 20261118, same seeds | 300/300 same; 249 made a thumbnail in both |
+| 85 thumbnails | 85/85 exit, stdout, JSON, size, JPEG bytes, candidates and levelled picture equal; 2,918 pictures output, each equal to the alpha.4 picture of its time |
+| 36 videos against `ffmpeg -threads 1` | window 5,004/5,004; pictures a thumbnail run outputs 1,040/1,040 |
+| 40 failure cases | 40/40 same outcome, result and JPEG; panics 0; peak RSS 118.5 / 120.2 MiB |
+| `integration/real_conversion_compare.py`, 13 original segments | 13/13 without differences, 15,600 frames |
+
+Speed, worker spawn to exit, median (range) of 7 alternating rounds of `b94d8a4`, `d2637b2` and
+the new binary after one warmup, inputs on local ext4, load 0.90 -> 1.04:
+
+| input | `b94d8a4` | `d2637b2` | new | CPU `b94d8a4` / `d2637b2` / new | peak RSS (MiB) |
+|---|---|---|---|---|---|
+| 13-1 qcamera | 108.4 (107.8-115.8) | 51.4 (49.0-57.6) | 58.0 (55.3-67.1) | 104 / 49 / 56 ms | 14.3 / 14.3 / 14.3 |
+| 14-0 qcamera | 108.6 (103.4-132.0) | 48.4 (46.6-62.1) | 52.3 (50.8-68.4) | 104 / 46 / 50 ms | 14.3 / 14.3 / 14.3 |
+| 47-9 qcamera | 102.7 (102.1-109.9) | 49.9 (48.7-76.4) | 55.7 (52.7-65.7) | 99 / 48 / 54 ms | 14.3 / 14.3 / 14.3 |
+| 14-0 fcamera | 1,959.8 (1,910-2,057) | 174.2 (166.7-193.7) | 168.1 (165.1-188.4) | 1,889 / 168 / 162 ms | 21.7 / 18.5 / 18.9 |
+| 47-6 fcamera | 1,876.8 (1,847-1,982) | 228.6 (225.5-250.8) | 224.1 (219.1-246.6) | 1,809 / 220 / 216 ms | 21.7 / 22.6 / 22.8 |
+| 14-8 fcamera | 2,121.2 (2,080-2,198) | 275.6 (263.3-304.9) | 277.1 (258.5-300.9) | 2,042 / 266 / 267 ms | 20.7 / 23.3 / 23.4 |
+
+H.264 is 4-6 ms slower than `d2637b2` (52-58 ms against 48-51 ms in the same rounds): the survey
+now decodes a P picture for each of the (up to) 9 candidates instead of the 5 restarts, and the
+measurement build's `thumb_survey` takes 10-12 ms (the probes ran during decoding before). The same
+36-41 samples are decoded. HEVC is unchanged within the ranges. All three binaries ran about 5%
+slower in these rounds than in the previous ones (`d2637b2` 48-51 against 45-49 ms there), so
+the two tables are compared column against column, not across.
 
 ### Not verified
 
