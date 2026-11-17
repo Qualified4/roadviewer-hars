@@ -7,7 +7,7 @@ Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)는 별도 
 - [기능·API 인벤토리](docs/hars/inventory.json)
 - [구현·검증 현황](docs/hars/STATUS.md)
 - [설계와 이식 기준](docs/hars/ARCHITECTURE.md)
-- [HAOS 병행 설치와 전환·롤백](docs/hars/CUTOVER.md)
+- [HAOS 병행 설치와 전환·롤백](docs/hars/CUTOVER.md) · [실제 HAOS 검증 준비](docs/hars/HAOS-VALIDATION.md)
 - [실행 및 테스트](docs/hars/DEVELOPMENT.md)
 - [검증 증거](docs/hars/VALIDATION.md) · [API 예비 측정](docs/hars/PERFORMANCE.md)
 

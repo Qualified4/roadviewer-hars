@@ -4,6 +4,8 @@
 
 ## 병행 설치
 
+포트 승계 전에 HARS를 격리 상태로 설치해 확인하는 계획과 HARS만 제거하는 절차는 [HAOS-VALIDATION.md](HAOS-VALIDATION.md)에 있다.
+
 | 항목 | Python 1.x | HARS 2.x |
 |---|---|---|
 | 저장소 | Qualified4/roadviewer-ha | Qualified4/roadviewer-hars |
