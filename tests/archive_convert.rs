@@ -174,6 +174,7 @@ async fn connecting_drive_queues_the_deferred_conversions_and_clears_their_warni
     }
 
     // Signing in again is enough: no archive cycle runs here.
+    let cycles = e.a().status()["last_cycle_at"].clone();
     e.a().set_connection_interval(Duration::from_millis(1));
     let (status, body) = e
         .req("POST", "/api/settings/archive/gdrive/connect", Value::Null)
@@ -185,7 +186,7 @@ async fn connecting_drive_queues_the_deferred_conversions_and_clears_their_warni
     .await;
     let m = e.meta(&id).await;
     assert!(m["error"].is_null() && m.get("deferred").is_none(), "{m}");
-    assert_eq!(e.a().status()["last_cycle_at"], Value::Null, "no cycle ran");
+    assert_eq!(e.a().status()["last_cycle_at"], cycles, "no cycle ran");
     assert!(
         !e.local(&id, "fcamera.hevc") && e.drive_file(&id, "fcamera.hevc").is_some(),
         "queueing moves and deletes nothing"
