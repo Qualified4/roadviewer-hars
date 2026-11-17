@@ -80,7 +80,7 @@ python3 integration/ui_view_check.py --browser EXE --profile NEW_DIR --port 1877
 
 `ui_sync_check.py`의 브라우저는 바깥 호스트 이름을 풀지 못하게 띄운다. 지도 타일을 받지 않으므로 실주행 위치가 밖으로 나가지 않는다. `ui_view_check.py`는 그렇게 하지 않으므로 실주행 데이터에서는 지도 타일 요청이 OpenFreeMap으로 나간다. 구간 카드 제스처는 원본 `tests/segment_peek.cjs`가 CDP로 보내는 터치 대신 같은 포인터·터치 이벤트를 스크립트로 보낸다.
 
-보존 원본 브라우저 테스트(`reference/python/tests/*.cjs`, Node + Playwright)는 원본 파일을 고치지 않고 HARS에 붙일 수 있다. `segment_peek.cjs`는 API를 가짜로 채우고 화면 파일을 작업 폴더에서 읽으므로, `integration/upstream_cjs/mirror_web.py`로 HARS가 내보낸 페이지·자산을 영문 임시 폴더에 받아 그 폴더에서 실행한다. `maps.cjs`는 `RV_PYTHON`이 띄우는 서버를 쓰므로 `integration/upstream_cjs/hars_as_python.py`(HARS 기동 + `/api/hassio_ingress/test/` 접두사 제거 프록시)를 `RV_PYTHON`으로 준다. 이 테스트는 Python 형식 기록 파일을 데이터 폴더에 직접 써 넣는다.
+보존 원본 브라우저 테스트(`reference/python/tests/*.cjs`, Node + Playwright)는 원본 파일을 고치지 않고 HARS에 붙일 수 있다. 전체 실행기와 결과·분류는 [BROWSER-TESTS.md](BROWSER-TESTS.md)에 있다(`integration/upstream_cjs/run_browser_tests.py`). `segment_peek.cjs`는 API를 가짜로 채우고 화면 파일을 작업 폴더에서 읽으므로, `integration/upstream_cjs/mirror_web.py`로 HARS가 내보낸 페이지·자산을 영문 임시 폴더에 받아 그 폴더에서 실행한다. `maps.cjs`는 `RV_PYTHON`이 띄우는 서버를 쓰므로 `integration/upstream_cjs/hars_as_python.py`를 `RV_PYTHON`으로 준다. 이 래퍼는 테스트의 서버 프로그램을 그대로 실행하되 `pyshim/`의 `server`·`werkzeug.serving`이 HARS 기동 + `/api/hassio_ingress/test/` 접두사 제거 프록시가 되게 한다. 이 테스트는 Python 형식 기록 파일을 데이터 폴더에 직접 써 넣는다.
 
 ```sh
 cd /tmp/peek && NODE_PATH=PLAYWRIGHT_NODE_MODULES node "$REPO/reference/python/tests/segment_peek.cjs"

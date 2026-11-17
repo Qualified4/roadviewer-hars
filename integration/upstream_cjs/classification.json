@@ -21,7 +21,7 @@
  },
  "video_overlay": {
   "class": "A",
-  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과"
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과. 단, CPU 부하·4병렬에서 77행(Escape 뒤 포커스)이 간헐 실패: 4병렬 2/3 실패, 부하 직렬 HARS 2/8·Python 3/8 실패 -> 원본 테스트의 부하 민감성"
  },
  "upload_stall": {
   "class": "A",
