@@ -1,0 +1,658 @@
+# Release notes
+
+[한국어 전체 변경 이력](CHANGELOG.md) · English
+
+These are the English release notes from 0.13.0 on. Earlier release entries remain in the [original Korean history](CHANGELOG.md); they describe behavior at their release date, not necessarily current behavior. See the [current user guide](DOCS.en.md) for present settings and policies.
+
+## 1.3.18
+
+- The vehicle-shaped map car icon draws its body and windows without transparency.
+- Pushing a held segment card up: the "구간 n · 밀어서/놓으면 구간이동" title no longer hugs the top of the screen; it sits a quarter of the way down to the resting card, at least 20 px below the app bar. The card rises to just under it and grows as it goes, to 1.3× at the top.
+
+## 1.3.17
+
+- Choose automatic, white, mint, blue, cyan, violet, rose, amber, or red for map vehicle icons. The main map and video minimap share the choice, which is remembered in this browser.
+- Direction-arrow markers also use the selected color. Automatic retains the mint background and white arrow; explicit colors keep the arrow, windshield, and outline distinguishable.
+
+## 1.3.16
+
+- Enlarged vehicle markers: 44px on the main map, 32px on the video minimap, and 24px on compact mobile minimaps.
+- Before playback, repeated starting GPS fixes without a reported bearing use the first movement direction. Stopped endings retain the previous movement direction; reported bearings remain authoritative.
+
+## 1.3.15
+
+- Maps now use the road-view vehicle silhouette for the current position. Choose the vehicle or the direction arrow in map display options or the video minimap settings. The choice is remembered in this browser without changing the position or heading.
+
+## 1.3.14
+
+- Controls no longer use focus. Buttons, tabs, the seek bar, charts and maps keep no focus after a press or drag, and closing a dialog or moving to another segment hands focus to nothing. The shortcuts (Space, ←/→, F, PageUp/PageDown) do the same thing wherever you clicked; only text fields and open dialogs are exempt.
+- Fixed Space scrolling the page instead of playing right after PageUp/PageDown moved to another segment.
+- Removed the keyboard-focus-only behaviors (arrows switching tabs on a focused tab, arrows moving along a focused chart).
+
+## 1.3.13
+
+- Replay shortcuts (Space play/pause, ←/→ one frame, F full screen, PageUp/PageDown segments) now work in the real app. Inside the app shell the key handler sat on the replay page's root, so with nothing focused (after clicking empty space or on entry) Space scrolled the page and F did nothing; it now listens on the window.
+- With a mouse, the map credit button (ⓘ) in the bottom-right corner is no longer stretched vertically (small map, Map tab, list map).
+
+## 1.3.12
+
+- In the 차선·도로 (lanes/road) tab's y[0] distance mode, the 차선 1 / 차선 2 values no longer touch or overlap the lane line samples inside their cards: the sample's side keeps a wider inset, and lengths in this panel (lane y[0], road edges, lead distance) carry a small unit, leaving at least 5 px even at phone width.
+- The documentation's lanes/road captures were retaken with the current UI and real drive data, and the y[0] image now has its dark-mode version too.
+
+## 1.3.11
+
+- Keyboard shortcuts on the replay page work again after clicking buttons, tabs or settings with the mouse. Space used to press the last clicked button again (frame step, overlay and so on) instead of playing, and the arrows switched tabs after a tab was clicked. Now a mouse click leaves the shortcuts on; only a control reached with Tab keeps its own keys.
+- The light wide-camera image in the documentation now uses a real daytime wide video (dashboard reflection removed, the lead car's plate and the parking contact on the dashboard erased).
+
+## 1.3.10
+
+- The mobile segment card has its speech-bubble tail again, pointing at the held block; pushed up it slides up into the card and slides back out when the card returns to the strip.
+- The green ring shown at "놓으면 구간이동" now glows.
+
+## 1.3.9
+
+- On phones the pushed segment card no longer lags behind the finger: while it moves, the card and the darkening follow it directly; easing is kept only for letting go.
+
+## 1.3.8
+
+- Mobile segment switching, redesigned: hold a block on the segment strip and its card rises, the screen behind the controls blurs and a looping hint (an arrow pushing "밀어서 구간이동" up) shows. Pushing up locks the segment; only the card follows the finger, the rest darkens and "구간 n" appears at the top. Letting go once it reads "놓으면 구간이동" opens the segment; letting go short of it, on the strip or below it does not. On the playing segment the arrow flattens and the hint stops.
+- Keyboard shortcuts now work after clicking the play button or the seek bar (before, focus left on a button ignored them all). Added F (full screen) and PageUp/PageDown (previous/next segment).
+- The blind-spot wall now also ends at the cluster FF car when there is no TARGET, as the model path does; before, it ran past the car to 40m.
+
+## 1.3.7
+
+- The target following distance bars are drawn whenever longitudinal control is on (with no lead, a lead nearer than the target, or the lead mark off), not while it is off, fading over 0.3s as it switches.
+
+## 1.3.6
+
+- When longitudinal control switches off, path chevrons fade one by one from the farthest (about 0.8s) instead of staying until they flow out.
+- With no cluster TARGET (longitudinal control off), the driving path now ends at the cluster's FF car and continues dashed beyond it, instead of running through the car.
+
+## 1.3.5
+
+- Path chevrons no longer pop in and out when longitudinal control switches: switching on, they appear one by one from the nearest; switching off, no new one comes in and those on the road flow out (gone after 4s when standing still).
+- The paused picture before play now matches the first moment of playback: the first frame takes cluster lane codes and road signals that arrive within the first 0.25s, and the overlay is redrawn when the vehicle data arrives.
+
+
+
+- Drive cards show the first segment's thumbnail again (1.3.3 picked the best-looking segment). First segments get the new levelled thumbnails too, and the background remake does each drive's first segment first, so cards change once and stay.
+
+## 1.3.3
+
+- Log list thumbnails are no longer black: each segment's thumbnail is the best-exposed frame of its first 5 s (avoiding the camera's exposure ramp right after the start), brightened when dark. A drive card shows its best-looking segment instead of the first. Existing thumbnails are remade in the background after the update (the old ones show meanwhile).
+- Path chevrons no longer dim beyond the target following distance: their brightness switched at the bars, and with no lead at a point not shown at all.
+- Ground labels no longer stand up suddenly on bends: how far they lie is set by the distance alone.
+- Ground label text shrinks with distance (about 23px at 6m, 17px at 15m, 12px from 30m on a 900px picture).
+
+## 1.3.2
+
+- The lead arc, target following distance, path end, chevron end and blind-spot wall end are drawn 1.52 m further on, the gap between the radar (front bumper) and the camera: until now they sat short of a near lead. The LF/FF/RF boxes, radar points and raw tracks are corrected the same way. The distances shown on screen are unchanged.
+- Path chevrons run from 5.5 m ahead up to 30 m (fading from 20 m), or to 1 m short of a nearer lead, with or without a lead; they are no longer hidden when the lead is inside the target distance.
+- The target following distance is two short bars at the path edges without the dotted arc, with a smooth glow.
+- A radar or model point on a drawn vehicle box is only a short tick on the ground. Point values beside markers show only with the new **감지점 라벨** (point labels) setting, off by default.
+- With the TARGET label on, the lead shows it and the same car's FF label is hidden; before, the TARGET label setting did nothing while FF labels were shown.
+- Ground labels (TARGET; LF/FF/RF under their boxes) lie on the road out to 18 m, each letter leaning to the vanishing point, then stand up gradually, upright from 23 m.
+- The following-distance level in the bottom-left corner has no background: white bars in every theme.
+
+## 1.3.1
+
+- Logs converted before 1.3.0 now show the following-distance setting and target distance too. After the update the app fills them in the background from the original log (rlog) alone, one log at a time: no reconversion, no video downloaded again, and it waits while conversions, uploads, playback or archive moves run.
+- Past the lead, the driving path continues to its end as dashed edges that fade with distance, drawn faint where they cross the lead car.
+- The blind-spot wall ends at the lead's distance when there is a lead.
+- When a blinker comes on or goes off, the path chevrons and the >>> arrows cross-fade instead of switching at once, and the other path chevrons fade out and back in. A lifting arrow keeps its chevron's light as it rises and turns into the >>> shape.
+- A blinker switched off while its arrows rise, or back on while they settle, turns them round where they are. Switching straight from one side to the other carries the <<< across at their height into >>>.
+- With no lead, the path chevrons run to 30 m, fading from 20 m (with a lead: up to 17 m and 3 m short of it, as before).
+- The path chevrons' front edge is now as thin as the rear edge.
+- Solid lane lines no longer show a line down their middle, and road edges no longer glow over the neighbouring lanes: they are drawn like lanes, a band with a soft rim.
+- The replay map and the small map over the video highlight the whole segment being played instead of the part already driven; the drive's other segments are faded.
+- A Google Drive parallel-upload test that sometimes failed now counts requests in flight instead of timing them.
+
+## 1.3.0
+
+- The video overlay is redrawn in a "road projection" style: lanes, road edges, the path and vehicle marks look like light on the road instead of painted lines. The path is a faint blue floor with thin edge lines that ends at the lead car, with teal chevrons flowing towards you (at 40% of your speed). Lanes are translucent bands with a thin glowing outline; dashed lanes are drawn as real dashes. On a phone's small picture lines and text get thinner and smaller to match.
+- Vehicles (LF, FF, RF) are marked by a ring of light on the ground behind them and their label laid flat on the road. The 3D box is a switch, **차량 박스** (off by default). When a car moves from a side lane to the lead slot or back, its ring and the lead mark blend into each other.
+- New overlay settings: **앞차거리: 끄기 | 선 | 호** (lead distance: off, line or arc; default arc) and **목표 차간 거리** (target following distance, on by default). The arc wraps the lead car's rear, and the glow spreading towards you while slowing down follows its shape. The target distance shows as amber marks on both path edges; when the lead is well inside it, the marks give way and the lead mark turns red.
+- The following-distance setting (four cells) shows at the bottom left of the video, riding above the playback controls while they show. The **차간 거리 단계** switch turns it off.
+- The path chevrons show the drive state: amber while slowing down, dimmer beyond the target distance, not drawn when the lead is well inside the target or longitudinal control is off, and slowly brightening and dimming while stopped.
+- Turning a blinker on lifts the path chevrons one by one into >>> arrows at a fixed place ahead of the car (the nearest chevron to the outermost arrow); turning it off sends them back to the road. Without chevrons on the path they curve out of and back into the car. Hazard lights split them to both sides.
+- The following-distance setting and target distance exist only in logs converted from now on; convert an older log again to see them.
+
+## 1.2.25
+
+- No change in behaviour: automated tests only (a check that failed now and then is fixed, and the map tests are split so the checks finish sooner).
+
+## 1.2.24
+
+- The log list's tag filter takes several tags at once: only logs carrying every selected tag are shown, and pressing a selected tag again clears just that one. "태그 없음" (untagged) is not combined with other tags.
+- In the replay's lane and road-edge panel the cluster lane line type is drawn as a line instead of a text chip: the right edge of the lane 1 card and the left edge of the lane 2 card show the line's colour and whether it is solid or dashed (hover for the name). The four lane cards now centre their text.
+
+## 1.2.23
+
+- The overlay settings dialog is laid out again: each group is a card, every on/off item is a switch on the right, a slider has its name, value and a reset icon (↺) on one line, and options that hang on another item are indented. Two columns on wide screens; shorter help texts.
+- A map theme different from the screen theme no longer recolours the cards and buttons over the map (their text was lost): only the map changes.
+- The map display popover is drawn above the drive map's segment cards instead of under them.
+- "끝나면 다음 구간 재생" (play the next segment at the end) now also works after a pause and resume (when the video ends a moment before the log).
+- A drive card's 지도 (map) button shows with the card instead of popping in seconds later; pressed before the routes arrive, the map opens when they do.
+- A row tapped in the all-drives map's list no longer stops slightly off the middle.
+
+## 1.2.22
+
+- The replay's 보기 (View) menu (the ⋯ menu on phones) has two playback settings: "끝나면 다음 구간 재생" (off by default) plays the drive's next playable segment when one plays to its end, and with "구간을 옮기면 일시정지" (on by default, the behaviour so far) turned off, moving to another segment while playing keeps playing. Remembered in this browser.
+- The map display popover has a map theme (자동 | 라이트 | 다크: automatic, light, dark) for every map on the page but the small map over the video; remembered in this browser.
+- Faster moves to Google Drive: three files upload at once and fewer checks are asked of Google per file (one folder listing for a large run, the upload's own completion checksums for verification). A local file is still deleted only after its Drive copy is verified and the index is saved.
+- The "move everything" run no longer shows more files than its total (301/294): files that become eligible during the run are added to the total.
+- The log list shows the drive cards first and builds the segment rows of folded cards in the background, so a long list appears sooner and freezes less. The all-drives map's routes are kept by the server and recalculated only when a recording changes.
+- A drive card's segment bar and its unfolded segment list start from segment 0 (left, top). The light on a converting segment's block flows left to right.
+- Opening a replay while the log list could not be read left the title at "로그 재생" with the previous/next buttons off; it now retries and shows the drive and segment meanwhile.
+- Tags on a drive card no longer end in "…" or make the card taller ("+N") when the route map unfolds on hover.
+- When filling maps from Drive logs has nothing left, the line says so instead of showing a full progress bar.
+
+## 1.2.21
+
+- Drive cards and segment rows in the log list, and the replay title line, show every tag that fits in their one line; only those that do not fit become `+N`. They used to stop at three or four with room to spare.
+
+## 1.2.20
+
+- The browser upload status shows the transfer speed and the time left.
+
+## 1.2.19
+
+- Browser uploads send four files at a time. The server now answers eight requests at a time instead of four, so the pages keep responding during an upload.
+- "Move all eligible data" no longer ends at once with "Cannot connect to Google Drive" while Drive is connected: when its connection check meets another request's check, it waits for that answer.
+- The "move all" button says why it is disabled while settings are changed but not saved.
+
+## 1.2.18
+
+- All-drives map list: with the last drive selected, tapping a drive above it made the list jump in one step. It now scrolls smoothly.
+
+## 1.2.17
+
+- Folding and unfolding the list on the all-drives map and the drive map stutters less on phones. The list now slides down as a whole instead of shrinking, and only the cards in sight fade and move. The stutter grew with the number of drives.
+
+## 1.2.16
+
+- Fixed the drive list on the log tab's map looking cut off at the bottom after picking drives one after another. The fade at the list's edges stayed where a card had been, so a card in the middle faded out and the cards below it were invisible.
+- On the log tab's map and the drive map, the bottom bar now rises after the folding list has gone instead of crossing it.
+- On both maps, a tapped drive or segment row scrolls to the middle of its list.
+
+## 1.2.15
+
+- The bottom bar on the map tab and the drive map has slightly more room between the close button and the bar's edge, and before the text on the left.
+
+## 1.2.14
+
+- On the map tab and the drive map, a tap near a route line (within a finger's width) selects that drive or segment; the thin lines had to be hit exactly.
+- Fixed the bar shown at the bottom of the map tab when the drive list is folded: its top edge looked thicker than its sides.
+
+## 1.2.13
+
+- Fixed pages failing to open with "addEventListener is not a function" after updating to 1.2.12: one script of the previous version, kept by the browser's cache, was used together with the new ones.
+
+## 1.2.12
+
+- Fixed a memory leak in the replay: every log opened from another kept the page left behind (listeners left on the window and on the network state, maps never removed). It slowed the app down after many logs.
+- Fixed choppy fullscreen playback on large high-density touch screens (a Fold's inner screen): the overlay over the video is drawn at no more than 2.4 million pixels (measured on the device: 75 fps to 105 fps, dropped video frames 17 to 1).
+- Fixed the stutter when the small map over the video is enlarged or shrunk: the map is no longer redrawn at every step of the size change, only once when it ends.
+- Fixed the map tab's drive list leaving a tall empty gap for a card that had lost the selection, which pushed the cards below further away with every pick.
+
+## 1.2.11
+
+- Fixed the one-frame blink in the Android app when a drive card in the log list is folded or unfolded (the cards above it, or a thumbnail, vanished for a frame). Verified by recording a real phone's screen, in both themes, with the animation pace unchanged.
+- The map tab's map is taller on short screens (a Fold's inner screen): scrolled until the filter chips reach the app bar, it fills down to just above the tab bar.
+- Fixed the small map over the video not showing in fullscreen on a phone held upright.
+
+## 1.2.10
+
+- Reverts 1.2.9's log list fold change (the flashes stayed and the unfold motion stuttered).
+
+## 1.2.9
+
+- On phones the 지도 view's map fills down to just above the tab bar (it was short on tall devices such as a Fold, under the Home Assistant header, the search and the filters).
+- In the light theme the selected card's bottom light spreads wide and low from the bottom edge like the dark theme's instead of gathering in the middle.
+- In the Android app a drive card in the log list no longer flashes blank (the whole card or its thumbnail) for a frame as a card unfolds or folds (the folding card keeps its rendering optimisation).
+
+## 1.2.8
+
+- On phones the 지도 view shows the drive list as a bottom sheet like the drive map's: a tap on its handle hides it or brings the middle height, a drag settles on one of three heights, and only a tap on a card fits the map to that drive; with the sheet hidden the selected drive's card shows above the handle.
+- A tap on a phone sheet's handle no longer clears the selected segment or drive (the click after the tap fell on the map).
+- A press on a 지도 view card presses the whole card instead of lighting only its title part.
+- In the light theme the selected map card is near-opaque white with a green line at the middle of its top and bottom edges and a faint inner light at the dark theme's ratio (instead of 1.2.7's near-black light; the dark theme is unchanged).
+
+## 1.2.7
+
+- In the light theme the selected map card returns to the dark theme's top-and-bottom light, drawn in near-black so it no longer drowns in green hills and parks (the dark theme and the selected route line stay green).
+- The replay maps draw the current segment's line once and only lengthen its travelled part as the car moves, so the line around the car no longer jitters.
+- Log replay in full screen follows the screen theme instead of always dark (transport bar, buttons and small map; the area around the picture stays black).
+
+## 1.2.6
+
+- Pinning now only prevents permanent deletion: pinned segments are archived to Drive/NAS like the others (automatic, manual and capacity runs; capacity moves take pinned segments last). Local quota deletion, NAS cleanup and bulk delete still skip them, and Drive/NAS copies are never deleted automatically. Pinned segments that were only copied to Drive have their local originals cleaned up on the next move.
+- The replay's small map and 지도 tab move the car smoothly instead of in whole-pixel steps, with a smoothly turning heading. The maps draw a generous margin and scroll it while following (hardly any redraws); a pinch on the 지도 tab draws a narrow margin, and a one-finger drag slides what is drawn.
+- With reduced motion, a pinch ending exactly on a zoom step no longer leaves the basemap frozen out of place.
+- The replay page writes its time, progress, bookmark labels and graph measurements only when they change and skips drawing hidden tabs and panels.
+- On phones a tap on the drive map's handle folds and unfolds the sheet (hidden ↔ the middle height); dragging still settles on three heights.
+- Light theme: the selected map card lifts in white instead of a green glow, so it stands out over green hills (the selected route line stays green; dark theme unchanged).
+
+## 1.2.5
+
+- On phones, raising the drive map's bottom list moves the marked-segment bar smoothly with the sheet and fades it out in place (no jump, no sinking).
+- Opening the drive map focuses its title instead of the back button, so no focus ring shows; this targets the Android app, where the sheet's handle could not be dragged in that state.
+- Log map view (light theme): the drive list cards use whiter, calmer glass so they read like the drive map's segment cards over water and woods, the selected card's rim no longer looks doubled, and the selected card's bottom rim is a little stronger again.
+
+## 1.2.4
+
+- On phones, raising or lowering the drive map's bottom list no longer refits the map to the marked segment; the map only moves when a card is tapped.
+- In the light theme the selected card's green top and bottom rim is fainter.
+
+## 1.2.3
+
+- The bottom-right ⓘ (map credit) can be tapped again on the phone drive map and the list maps; the credit now starts folded into ⓘ on every map and ⓘ shows it.
+- Right-hand map list: spacing between the list toggle and the cards, the list title aligned to the toggle's bottom edge, a top fade that grows with the scroll distance, card shadows no longer vanish or clip at the sides when the fade starts, and a softer green glow under the selected card.
+- The selected-segment bar under the map also animates out.
+- The replay page's follow button no longer rises above the video.
+- In fullscreen the small map over the video uses the dark map (colour Auto).
+- Storage shows when a move run and the Drive log map fill finished.
+
+## 1.2.2
+
+- The small map over the video keeps the car centred across and a little below the middle (60% down), showing more road ahead. Fixed the car marker drawn a few pixels off the route line on the small map, and the small map turning white while pressed in light mode.
+- The map credit folds into an ⓘ button in the bottom-right corner on the small map and on narrow maps (phones): folded from the start on the small map, after the first touch on narrow maps; the ⓘ shows it.
+- On the drive map, a segment card's ⋯ menu is no longer cut off by the list's edges or covered by the cards below; the list scrolls when needed so the whole menu shows.
+- Fixed only the top half of the selected card lighting up on the drive overview map while the pointer rests on it.
+
+## 1.2.1
+
+- The layers button under the map's zoom buttons opens a "map display" popover: "hide labels" removes place and road names, icons and arrows while keeping the map's colours (such as the yellow main roads in light mode), and "grey map" switches to a calm grey map. They are independent; both on give a grey map without text.
+- The small map over the video always keeps the car in the middle (of the part below the speed). Drag its bottom-left corner with a mouse or finger to resize it, kept 4:3 and remembered in this browser; a double tap on the corner restores the default size. Overlay settings have their own "hide labels" and "grey" options for it.
+- The replay Map tab no longer draws over the playback bar and other parts of the screen.
+- Folding or unfolding a map list no longer moves the map, and the count and cards appear together. The map credit always sits in the map's bottom-right corner, and on wide screens the zoom buttons keep a left margin.
+- On the drive map, picking a segment with the list folded (on phones, with the sheet pulled down) shows a "segment N · time" pill at the bottom, ready to play.
+- Fixed broken corners on the selected card and the camera icon flickering in empty thumbnails while folding lists on phones and tablets. "Show in list" now brings a tall open drive card into view from its top.
+- The guides describe the route maps and every screenshot was retaken. The privacy policy now explains how filling maps from Drive logs reads Drive files.
+
+## 1.2.0
+
+- Maps now use OpenFreeMap vector tiles: CARTO started requiring an API key, so the maps showed only "API KEY REQUIRED"; no key or account is needed (OpenStreetMap data). A button at the map's top-left turns on a simpler map without 3D buildings and POI icons.
+- Lists over the maps are separate glass cards per drive or segment. On wide screens the all-drives map shows a drive list on the right that folds away and back with the top-right button (cards slide out and in), long lists fade at the edges while scrolling, and the selected card glows softly inside.
+- Drive lines on the all-drives map use the pastel tag colours, and the card under a tapped line is a glass pill.
+- On phones, dragging the drive map's segment sheet all the way down hides it; tapping the handle brings it back.
+- Route cards show their route as a small inset in the thumbnail's top-right on desktop, unfolding into a square map on hover, and as a "지도" button beside 재생 on phones.
+- The Storage tab gains "Fill maps from Google Drive logs" (off by default) and a run-once button: each Drive-only log's original is downloaded once to read its route and deleted right after (Drive files are not changed), with a progress bar and count.
+
+## 1.1.1
+
+- Fixed the route maps staying empty: 1.1.0 read only the device GPS, which saw no satellites in this car's logs. When the device GPS has no fix, the car's own GPS sent over CAN (carState.vehicleGps) is used, and failing that carrot's estimated position (carrotMan).
+- Logs that 1.1.0 recorded without a route are read again, when the original is on Home Assistant or the NAS; logs only on Google Drive are still not downloaded.
+
+## 1.1.0
+
+- Drive route maps. Converting a log now also keeps its GPS track at one point per second (about 1 KB per minute); logs converted earlier get theirs in the background from three minutes after start, when the original is on Home Assistant or the NAS, waiting while uploads, conversions, playback or archiving run.
+- The Logs screen has a List | Map switch: the map draws every drive the list's current filters show, one colour each; tapping a line offers play, the drive map, or showing it in the list.
+- Route cards show the route's shape; tapping it opens the drive map: the map stays on top while the segment list scrolls below, and segments and their part of the route highlight each other. The segment ⋯ menu's "Show on map" opens it too.
+- The replay's analysis tabs gain a Map tab: a car marker follows playback, and tapping the route seeks there.
+- Overlay settings › Map turns on a small map in the video's top-right corner (off by default), with automatic, light or dark colours and an option without place names; tapping it fills the picture. It hides while the Map tab is shown.
+- Map tiles are CARTO's, as in Home Assistant's map (© OpenStreetMap contributors © CARTO), fetched by the browser. Coordinates are not exposed through the log list, sharing, exports or the device API.
+
+## 1.0.37
+
+- A segment row's first line now reads name, time, playable state and pin, and on phones it runs over the play button's column; tags always sit on the line below the title, in segment rows and card headers alike.
+- Tapping "+N" on a tag list shows every tag in a small popup that closes on an outside tap or a scroll.
+- The ⋯ menu opens upwards when there is no room below, and on phones a tap outside it only closes it instead of also playing the segment underneath.
+- Folding or unfolding a route card no longer nudges its progress bar and buttons by a pixel.
+- The replay title drops the pin chip (the pin button shows the state); a single tag shows as its chip, several as their number, which opens the full list. Chips are no longer cut to "…".
+- The scene bookmark and tag editors open and close with the same motion as the other dialogs (a sheet that slides up on phones).
+- The layer button on the road view fills from the tap, and its icon spreads into three layers while the menu is open.
+
+## 1.0.36
+
+- The play buttons glow less: the green haze under the button at rest is gone, and the light on press is about half as strong, in the log list and on the replay screen alike.
+- The device upload API and AppArmor security documents open with a table of contents.
+
+## 1.0.35
+
+- Unfolding a route card in the log list no longer turns the card's ⋯ button into ✕; it becomes ✕ only while its menu is open.
+
+## 1.0.34
+
+- The open log list costs the server less: each 3 s check looks at fewer files per log, and an unchanged list is no longer sent again in full. What the page shows and does is unchanged.
+
+## 1.0.33
+
+- In the light theme the tag colour picker shows the palette's own colours again, as in the dark theme; light theme tag chips keep their deeper, readable text shades.
+- The six CI browser test groups are rebalanced by measured run time, so the slowest group finishes sooner.
+
+## 1.0.32
+
+- The replay's back button ripples from the touch at once, and the list replaces the replay at least 200 ms after the press so it is seen (immediately with reduced motion).
+- Press ripples are crisp circles on buttons, tabs and menu items; only large card and panel headers keep the soft-edged wave.
+- The replay's play and frame-step buttons and the list's 재생 glow while pressed and fade out over 350 ms instead of rippling; Space and ←/→ light them too, and the card no longer ripples around the list's 재생.
+- The list's ⋯ buttons fill from the press and morph into ✕ like the replay's, and their menus grow out of the button; ⋯ buttons get a faint mouse hover (none on touch).
+- Pin buttons (replay and list) fill with the pin colour from the press when pinned and fade out when unpinned.
+- In the light theme the chosen bottom tab shows a bright mint icon and a lighter green label.
+
+## 1.0.31
+
+- The replay's ⋯, 보기 and 레이어 menu buttons fill from where they were pressed when their menu opens (300 ms; from the middle when opened by keyboard) and the fill fades out in 200 ms on close. These buttons skip the separate press ripple.
+- The ⋯ button has no background at rest or on hover; it is filled only while its menu is open.
+
+## 1.0.30
+
+- The ⋯ button at the top right of the replay turns into ✕ while its menu is open: the three dots gather in the middle and the ✕'s four strokes draw out of them at full weight; closing reverses it. The ✕ is as wide as the ⋯.
+- The replay's ⋯, 보기 and 레이어 menus grow in from their button's side (150 ms) and fade out in 75 ms; with reduced motion they switch at once.
+- The 12 old archive options that moved to the web settings (`archive_enabled`, `archive_path`, `archive_mode`, …) are removed from the add-on configuration. The upload limit, device HTTPS certificate and Drive OAuth client options stay; settings already in the web settings are unaffected.
+
+## 1.0.29
+
+- While ‘이동 가능한 데이터 모두 이동’ runs, the Storage tab shows the bytes processed (the file being uploaded included), the transfer speed over the last 30 seconds and the time left. The progress bar follows bytes rather than files, so it keeps moving while a large video uploads.
+- Bytes a resumed upload sent earlier and Drive copies adopted without uploading are left out of the speed; for the first seconds, and while the run waits for an upload or conversion, that state shows instead.
+
+## 1.0.28
+
+- After an add-on restart, the first archive run (including ‘이동 가능한 데이터 모두 이동’) checks the archived copies with one Google Drive folder listing instead of a request per file, which took minutes with about a thousand files while the run showed 0 done. A file the listing lacks is still checked by itself, and a local original is still deleted only after Drive itself confirms its copy.
+- While those checks run, the Storage tab shows their progress (‘이동 준비 중 · 보관본 확인 n/N’).
+- The divider between a card's header and its list fades over the whole 300 ms fold with an ease-out curve, so the change is visible in the dark theme.
+- Progress bars (upload, import, archiving) no longer light up on hover as if they could be clicked.
+
+## 1.0.27
+
+- Library cards off screen skip layout and paint, so folding a card in a long list stutters less (on a phone-speed CPU with 30 cards, about 35 to 60 fps).
+- Less hesitation after tapping a card's chevron: the fold measured its ends by laying the list out three times; it now does so once when unfolding and not at all when folding.
+- When a card folds, its list rises at a steady pace and keeps moving until the panel has closed.
+- The divider between a card's header and its list fades in as the card unfolds and out as it folds (about 90 ms).
+
+## 1.0.26
+
+- In the dark theme the glass highlight along the top of a library card's header shows again. Since 1.0.24 the header's background had hidden it except while a card folded; it is now the same at rest and in motion.
+
+## 1.0.25
+
+- A library card's header reads as a card of its own and the segment list as a panel behind it: unfolding rolls the panel out from behind the header, folding rolls it back, and just before the card closes the panel's rounded edge rises slightly above the header's so it is fully tucked away instead of its outline merging into the header's.
+- While a card folds, its outline and shadow wrap the header and the visible panel, so the shadow is no longer cut off at the sides, and the white line around the list is gone.
+- The header's lower corners ease to square as a card unfolds and back as it folds. The header's shadow on the list and the shade inside the panel's edge are the same soft shadow, follow the rounded corners, last the whole motion and shrink with the visible panel.
+
+## 1.0.24
+
+- A library card's header carries its own background gradient, so an open card no longer stretches it until the header looks flat, and the header no longer changes shade when a fold ends.
+- Fold shades are drawn only over the visible list between the divider and the moving bottom edge; the bottom shade no longer rises over the header just before a card closes.
+- When a card folds or unfolds, its list always slides 48px, whatever its length.
+- Dragging the replay page's segment strip with the mouse no longer selects the surrounding text.
+
+## 1.0.23
+
+- The play button's icon morphs between play and pause: the two halves of the play triangle pull apart into the pause bars and close back into the triangle (240 ms; instant with reduced motion).
+- On phones the segment list no longer shows through a library card's header while the card folds or unfolds; the header covers it with the card's background during the motion.
+- Unfolding a card with many segments no longer slides the list by hundreds of pixels as if scrolling; the list moves a third of the height change visible on screen.
+
+## 1.0.22
+
+- While a library card folds or unfolds, its list keeps moving until the end: the slide was capped at 40px, so long lists looked stopped halfway; it is now a third of the height change, on the edge's curve.
+- During the fold the divider between the card header and its list stays visible, and soft shades under the divider and above the moving bottom edge make the list seem to roll under them; they come in as a card starts to close and fade out just before it is fully open.
+
+## 1.0.21
+
+- On tablets and desktops the library's tag filter shows at most two rows; the rest fold behind a **+N개 더보기** chip at the end of the second row, which unfolds them all and then reads **접기**. A selected tag is moved forward and never folded away. Phones keep one sideways-scrolling row.
+- Folding a library card no longer occasionally flashes its full height for a frame at the end, and the divider between the card header and its segments stays in place instead of moving and being clipped with the list.
+- The segment strip's edge fades fill faster (full after 14px of scrolling), so end blocks no longer look cut off early in a scroll.
+
+## 1.0.20
+
+- The replay page remembers the last of all four analysis tabs (주행 상황, 차선도로, 차량 정보, 북마크); before, only 차량 정보 and 북마크 were restored.
+- Folds in the library and settings no longer fade: the growing panel clips its content, which slides down slightly into place (and back up when folding). Rows unfolded with the chevron no longer look faded.
+- Back from a long time in the background, a single failed library read retries after a second without a warning, and a later successful read clears the '로그 목록을 읽을 수 없습니다' warning.
+- The scrolling segment strip's edge fades widen gradually with the distance from each end instead of switching on at once.
+- On tablets and desktops the play button no longer shows a dark band along its top edge and a light one along its bottom (which made it look shifted down); other mint buttons (e.g. upload) no longer show border bands either.
+- The segment preview bubble's tail no longer shows a thin line where it joins the bubble.
+
+## 1.0.19
+
+- The empty part of a route card's button row (on phones, under the thumbnail left of 재생) now folds and unfolds the card like the rest of it; the gaps between the buttons still do nothing.
+
+## 1.0.18
+
+- Uploads from a device or another browser now show their progress in the library header's upload pill (`업로드 N%`); before, only this browser's own uploads did.
+- The current segment's ring is no longer cut off at either end of a scrolling segment strip, and coloured segment blocks are drawn flat, without the dark inner edge they showed on phones.
+
+## 1.0.17
+
+- Mobile text entry no longer sits under the floating playback controls. Tag and bookmark editors follow the keyboard's visible viewport and keep their save action reachable.
+- Picking existing tags no longer raises the keyboard. Selected tags appear first, with search and new-tag entry below.
+- Capture bookmarks in a popup without leaving the current replay view. Titles are optional and default to the scene time; the captured time and unfinished draft are preserved.
+
+## 1.0.16
+
+- Added log export and import. Home Assistant backups do not include logs, so all recordings (Storage tab, local storage card) or the selected ones (library selection mode) can be saved as one .tar file: the original log and videos plus name, upload time, tags, bookmarks and pin; files moved to Drive/NAS are included as references only.
+- Import uploads that file recording by recording: existing recordings are skipped, a recording that fails its checks is not added, and imported recordings are converted again per the auto-convert setting. With the same Drive/NAS connected, moved files play as before.
+
+## 1.0.15
+
+- The current segment's whole video is read in the background, also while paused, so every seek within the segment is then immediate. Browsers read only a little ahead while paused, so seeking past it lagged and the seek bar's loaded parts were scattered. Drive videos come from the app's in-memory copy, not Google again; videos over 256 MB still stream.
+
+## 1.0.14
+
+- The video is sized against where the floating transport bar actually is instead of a fixed allowance, so it grows right up to the bar with smaller side margins.
+- The video no longer grows tall and then shrinks while a segment loads: the bar keeps its last height and the video its last aspect ratio.
+- Desktop and tablet now show the previous/next buttons beside the title at the top left of the video (‹ ›), as on phones.
+- Deleting permanently from the replay opens the previous segment of the same drive, else the next one, and returns to the log list only when there is neither.
+
+## 1.0.13
+
+- Leaving a turned phone/tablet fullscreen by moving to another segment no longer leaves the next segment's seek touches and dialogs in the turned orientation.
+- The driving map places the followed lead (선택) and FF labels first, so traffic never pushes them out; other labels still fill free places as before, and label backgrounds no longer touch.
+- On 320px-wide phones the speed sits at the right edge with the wheel below it, clear of the segment navigation, and the playback buttons flow in one row without overlapping; 360px and wider keep the existing layout.
+- Folded radarState/liveTracks tables are no longer rebuilt during playback (they fill with current values when opened), and the hidden driving map is not drawn during video fullscreen.
+
+## 1.0.12
+
+- After holding a finger on the segment strip to show a thumbnail, sliding it scrubs through the segments like a mouse pointer; the strip does not scroll meanwhile, and lifting the finger hides the preview without changing segments.
+- On long drives, resting the held finger near an end of the strip moves the strip on to further segments.
+
+## 1.0.11
+
+- Hovering a block of the replay segment strip (or holding a finger on it) shows that segment's thumbnail and start time above the strip; it goes away on release, and a hold does not change segments.
+- Phone and tablet fullscreen hides the segment strip; the title menu at the top left still changes segments.
+- The horizontally scrolling segment strip of long drives has a larger touch area (about 16px to 28px); on touch screens the event track just below also counts as the strip.
+- README screenshots are recaptured from 1.0.11 with dark-mode versions, so GitHub shows the ones matching the reader's theme.
+- In the stacked layout the video no longer shrinks after leaving fullscreen. It is sized to use the room the app bar gives up while playing; paused, with the app bar shown, the controls at the bottom of the video move up clear of the transport bar.
+
+## 1.0.10
+
+- In the stacked layout the sticky video card has the same shadow as the other cards, so the card scrolling up under it meets a clear edge.
+- Notices over the video (e.g. no log data for this segment) use the same text colour and weight as the other chips, on a thinner background that shows more of the picture.
+- The default automatic archive interval is now 24 hours instead of 10 minutes. It applies only when the setting was never saved; saved values are kept.
+- The English release notes describe their actual range (0.13.0 on).
+
+## 1.0.9
+
+- Opening a replay from the log list no longer leaves the stacked video stuck at a small size (the 320px fallback height); its size follows the panel's width and the screen height.
+- No white focus ring around the video title after moving to the replay.
+- The glass of the over-video controls is thinner so the blur shows: 10% fill and less darkening in dark mode, 40% white in light mode. Text contrast is lower over very bright (dark mode) or very dark (light mode) footage.
+- The dark page glow is centred; on wide screens it sat to the right.
+- The Drive state at the top right of the library no longer flips to **확인 중** (checking) periodically: the last known state is shown while the server rechecks Drive, and the header refreshes every 3 s while checking, otherwise every 10 s (no more Google API calls than before).
+
+## 1.0.8
+
+- The log list no longer rebuilds every row each time the Drive state is rechecked (about every 10 s): with the list open, responses that took 2.5-5 s are back to about 0.5 s. The list shows the last known state while it is rechecked in the background.
+- The log list draws faster: rows inside folded cards are no longer measured for motion and dates use prebuilt formats, cutting drawing time on phones to about a quarter.
+- The list response leaves out the file hashes and storage details the screen never used, about halving its size.
+- On phones and tablets full screen opens in landscape: the orientation is locked where the browser allows it, and elsewhere (the Android Home Assistant app, iPad) the picture is turned a quarter turn, so hold the device on its left side. Touch seeking follows the turned bar.
+- Fixes the page background gradient missing since 1.0.7.
+- The **새 코드 발급** (new code) icon turns once per press, like the log list's refresh button.
+
+## 1.0.7
+
+- Google Drive archiving is faster: uploads use 16MiB chunks over a reused connection to Google instead of a new connection per chunk.
+- The thumbnail/start-time backfill no longer waits for archiving to finish. Fixes drives that kept an old date, with every segment showing the same time, while a long archive run was active.
+- Prepared data uses a new replay format, roughly halving its size per segment. Existing data is rewritten in the background after the app starts; no reconversion is needed.
+- Past 20 segments, a route card's segment bar shows the first 20 blocks and a **+** coloured by the most urgent state among the rest.
+- Every route card starts collapsed each time the log list opens. On phones the expand button sits in the action row, and in selection mode the checkbox and expand button are vertically centred.
+- Pressing a card no longer flashes; the ripple and arrow motion remain, and the arrow colour changes smoothly.
+- The archive start threshold is entered in GB with decimals; the custom local storage limit also accepts decimal GB.
+- Fixes a band behind the page while scrolling on desktop, and tag colour swatches stretched into ovals.
+- The guide and documentation screenshots match the current UI.
+
+## 1.0.6
+
+- Drive start times are corrected: logs without a GPS fix use the live system clock (clocks) instead of the stale start record (initData), and every segment of a drive is dated from its latest segment's clock. Logs already recalculated are recalculated once more.
+- The playback bar can be dragged by touch, following the finger even when the app's web view tries to take over the gesture.
+- The background job that fills thumbnails and start times now pauses while any video is being watched (local ones too, not only Drive), so it no longer competes with playback and seeking; logs without GPS read less of their start.
+
+## 1.0.4
+
+- Fixes 1.0.3 failing to start: an internal name clash in the background job that recalculates start times stopped the server from booting.
+
+## 1.0.3
+
+- Drive start times come from GPS time. A device clock not yet set at start-up no longer puts different days' drives at the same time and date; segments without GPS are corrected from another segment of the same drive. Existing logs (Drive and NAS too) are recalculated in the background.
+- Drive cards take their thumbnail from the first segment instead of the last.
+- Stacked, the video shrinks and grows exactly with the scroll position, so the page follows the finger 1:1; on the cover display the 차선·도로 tab scrolls to its end.
+- While playing, touching the video again while the controls show hides them at once. The playback bar can be dragged by touch.
+- Buttons and cards regain the design's depth and the play button its mint gradient. The screen-mode switch has one consistent shape and its highlight slides to the chosen mode.
+- Back responds at once with a progress line at the top and returns faster, as the library page is fetched ahead.
+
+## 1.0.2
+
+- Over-video controls use the same glass as the magazine home's tab bar: blur only (no milky brightening) and a 1px rim lit along the top instead of an even white outline. The quality chooser keeps its chevron.
+- The video frame follows the picture's own aspect ratio, removing the black bars above and below, and the white card around the video is gone.
+- On phones the previous/next segment buttons sit beside the title at the top left of the video (‹ 구간 k ›); narrow screens show only the segment in the title.
+- Lane and road-edge readouts moved to a new **차선·도로** analysis tab.
+- Controls hidden during playback come back when touching anywhere on the video or its playback bar.
+
+## 1.0.1
+
+- Replay page: the segment-chooser title moved to the top left of the video and the camera/overlay buttons to the bottom left; the app bar is a single line. The speed shows as white figures without a pill, with the wheel to its upper right.
+- While playing, the title, buttons and fullscreen over the video fade out and come back briefly on touch. On touch or short screens the app bar also folds while playing, and the video is sized so the playback bar never covers it.
+- Side by side, the video stays put while only the analysis scrolls. Stacked, the video sticks to the top and shrinks to 60% while scrolling; on short phone screens (such as the Fold cover display) the playback bar also folds into one row.
+- Lane and road-edge readouts moved out of the layer menu back under the driving map.
+- The segment strip uses the library's status colours with the current segment outlined; the play button has a soft glow.
+- Over-video glass is more transparent with a thinner edge and stays dark in fullscreen; the fullscreen button no longer loses its icon on hover.
+- A softer press ripple; touch scrolling no longer stops dead after pressing a button (lingering focus and a fixed background removed). The green hairline beside the tablet analysis tabs is gone and the tabs are larger on touch screens.
+- The library opens quickly: rows come from cached stored metadata, and older logs get their summaries and start times saved in the background.
+- Thumbnails are now produced for logs moved to Drive or NAS: an unreadable log no longer stalls the run, drive-card thumbnails come first, and new thumbnails appear in the list right away. The gap above the phone library header is fixed.
+
+## 1.0.0
+
+- The whole interface was redesigned: neutral surfaces with a mint accent, flat buttons and selects, and translucent glass for floating bars and over-video controls. A **screen mode** setting (auto, light, dark) was added; the video area always stays dark.
+- The library is split into **로그 · 업로드 · 저장공간 · 장치 · 설정** tabs (a bottom tab bar on phones). Uploads keep running when switching tabs, with progress in the header.
+- The log tab adds search and filter chips (pinned, unconverted, processing, Drive, NAS, each tag), date-grouped drive cards with thumbnails, a segment status bar, automatic-control ratio and takeover count, and a storage summary. Segment actions moved into the ⋯ menu.
+- Bulk management is now an in-list **selection mode** ("선택" or long-press) with a bottom action bar for tags, download, convert, remove and delete.
+- The replay page was rearranged: a compact app bar, controls over the video (camera, overlay, speed, steering state with an **개입** (intervention) marker, fullscreen), a **floating transport bar** at the bottom (segment strip, control/takeover track, bookmark markers) and analysis tabs (driving view, vehicle data, bookmarks). Tapping the time toggles the total length.
+- Conversion now stores a **thumbnail**, the real **drive start time** and a control summary; older logs and logs moved to Drive or NAS are backfilled in the background (Drive downloads only the start of each file).
+- Long drives with tens to hundreds of segments scroll the segment strip with the current segment centred, and list bars show proportional status runs. A press ripple and Material-based motion were added.
+- The user guide, READMEs and documentation screenshots were updated for the new interface.
+
+## 0.13.20
+
+- Under each segment, the log list now shows where the log and each camera video (high-quality, low-res, wide) are kept: **로컬** (local), **Drive** or **NAS**. Only files moved by archiving show Drive or NAS.
+- The replay page's download button became a menu like the list's, with **제거** (Remove), **다운로드** (Download) and **완전 삭제** (Delete permanently); a confirmed remove or delete returns to the log list.
+- The "재생 화면" label above the replay toolbar is gone, and the list's status and file guide matches the current menu.
+- The user guide, READMEs and device API docs were brought up to date: enabling Drive move mode (in the web UI), automatic cleanup never deleting Drive files, device upload limits and chunk size, and the per-connection default quality; duplicated paragraphs were removed.
+
+## 0.13.19
+
+- The default playback quality setting moved from a button at the top of the replay page into the camera list below the video: **기본 화질** (default quality) beside 닫기 (close) opens the mobile data and Wi-Fi/wired choices.
+
+## 0.13.18
+
+- A **재생 화질** (playback quality) setting at the top of the replay page chooses, separately for mobile data and for Wi-Fi/wired, whether a video opens on the small front video (qcamera) or the high-quality one (fcamera). Mobile data defaults to qcamera and Wi-Fi/wired to fcamera; the choice is kept per browser.
+  - The connection is told apart only where the browser reports it (Chromium browsers on Android such as Samsung Internet, Whale and Chrome). Elsewhere (iPhone, iPad, desktop browsers) phones and tablets follow the mobile-data choice and other devices the Wi-Fi/wired one; the dialog shows which applies.
+
+## 0.13.17
+
+- Phones and tablets now start on the small front video (qcamera) instead of the high-quality one (fcamera), to save mobile data. Desktops still start on the high-quality front, the selector below the video still switches at any time, and if qcamera cannot be read the high-quality front follows.
+
+## 0.13.16
+
+- The Google Drive playback cache moved from a scratch folder on disk (up to 1 GB) to memory and now holds only the video being watched. Opening another video or camera drops the previous one at once, and it is freed after 10 minutes unwatched; files over 256 MB are not held and stream from Drive. Nothing is written to the Home Assistant host's storage any more, and seeks into the part already received stay quick.
+
+## 0.13.15
+
+- Fixed seeks in Google Drive videos pausing for seconds. Each request from Home Assistant to Google takes over a second, and a seek chained a connection check, a metadata read and the download.
+  - A read trusts a 'connected' from the last 5 minutes and reuses a file's metadata for 10 minutes; a failed download makes the next read check again.
+  - Opening a Drive video copies the whole file to a scratch folder in the background, and seeks into the part already copied are answered without Google. The scratch copies hold at most 1 GB (least recently watched go first), are not made with less than 2 GB of free disk, are emptied on restart, and a finished copy whose SHA-256 differs from the index is discarded. They are not counted against the storage limit or archived; downloads always come from Drive.
+
+## 0.13.14
+
+- Google Drive playback responses now stay in the browser's private cache for one hour instead of a day. Seeks into ranges received while watching stay immediate; after an hour they come from Drive again.
+
+## 0.13.13
+
+- Fixed seeks in Google Drive videos waiting seconds even into ranges the seek bar shows as loaded (grey). Chromium-based browsers (Whale, Samsung Internet and others) drop played ranges from memory but keep showing them, and the Drive video response forbade the browser cache (no-store), so each such seek went back to Google. Playback responses may now stay in the browser's private cache for a day, so seeks into ranges already received are immediate. Downloads are still never cached.
+
+## 0.13.12
+
+- Faster seeking in Google Drive videos. Playback reuses a file's Drive metadata for 30 seconds, so a seek is one round trip to Google; bytes are passed on in 64 KB blocks instead of after each 1 MB; playback ranges are answered at most 16 MB at a time so a request dropped on a seek no longer streams the rest of the file from Drive while holding the server; releasing the seek bar goes straight to the final position instead of waiting for the preview seek in flight.
+
+## 0.13.11
+
+- Saved logs now show their route groups folded by default. Only routes opened by hand are remembered as open; folds saved by earlier versions are not used, so every route starts folded after the update.
+- Fixed Google Drive videos failing on first open with "cannot connect to the video store" until a reload. A video request now waits for a Drive check already in progress, and the replay retries by itself while the store is still being checked. When Drive really is unreachable the message names Google Drive instead of the NAS.
+
+## 0.13.10
+
+- In storage management, the Google Drive mode note and Disconnect button moved from the local storage card to the extended storage (Google Drive) card; with archiving off they form a Google Drive card of their own. Opening the run and copy details no longer shifts the local storage card, and its figures line up in equal columns and full-width rows.
+
+## 0.13.9
+
+- Separate route headers from individual segments with distinct backgrounds, a top divider, indentation, and a vertical guide for the expanded list.
+- Differentiate route and segment title sizes and refine row spacing. Preserve existing controls and folding on mobile, tablet, and desktop. No log analysis or video reconversion is required.
+
+## 0.13.8
+
+- Keep route-header buttons visible in both fold states. The header height and button elements stay stable while only the segment list expands/collapses, and rapid reversals continue from the current height.
+- Prevent row-insertion effects from replaying on expansion. Changes to another segment’s processing state no longer replace header buttons unnecessarily, preserving focus and avoiding flicker.
+- Distinguish pins using icons only: yellow background and pin for all pinned, a yellow pin without highlighted background for partial pins, and a neutral pin for none. Remove the tiny partial label while preserving counts in accessible labels and tooltips.
+- Preserve per-segment playback, pins, conversion, and downloads, and strengthen browser regression coverage. No log analysis or video reconversion is required.
+
+## 0.13.7
+
+- Group stored segments by full route ID with collapsible sections. The first segment’s upload date/time and segment count stay visible when collapsed; the browser remembers fold state.
+- Play the first segment and pin/unpin every currently stored segment in the route from its collapsed header. Partial pins become fully pinned; failures show completed counts and retain an accurate partial state.
+- A direct download icon opens the existing multi-segment download dialog for the route. Playback stays content-sized, while expanded-row pins and management menus remain segment-specific.
+- Preserve tag filters, live status updates, mobile/keyboard interaction, and existing per-segment controls. No log analysis or video reconversion is required.
+
+## 0.13.6
+
+- Opening storage management now measures Google Drive usage in the background when there is no figure or it is older than 5 minutes. It shows "measuring" meanwhile and refreshes when done, fixing "0 B / quota unknown" after a restart until the first archive cycle. Nothing is moved or copied; accounts for which Google reports no total quota still show it as unknown.
+
+## 0.13.5
+
+- Fixed the Drive/NAS status staying at "checking" in storage management. While the server probes the archive in the background, the panel asks again shortly, so it settles to connected/unavailable without reopening. Connection and archiving behavior are unchanged.
+
+## 0.13.4
+
+- Replaced "Archive now" with "Move all eligible data" ("Copy all eligible data" in COPY). It runs the existing MOVE/COPY engine until every eligible file is processed, without the scheduled batch size or local threshold, while keeping the minimum age and pinned-log protection. The scheduled interval, batch, and threshold are unchanged.
+- A confirmation first shows file and segment counts, size, expected local space freed in MOVE, whether local files are really deleted, and excluded records; nothing runs until confirmed. Drive MOVE without local deletion allowed is announced as a copy.
+- Progress and processed/succeeded/failed counts are shown; a second run and settings changes are refused meanwhile. Failed files keep their originals, and Drive outages, expired sign-in, or a full NAS stop the run safely. The run state is stored on the server, survives reloads, and a run cut short by a restart shows as interrupted. Remote files are never deleted and verified remote copies are not uploaded again.
+- Refreshed the Korean/English guides and UI screenshots. Stabilized the Drive panel test with a fake browser clock and rebalanced CI browser groups.
+
+## 0.13.3
+
+- Moved the LF/FF/RF ground-anchor and estimated-size explanation into overlay settings. Matched lane probability/y[0] card heights, typography, and road-edge alignment.
+- Reorganized storage management into status/connections, archiving basics, execution/advanced settings, and a current settings summary. Aligned desktop status-card height and bottom actions.
+- Added explained COPY/MOVE choices, clarified local-delete permission and NAS move behavior, and provided retention/threshold/interval presets with custom inputs that preserve existing hour/minute/MB values.
+- Visualized the archive threshold versus the Drive MOVE soft limit, with a live summary and distinct unsaved/saving/saved/failed/partially saved states. Retries save only remaining changes.
+- Prevented manual archiving from unsaved settings. Existing APIs, policies, and MOVE/COPY engines are unchanged; no log analysis or video reconversion is required.
+- Reused Playwright downloads and warmed main’s build, vulnerability database, and browser caches.
+
+## 0.13.2
+
+- Treated Google Drive MOVE as extension storage. Local limits are soft; reaching the quota or archive threshold requests the existing background archiver. Uploads may exceed the limit while disk space covers reservations, temporary files, and a 100 MiB safety margin.
+- MOVE runs alongside uploads without duplication. Local files are deleted only after remote transfer, integrity verification, and index commit. Drive failure preserves originals and records; physical shortage rejects new uploads without deleting existing records.
+- Automatic local cleanup never deletes Drive files or recordings referencing them. Remote deletion requires explicit permanent deletion. Unknown legacy deletion intents, pins, in-use protection, minimum age, and batch limits are preserved.
+- Improved storage/readout presentation and browser-test parallelism; arm64 container checks use a native runner. Required checks and tested-image reuse remain unchanged.
+- Updated Korean/English guidance and web asset versions. No reanalysis or reconversion is required. Previously enabled archiving continues under saved settings after updating.
+
+## 0.13.1
+
+- Moved archive settings into the web UI. OAuth client ID/secret remain app options; non-secret settings are stored in `/data/roadviewer/.archive-settings.json` (0600).
+- Migrated old archive options once without overwriting an existing settings file. Invalid state disables archiving and reports an error. Settings are included in Home Assistant backups.
+- Validated settings server-side and applied them without restart; saving is blocked during a cycle. Saving alone does not run an archive. MOVE requires explicit local-delete permission.
+- Verified MOVE against real Drive in a test environment, including remote SHA-256, committed records, local deletion, Range playback, and original download. No reanalysis or reconversion is required.
+
+## 0.13.0
+
+- Added experimental NAS archiving and Google Drive integration, initially configured through app options. NAS moves verified videos first and rlog last, keeping metadata/prepared data local and protecting pins during NAS cleanup.
+- Added remote connection, missing-video, and read-error states. An unreachable backend preserves files; downloads/conversion fail safely when the source cannot be reached.
+- Added Google device-code OAuth using a user-supplied client and `drive.file` scope. COPY preserves local originals; MOVE requires explicit permission and verifies the uploaded copy before deleting local data.
+- Added Range playback and downloads for remote-only files, plus deferred remote deletions and verification retries.
+- These are historical release notes. The initial remote-eviction behavior was superseded by the extension-storage protection in **0.13.2**, and settings moved to the web UI in **0.13.1**.
