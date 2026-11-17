@@ -3,7 +3,7 @@
 // in the dark and the light theme. The OpenFreeMap basemap (MapLibre in Leaflet) is stubbed with small fixtures (no
 // network) unless RV_MAP_REAL_TILES=1; the positions are synthetic, never a real drive.
 const fs=require('fs'),os=require('os'),path=require('path'),zlib=require('zlib'),assert=require('node:assert/strict'),{spawn}=require('child_process'),{chromium}=require('playwright');
-const {settleLayout}=require('./browser-helpers.cjs');
+const {settleLayout,waitForSteadyLayout}=require('./browser-helpers.cjs');
 // OpenFreeMap stubs: a style per theme (a background, a GeoJSON street grid around the routes and a symbol layer of
 // street names, so 글자 숨기기 has layers to hide), its TileJSON, empty vector tiles and empty glyph ranges.
 // RV_MAP_REAL_TILES=1 lets the browser fetch the real OpenFreeMap styles and tiles instead (with RV_MAP_SHOTS, to look).
@@ -106,10 +106,15 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
    await page.goto(base);await page.locator('.log-route').first().waitFor();
    assert(!await page.evaluate(()=>!!(window.L||window.maplibregl)),'Leaflet and MapLibre load only when a map is first shown');
    // ② The cards with GPS show their route (SVGs, no tiles); phones: a 지도 button left of 재생, no route in the thumbnail.
-   await page.locator('.route-map-button').first().waitFor();
+   // The 지도 buttons show while /api/tracks is on its way (no shape yet); maps.js draws every card's shape in one pass
+   // when the routes arrive, so the first drawn shape is the point where the cards are complete.
+   await page.locator('.route-map-button svg .shape-line').first().waitFor();
    assert.equal(await page.locator('.route-map-button').count(),2);assert.equal(await page.locator('.route-map-button svg .shape-line').count(),2);
    assert.equal(await page.locator('.log-route[data-route*="00000397"] :is(.route-inset,.route-strip,.route-map-button)').count(),0,'no GPS: no route at all');
-   {const card=page.locator('.log-route[data-route*="00000395"]'),button=await card.locator('.route-map-button').boundingBox(),play=await card.locator('.log-route-actions a.replay').boundingBox();
+   // Both boxes from one layout once the row has stopped moving (two reads in turn once caught the list between
+   // layouts: the button 56 px below 재생).
+   {const card=page.locator('.log-route[data-route*="00000395"]');await settleLayout(page);await waitForSteadyLayout(page,'.log-route[data-route*="00000395"] :is(.route-map-button,.log-route-actions a.replay)');
+    const {button,play}=await card.evaluate(e=>{const box=s=>{const r=e.querySelector(s).getBoundingClientRect();return {x:r.x,y:r.y,width:r.width,height:r.height}};return {button:box('.route-map-button'),play:box('.log-route-actions a.replay')}});
     assert(button.height>=44&&button.x+button.width<=play.x&&play.x-(button.x+button.width)<=12&&Math.abs(button.y+button.height/2-play.y-play.height/2)<2,JSON.stringify({button,play}));
     assert.equal(await card.locator('.route-map-button').innerText(),'지도');
     // The empty left of the actions row folds the card (지도 sits beside 재생).
