@@ -28,7 +28,7 @@
   1. `gate`: `scripts/check_release.py --tag`(태그와 `Cargo.toml`·`config.yaml`·`Dockerfile`의 버전 일치), fmt, clippy, 전체 테스트.
   2. `image`(amd64, aarch64 각각의 네이티브 러너): 빌드 → FFmpeg 잔존 검사 → `scripts/container_smoke.py`(기동, TLS, 변환, 내보내기, 썸네일) → 통과한 뒤에만 `:<tag>-<arch>` push.
   3. `manifest`: 두 이미지를 `:<tag>`로 묶고 GitHub prerelease를 만든다(본문은 `STATUS.md`).
-- 현재 상태: 저장소에 태그와 릴리스가 없고 GHCR 패키지 `roadviewer-hars`도 아직 없다(2026-11-17 API 조회 404). 따라서 지금 HAOS에 이 저장소를 추가하면 앱은 보이지만 설치는 이미지를 받지 못해 실패한다.
+- 게시 상태(2026-11-17): 태그 `2.0.0-alpha.4`를 push해 이 워크플로가 처음 실행됐고 네 작업이 모두 통과했다. `ghcr.io/qualified4/roadviewer-hars:2.0.0-alpha.4`(amd64·arm64 manifest)가 인증 없이 조회되며 GitHub prerelease가 만들어졌다. 그 전에는 태그·릴리스·패키지가 없어 저장소를 추가해도 설치가 실패하는 상태였다.
 - `main`의 CI는 같은 Dockerfile을 두 아키텍처에서 빌드·검사한다(`cf94bba`에서 통과). 게시 워크플로 자체는 한 번도 실행된 적이 없으므로 첫 실행이 곧 검증이다.
 
 ## 설치에 필요한 게시 절차 (승인 후 실행)
@@ -77,7 +77,7 @@ HARS는 기본 설정에서 Python의 데이터·포트·인증·원격 저장�
 
 운영 포트를 HARS로 넘긴 뒤의 롤백은 이 절차가 아니라 [CUTOVER.md](CUTOVER.md)의 "롤백"을 따른다.
 
-## 설치 전에 남은 준비
+## 설치 전에 남은 준비 (2026-11-17에 모두 수행)
 
 - 태그 push와 게시(위 절차). 사용자 승인이 필요하다.
 - GHCR 패키지 공개 여부 확인.
