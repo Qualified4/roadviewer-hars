@@ -1,7 +1,8 @@
 """Compare runtime geometry against the last shipped Python projection formulas."""
 import json,sys
 from pathlib import Path
-sys.path.insert(0,str(Path(__file__).resolve().parents[1]/'roadviewer/app'))
+# HARS: the preserved Python modules stay in reference/python (read only).
+sys.path.insert(0,str(Path(__file__).resolve().parents[2]/'reference/python/roadviewer/app'))
 from overlay import OverlayProjector,rotation,projection_coordinates
 from overlay_reference import OverlayProjector as Reference
 from compact import compact_data,expand_frames
