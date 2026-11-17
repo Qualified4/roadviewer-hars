@@ -4,6 +4,7 @@
 use super::scale::{Image, Plane};
 use anyhow::{Context, bail, ensure};
 use std::{
+    cell::Cell,
     fs::File,
     io::{Read, Seek, SeekFrom},
     path::Path,
@@ -601,14 +602,113 @@ enum Decoder {
     Hevc(Box<rusty_h265::Decoder>),
 }
 
+fn new_decoder(track: &Track) -> anyhow::Result<Decoder> {
+    Ok(match track.codec {
+        Codec::H264 => Decoder::H264(Box::default()),
+        Codec::Hevc => {
+            let mut d = Box::new(rusty_h265::Decoder::new());
+            for set in &track.sets {
+                guarded(|| d.push_nal(set, None))?.map_err(|e| anyhow::anyhow!("{e}"))?;
+            }
+            Decoder::Hevc(d)
+        }
+    })
+}
+
+/// A picture presented this close before the time the caller wants is still decoded, so the
+/// rounding of the caller's own comparison cannot make a needed picture be skipped.
+const SKIP_MARGIN: f64 = 1e-3;
+
+/// The IDR sample a fresh decoder can start from instead of decoding `from..` in order, when
+/// that gives the same pictures from it on: the samples skipped present before `wanted`, lie
+/// inside the file (a file cut short stops at its first missing sample) and carry no parameter
+/// set other than the track's own, and the restart sample is an IDR picture, which references
+/// nothing before it.
+fn restart(
+    file: &mut File,
+    track: &Track,
+    from: usize,
+    wanted: f64,
+    time: impl Fn(i64) -> f64,
+) -> anyhow::Result<Option<usize>> {
+    let Some(needed) = (from..track.samples.len())
+        .find(|i| time(track.samples[*i].2 + track.samples[*i].3) >= wanted - SKIP_MARGIN)
+    else {
+        return Ok(None);
+    };
+    let len = file.metadata()?.len();
+    let mut bytes = Vec::new();
+    let mut read = |index: usize, bytes: &mut Vec<u8>| -> anyhow::Result<bool> {
+        let (position, size, _, _) = track.samples[index];
+        if position.checked_add(size).is_none_or(|end| end > len) {
+            return Ok(false);
+        }
+        bytes.resize(usize::try_from(size)?, 0);
+        file.seek(SeekFrom::Start(position))?;
+        file.read_exact(bytes)?;
+        Ok(true)
+    };
+    let kind = |nal: &[u8]| match track.codec {
+        Codec::H264 => nal[0] & 31,
+        Codec::Hevc => (nal[0] >> 1) & 63,
+    };
+    let (vcl, idr, sets): (fn(u8) -> bool, fn(u8) -> bool, fn(u8) -> bool) = match track.codec {
+        Codec::H264 => (
+            |t| (1..=5).contains(&t),
+            |t| t == 5,
+            |t| matches!(t, 7 | 8 | 13 | 15),
+        ),
+        Codec::Hevc => (
+            |t| t < 32,
+            |t| matches!(t, 19 | 20),
+            |t| matches!(t, 32..=34),
+        ),
+    };
+    let mut start = None;
+    for index in (from + 1..=needed).rev() {
+        if !read(index, &mut bytes)? {
+            return Ok(None);
+        }
+        let Ok(nals) = units(&bytes, track.length_size) else {
+            continue;
+        };
+        let pictures: Vec<u8> = nals.iter().map(|n| kind(n)).filter(|t| vcl(*t)).collect();
+        if !pictures.is_empty() && pictures.into_iter().all(idr) {
+            start = Some(index);
+            break;
+        }
+    }
+    let Some(start) = start else {
+        return Ok(None);
+    };
+    for index in from..start {
+        if !read(index, &mut bytes)? {
+            return Ok(None);
+        }
+        let Ok(nals) = units(&bytes, track.length_size) else {
+            continue;
+        };
+        if nals
+            .iter()
+            .any(|n| sets(kind(n)) && !track.sets.iter().any(|s| s.as_slice() == *n))
+        {
+            return Ok(None);
+        }
+    }
+    Ok(Some(start))
+}
+
 /// Decodes the first `limit` video samples of `path` and calls `each` with every picture FFmpeg
-/// would return, in its order, until `each` returns true. A sample that does not decode is
-/// skipped, as `avcodec_send_packet` failures are. When the limit is reached the picture of the
-/// last sample is not returned and nothing is flushed: frame threading with two threads holds it.
+/// would return, in its order, until `each` returns `None`. `Some(t)` says no picture presented
+/// before `t` is needed any more: without B-frames, the samples before the last IDR picture
+/// ahead of `t` are then not decoded (`restart`), which leaves every picture from that IDR on
+/// as decoding all of them gives. A sample that does not decode is skipped, as
+/// `avcodec_send_packet` failures are. When the limit is reached the picture of the last sample
+/// is not returned and nothing is flushed: frame threading with two threads holds it.
 pub fn decode(
     path: &Path,
     limit: usize,
-    mut each: impl FnMut(Frame) -> anyhow::Result<bool>,
+    mut each: impl FnMut(Frame) -> anyhow::Result<Option<f64>>,
 ) -> anyhow::Result<()> {
     let mut file = File::open(path)?;
     let track = track(&mut file, limit)?;
@@ -636,22 +736,24 @@ pub fn decode(
         );
     }
     let full_range = sequence.is_some_and(|s| s.full_range);
-    let mut decoder = match track.codec {
-        Codec::H264 => Decoder::H264(Box::default()),
-        Codec::Hevc => {
-            let mut d = Box::new(rusty_h265::Decoder::new());
-            for set in &track.sets {
-                guarded(|| d.push_nal(set, None))?.map_err(|e| anyhow::anyhow!("{e}"))?;
-            }
-            Decoder::Hevc(d)
-        }
-    };
+    let mut decoder = new_decoder(&track)?;
     let reorder = track.samples.iter().any(|s| s.3 != 0);
     let mut pending: Vec<(i64, Image)> = Vec::new();
     let time = |pts: i64| (pts - track.start) as f64 / f64::from(track.timescale);
     let limited = track.samples.len() == limit;
     let mut sample = Vec::new();
     let mut fresh = true;
+    let wanted = Cell::new(f64::NEG_INFINITY);
+    let mut planned = f64::NEG_INFINITY;
+    let mut each = |frame: Frame| -> anyhow::Result<bool> {
+        Ok(match each(frame)? {
+            None => true,
+            Some(t) => {
+                wanted.set(t);
+                false
+            }
+        })
+    };
     let emit = |pts: i64,
                 image: Image,
                 each: &mut dyn FnMut(Frame) -> anyhow::Result<bool>|
@@ -669,7 +771,19 @@ pub fn decode(
             full_range,
         })
     };
-    for (index, &(position, size, dts, offset)) in track.samples.iter().enumerate() {
+    let mut next = 0;
+    while next < track.samples.len() {
+        if !reorder && wanted.get() > planned {
+            planned = wanted.get();
+            if let Some(start) = restart(&mut file, &track, next, planned, time)? {
+                next = start;
+                decoder = new_decoder(&track)?;
+                fresh = true;
+            }
+        }
+        let index = next;
+        next += 1;
+        let (position, size, dts, offset) = track.samples[index];
         let last = limited && index + 1 == limit;
         let pts = dts.checked_add(offset).context("invalid PTS/DTS")?;
         sample.resize(usize::try_from(size)?, 0);

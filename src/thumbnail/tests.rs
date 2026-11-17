@@ -43,6 +43,89 @@ fn jpeg_has_ffmpeg_quantiser_and_picture_size() {
     assert_eq!(&jpeg[sof + 5..sof + 9], &[0, 200, 1, 64]);
 }
 
+/// A camera-like stream: no B-frames and an IDR picture every `gop` frames (openpilot's qcamera
+/// has 15, its HEVC cameras 20).
+fn keyframed(path: &std::path::Path, hevc: bool, gop: u32) {
+    let mut cmd = std::process::Command::new("ffmpeg");
+    cmd.args(["-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i"])
+        .args([
+            "testsrc2=size=526x330:rate=20",
+            "-t",
+            "7",
+            "-an",
+            "-threads",
+            "1",
+        ])
+        .args(["-pix_fmt", "yuv420p"]);
+    if hevc {
+        let params = format!("pools=1:frame-threads=1:bframes=0:keyint={gop}:min-keyint={gop}");
+        cmd.args(["-c:v", "libx265", "-tag:v", "hvc1", "-x265-params"])
+            .arg(params + ":scenecut=0:open-gop=0:log-level=error");
+    } else {
+        let gop = gop.to_string();
+        cmd.args([
+            "-c:v",
+            "libx264",
+            "-bf",
+            "0",
+            "-g",
+            &gop,
+            "-keyint_min",
+            &gop,
+        ])
+        .args(["-sc_threshold", "0", "-forced-idr", "1"]);
+    }
+    let status = cmd
+        .args(["-movflags", "+faststart"])
+        .arg(path)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success(), "fixture encoder failed");
+}
+
+#[test]
+fn skipping_to_an_idr_picture_gives_the_pictures_of_decoding_every_sample() {
+    for (hevc, gop) in [(false, 15), (true, 20)] {
+        let temp = tempfile::tempdir().unwrap();
+        let mp4 = temp.path().join("camera.mp4");
+        keyframed(&mp4, hevc, gop);
+        let mut all = Vec::new();
+        super::video::decode(&mp4, 140, |f| {
+            all.push((f.time, f.image));
+            Ok(Some(f64::NEG_INFINITY))
+        })
+        .unwrap();
+        // Between two IDR pictures, exactly on one, and the last one of the window.
+        let wanted = [1.3, 2.0, 3.65, 6.0];
+        let mut some = Vec::new();
+        let mut met = 0;
+        super::video::decode(&mp4, 140, |f| {
+            while met < wanted.len() && f.time >= wanted[met] {
+                met += 1;
+            }
+            some.push((f.time, f.image));
+            Ok(wanted.get(met).copied())
+        })
+        .unwrap();
+        assert!(
+            some.len() < all.len() / 2,
+            "{} of {}",
+            some.len(),
+            all.len()
+        );
+        for (time, image) in &some {
+            assert!(all.iter().any(|(t, i)| t == time && i == image), "{time}");
+        }
+        for w in &wanted {
+            let first = |v: &[(f64, super::scale::Image)]| v.iter().position(|(t, _)| t >= w);
+            let (a, s) = (first(&all).unwrap(), first(&some).unwrap());
+            assert!(all[a] == some[s], "hevc {hevc}, wanted {w}");
+        }
+    }
+}
+
 #[test]
 fn unreadable_inputs_fail_without_a_picture() {
     let temp = tempfile::tempdir().unwrap();

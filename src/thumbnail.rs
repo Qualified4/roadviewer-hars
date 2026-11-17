@@ -97,7 +97,9 @@ pub fn make(source: &Path, output: &Path) -> anyhow::Result<Value> {
                 candidates.push((second, scale::small(&frame.image, WIDTH, frame.full_range)?));
             }
         }
-        Ok(candidates.len() == 5)
+        Ok((1..=5u8)
+            .find(|second| !candidates.iter().any(|v| v.0 == *second))
+            .map(|second| start + f64::from(second)))
     })?;
     if candidates.is_empty()
         && let Some(first) = first
