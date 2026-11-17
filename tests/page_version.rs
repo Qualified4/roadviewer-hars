@@ -109,6 +109,31 @@ async fn pages_name_the_hars_version_only() {
             html.contains("Road Viewer HARS") && !html.contains("HARS HARS"),
             "{uri}"
         );
+        // HARS is named in the title and next to the version label only; every other "Road
+        // Viewer" stays as preserved, the wordmark above all (it is sized for those 11 letters).
+        assert!(
+            html.contains("<title>Road Viewer HARS · Home Assistant</title>"),
+            "{uri}: the title names HARS"
+        );
+        if uri == "/?fragment=1" {
+            assert!(
+                html.contains("<h1>Road Viewer</h1>"),
+                "{uri}: the wordmark keeps the preserved letters"
+            );
+        }
+        assert_eq!(
+            html.matches("Road Viewer HARS").count(),
+            if fragment { 2 } else { 1 },
+            "{uri}: HARS is named in the title and the version label only"
+        );
+        if fragment {
+            assert!(
+                html.contains(&format!(
+                    ">Road Viewer HARS <span class=\"app-version\">v{HARS}</span>"
+                )),
+                "{uri}: the version label names HARS"
+            );
+        }
         if fragment {
             assert!(
                 html.contains(&format!("<span class=\"app-version\">v{HARS}</span>")),

@@ -1,0 +1,122 @@
+const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('playwright');
+(async()=>{
+ const browser=await chromium.launch({headless:true});require('./browser-helpers.cjs').openRouteGroups(browser);
+ try{
+  const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
+  const base='https://rv.test';
+  let progressReads=0,dataFailure=false,releaseVideo;
+  const videoGate=new Promise(resolve=>releaseVideo=resolve);
+  let logs=[{id:'one',name:'one',status:'processing',uploaded:1,bytes:1,video:true},{id:'two',name:'two',status:'processing',uploaded:2,bytes:1,video:false}],ready=false,reads=0,videoRequests=[];
+  const data={route:'one',key:'new-video-version',duration:2,warnings:[],video:{start:0,duration:2},frames:Array.from({length:21},(_,i)=>({t:i/10,id:i,valid:false,lanes:[],edges:[],lp:[],es:[],leads:[],liveTracksValid:false}))};
+  await page.route(base+'/**',async route=>{
+   const url=new URL(route.request().url()),p=url.pathname;
+   if(p.endsWith('/bookmarks'))return route.fulfill({json:{bookmarks:[]}});
+   if(p==='/api/progress'){progressReads++;return route.fulfill({json:{progress:Object.fromEntries(logs.filter(m=>m.status==='processing'&&m.progress).map(m=>[m.id,m.progress]))}})}
+   if(p==='/api/logs')return route.fulfill({json:{logs,max_upload_mb:512,storage_used_bytes:1}});
+   // The replay loads vehicle data in the background for the event track; none here.
+   if(p.endsWith('/telemetry'))return route.fulfill({status:404,json:{error:'차량 정보 없음'}});
+   if(p.endsWith('/data')){reads++;if(dataFailure)return route.fulfill({status:500,json:{error:'failed'}});return route.fulfill(ready?{json:data}:{status:409,json:{status:'processing'}})}
+   if(p.endsWith('/video')){await videoGate;videoRequests.push(url.searchParams.get('v'));return route.fulfill({body:fs.readFileSync((process.env.RV_TEST_VIDEO||'/tmp/roadviewer-test.mp4')),contentType:'video/mp4'})}
+   if(p==='/api/diagnostics')return route.fulfill({json:{saved:1}});
+   if(p.startsWith('/api/settings'))return route.fulfill({json:{}});
+   const name=p==='/'?'library.html':p.startsWith('/view/')?'index.html':p.replace('/assets/','');
+   const contentType=name.endsWith('.js')?'application/javascript':name.endsWith('.css')?'text/css':name.endsWith('.png')?'image/png':name.endsWith('.svg')?'image/svg+xml':'text/html';
+   return route.fulfill({body:fs.readFileSync('roadviewer/app/web/'+name),contentType});
+  });
+  await page.goto(base+'/');assert.equal(await page.locator('.diagnostics').count(),0);assert.equal(await page.locator('script[src*="picker-diagnostics"]').count(),0);await page.waitForFunction(()=>document.querySelectorAll('.log-row').length===2);
+  for(const [progress,text] of [
+   [{stage:'log_analysis',frames:1234},'프레임 분석 완료'],
+   [{stage:'video_convert',percent:65},'영상 변환 중'],
+   [{stage:'video_verify',percent:80},'영상 패킷 검증 중'],
+   [{stage:'log_prepare'},'변환 준비 중'],
+   [{stage:'log_decompress',percent:50},'로그 압축 해제 중'],
+   ...Object.entries({telemetry_build:'차량 그래프 생성 중',telemetry_encode:'차량 그래프 JSON 변환 중',telemetry_compress:'차량 그래프 압축·저장 중',replay_compact:'재생 데이터 정리 중',replay_encode:'재생 데이터 JSON 변환 중',replay_compress:'재생 데이터 압축·저장 중',summary_save:'요약 저장 중'}).map(([stage,label])=>[{stage,percent:50},label])
+  ]){
+   logs[0].progress=progress;await page.evaluate(()=>refresh());
+   assert((await page.locator('.state-processing').first().textContent()).includes(text));
+  }
+  logs[0].conversion_revision=1;logs[0].progress={stage:'log_prepare',percent:0};await page.evaluate(()=>refresh());
+  await page.evaluate(()=>window.savedProcessingRow=document.querySelector('.log-row'));
+  logs[0].progress={stage:'video_convert',percent:91};
+  const readsBefore=progressReads;
+  await page.waitForFunction(()=>document.querySelector('.state-processing').textContent==='영상 변환 중 · 73%');
+  assert(progressReads>readsBefore);
+  assert(await page.evaluate(()=>savedProcessingRow===document.querySelector('.log-row')));
+  logs[0].progress={stage:'video_verify',percent:92};
+  await page.evaluate(()=>refresh());
+  assert(await page.evaluate(()=>savedProcessingRow===document.querySelector('.log-row')));
+  assert.equal(await page.locator('.state-processing').first().textContent(),'영상 패킷 검증 중 · 79%');
+  logs[0].status='ready';await page.evaluate(()=>refresh());
+  await page.evaluate(()=>window.savedReplay=document.querySelector('.log-row .replay'));
+  await page.evaluate(()=>refresh());assert(await page.evaluate(()=>savedReplay===document.querySelector('.log-row .replay')));
+  // Another row finishing must not replace this row's replay link during a click.
+  await page.locator('.log-row .replay').hover();await page.mouse.down();
+  logs[1].status='ready';await page.evaluate(()=>refresh());assert(await page.evaluate(()=>savedReplay===document.querySelector('.log-row .replay')));
+  await page.mouse.up();await page.waitForURL('**/view/one/');
+  await page.waitForFunction(()=>document.getElementById('status').textContent.includes('로그 준비 중'));
+  assert(await page.locator('#play').isDisabled());
+  assert(await page.locator('#playbackControls').isHidden());
+  assert.match(await page.locator('#playbackMessage').textContent(),/로그 준비 중/);
+  ready=true;
+  await page.waitForFunction(()=>document.getElementById('playbackMessage').textContent.includes('영상을 불러오는 중'));
+  assert(await page.locator('#playbackControls').isHidden());
+  await page.locator('#video').evaluate(v=>v.dispatchEvent(new Event('loadedmetadata')));
+  assert(await page.locator('#playbackControls').isHidden(),'metadata alone does not make video playable');
+  releaseVideo();
+  await page.waitForFunction(()=>!document.getElementById('play').disabled);
+  assert(await page.locator('#playbackControls').isVisible());assert(await page.locator('#playbackMessage').isHidden());
+  assert(reads>=2);assert(videoRequests.includes('new-video-version'));
+  // The app bar stays at the top of the page while the content scrolls under it.
+  for(const viewport of [{width:1280,height:720},{width:390,height:844}]){
+   await page.setViewportSize(viewport);await page.evaluate(()=>window.scrollTo(0,0));
+   const nav=page.locator('.app-bar');const initial=await nav.boundingBox();assert(Math.abs(initial.y)<1);
+   await page.evaluate(()=>window.scrollTo(0,300));
+   await page.waitForFunction(()=>Math.abs(document.querySelector('.app-bar').getBoundingClientRect().top)<1);
+   assert(await page.locator('#logSegmentChoice').isVisible()&&await page.locator('#pinLog').isVisible());
+   assert.equal(await page.locator('.camera-panel .note').count(),0);
+   assert((await page.locator('.road-panel .note').first().textContent()).includes('차선: 확률이 높을수록 선명하게 표시'));
+   assert.equal(await page.getByRole('tab',{name:'주행 상황',exact:true}).getAttribute('aria-selected'),'true');
+   for(const selector of ['.back','#previousLog','#nextLog']){
+    await page.locator(selector).scrollIntoViewIfNeeded();const box=await page.locator(selector).boundingBox();
+    assert(box.y>=0&&box.x>=0&&box.x+box.width<=viewport.width&&box.y+box.height<=viewport.height);
+   }
+   await page.evaluate(()=>window.scrollTo(0,0));
+  }
+  await page.locator('#play').click();await page.waitForFunction(()=>document.getElementById('video').currentTime>0.1);
+  assert(await page.locator('#logSegment').isHidden());
+  logs=[
+   {id:'one',name:'00000356--148eb5e823 / 구간 13',status:'ready'},
+   {id:'two',name:'00000356--148eb5e823 / 구간 12',status:'ready'},
+   {id:'pending',name:'00000356--148eb5e823 / 구간 2',status:'processing'},
+   {id:'other',name:'00000357--148eb5e823 / 구간 11',status:'ready'}
+  ];
+  await page.evaluate(()=>loadLogNavigation());
+  assert.equal(await page.locator('#logSegment').inputValue(),'one');
+  assert.deepEqual(await page.locator('#logSegment option').allTextContents(),['구간 2 · 준비 중','구간 12','구간 13']);
+  assert(await page.locator('#logSegment option').first().isDisabled());
+  for(const width of [320,390,1280]){
+   await page.setViewportSize({width,height:844});
+   for(const selector of ['.back','#logSegmentChoice','#previousLog','#nextLog']){
+    const box=await page.locator(selector).boundingBox();assert(box.x>=0&&box.x+box.width<=width);
+   }
+  }
+  await page.selectOption('#logSegment','two',{force:true});await page.waitForURL('**/view/two/');
+  await page.waitForFunction(()=>document.getElementById('logSegment').value==='two');
+  await page.locator('#lateralRangeChoice').click();
+  await page.getByRole('option',{name:'±10 m',exact:true}).click();
+  assert.equal(await page.locator('#lateralRange').inputValue(),'10');
+  await page.reload();await page.waitForFunction(()=>document.getElementById('lateralRangeChoice')?.textContent==='±10 m');
+  await page.waitForFunction(()=>!document.getElementById('play').disabled);
+  await page.evaluate(()=>document.getElementById('video').dispatchEvent(new Event('error')));
+  assert(await page.locator('#playbackControls').isHidden());
+  assert.match(await page.locator('#playbackMessage').textContent(),/영상을 읽지 못했습니다/);
+  const stopped=await page.evaluate(()=>t);await page.keyboard.press('Space');await page.keyboard.press('ArrowRight');
+  assert.equal(await page.evaluate(()=>t),stopped,'unavailable replay ignores playback shortcuts');
+  data.video=null;await page.reload();await page.waitForFunction(()=>!document.getElementById('play').disabled);
+  assert(await page.locator('#playbackControls').isVisible(),'log-only replay remains playable');
+  dataFailure=true;await page.reload();await page.waitForFunction(()=>document.getElementById('status').textContent==='재생 불가');
+  assert(await page.locator('#playbackControls').isHidden());
+  assert.match(await page.locator('#playbackMessage').textContent(),/로그를 불러오지 못했습니다/);
+  assert.deepEqual(errors,[]);console.log('PASS: stable replay links during refresh and click, pending to ready without reload, versioned video loads and plays');
+ }finally{await browser.close()}
+})().catch(e=>{console.error(e);process.exitCode=1});

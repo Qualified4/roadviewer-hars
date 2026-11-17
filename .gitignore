@@ -8,6 +8,8 @@ __pycache__/
 *.mp4
 # Synthetic 10-frame clip for the container check (scripts/container_smoke.py), no recording.
 !/scripts/smoke/qcamera.ts
+# Synthetic videos the browser tests play (2 s black, a generated colour clip), no recording.
+!/tests/browser/fixtures/*.mp4
 /target/
 /.hars-data/
 /.env
@@ -18,3 +20,4 @@ __pycache__/
 *.key
 /.devices.json
 /.uploads/
+/integration/upstream_cjs/node_modules/

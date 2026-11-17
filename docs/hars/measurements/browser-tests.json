@@ -1,0 +1,1197 @@
+{
+ "date": "2026-11-17",
+ "base": "5a2426f",
+ "hars_version": "2.0.0-alpha.4",
+ "build": "release",
+ "node": "v22.13.1",
+ "playwright": "1.64.1",
+ "chromium_headless_shell_revision": "1248",
+ "chromium_version": "156.0.8078.4",
+ "isolation": "unshare -rn (loopback only)",
+ "host": "WSL2 Ubuntu 24.04, 16 vCPU, 31 GiB",
+ "serial_full_seconds": 572.8,
+ "serial_full_totals": {
+  "fail": 3,
+  "pass": 48
+ },
+ "repeat5_seconds": 2755.9,
+ "repeat5_totals": {
+  "pass": 240
+ },
+ "parallel4_seconds": [
+  164.1,
+  323.0
+ ],
+ "parallel4_runs": [
+  1,
+  2
+ ],
+ "parallel4_totals": [
+  {
+   "fail": 4,
+   "pass": 47
+  },
+  {
+   "fail": 7,
+   "pass": 95
+  }
+ ],
+ "unit": "assertions = assert(...)/assert.<name>(...) call sites per file",
+ "entries": [
+  {
+   "label": "replay_coverage",
+   "file": "replay_coverage.cjs",
+   "area": "긴 영상·로그, 영상 없는 구간, 시킹",
+   "assertions": 56,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 30.2,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "display_preferences",
+   "file": "display_preferences.cjs",
+   "area": "표시 설정 저장·복원",
+   "assertions": 51,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 3.9,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "concurrency",
+   "file": "concurrency.cjs",
+   "area": "변환 동시 실행 수 설정",
+   "assertions": 6,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 5.0,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "info_panels",
+   "file": "info_panels.cjs",
+   "area": "저장공간·카메라 정보 패널",
+   "assertions": 30,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 3.0,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "archive_status",
+   "file": "archive_status.cjs",
+   "area": "미디어 상태 배지, NAS 상태 패널, 전체 이동 실행",
+   "assertions": 43,
+   "server": "Python 서버→shim",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 6.5,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "video_overlay",
+   "file": "video_overlay.cjs",
+   "area": "영상 오버레이 그리기·배치",
+   "assertions": 240,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 11.1,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "fail",
+    "pass",
+    "fail"
+   ]
+  },
+  {
+   "label": "upload_stall",
+   "file": "upload_stall.cjs",
+   "area": "멈춘 업로드 재시도",
+   "assertions": 13,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 1.3,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "navigation",
+   "file": "navigation.cjs",
+   "area": "단일 문서 내비게이션, Ingress 접두사, 기록",
+   "assertions": 47,
+   "server": "Python 서버→shim",
+   "class": "B",
+   "note": "fixture meta.json 2개에 id가 없어 HARS가 기동을 거부(src/store.rs:169). shim이 폴더 이름으로 id만 채움(Python이 쓰는 meta.json에는 항상 있음)",
+   "serial_result": "pass",
+   "serial_seconds": 25.6,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "replay_play_request",
+   "file": "replay_play_request.cjs",
+   "area": "재생 요청 취소·지연",
+   "assertions": 9,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 1.0,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "recording_names",
+   "file": "recording_names.cjs",
+   "area": "주행 묶음, 업로드 날짜, 접힘 기본값",
+   "assertions": 81,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 8.2,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "archive_settings",
+   "file": "archive_settings.cjs",
+   "area": "아카이브 설정 폼(NAS/Drive, COPY/MOVE 경고, 저장·재적용)",
+   "assertions": 72,
+   "server": "Python 서버→shim",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 2.7,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "fullscreen_landscape",
+   "file": "fullscreen_landscape.cjs",
+   "area": "터치 화면 전체 화면·가로 고정",
+   "assertions": 26,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 3.7,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "long_drive",
+   "file": "long_drive.cjs",
+   "area": "180구간 주행 스크롤 띠",
+   "assertions": 47,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 9.8,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "lazy_rows",
+   "file": "lazy_rows.cjs",
+   "area": "목록 행 지연 렌더링",
+   "assertions": 22,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 2.3,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "upload_drop",
+   "file": "upload_drop.cjs",
+   "area": "끌어다 놓기 업로드",
+   "assertions": 30,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 0.9,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "upload_parallel",
+   "file": "upload_parallel.cjs",
+   "area": "4개 동시 업로드",
+   "assertions": 13,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 4.7,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "video_sources",
+   "file": "video_sources.cjs",
+   "area": "영상 소스·화질 선택",
+   "assertions": 41,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 10.5,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "choices",
+   "file": "choices.cjs",
+   "area": "선택 시트·메뉴(속도·범위·구간 이동)",
+   "assertions": 42,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 17.6,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "conversion_controls",
+   "file": "conversion_controls.cjs",
+   "area": "자동 변환 토글, 변환·제거·완전 삭제 상태",
+   "assertions": 47,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 3.8,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "whole_video",
+   "file": "whole_video.cjs",
+   "area": "전체 영상 사본 전환",
+   "assertions": 5,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 2.6,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "motion",
+   "file": "motion.cjs",
+   "area": "전환·목록 애니메이션",
+   "assertions": 73,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 32.8,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "log_export",
+   "file": "log_export.cjs",
+   "area": "로그 내보내기",
+   "assertions": 28,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 1.4,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "storage_devices",
+   "file": "storage_devices.cjs",
+   "area": "저장공간·장치 탭",
+   "assertions": 36,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 13.2,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "pairing_refresh",
+   "file": "pairing_refresh.cjs",
+   "area": "페어링 코드 갱신",
+   "assertions": 20,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 6.1,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "segment_peek",
+   "file": "segment_peek.cjs",
+   "area": "구간 미리보기(호버·터치 길게 누름)",
+   "assertions": 77,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 16.4,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "replay_rendering",
+   "file": "replay_rendering.cjs",
+   "area": "지도 라벨·표 렌더링",
+   "assertions": 15,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 2.7,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "replay_glass_capture",
+   "file": "replay_glass_capture.cjs",
+   "area": "재생 화면 테마·배지·탭 화면",
+   "assertions": 24,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 23.5,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "download_dialog",
+   "file": "download_dialog.cjs",
+   "area": "다운로드 대화상자(형식·ZIP 범위)",
+   "assertions": 45,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 4.1,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "upload_timeout",
+   "file": "upload_timeout.cjs",
+   "area": "업로드 시간 초과 판정(브라우저 없음)",
+   "assertions": 33,
+   "server": "Node만",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 0.0,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "tag_filter_fold",
+   "file": "tag_filter_fold.cjs",
+   "area": "태그 필터 접기",
+   "assertions": 20,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 2.0,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "replay_end_seek",
+   "file": "replay_end_seek.cjs",
+   "area": "끝 위치 시킹",
+   "assertions": 10,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 0.6,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "tags",
+   "file": "tags.cjs",
+   "area": "태그 편집·필터·일괄(실서버 304 폴링 포함)",
+   "assertions": 74,
+   "server": "Python 서버→shim",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 22.5,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "bookmarks",
+   "file": "bookmarks.cjs",
+   "area": "북마크 기록·목록·편집(모바일)",
+   "assertions": 35,
+   "server": "Python 서버→shim",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 2.9,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "camera_info",
+   "file": "camera_info.cjs",
+   "area": "카메라 정보 대화상자",
+   "assertions": 15,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 7.7,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "replay_layout",
+   "file": "replay_layout.cjs",
+   "area": "재생 화면 배치, 앱바, 고정, 버전 줄",
+   "assertions": 146,
+   "server": "웹 파일+모킹",
+   "class": "D",
+   "note": "214행이 버전을 ^v숫자.숫자.숫자$로 검사. HARS는 의도대로 자기 버전 v2.0.0-alpha.4를 표시(src/http.rs page_html). 프리릴리스 버전에서만 생기는 차이",
+   "serial_result": "fail",
+   "serial_seconds": 8.0,
+   "repeat5": null,
+   "parallel4": [
+    "fail",
+    "fail",
+    "fail"
+   ]
+  },
+  {
+   "label": "disclosure_animation",
+   "file": "disclosure_animation.cjs",
+   "area": "접기·펼치기 애니메이션",
+   "assertions": 32,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 5.9,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "lane_marking",
+   "file": "lane_marking.cjs",
+   "area": "차선 표시 코드(영상·도로 보기)",
+   "assertions": 35,
+   "server": "웹 파일+모킹",
+   "class": "B",
+   "note": "fixture를 tests/overlay_geometry_fixture.py가 보존 Python overlay.py·compact.py로 생성(서버와 무관, API는 모킹). HARS의 미러 웹 파일만 검사",
+   "serial_result": "pass",
+   "serial_seconds": 0.9,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "replay_ready",
+   "file": "replay_ready.cjs",
+   "area": "변환 완료 전후 재생 링크",
+   "assertions": 37,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 5.9,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "bulk_actions",
+   "file": "bulk_actions.cjs",
+   "area": "목록 다중 선택, 일괄 작업, ZIP 크기 제한",
+   "assertions": 110,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 19.4,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "device_test_page",
+   "file": "device_test_page.cjs",
+   "area": "장치 시험 페이지(HMAC, 조각 업로드)",
+   "assertions": 23,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 1.3,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "replay_gzip",
+   "file": "replay_gzip.cjs",
+   "area": "gzip 재생 데이터와 대체 경로",
+   "assertions": 13,
+   "server": "웹 파일+모킹",
+   "class": "B",
+   "note": "lane_marking과 같은 Python 생성 fixture 사용. HARS의 미러 웹 파일만 검사",
+   "serial_result": "pass",
+   "serial_seconds": 2.7,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "replay_format2",
+   "file": "replay_format2.cjs",
+   "area": "재생 데이터 형식 2 확장(Python compact 대조)",
+   "assertions": 6,
+   "server": "Node만",
+   "class": "F",
+   "note": "Python 내부 모듈 compact.py의 compact_data·expand_frames를 import해 app.js와 대조. HARS에는 Python 모듈이 없음(ModuleNotFoundError: compact). 서버를 쓰지 않음",
+   "serial_result": "fail",
+   "serial_seconds": 0.1,
+   "repeat5": null,
+   "parallel4": [
+    "fail",
+    "fail",
+    "fail"
+   ]
+  },
+  {
+   "label": "library_tabs",
+   "file": "library_tabs.cjs",
+   "area": "라이브러리 탭, 헤더, 경로 카드, 좁은 화면 앱바",
+   "assertions": 94,
+   "server": "Python 서버→shim",
+   "class": "C",
+   "note": "320px+업로드 표시에서 워드마크 폭<=60px(183행). HARS가 페이지의 'Road Viewer'를 'Road Viewer HARS'로 바꿈(src/http.rs:472). Python 원본 h1만 같은 글자로 바꾸면 Python에서도 같은 행에서 실패",
+   "serial_result": "fail",
+   "serial_seconds": 15.4,
+   "repeat5": null,
+   "parallel4": [
+    "fail",
+    "fail",
+    "fail"
+   ]
+  },
+  {
+   "label": "replay_downloads",
+   "file": "replay_downloads.cjs",
+   "area": "재생 화면 메뉴(다운로드·정보·삭제)",
+   "assertions": 32,
+   "server": "웹 파일+모킹",
+   "class": "B",
+   "note": "roadviewer/config.yaml의 version을 읽음. reference/python에는 없어 작업 폴더에 HARS의 roadviewer_hars/config.yaml(2.0.0-alpha.4)을 둠",
+   "serial_result": "pass",
+   "serial_seconds": 5.4,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "upload_mobile",
+   "file": "upload_mobile.cjs",
+   "area": "모바일 업로드·정리",
+   "assertions": 26,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 4.6,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "maps[map_schemes=dark][map_parts=main]",
+   "file": "maps.cjs",
+   "area": "지도(목록 카드 경로, 주행 지도, 영상 위 지도, 다수 주행, 누수)",
+   "assertions": 302,
+   "server": "Python 서버→shim",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 63.4,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "ripple",
+   "file": "ripple.cjs",
+   "area": "누름 물결 효과",
+   "assertions": 16,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 7.9,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "maps[map_schemes=light][map_parts=main]",
+   "file": "maps.cjs",
+   "area": "지도(목록 카드 경로, 주행 지도, 영상 위 지도, 다수 주행, 누수)",
+   "assertions": 302,
+   "server": "Python 서버→shim",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 61.1,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "gdrive_panel",
+   "file": "gdrive_panel.cjs",
+   "area": "Google Drive 패널(장치 코드 로그인, 해제, 재시도)",
+   "assertions": 113,
+   "server": "Python 서버→shim",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 9.5,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "maps[map_parts=many,leak]",
+   "file": "maps.cjs",
+   "area": "지도(목록 카드 경로, 주행 지도, 영상 위 지도, 다수 주행, 누수)",
+   "assertions": 302,
+   "server": "Python 서버→shim",
+   "class": "B",
+   "note": "서버 실행 중 기록 폴더 100개를 직접 써 넣음. shim이 폴더 목록 변화를 보고 다음 요청 전에 HARS를 1회 재기동(Python은 요청마다 폴더를 읽음)",
+   "serial_result": "pass",
+   "serial_seconds": 46.1,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  },
+  {
+   "label": "telemetry",
+   "file": "telemetry.cjs",
+   "area": "텔레메트리 탭·그래프 동기화",
+   "assertions": 98,
+   "server": "웹 파일+모킹",
+   "class": "A",
+   "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과",
+   "serial_result": "pass",
+   "serial_seconds": 14.4,
+   "repeat5": [
+    "pass",
+    "pass",
+    "pass",
+    "pass",
+    "pass"
+   ],
+   "parallel4": [
+    "pass",
+    "pass",
+    "pass"
+   ]
+  }
+ ]
+}
