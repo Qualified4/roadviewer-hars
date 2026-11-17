@@ -211,7 +211,9 @@ const {settleLayout:settle}=require('./browser-helpers.cjs');
   }
   await page.setViewportSize({width:390,height:844});
   await page.locator('#replayDownload>summary').click();
-  assert.match(await page.locator('#replayDownloadMenu .menu-version .app-version').textContent(),/^v[0-9]+[.][0-9]+[.][0-9]+$/,'version is an info line in ⋯');
+  // HARS: the exact version of the server under test (the runner reads it from Cargo.toml), pre-releases included.
+  assert(process.env.HARS_EXPECTED_VERSION,'HARS_EXPECTED_VERSION names the version the server must show');
+  assert.equal(await page.locator('#replayDownloadMenu .menu-version .app-version').textContent(),'v'+process.env.HARS_EXPECTED_VERSION,'version is an info line in ⋯');
   await page.locator('#replayDownloadMenu #splitView').waitFor({timeout:2000});  // 보기 choices are in ⋯ on phones (the menu grows in).
   await page.keyboard.press('Escape');
   // The app bar stays at the top; the video stays in view: right under it on phones, 12px under it beside the analysis.
