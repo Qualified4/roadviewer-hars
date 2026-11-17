@@ -34,7 +34,7 @@
 - 3단계(`feat/remove-ffmpeg`, 1단계 `feat/pure-reverse`·2단계 `feat/thumbnail-without-ffmpeg`를 합친 뒤): 제품 빌드와 실행에서 FFmpeg을 없앴다. `ffmpeg-next`·`ffmpeg-sys-next`(와 그것만 끌어오던 `bindgen`·`clang-sys` 등 12 crate)가 `Cargo.lock`에서 빠졌고, 실행 파일은 libc·libm·libgcc_s만 링크하며, 업로드 검사·변환·역변환·썸네일 어디서도 `ffmpeg`/`ffprobe`를 부르지 않는다. 대체 경로도 없다.
 - amd64 이미지(로컬 측정): **풀린 layer 580.9 MB → 120.6 MB(−460.3 MB, −79.2 %)**, 레지스트리 blob(gzip) **217.5 MB → 46.3 MB(−171.1 MB, −78.7 %)**. aarch64는 CI 컨테이너 작업이 같은 방법으로 잰다(로컬 미측정).
 - 실주행 13구간 26영상: `ffmpeg`/`ffprobe`가 없는 PATH에서 새 실행 파일로 변환해 Python 결과와 13/13 동등(15,600프레임).
-- FFmpeg은 개발 전용으로만 남는다: 시험의 합성 입력 생성과 독립 대조(oracle). CI에서는 `Rust checks` 작업만 설치한다.
+- FFmpeg은 개발 전용으로만 남는다: 시험의 합성 입력 생성과 독립 대조(oracle). CI에서는 `Rust tests`와 `Compatibility` 작업만 설치한다.
 
 ## 제거한 것
 
