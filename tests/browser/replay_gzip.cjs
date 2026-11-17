@@ -51,10 +51,15 @@ const compact={route:'gzip',key:'gzip-key',duration:1,logStart:0,logEnd:.95,warn
    await page.locator('#replayDownload>summary').click();await page.locator('#cameraInfoButton').click();
    assert.match(await page.locator('#cameraInfoValues').textContent(),/gzip-device/);
    // Playback redraws the road view only when the model frame changes.
-   await page.evaluate(()=>{window.draws=0;const c=document.getElementById('road').getContext('2d'),clear=c.clearRect.bind(c);c.clearRect=(...a)=>{window.draws++;return clear(...a)}});
-   await page.keyboard.press('Escape');await page.evaluate(()=>toggle());await page.waitForTimeout(500);await page.evaluate(()=>pause());
-   const draws=await page.evaluate(()=>window.draws),frameIndex=await page.evaluate(()=>idx);
-   assert(draws>=frameIndex&&draws<=frameIndex+4,`${draws} redraws for ${frameIndex} frames`);
+   // HARS: the frame index is not the number of frame changes. A loaded machine ticks slower than the 20 Hz model frames,
+   // playback then steps over a frame (correctly), and the old fixed 500 ms wait read fewer redraws than idx. Count the
+   // changes the page actually showed, sampled every animation frame apart from the drawing, and wait for playback to
+   // reach a frame instead of a fixed time.
+   await page.evaluate(()=>{window.draws=0;const c=document.getElementById('road').getContext('2d'),clear=c.clearRect.bind(c);c.clearRect=(...a)=>{window.draws++;return clear(...a)};
+    window.hcFrameChanges=0;window.hcSeenFrame=idx;const sample=()=>{if(idx!==hcSeenFrame){hcSeenFrame=idx;hcFrameChanges++}requestAnimationFrame(sample)};requestAnimationFrame(sample)});
+   await page.keyboard.press('Escape');await page.evaluate(()=>toggle());await page.waitForFunction(()=>idx>=10);await page.evaluate(()=>pause());
+   const {draws,frameChanges}=await page.evaluate(()=>({draws:window.draws,frameChanges:hcFrameChanges+(idx!==hcSeenFrame?1:0)}));
+   assert(draws>=frameChanges&&draws<=frameChanges+4,`${draws} redraws for ${frameChanges} frame changes`);
    assert.deepEqual(errors,[]);await page.close();
   }
   console.log('PASS: gzip replay data, plain fallback without DecompressionStream, compact expansion and frame-paced redraws');
