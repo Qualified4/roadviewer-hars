@@ -286,7 +286,7 @@ HARS 2.x는 Python 1.x와 같은 Drive 계정·NAS를 쓰더라도 자기 위치
 - [roadviewer-mcp](https://github.com/Qualified4/roadviewer-mcp): AI 에이전트용 MCP 서버. 기존 Ingress 인증과 API만 사용
 - [장치 API v1](docs/device-api.md) · [English](docs/device-api.en.md): HTTPS 구성, 페어링·서명, 업로드·이어올리기와 openpilot 없이 테스트하는 방법
 
-저장소 루트가 Docker 빌드 컨텍스트입니다(`Dockerfile`). Rust 실행 파일 `roadviewer-hars`를 빌드해 `debian:bookworm-slim` 위에 넣고, 웹 파일은 보존한 Python 1.3.18 원본(`reference/python/roadviewer/app/web`)을 그대로 씁니다. 런타임 패키지는 `nginx`와 `ca-certificates`뿐이며 FFmpeg과 Python은 들어 있지 않습니다. GitHub Actions(**HARS CI**)는 Rust 검사(fmt·clippy·전체 테스트), 원본 ccnc 클라이언트 호환·업로드 장애 주입 검사, Python과 Rust의 재생 변환 대조, 보존 원본 검사(`scripts/verify_reference.py`)·릴리스 식별 검사(`scripts/check_release.py`)·병행 설치 검사(`scripts/check_coexistence.py`)를 실행하고, amd64·aarch64 각각의 네이티브 러너에서 이미지를 빌드해 FFmpeg 잔존 검사와 컨테이너 기동·TLS 검사를 합니다. 브라우저 화면 검사(`tests/browser`)는 필수 CI `Browser checks`로 실행합니다([브라우저 테스트](docs/hars/BROWSER-TESTS.md), [실행 및 테스트](docs/hars/DEVELOPMENT.md)).
+저장소 루트가 Docker 빌드 컨텍스트입니다(`Dockerfile`). Rust 실행 파일 `roadviewer-hars`를 빌드해 `debian:bookworm-slim` 위에 넣고, 웹 파일은 Python 1.3.18에서 복사한 HARS 소유 `web/`를 씁니다. 런타임 패키지는 `nginx`와 `ca-certificates`뿐이며 FFmpeg과 Python은 들어 있지 않습니다. GitHub Actions(**HARS CI**)는 Rust 검사(fmt·clippy·전체 테스트), 원본 ccnc 클라이언트 호환·업로드 장애 주입 검사, Python과 Rust의 재생 변환 대조, 보존 원본 검사(`scripts/verify_reference.py`)·릴리스 식별 검사(`scripts/check_release.py`)·병행 설치 검사(`scripts/check_coexistence.py`)를 실행하고, amd64·aarch64 각각의 네이티브 러너에서 이미지를 빌드해 FFmpeg 잔존 검사와 컨테이너 기동·TLS 검사를 합니다. 브라우저 화면 검사(`tests/browser`)는 필수 CI `Browser checks`로 실행합니다([브라우저 테스트](docs/hars/BROWSER-TESTS.md), [실행 및 테스트](docs/hars/DEVELOPMENT.md)).
 
 원본 Python 이력과 MIT 라이선스를 유지하고, 기준 코드·테스트·스키마·UI는 `reference/python`에 보존합니다. 원본 Python 저장소는 이 저장소에서 수정하지 않습니다.
 

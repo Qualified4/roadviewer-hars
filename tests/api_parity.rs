@@ -20,7 +20,7 @@ use std::{
 use tower::ServiceExt;
 
 fn web() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("reference/python/roadviewer/app/web")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web")
 }
 async fn app(root: &std::path::Path) -> App {
     let a = App::open(root.to_path_buf(), web(), false, 512)
@@ -968,4 +968,48 @@ async fn import_and_legacy_upload_use_storage_admission_and_settings() {
     }
     let (_, list) = call(&a, "GET", "/api/logs", Value::Null).await;
     assert_eq!(list["logs"][0]["pinned"], true);
+}
+
+#[tokio::test]
+async fn processing_concurrency_bounds_and_persistence() {
+    let root = tempfile::tempdir().unwrap();
+    let a = app(root.path()).await;
+    assert_eq!(a.store.processing.read().await["concurrency"], 1);
+    let (status, settings) = call(
+        &a,
+        "POST",
+        "/api/settings/processing",
+        json!({"concurrency":16}),
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(settings["concurrency"], 16);
+    for value in [0, 17] {
+        let (status, error) = call(
+            &a,
+            "POST",
+            "/api/settings/processing",
+            json!({"concurrency":value}),
+        )
+        .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
+        assert_eq!(error["error"], "invalid_settings");
+        assert_eq!(a.store.processing.read().await["concurrency"], 16);
+    }
+    drop(a);
+    let reopened = app(root.path()).await;
+    assert_eq!(reopened.store.processing.read().await["concurrency"], 16);
+    drop(reopened);
+    for value in [0, 17] {
+        std::fs::write(
+            root.path().join(".processing-settings.json"),
+            serde_json::to_vec(&json!({"concurrency":value})).unwrap(),
+        )
+        .unwrap();
+        assert!(
+            App::open(root.path().to_path_buf(), web(), false, 512)
+                .await
+                .is_err()
+        );
+    }
 }

@@ -72,7 +72,7 @@ git diff c977863 -- tests/browser
 
 `replay_format2`: Python 변환기의 `compact.py`(`compact_data`, `expand_frames`)를 import해 재생 형식 2를 만들고, `app.js`의 확장(`expandFlat`) 결과와 대조한다. HARS에는 이 Python 모듈이 없고, 이 테스트는 서버도 HARS 화면도 쓰지 않는다. 그래서 `tests/browser`에 가져오지 않았다. `browser-groups.json`(g6)에는 남아 있고, `expectations.json`의 `excluded`에 사유와 함께 있다. `test_gate_rules.py`가 제외 집합이 정확히 `{replay_format2}`이고 그 파일이 `tests/browser`에 없음을 고정한다.
 
-- 대신하는 검증: 인코더 쪽은 `integration/pipeline_contract.py`(CI, 합성 입력)와 `integration/real_conversion_compare.py`(실주행 13·14·47구간, 로컬)가 HARS replayV2 출력 전체가 Python 출력과 같음을 요구한다. `scripts/verify_reference.py`는 `app.js`가 보존 원본과 같음을 지킨다.
+- 대신하는 검증: 인코더 쪽은 `integration/pipeline_contract.py`(CI, 합성 입력)와 `integration/real_conversion_compare.py`(실주행 13·14·47구간, 로컬)가 HARS replayV2 출력 전체가 Python 출력과 같음을 요구한다. `scripts/verify_reference.py`는 `reference/`의 보존 원본만 검증하며 HARS `web/app.js`는 독립적으로 관리한다.
 - 남은 공백: HARS 출력에 `app.js` 디코더를 직접 돌려 보는 검사가 없다.
 
 ## 실행
@@ -115,8 +115,8 @@ Node 22가 PATH에 있어야 한다(`--node`로 지정할 수도 있다). 종료
 
 ## 실행기 구조
 
-- **미러.** 실행을 시작할 때 HARS를 임시 데이터 폴더(기록 1개)로 한 번 띄운다. 포트는 19180~19199 중 빈 두 개를 쓴다. 준비 판정은 연결 성공이 아니다. 띄운 프로세스가 살아 있고 그 포트의 listen 소켓을 가진 프로세스가 그 pid여야 한다(`/proc/net/tcp`와 `/proc/<pid>/fd`). 그래야 같은 PC의 다른 실행기가 띄운 HARS 화면을 받지 않는다. 그다음 보존 웹 파일마다 HARS가 Python과 같은 URL에서 내보내는 내용을 받는다(`mirror_web.py`). 미러 단계에서 예외가 나도 임시 폴더는 지워진다.
-- **작업 폴더(테스트마다 새로).** `roadviewer/app/web`(미러), `roadviewer/config.yaml`(HARS의 `roadviewer_hars/config.yaml`), `tests/`(`tests/browser` 항목마다 심볼릭 링크), `tmp/`(`TMPDIR`). 환경변수 `HARS_EXPECTED_VERSION` = `Cargo.toml`의 패키지 버전이다.
+- **미러.** 실행을 시작할 때 HARS를 임시 데이터 폴더(기록 1개)로 한 번 띄운다. 포트는 19180~19199 중 빈 두 개를 쓴다. 준비 판정은 연결 성공이 아니다. 띄운 프로세스가 살아 있고 그 포트의 listen 소켓을 가진 프로세스가 그 pid여야 한다(`/proc/net/tcp`와 `/proc/<pid>/fd`). 그래야 같은 PC의 다른 실행기가 띄운 HARS 화면을 받지 않는다. 그다음 HARS 소유 `web/`의 파일마다 HARS가 Python과 같은 URL에서 내보내는 내용을 받는다(`mirror_web.py`). 미러 단계에서 예외가 나도 임시 폴더는 지워진다.
+- **작업 폴더(테스트마다 새로).** `roadviewer/app/web`(HARS `web/`의 서빙 결과 미러), `roadviewer/config.yaml`(HARS의 `roadviewer_hars/config.yaml`), `tests/`(`tests/browser` 항목마다 심볼릭 링크), `tmp/`(`TMPDIR`). 환경변수 `HARS_EXPECTED_VERSION` = `Cargo.toml`의 패키지 버전이다.
 - **Python 서버 자리(`hars_as_python.py` + `pyshim/`).** 테스트는 `RV_PYTHON -u -c PROGRAM`으로 서버를 띄운다. shim이 `server`·`werkzeug.serving`을 대신해 HARS를 띄운다. 그리고 `/`와 `/api/hassio_ingress/test/` 둘 다에서 답하는 HTTP/1.0 프록시를 돌려준다(연결 대기열 128, werkzeug와 같음). HARS 준비 판정은 미러와 같다(살아 있음 + 소켓 소유). 기록 폴더가 바뀌면 HARS를 재기동하는 동작은 `HARS_SHIM_RESTART=1`일 때만 한다. 실행기는 이 값을 `restart_allowed` 항목에만 준다. `meta.json`의 `id`를 채우던 코드는 없앴다.
 - **감독 프로세스.** 테스트마다 `run_browser_tests.py --supervise`(실행 시작 때 만든 사본)가 child subreaper가 되어 Node를 띄운다. 테스트가 끝나거나, 실패하거나, 시간을 넘기거나, 중단되면 `/proc`에서 자손 전체를 찾아 SIGKILL한다. 감독 자체가 상한을 넘기면 실행기가 그 감독의 프로세스 트리와 작업 폴더를 그 자리에서 지운다.
 - **외부 차단.** 감독을 `unshare -rn`(loopback만) 안에서 띄우고, 테스트 전에 장치가 `lo` 하나뿐이고 `1.1.1.1:443` 연결이 `ENETUNREACH`인지 확인한다. 아니면 `isolation-failed`다.
@@ -124,7 +124,7 @@ Node 22가 PATH에 있어야 한다(`--node`로 지정할 수도 있다). 종료
 
 ## 범위와 한계
 
-- 모킹형 39개 파일은 HARS의 API를 부르지 않는다. HARS가 내보내는 화면 파일(보존 원본 + 버전·제목 치환)만 검사한다. HARS API에 닿는 것은 Python 서버형 8개 파일이다(archive_settings, archive_status, bookmarks, gdrive_panel, library_tabs, maps, navigation, tags).
+- 모킹형 39개 파일은 HARS의 API를 부르지 않는다. HARS가 내보내는 화면 파일(`web/` + 버전·제목 치환)만 검사한다. HARS API에 닿는 것은 Python 서버형 8개 파일이다(archive_settings, archive_status, bookmarks, gdrive_panel, library_tabs, maps, navigation, tags).
 - `maps[map_parts=many,leak]`는 어댑터의 재기동에 기대어 통과한다. HARS는 기록을 시작할 때 한 번 읽고, 이 테스트는 서버가 도는 중에 폴더에 기록을 직접 써 넣는다.
 - 미러는 HARS가 같은 URL에서 내보내는 본문이다. HARS의 응답 헤더(CSP 등)는 모킹형 테스트에 가지 않는다.
 - `replay_format2`의 공백([위](#가져오지-않은-항목)).

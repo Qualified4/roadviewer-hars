@@ -247,14 +247,10 @@ async fn run() -> anyhow::Result<()> {
     let root = PathBuf::from(
         std::env::var_os("HARS_DATA").unwrap_or_else(|| "/data/roadviewer-hars".into()),
     );
-    let web = PathBuf::from(std::env::var_os("HARS_WEB").unwrap_or_else(|| {
-        if ha_mode {
-            "/app/web"
-        } else {
-            "reference/python/roadviewer/app/web"
-        }
-        .into()
-    }));
+    let web = PathBuf::from(
+        std::env::var_os("HARS_WEB")
+            .unwrap_or_else(|| if ha_mode { "/app/web" } else { "web" }.into()),
+    );
     let ingress_only = std::env::var("HARS_INGRESS_ONLY").unwrap_or_else(|_| "1".into()) != "0";
     let max_upload_mb = std::env::var("HARS_MAX_UPLOAD_MB")
         .unwrap_or_else(|_| options.max_upload_mb.to_string())

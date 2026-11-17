@@ -14,7 +14,7 @@ use std::{io::Read, path::PathBuf, time::Duration};
 use tower::ServiceExt;
 
 fn web() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("reference/python/roadviewer/app/web")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web")
 }
 fn python_app() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("reference/python/roadviewer/app")

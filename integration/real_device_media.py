@@ -31,7 +31,7 @@ async def main(args):
     route=files[0].name.rsplit('--',2)[0]
     ui_port,device_port=args.ports or (port(),port())
     ui='http://127.0.0.1:'+str(ui_port);device='http://127.0.0.1:'+str(device_port)
-    env=dict(os.environ,HARS_DATA=str(args.output/'data'),HARS_INGRESS_ONLY='0',HARS_BIND=ui.removeprefix('http://'),HARS_DEVICE_BIND=device.removeprefix('http://'),HARS_WEB=str(ROOT/'reference/python/roadviewer/app/web'))
+    env=dict(os.environ,HARS_DATA=str(args.output/'data'),HARS_INGRESS_ONLY='0',HARS_BIND=ui.removeprefix('http://'),HARS_DEVICE_BIND=device.removeprefix('http://'),HARS_WEB=str(ROOT/'web'))
     phases={'upload':{'rss':[],'api_ms':[]},'conversion':{'rss':[],'api_ms':[]}};phase='upload';done=False;chunks=[];monitor_errors=[]
     with (args.output/'server.log').open('wb') as log:
         server=subprocess.Popen([str(args.binary)],env=env,stdout=log,stderr=log)

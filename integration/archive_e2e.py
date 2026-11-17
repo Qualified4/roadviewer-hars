@@ -157,7 +157,7 @@ with tempfile.TemporaryDirectory(prefix='hars-archive-e2e-') as tmp, Drive(args.
     data_dir, nas = tmp / 'data', tmp / 'nas'
     nas.mkdir()
     env = dict(os.environ, HARS_DATA=str(data_dir), HARS_INGRESS_ONLY='0', HARS_BIND='127.0.0.1:%d' % args.port,
-               HARS_DEVICE_BIND='127.0.0.1:%d' % (args.port + 1), HARS_WEB=str(ROOT / 'reference/python/roadviewer/app/web'),
+               HARS_DEVICE_BIND='127.0.0.1:%d' % (args.port + 1), HARS_WEB=str(ROOT / 'web'),
                RV_ARCHIVE_ALLOW_ANY_PATH='1',
                RV_ARCHIVE_OPTIONS_JSON=json.dumps({'archive_gdrive_client_id': 'e2e-client', 'archive_gdrive_client_secret': 'e2e-secret'}),
                **drive.env())
