@@ -15,8 +15,12 @@ has only loopback, and checks that before the test starts, so the browser cannot
 
 The gate (expectations.json): every browser-groups.json entry runs and passes, except the excluded entries (not run)
 and the expected failures, which must fail with exactly the recorded assertion; each expected failure also runs once
-more on a mirror copy changed in the one place it names, and that run must pass. A failed test is run once more with
-a Playwright trace for the artifacts only; that run does not change the verdict.
+more on a mirror copy changed in the one place it names, and that run must pass. A HARS check (hars_checks, a test
+file in this folder) runs with the entry it names and must pass. The one known upstream test defect
+(known_upstream_defects, at most one entry) is run again, up to its attempt limit, only while it fails with exactly
+the recorded assertion; it passes if an attempt passes, and every such failure is counted (known_upstream_defect_hits,
+always printed). A failed test is run once more with a Playwright trace for the artifacts only; that run does not
+change the verdict.
 
   integration/upstream_cjs/run_browser_tests.py --hars-bin target/debug/roadviewer-hars --out /tmp/rv-browser
   integration/upstream_cjs/run_browser_tests.py --aggregate /tmp/shard1 /tmp/shard2 --out /tmp/rv-browser
@@ -123,30 +127,98 @@ def entries():
     return out
 
 
-def failure_of(log, file):
+def failure_of(log, path):
     """The errors a test printed (Node prints an uncaught or caught-and-logged error as `Name [CODE]: message` at the
-    start of a line, then its stack): how many, and the first one's name, message and line in the test file."""
+    start of a line, then its stack): how many, and the first one's name, message and line in the test file (`path`,
+    the end of its file name in the stack, e.g. tests/maps.cjs)."""
     headers = list(re.finditer(r"^([A-Za-z]*Error)(?: \[[A-Z_]+\])?: (.*)$", log, re.M))
     if not headers:
         return {"errors": 0}
     first = headers[0]
-    frame = re.search(r"^\s+at .*?/tests/" + re.escape(file) + r":(\d+):\d+", log[first.end():], re.M)
+    frame = re.search(r"^\s+at .*?/" + re.escape(path) + r":(\d+):\d+", log[first.end():], re.M)
     return {"errors": len(headers), "error": first.group(1), "message": first.group(2).strip(),
             "line": int(frame.group(1)) if frame else None}
 
 
 # ---------------------------------------------------------------------------------------------------------------- gate
+MAX_KNOWN_DEFECTS, MAX_DEFECT_ATTEMPTS = 1, 3
+DEFECT_FIELDS = ("kind", "reason", "error", "message", "line", "max_attempts", "upstream_fix", "guarded_by")
+
+
+def expectation_problem(expectations):
+    """Why expectations.json is refused, or None. known_upstream_defects reruns a failing test, so it holds at most
+    one entry, with its exact signature, an attempt limit of at most MAX_DEFECT_ATTEMPTS and a HARS check that runs
+    with it; a list that could grow would be a way round the gate."""
+    defects, checks = expectations.get("known_upstream_defects", {}), expectations.get("hars_checks", {})
+    if len(defects) > MAX_KNOWN_DEFECTS:
+        return f"known_upstream_defects has {len(defects)} entries, at most {MAX_KNOWN_DEFECTS} is accepted"
+    for name, d in defects.items():
+        missing = [k for k in DEFECT_FIELDS if k not in d]
+        if missing:
+            return f"known_upstream_defects.{name} lacks {missing}"
+        if d["kind"] != "known upstream test defect":
+            return f"known_upstream_defects.{name}: kind {d['kind']!r}"
+        if type(d["max_attempts"]) is not int or not 1 <= d["max_attempts"] <= MAX_DEFECT_ATTEMPTS:
+            return f"known_upstream_defects.{name}: max_attempts {d['max_attempts']!r}, must be 1..{MAX_DEFECT_ATTEMPTS}"
+        if type(d["line"]) is not int or not d["error"] or not d["message"]:
+            return f"known_upstream_defects.{name}: signature needs an error, a message and a line number"
+        if name in expectations["expected_failures"] or name in expectations["excluded"]:
+            return f"known_upstream_defects.{name} is also an expected failure or excluded"
+        if checks.get(d["guarded_by"], {}).get("runs_with") != name:
+            return f"known_upstream_defects.{name}: guarded_by {d['guarded_by']!r} is not a hars_checks entry run with it"
+    for name, c in checks.items():
+        if not (HERE / c.get("file", "")).is_file() or not c.get("runs_with"):
+            return f"hars_checks.{name}: needs runs_with and an existing file in {HERE}"
+    return None
+
+
+def is_base(result):
+    """A run of a manifest entry itself (not its release-version copy or a HARS check run with it)."""
+    return not result.get("variant") and not result.get("hars_check")
+
+
+def failure_matches(result, signature):
+    """The run failed with exactly one error: that name and message, first at that line of the test file."""
+    f = result.get("failure") or {}
+    return (result["outcome"] == "fail" and f.get("errors") == 1 and f.get("error") == signature["error"]
+            and f.get("message") == signature["message"] and f.get("line") == signature["line"])
+
+
+def attempts_of(result):
+    return [*result.get("earlier_attempts", []), result]
+
+
+def another_attempt(attempts, defect):
+    """Run a known upstream defect again: only after a failure with exactly its signature, up to its attempt limit."""
+    return len(attempts) < defect["max_attempts"] and failure_matches(attempts[-1], defect)
+
+
+def judge_defect(attempts, defect):
+    """pass when an attempt passed, every earlier one failed with the defect's signature, and the limit holds."""
+    if len(attempts) > defect["max_attempts"] or not all(failure_matches(a, defect) for a in attempts[:-1]):
+        return "fail"
+    return "pass" if attempts[-1]["outcome"] == "pass" else "fail"
+
+
+def defect_hits(result, expectations):
+    """How many attempts of this run failed with its known upstream defect's signature."""
+    defect = expectations.get("known_upstream_defects", {}).get(result["label"]) if is_base(result) else None
+    return sum(1 for a in attempts_of(result) if failure_matches(a, defect)) if defect else 0
+
+
 def judge(result, expectations):
     """pass | expected-failure | fail | unexpected-pass, from what the run recorded (outcome and parsed failure)."""
-    expected = expectations["expected_failures"].get(result["label"]) if not result.get("variant") else None
+    defect = expectations.get("known_upstream_defects", {}).get(result["label"]) if is_base(result) else None
+    if defect:
+        return judge_defect(attempts_of(result), defect)
+    if result.get("earlier_attempts"):
+        return "fail"
+    expected = expectations["expected_failures"].get(result["label"]) if is_base(result) else None
     if not expected:
         return "pass" if result["outcome"] == "pass" else "fail"
     if result["outcome"] == "pass":
         return "unexpected-pass"
-    f = result.get("failure") or {}
-    matches = (result["outcome"] == "fail" and f.get("errors") == 1 and f.get("error") == expected["error"]
-               and f.get("message") == expected["message"] and f.get("line") == expected["line"])
-    return "expected-failure" if matches else "fail"
+    return "expected-failure" if failure_matches(result, expected) else "fail"
 
 
 def verdict(results, excluded, labels, iterations, expectations, require_full):
@@ -157,24 +229,34 @@ def verdict(results, excluded, labels, iterations, expectations, require_full):
     if require_full and (len(manifest) != expectations["entries"] or set(labels) != manifest):
         reasons.append(f"entries: manifest has {len(manifest)}, expectations.json records {expectations['entries']}, "
                        f"this verdict covers {len(set(labels))}")
-    unknown = (set(expectations["expected_failures"]) | set(expectations["excluded"])) - manifest
+    checks = expectations.get("hars_checks", {})
+    unknown = (set(expectations["expected_failures"]) | set(expectations["excluded"])
+               | set(expectations.get("known_upstream_defects", {})) | {c["runs_with"] for c in checks.values()}) - manifest
     if unknown:
         reasons.append(f"expectations.json names entries not in the manifest: {sorted(unknown)}")
     counts = {"pass": 0, "expected-failure": 0, "excluded": 0, "fail": 0, "unexpected-pass": 0,
-              "release_version_runs_passed": 0}
+              "release_version_runs_passed": 0, "hars_checks_passed": 0, "known_upstream_defect_hits": 0}
     for iteration in range(1, iterations + 1):
         mine = [r for r in results if r["iteration"] == iteration]
-        base = [r["label"] for r in mine if not r.get("variant")]
+        base = [r["label"] for r in mine if is_base(r)]
         dup = sorted({x for x in base if base.count(x) > 1})
         skipped = [x for x in excluded if x in labels]
         covered = set(base) | set(skipped)
         if dup or covered != set(labels) or set(base) & set(skipped):
             reasons.append(f"run {iteration}: entries run {len(base)} + excluded {len(skipped)} != {len(labels)} "
                            f"(missing {sorted(set(labels) - covered)[:5]}, duplicated {dup[:5]})")
-        if any(r["label"] in expectations["excluded"] for r in mine if not r.get("variant")):
+        if any(r["label"] in expectations["excluded"] for r in mine if is_base(r)):
             reasons.append(f"run {iteration}: an excluded entry was run")
         counts["excluded"] += len(skipped)
         for r in mine:
+            if r.get("hars_check"):
+                if r["hars_check"] not in checks:
+                    reasons.append(f"run {iteration}: {r['hars_check']} is not a hars_checks entry")
+                elif r["outcome"] == "pass":
+                    counts["hars_checks_passed"] += 1
+                else:
+                    reasons.append(f"run {iteration}: {r['label']} {r['outcome']} ({r.get('failure')})")
+                continue
             if r.get("variant"):
                 if r["outcome"] == "pass":
                     counts["release_version_runs_passed"] += 1
@@ -183,11 +265,18 @@ def verdict(results, excluded, labels, iterations, expectations, require_full):
                 continue
             status = judge(r, expectations)
             counts[status] += 1
+            counts["known_upstream_defect_hits"] += defect_hits(r, expectations)
             if status in ("fail", "unexpected-pass"):
-                reasons.append(f"run {iteration}: {r['label']} {status} ({r['outcome']}, {r.get('failure')})")
+                tried = f", attempts {len(attempts_of(r))}" if r.get("earlier_attempts") else ""
+                reasons.append(f"run {iteration}: {r['label']} {status} ({r['outcome']}, {r.get('failure')}{tried})")
         for name, expected in expectations["expected_failures"].items():
             if name in base and not any(r.get("variant") == name for r in mine):
                 reasons.append(f"run {iteration}: {expected['release_version_run']} did not run")
+        for name, check in checks.items():
+            ran = sum(1 for r in mine if r.get("hars_check") == name)
+            if ran != (1 if check["runs_with"] in base else 0):
+                reasons.append(f"run {iteration}: {name} ran {ran} times with {check['runs_with']} run "
+                               f"{base.count(check['runs_with'])} times")
     executed = counts["pass"] + counts["expected-failure"] + counts["fail"] + counts["unexpected-pass"]
     if executed == 0:
         reasons.append("no test ran")
@@ -198,15 +287,24 @@ def verdict(results, excluded, labels, iterations, expectations, require_full):
 
 def expectation_lines(expectations):
     ef, ex = expectations["expected_failures"], expectations["excluded"]
+    kd, hc = expectations.get("known_upstream_defects", {}), expectations.get("hars_checks", {})
     lines = [f"expected failures ({len(ef)}): " + ", ".join(ef)]
     lines += [f"  {k}: line {v['line']} {v['error']} '{v['message']}' — {v['reason']}" for k, v in ef.items()]
+    lines += [f"known upstream test defects ({len(kd)}): " + ", ".join(kd)]
+    lines += [f"  {k}: rerun only after line {v['line']} {v['error']} '{v['message']}', at most {v['max_attempts']} "
+              f"attempts; guarded by {v['guarded_by']} — {v['reason']}" for k, v in kd.items()]
+    lines += [f"HARS checks ({len(hc)}): " + ", ".join(f"{k} (with {v['runs_with']})" for k, v in hc.items())]
     lines += [f"excluded ({len(ex)}): " + ", ".join(ex)]
     lines += [f"  {k}: {v['reason']}" for k, v in ex.items()]
     return lines
 
 
 def load_expectations():
-    return json.loads((HERE / "expectations.json").read_text())
+    expectations = json.loads((HERE / "expectations.json").read_text())
+    problem = expectation_problem(expectations)
+    if problem:
+        sys.exit(f"expectations.json refused: {problem}")
+    return expectations
 
 
 # ---------------------------------------------------------------------------------------------------------------- supervisor
@@ -285,7 +383,7 @@ def supervise(spec):
     node = [spec["node"]] + (["--require", str(HERE / "failure_capture.cjs")] if spec["failure_shots"] else [])
     started = time.monotonic()
     with open(artifacts / "test.log", "wb") as log:
-        child = subprocess.Popen([*node, str(TESTS / spec["file"])], cwd=work, env=env, stdout=log,
+        child = subprocess.Popen([*node, spec["script"]], cwd=work, env=env, stdout=log,
                                  stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, start_new_session=True)
         state["child"] = child
         try:
@@ -304,7 +402,7 @@ def supervise(spec):
     if shots_on_pass:
         shutil.rmtree(shots)
     finish(outcome, exit=code, seconds=seconds, screenshots_discarded_on_pass=shots_on_pass,
-           failure=failure_of((artifacts / "test.log").read_text(errors="replace"), spec["file"]))
+           failure=failure_of((artifacts / "test.log").read_text(errors="replace"), spec["frame"]))
     return 0
 
 
@@ -382,6 +480,7 @@ def print_gate(gate, expectations):
     for line in expectation_lines(expectations):
         print(line)
     print("gate: " + ("ok" if gate["ok"] else "FAILED") + " " + json.dumps(gate["counts"]))
+    print(f"known_upstream_defect_hits: {gate['counts'].get('known_upstream_defect_hits', 0)}")
     for reason in gate["reasons"]:
         print("  " + reason)
 
@@ -416,7 +515,9 @@ def aggregate(args):
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     print_gate(gate, expectations)
-    return write_summary(out, {"aggregate": args.aggregate, "gate": gate, "results": results}, 0 if gate["ok"] else 1)
+    return write_summary(out, {"aggregate": args.aggregate, "gate": gate,
+                               "known_upstream_defect_hits": gate["counts"].get("known_upstream_defect_hits", 0),
+                               "results": results}, 0 if gate["ok"] else 1)
 
 
 def main():
@@ -471,7 +572,7 @@ def main():
     out.mkdir(parents=True, exist_ok=True)
     expectations = load_expectations()
     if args.python_baseline:
-        expectations = {**expectations, "expected_failures": {}, "excluded": {}}
+        expectations = {**expectations, "expected_failures": {}, "excluded": {}, "known_upstream_defects": {}}
     all_entries = entries()
     selected = [e for e in all_entries if (not args.groups or e["group"] in args.groups)
                 and (not args.only or e["label"] in args.only or e["file"] in args.only)]
@@ -517,17 +618,23 @@ def main():
     free_slots = list(range(args.jobs))
     results = []
 
-    def run(entry, iteration, variant=None, collect=False):
+    defects = expectations.get("known_upstream_defects", {})
+    checks = expectations.get("hars_checks", {})
+
+    def run(entry, iteration, variant=None, collect=False, check=None, attempt=1):
         if stop.is_set():
             return None
         with lock:
             slot = free_slots.pop()
-        label = variants[entry["label"]] if variant else entry["label"]
+        label = variants[entry["label"]] if variant else check or entry["label"]
+        script = HERE / checks[check]["file"] if check else TESTS / entry["file"]
         try:
             first = PORT_FIRST + slot * PORTS_PER_SLOT
-            artifacts = out / f"run{iteration}" / label / ("collect" if collect else "")
+            artifacts = (out / f"run{iteration}" / label / (f"attempt-{attempt}" if attempt > 1 else "")
+                         / ("collect" if collect else ""))
             artifacts.mkdir(parents=True, exist_ok=True)
             spec = {"label": label, "file": entry["file"], "env": entry["env"], "artifacts": str(artifacts),
+                    "script": str(script), "frame": f"{script.parent.name}/{script.name}",
                     "work": str(root / f"work-{iteration}-{slot}"),
                     "mirror": str(release_root if variant else mirror_root), "node": args.node,
                     "hars_bin": args.hars_bin, "web": args.web, "ports": f"{first}-{first + PORTS_PER_SLOT - 1}",
@@ -558,14 +665,19 @@ def main():
                 except (OSError, ValueError):
                     result = {"label": label, "file": entry["file"], "env": entry["env"],
                               "outcome": "supervisor-failed", "supervisor_exit": proc.returncode}
-            result.update(iteration=iteration, group=entry["group"], **static_counts(TESTS / entry["file"]))
+            result.update(iteration=iteration, group=entry["group"], **static_counts(script))
             if variant:
                 result["variant"] = entry["label"]
+            if check:
+                result.update(hars_check=check, runs_with=entry["label"], script=str(script.relative_to(REPO)))
+            if attempt > 1:
+                result["attempt"] = attempt
             if collect:
                 result["collection_rerun"] = True
             tail = (artifacts / "test.log").read_text(errors="replace")[-600:] if (artifacts / "test.log").exists() else ""
             shown = "collect" if collect else result["outcome"]
             print(f"[{iteration}] {shown:>8} {result.get('seconds', '-'):>6}s  {label}"
+                  + (f" (attempt {attempt}, known upstream defect rerun)" if attempt > 1 else "")
                   + ("" if result["outcome"] == "pass" or collect else "\n    " + tail.strip().replace("\n", "\n    ")[-400:]),
                   flush=True)
             return result
@@ -575,10 +687,26 @@ def main():
 
     def run_entry(entry, iteration):
         first = run(entry, iteration)
+        defect = defects.get(entry["label"])
+        if first and defect:
+            # Only the known upstream defect, only after exactly its failure, only up to its limit (another_attempt).
+            attempts = [first]
+            while another_attempt(attempts, defect):
+                again = run(entry, iteration, attempt=len(attempts) + 1)
+                if not again:
+                    break
+                attempts.append(again)
+            first = attempts[-1]
+            if len(attempts) > 1:
+                first["earlier_attempts"] = attempts[:-1]
         found = [first] if first else []
         if first and entry["label"] in variants:
             second = run(entry, iteration, variant=True)
             found += [second] if second else []
+        for name, check in checks.items():
+            if first and check["runs_with"] == entry["label"]:
+                third = run(entry, iteration, check=name)
+                found += [third] if third else []
         return found
 
     collected = []
@@ -591,12 +719,13 @@ def main():
                     break
             # Judged first; the traced reruns only gather artifacts for what already failed.
             failed = [r for r in results if r["outcome"] != "pass"
-                      and (r.get("variant") or judge(r, expectations) != "expected-failure")]
+                      and (not is_base(r) or judge(r, expectations) != "expected-failure")]
             if not args.no_collect and not stop.is_set():
                 by_label = {e["label"]: e for e in runnable}
                 for r in failed:
-                    entry = by_label[r.get("variant") or r["label"]]
-                    again = run(entry, r["iteration"], variant=bool(r.get("variant")), collect=True)
+                    entry = by_label[r.get("variant") or r.get("runs_with") or r["label"]]
+                    again = run(entry, r["iteration"], variant=bool(r.get("variant")), check=r.get("hars_check"),
+                                collect=True)
                     if again:
                         collected.append(again)
     finally:
@@ -608,7 +737,9 @@ def main():
     for r in results + collected:
         r["classification"] = classification.get(r.get("variant") or r["label"])
         if not r.get("collection_rerun"):
-            r["gate"] = judge(r, expectations) if not r.get("variant") else ("pass" if r["outcome"] == "pass" else "fail")
+            r["gate"] = judge(r, expectations) if is_base(r) else ("pass" if r["outcome"] == "pass" else "fail")
+            if r["label"] in defects and is_base(r):
+                r["known_upstream_defect_hits"] = defect_hits(r, expectations)
     gate = verdict(results, excluded, [e["label"] for e in selected], args.repeat, expectations, False)
     if stop.is_set():
         gate["ok"] = False
@@ -621,10 +752,11 @@ def main():
                    runner_leftover_processes=[c for _, c in leftovers], temp_root_removed=not root.exists(),
                    **tool_versions(args.node), excluded=excluded,
                    totals={k: sum(1 for r in results if r["outcome"] == k) for k in sorted({r["outcome"] for r in results})},
-                   gate=gate, results=results, collection_reruns=collected)
+                   gate=gate, known_upstream_defect_hits=gate["counts"].get("known_upstream_defect_hits", 0),
+                   results=results, collection_reruns=collected)
     print_gate(gate, expectations)
-    print(json.dumps({k: summary[k] for k in ("seconds", "totals", "interrupted", "runner_leftover_processes",
-                                              "temp_root_removed")}, ensure_ascii=False))
+    print(json.dumps({k: summary[k] for k in ("seconds", "totals", "known_upstream_defect_hits", "interrupted",
+                                              "runner_leftover_processes", "temp_root_removed")}, ensure_ascii=False))
     for r in collected:
         print(f"collection rerun (artifacts only, not judged): run{r['iteration']}/{r['label']}/collect {r['outcome']}")
     return write_summary(out, summary, 130 if stop.is_set() else 0 if gate["ok"] else 1)

@@ -10,6 +10,26 @@
    "release_version_run": "replay_layout[release_version]"
   }
  },
+ "known_upstream_defects": {
+  "video_overlay": {
+   "kind": "known upstream test defect",
+   "reason": "Line 77 reads document.activeElement right after the dialog is hidden, but the app hands focus on from the dialog's close event (video-overlay.js), which arrives a few ms later; read before it, focus is still on the hidden 초기화 button. Same with the Python server. Not a HARS difference; the behaviour itself is checked by guarded_by on every run.",
+   "error": "AssertionError",
+   "message": "closing hands focus to nothing",
+   "line": 77,
+   "max_attempts": 3,
+   "upstream_fix": "reference/python/tests/video_overlay.cjs, before line 77: await page.waitForFunction(()=>document.activeElement===document.body)",
+   "guarded_by": "video_overlay[hars_focus_check]",
+   "remove_when": "the upstream test is fixed and imported again"
+  }
+ },
+ "hars_checks": {
+  "video_overlay[hars_focus_check]": {
+   "file": "video_overlay_focus_check.cjs",
+   "runs_with": "video_overlay",
+   "reason": "What video_overlay.cjs line 77 guards (Escape closes 겹쳐 보기 설정 and focus belongs to nothing), with the dialog's close event awaited before the same condition. Runs whenever video_overlay runs and must pass."
+  }
+ },
  "excluded": {
   "replay_format2": {
    "reason": "Imports the Python converter's compact.py (compact_data, expand_frames) to build replay format 2 and compares app.js's expansion with it. HARS has no Python converter; the test uses neither the server nor the HARS pages.",

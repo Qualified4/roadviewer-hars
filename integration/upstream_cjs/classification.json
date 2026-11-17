@@ -21,7 +21,7 @@
  },
  "video_overlay": {
   "class": "A",
-  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과. 단, 77행(Escape 뒤 포커스)이 간헐 실패. 원인: 앱은 대화상자의 비동기 close 이벤트에서 포커스를 넘기고(video-overlay.js 618행. probe에서 keydown 뒤 2~22 ms), 테스트는 close() 즉시 참이 되는 hidden만 기다린 뒤 activeElement를 읽는다. 원본 테스트의 대기 조건 결함(Python 공통). BROWSER-TESTS.md 참조"
+  "note": "표준 구성(HARS 미러 웹 파일, 필요 시 RV_PYTHON shim)만으로 통과. 단, 77행(Escape 뒤 포커스)이 간헐 실패. 원인: 앱은 대화상자의 비동기 close 이벤트에서 포커스를 넘기고(video-overlay.js 618행. probe에서 keydown 뒤 2~22 ms), 테스트는 close() 즉시 참이 되는 hidden만 기다린 뒤 activeElement를 읽는다. 원본 테스트의 대기 조건 결함(Python 공통). expectations.json의 알려진 원본 테스트 결함(known_upstream_defects): 77행 그 단언 서명으로 실패할 때만 다시 돌려 뒤쪽 단언을 확인(최대 3회 시도, 서명 실패 수는 known_upstream_defect_hits로 항상 기록). 77행이 지키는 동작은 HARS 검사 video_overlay[hars_focus_check](close 이벤트를 기다린 뒤 같은 조건)가 매번 확인하고 실패하면 게이트 실패. 원본이 고쳐져 다시 들여오면 이 결함 항목을 지운다. BROWSER-TESTS.md 참조"
  },
  "upload_stall": {
   "class": "A",

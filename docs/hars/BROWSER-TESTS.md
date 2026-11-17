@@ -8,6 +8,7 @@
 - [게이트](#게이트)
 - [실패 산출물](#실패-산출물)
 - [video_overlay 77행](#video_overlay-77행)
+  - [게이트 처리(알려진 원본 테스트 결함)](#게이트-처리알려진-원본-테스트-결함)
 - [실행기 구조](#실행기-구조)
 - [대상과 세는 단위](#대상과-세는-단위)
 - [분류표](#분류표)
@@ -18,6 +19,7 @@
 - [시간·용량](#시간용량)
 - [CI 구성](#ci-구성)
 - [검증](#검증)
+  - [알려진 원본 테스트 결함 규칙(2026-11-17)](#알려진-원본-테스트-결함-규칙2026-11-17)
 - [미검증과 남은 위험](#미검증과-남은-위험)
 <!-- /toc -->
 
@@ -29,12 +31,13 @@
 
 | 판정 | 수 | 항목 |
 |---|---|---|
-| 통과 | 49 | 아래 둘을 뺀 전부(1단계의 C `library_tabs`는 제품 결함을 고쳐 통과) |
+| 통과 | 49 | 아래 둘을 뺀 전부(1단계의 C `library_tabs`는 제품 결함을 고쳐 통과). 이 중 `video_overlay`는 알려진 원본 테스트 결함 규칙 적용(아래) |
 | 엄격한 예상 실패 | 1 | `replay_layout`(214행 그 단언에서만 실패해야 함) + 버전 줄만 바꾼 사본으로 한 번 더: `replay_layout[release_version]` 통과 필수 |
 | 제외 | 1 | `replay_format2`(Python `compact.py` import) |
+| HARS 검사 | 1 | `video_overlay[hars_focus_check]`(`integration/upstream_cjs/video_overlay_focus_check.cjs`): `video_overlay`가 돌 때마다 함께 돌고 통과 필수 |
 | 예상 밖 실패 | 0 | 직렬 전체 5회, CI 묶음 구성 3회(아래 [검증](#검증)) |
 
-분류(1단계 A~F)는 바뀌지 않았고 `library_tabs`만 C에서 A가 됐다. 남은 위험 하나: `video_overlay` 77행이 원본 테스트의 대기 조건 결함으로 간헐 실패한다(직렬 무부하에서도 0~5/30, [아래](#video_overlay-77행)). 재시도로 숨기지 않으므로 그만큼 `Browser checks`가 간헐적으로 빨갛게 될 수 있다.
+분류(1단계 A~F)는 바뀌지 않았고 `library_tabs`만 C에서 A가 됐다. `video_overlay` 77행은 원본 테스트의 대기 조건 결함으로 간헐 실패한다([아래](#video_overlay-77행)). 77행이 지키는 동작은 HARS 검사가 매번 확인하고, 원본 항목은 정확히 77행 그 서명으로 실패할 때만 최대 3회까지 시도해 뒤쪽 단언을 확인한다. 서명 실패 수는 `known_upstream_defect_hits`로 항상 남는다.
 
 "51개"는 `browser-groups.json`의 항목 수다. 테스트 파일은 49개이고 `maps.cjs`가 환경변수만 다르게 세 항목으로 들어 있다. `browser-helpers.cjs`와 `run_group.cjs`는 테스트가 아니다.
 
@@ -58,13 +61,17 @@ Node 22가 PATH에 있어야 한다(`--node`로 지정 가능). 종료 코드는
 
 ## 게이트
 
-데이터는 `integration/upstream_cjs/expectations.json` 한 곳이다. `entries: 51`, 예상 실패 1개(`replay_layout`), 제외 1개(`replay_format2`). 실행기는 요약 첫머리에 이 목록과 사유를 그대로 찍는다. 목록에 항목을 더하면 게이트가 받아들이는 것이 바뀌므로, 이 문서의 이 표와 함께 고친다.
+데이터는 `integration/upstream_cjs/expectations.json` 한 곳이다. `entries: 51`, 예상 실패 1개(`replay_layout`), 알려진 원본 테스트 결함 1개(`video_overlay`), HARS 검사 1개(`video_overlay[hars_focus_check]`), 제외 1개(`replay_format2`). 실행기는 요약 첫머리에 이 목록과 사유를 그대로 찍는다. 목록에 항목을 더하면 게이트가 받아들이는 것이 바뀌므로, 이 문서의 이 표와 함께 고친다.
 
 | 목록 | 항목 | 판정 조건 | 사유 |
 |---|---|---|---|
 | 예상 실패 | `replay_layout` | `test.log`에 Node가 찍은 오류 머리줄(`이름 [코드]: 메시지`)이 **정확히 1개**, 이름 `AssertionError`, 메시지 `version is an info line in ⋯`, 그 아래 스택에서 처음 나오는 `tests/replay_layout.cjs:<줄>`이 **214**, 종료 코드 1(outcome `fail`). 통과하면 `unexpected-pass`로 게이트 실패(정식 버전이 되면 목록에서 빼야 한다는 신호). 다른 줄·다른 메시지·시간 초과는 `fail` | 214행이 버전 줄을 `^v숫자.숫자.숫자$`로 검사하고 HARS는 의도대로 `v2.0.0-alpha.4`를 낸다 |
 | 예상 실패의 짝 | `replay_layout[release_version]` | 통과 필수. 미러 사본에서 `index.html`의 `<span class="app-version">vX.Y.Z-접미사</span>` 한 곳(정확히 1회 일치해야 함)만 `vX.Y.Z`로 바꾸고 같은 원본 파일을 돌린다. 테스트 파일은 그대로다. 일치가 0회(접미사 없음)면 `not-run`으로 게이트 실패 | 214행 뒤의 단언이 가려지지 않게 |
+| 알려진 원본 테스트 결함 | `video_overlay` | 통과하면 통과. 실패가 정확히 77행 서명(오류 머리줄 1개, `AssertionError`, 메시지 `closing hands focus to nothing`, 스택에서 처음 나오는 `tests/video_overlay.cjs:<줄>`이 77, outcome `fail`)일 때만 같은 항목을 다시 돌린다. 시도 상한 3회(재실행 최대 2회). 한 번이라도 통과하면 통과, 3회 모두 그 서명이면 게이트 실패, 서명이 조금이라도 다르면(다른 줄·메시지, 머리줄 2개 이상, 시간 초과) 재실행 없이 게이트 실패. 서명 실패 수를 `known_upstream_defect_hits`로 요약(`summary.json`, 0이어도)과 표준 출력 요약 줄에 찍는다 | 원본 테스트의 대기 조건 결함([video_overlay 77행](#video_overlay-77행)) |
+| HARS 검사 | `video_overlay[hars_focus_check]` | `video_overlay`를 돌릴 때마다(반복·묶음마다) 정확히 1회, 통과 필수. 재실행 없음 | 77행이 지키는 동작을 결함 없이 확인 |
 | 제외 | `replay_format2` | 실행하지 않고 요약에 `excluded`로 사유와 함께 남는다. 실행되면 게이트 실패 | Python `compact.py`의 `compact_data`·`expand_frames`를 import한다. HARS에는 Python 변환기가 없다 |
+
+알려진 원본 테스트 결함 항목의 제한(실행기가 강제): `known_upstream_defects`가 1개를 넘거나, 항목에 `kind`·`reason`·서명(`error`·`message`·`line`)·`max_attempts`(1~3)·`upstream_fix`·`guarded_by`(그 항목과 함께 도는 `hars_checks` 항목) 중 하나라도 없거나 어긋나거나, 같은 이름이 예상 실패·제외에도 있으면 실행기가 `expectations.json refused: ...`로 종료 1(실행·`--aggregate` 모두). 실행기에 일반 재시도 옵션은 없다. 재실행 판단은 `another_attempt`, 판정은 `judge_defect`(`run_browser_tests.py`)이고 `--aggregate`도 요약의 결과(`earlier_attempts`에 이전 시도)에서 다시 계산한다. 시도별 산출물은 `run<N>/video_overlay/`(1회차), `attempt-2/`, `attempt-3/`이다. `--python-baseline`에서는 이 규칙도 끈다(선택한 것 전부 1회에 통과해야 함). 규칙 자체의 단위 검사: `python3 integration/upstream_cjs/test_gate_rules.py`(브라우저 없음, CI에는 넣지 않음).
 
 `replay_format2`가 지키던 것(Python `compact.py` 인코더와 `app.js` 디코더의 일치)의 HARS 쪽 대체: 인코더 쪽은 `integration/pipeline_contract.py`(CI, 합성 입력)와 `integration/real_conversion_compare.py`(13·14·47 실주행 구간, 로컬)가 HARS의 replayV2 전체가 Python 출력과 같음을 요구하고, `scripts/verify_reference.py`가 `app.js`가 보존 원본 그대로임을 지킨다. **공백:** HARS 출력에 `app.js`의 형식 2 확장(`expandFlat`)을 실제로 돌려 보는 검사는 없다. HARS 출력 = Python 출력이고, Python 출력과 `app.js`의 일치는 원본 저장소의 이 테스트가 확인했다는 간접 근거뿐이다.
 
@@ -101,7 +108,14 @@ Node 22가 PATH에 있어야 한다(`--node`로 지정 가능). 종료 코드는
 | `taskset -c 0-1` 교차, 사전 로드 끔 | 최종 실행기 `--no-failure-shots` | 28/30 | (위와 같은 시간대, 번갈아) |
 | 직렬 전체 5회 + 사전 로드 없는 전체 1회 + CI 묶음 3회 | 최종 | 9/9 | 1.3~3.0 |
 
-실패 17회 모두 77행이다. 직렬 무부하에서도 0~17 %로 흔들리므로 "부하 없는 직렬에서만 안정적"이라고 할 수 없다. 재시도·시간 연장은 넣지 않았다. 원본(Python 저장소)에서 77행 앞에 `await page.waitForFunction(()=>document.activeElement===document.body)` 같은 대기를 넣는 것이 근본 해결이며, 그 전까지 `Browser checks`는 이 항목으로 간헐 실패할 수 있다(16 vCPU 측정 기준 실행당 대략 0~17 %, GitHub 러너에서는 미측정).
+실패 17회 모두 77행이다. 직렬 무부하에서도 0~17 %로 흔들리므로 "부하 없는 직렬에서만 안정적"이라고 할 수 없다(위 표는 이 정책 전 측정이다).
+
+### 게이트 처리(알려진 원본 테스트 결함)
+
+- **무엇이 결함인가.** 앱 동작이 아니라 원본 테스트의 대기 조건이다. 77행이 확인하려는 상태(포커스가 아무 것에도 없음)는 `close` 이벤트 뒤에 성립하는데 테스트는 그보다 먼저 참이 되는 `hidden`만 기다린다. Python 서버에서도 같다. 원본에서 고칠 한 줄: `reference/python/tests/video_overlay.cjs` 77행 앞에 `await page.waitForFunction(()=>document.activeElement===document.body);`(또는 `close` 이벤트 대기). HARS는 `reference/`를 고치지 않는다.
+- **동작은 HARS 검사가 지킨다.** `integration/upstream_cjs/video_overlay_focus_check.cjs`는 원본과 같은 페이지·모킹·조작(설정 버튼으로 대화상자 열기, `초기화`로 포커스를 대화상자 안에 두기, 높이 75, Escape, `hidden` 대기)을 5회 반복하며, 매번 Escape 전에 포커스가 `#overlayHeightReset`에 있는지 보고 `close` 이벤트를 기다린 뒤 77행과 같은 조건 `document.activeElement===document.body`를 같은 메시지로 단언한다. `video_overlay`가 돌 때마다 함께 돌고 실패하면 게이트 실패다(재실행 없음).
+- **원본 항목은 서명이 정확할 때만 다시 돈다.** 재실행을 77행 서명 하나로 묶은 이유: 그 실패의 원인은 확인됐고(위 probe: 실패 6회 모두 `close` 전 읽기) 그 동작은 HARS 검사가 따로 확인하므로, 77행 실패 자체는 새 정보가 없다. 다시 도는 목적은 77행 뒤의 단언(파일 끝까지)을 가리지 않는 것이다. 다른 줄·다른 메시지·시간 초과는 원인을 모르는 실패이므로 재실행으로 숨기지 않고 즉시 게이트 실패다. 3회 모두 77행이면 우연으로 보기 어려우므로(2코어 기준 실패율 약 10 %면 0.1 %) 게이트 실패다. 서명 실패 수(`known_upstream_defect_hits`)는 통과할 때도 남으므로 비율이 바뀌면 보인다.
+- **지울 때.** 원본 저장소가 77행을 고쳐 다시 들여오면 `expectations.json`의 `known_upstream_defects.video_overlay`를 지운다(HARS 검사는 남겨도 된다). 원본이 고쳐졌는데 항목이 남아 있어도 판정은 같지만(통과하면 통과), 남은 항목은 우회 통로이므로 지운다.
 
 ## 실행기 구조
 
@@ -236,7 +250,7 @@ fixture와 Python 의존:
 
 E는 없다. HARS 첫 전체 실행에서 실패한 6개(navigation, replay_layout, replay_format2, library_tabs, gdrive_panel, maps many·leak)를 Python 서버로 돌려 6/6 통과했다. 그중 3개는 실행기 결함(아래)과 `id` 대체를 고친 뒤 HARS에서도 통과했다.
 
-**병렬·부하에서의 간헐 실패(원본 테스트 쪽).** `video_overlay` 77행(`closing hands focus to nothing`, Escape로 대화상자를 닫은 직후 포커스가 `body`인지)은 직렬 6/6 통과, 4병렬 3회 중 2회 실패했다. 서버를 쓰지 않는 모킹형이다. 바쁜 루프 14개(16 vCPU)를 걸고 직렬로 돌리면 HARS 미러에서 2/8, Python 원본 웹 파일(`--python-baseline`)에서 3/8로 같은 행에서 실패했다. 2단계에서 원인을 밝혔다: [video_overlay 77행](#video_overlay-77행)(원본 테스트의 대기 조건 결함, 직렬에서도 간헐). 분류는 A로 두고, 재시도로 숨기지 않는다.
+**병렬·부하에서의 간헐 실패(원본 테스트 쪽).** `video_overlay` 77행(`closing hands focus to nothing`, Escape로 대화상자를 닫은 직후 포커스가 `body`인지)은 직렬 6/6 통과, 4병렬 3회 중 2회 실패했다. 서버를 쓰지 않는 모킹형이다. 바쁜 루프 14개(16 vCPU)를 걸고 직렬로 돌리면 HARS 미러에서 2/8, Python 원본 웹 파일(`--python-baseline`)에서 3/8로 같은 행에서 실패했다. 2단계에서 원인을 밝혔다: [video_overlay 77행](#video_overlay-77행)(원본 테스트의 대기 조건 결함, 직렬에서도 간헐). 분류는 A로 두고, 77행 서명에만 한정한 재실행과 HARS 검사로 처리한다(같은 절).
 
 ## 실행기에서 찾아 고친 결함
 
@@ -323,10 +337,34 @@ E는 없다. HARS 첫 전체 실행에서 실패한 6개(navigation, replay_layo
 | 결과 하나 삭제 | 묶음 5 요약에서 `upload_stall` 결과를 지움(요약의 gate·exit_code는 그대로) | 종료 1, 다시 계산한 판정과 요약 불일치 + 누락 |
 | 종료 코드 불일치 | 묶음 3의 `exit-code`를 1로(요약은 0) | 종료 1, 불일치 |
 
+### 알려진 원본 테스트 결함 규칙(2026-11-17)
+
+우회 점검(각 1회). 화면 사본은 `--web`에 보존 웹 폴더 사본을 주고 한 곳만 바꿨다. 원본 테스트 파일은 그대로다.
+
+| 일으킨 것 | 방법 | 결과 |
+|---|---|---|
+| (a) 77행이 아닌 줄의 실패 | `index.html`의 `#ccncBoxHelp` 문구만 바꾼 사본, `--only video_overlay.cjs` | 종료 1, `video_overlay fail`(32행, `Expected values to be strictly equal:`). `attempt-2/` 없음(재실행 없음), hits 0 |
+| (b) 77행 서명으로 3번 실패 | 실제 실행: `ripple.js`의 focusin 해제 한 줄을 지운 사본. 단위 검사: `test_gate_rules.py` 16개 | 실제 실행: 1·2·3회차 모두 77행 서명, 종료 1, `attempts 3`, hits 3. 단위 검사 16/16 통과(서명 일치→재실행, 3회 모두 서명→실패, 서명 뒤 통과→통과, 다른 줄·메시지·머리줄 2개·`TimeoutError`·시간 초과·`supervisor-failed`→재실행 없이 실패, 기록된 시도 수 초과·다른 실패 뒤 재실행·다른 항목의 `earlier_attempts`→실패) |
+| (c) 결함 항목 2개 | `known_upstream_defects`에 항목을 하나 더한 `expectations.json`(`HARS_BROWSER_RUNNER_HOME`으로 지정) | 실행·`--aggregate` 둘 다 `expectations.json refused: known_upstream_defects has 2 entries, at most 1 is accepted`, 종료 1, 테스트 실행 없음 |
+| (d) HARS 검사 실패 | (b)의 사본 | `video_overlay[hars_focus_check] fail`(검사 파일 40행 `closing hands focus to nothing`), 게이트 실패 사유에 따로 찍힘 |
+| HARS 검사의 검출력 | `video-overlay.js`의 `close` 처리기에서 `settings.focus(...)`만 지운 사본 | HARS 검사·원본 77행 모두 통과(포커스가 그래도 body로 감). 검출 확인은 위 `ripple.js` 사본으로만 됨 |
+
+`video_overlay` 단독 40회(`taskset -c 0-1`, 실행마다 실행기 1회, 시작·끝 부하 평균 14.6 → 18.4, 다른 작업자의 프로세스가 같이 돎): 게이트 통과 37/40. hits 분포: 0이 38회, 1이 1회, 2가 1회(합 3, 둘 다 다음 시도에서 통과). 게이트 실패 3회는 모두 77행이 아니라 **529행** `height reversal starts from the current position`(오류 1개, 재실행 없음, hits 0)이었다. HARS 검사는 40/40 통과. 529행은 높이 애니메이션을 90 ms 기다린 뒤 되돌릴 때 마지막 그린 위치와 바로 다음 위치의 차가 10 px 미만인지 보는 시간 민감 단언이다. 이 정책 전 측정(무부하·2코어, 실패 17회 모두 77행)에서는 나오지 않았다. 원인과 Python 서버에서의 재현은 확인하지 않았다. 규칙대로 재실행하지 않고 게이트 실패로 둔다.
+
+전체 직렬(이 규칙 적용 후, debug 빌드):
+
+| 실행 | 부하 평균(시작→끝) | 결과 |
+|---|---|---|
+| 전체 1회, 실행기 1번 | 17.6 → 9.4(다른 작업자의 분석 프로세스가 같이 돎) | **게이트 실패**: `conversion_controls`(Playwright 오류, 머리줄 없음), `replay_gzip` 57행 `9 redraws for 10 frames`, `maps[light][main]` 크기 고정 단언. 셋 다 수집용 재실행에서 통과. `video_overlay` 1회 통과, HARS 검사 통과, hits 0. 이전 무부하 5회에서는 없던 실패로, 높은 부하의 시간 민감 단언으로 보이나 원인 미확인 |
+| CI 묶음 구성 1회(5묶음 각각 직렬 + `--aggregate`) | 9.4 → 2.1 | 게이트 통과(49 + 예상 실패 1 + 제외 1 + `release_version` 1 + HARS 검사 1). 집계 `known_upstream_defect_hits: 1`(`video_overlay` 1회차 77행, 2회차 통과) |
+| 전체 1회, 실행기 1번 | 2.2 → 2.2 | 게이트 통과, 632초. `video_overlay` 1회차 77행 → 2회차 통과, hits 1 |
+
 ## 미검증과 남은 위험
 
 - GitHub 러너에서 실행하지 않았다: `unshare`+sysctl, 공유 라이브러리(`ldd`), `actions/cache/restore` 키 공유, 시간. 위 시간은 추정이다.
-- `video_overlay` 77행 간헐 실패(원본 테스트 결함)로 `Browser checks`가 가끔 실패할 수 있다. 4 vCPU 러너에서의 비율은 모른다.
+- `video_overlay` 529행(`height reversal starts from the current position`)이 높은 부하에서 간헐 실패했다(부하 평균 15~18, 2코어 고정 40회 중 3회). 원인 미확인, 재실행하지 않으므로 그만큼 게이트가 실패할 수 있다.
+- `video_overlay` 77행 간헐 실패(원본 테스트 결함)는 3회 모두 그 서명일 때만 게이트를 실패시킨다. 4 vCPU 러너에서의 서명 실패 비율은 모른다(`known_upstream_defect_hits`로 보인다).
+- HARS 검사의 결함 검출은 `ripple.js`의 focusin 해제를 없앤 사본으로만 확인했다. `video-overlay.js`의 `close` 처리기에서 `settings.focus(...)`만 지운 사본은 HARS 검사와 원본 77행 둘 다 통과했다(그 경우에도 포커스가 body로 간다. 관찰 결과이며 Chromium 내부 경로는 확인하지 않음).
 - 모킹형 39개는 HARS의 API를 부르지 않는다. HARS가 내보내는 화면 파일(보존 원본 + 버전·제목 치환)만 검사한다. HARS API는 Python 서버형 8개 파일만 닿는다.
 - `replay_format2`의 공백: HARS 출력에 `app.js`의 형식 2 확장을 직접 돌리는 검사가 없다.
 - 미러는 HARS가 같은 URL에서 내보내는 내용이지만, Python이 `/view/<id>/` 등에서 붙이는 응답 헤더(CSP 등)는 모킹형 테스트에 가지 않는다(테스트가 자기 헤더로 `fulfill`한다). Python에서도 같다.
