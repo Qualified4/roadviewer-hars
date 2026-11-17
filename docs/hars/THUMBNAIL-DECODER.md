@@ -10,6 +10,15 @@
 - [Verification](#verification)
 - [Differences from alpha.3](#differences-from-alpha3)
 - [Not verified, and remaining risks](#not-verified-and-remaining-risks)
+- [Speed-up (2026-11-17)](#speed-up-2026-11-17)
+  - [Where the time went (alpha.4, before)](#where-the-time-went-alpha4-before)
+  - [SIMD and threads, measured](#simd-and-threads-measured)
+  - [What was changed](#what-was-changed)
+  - [Tried and not applied](#tried-and-not-applied)
+  - [Correctness](#correctness)
+  - [After](#after)
+  - [What limits it now](#what-limits-it-now)
+  - [Not verified](#not-verified)
 <!-- /toc -->
 
 ## Result
@@ -235,3 +244,163 @@ list's `thumbnail`, `thumbnail_score`, `thumbnail_version` fields were equal to 
 - Since step 3, `media::thumbnail`'s check before the worker is the pure Rust upload check, and
   the image holds no FFmpeg program or library ([FFMPEG-REMOVAL.md](FFMPEG-REMOVAL.md)). This
   step added 1,471,392 bytes to the stripped binary and dropped its `libswscale.so.7` link.
+
+## Speed-up (2026-11-17)
+
+Branch `perf/thumbnail` from `b94d8a4`. Measurements are in
+`docs/hars/measurements/thumbnail-performance-2026-11-17.json`; the tools are
+`integration/thumbnail_*.py`. All on x86-64 (WSL Ubuntu 24.04, 16 logical CPUs), warm page cache,
+inputs copied to the local ext4 disk.
+
+### Where the time went (alpha.4, before)
+
+Stage timings from a measurement-only build (`integration/thumbnail_instrument.py` applies
+`profile::Scope`s to a copy of the tree; the product tree has none), median of 5 runs:
+
+| stage | H.264 qcamera (3 inputs) | HEVC fcamera (3 inputs) |
+|---|---|---|
+| whole worker, spawn to exit | 102-106 ms | 1,752-1,965 ms |
+| start-up and exit (worker total minus `make`) | 2.5-2.7 ms (a run that fails at once: 1.6 ms) | 2.9-3.4 ms |
+| address-space limit | 0.05 ms | 0.05 ms |
+| MP4 tables | 0.05 ms | 0.05 ms |
+| sample reads | 0.4 ms (101 samples) | 0.7 ms (102-103 samples) |
+| decoding | 91-95 ms (101 samples, 89%) | 1,725-1,939 ms (98.5%) |
+| decoder picture to planes | 0.25 ms | 9-10 ms (16 to 8 bit) |
+| scaling (6 pictures) | 6.0-6.2 ms (6%) | 19.7-20.8 ms (1.1%) |
+| score, levelling | 0.1 ms | 0.1 ms |
+| JPEG | 0.55 ms | 0.6 ms |
+| writing `thumbnail.jpg`, `.json` (no fsync in this path) | 0.15 ms | 0.16 ms |
+
+The parent's wait is the whole worker time; `media::run` adds no measurable work around it.
+
+Inside the decoders (`perf record -e cpu-clock`, self time, one run each, symbols grouped by
+hand, approximate):
+
+| H.264 (`rusty_h264-*`) | share | HEVC (`rusty_h265*`) | share |
+|---|---|---|---|
+| deblocking | ~34% | inverse transform and residual add | ~29% |
+| inter prediction (luma/chroma interpolation) | ~26% | motion compensation (FIR filters) | ~23% |
+| CABAC parsing | ~15% | CABAC residual and tree parsing | ~18% |
+| transform, residual add | ~4% | SAO | ~12% |
+| memmove/memset | ~4% | deblocking | ~8% |
+| thumbnail scaler | ~5% | thumbnail scaler | ~1% |
+
+The real cause of the 2.5x / 3.8x gap to alpha.3 was the amount decoded, more than SIMD or
+threads: a thumbnail needs the first picture and the first at or after 1 to 5 s, i.e. pictures
+up to about 100, and alpha.4 (like alpha.3) decoded every sample up to the fifth candidate. The
+camera files have an IDR picture every 15 samples (qcamera, 0.75 s) and every 20 (fcamera,
+1 s, IDR_W_RADL), and no B-frames. Of the 101 decoded pictures, 6 are used.
+
+### SIMD and threads, measured
+
+- SIMD: `rusty_h265` has a `simd` feature (`rusty_h265-accel`: SSE2/SSE4.1/AVX2 with runtime
+  detection, NEON on aarch64, a scalar twin of every kernel); `rusty_h264-decoder` has `asm`
+  (`rusty_h264-accel`: despite the name pure Rust intrinsics, no assembly, runtime AVX2
+  detection). alpha.4 builds both off. Not entirely scalar: `rusty_h264-common` always uses
+  `wide` (a safe SIMD wrapper over `safe_arch`) in its transform, and the compiler vectorises with
+  SSE2 (x86-64) / NEON (aarch64) by default. Turning both features on (on top of the decoding
+  range below) made decoding 1.9x faster: H.264 36 -> 19 ms, 51-53 -> 29 ms; HEVC 215 -> 123 ms,
+  287-316 -> 151 ms (worker total 46-64 -> 29-40 ms, 244-342 -> 151-178 ms).
+- Threads: neither decoder threads the per-picture API used here. `rusty_h264-decoder` has frame
+  threads only behind the `RS_H264_FRAME_THREADS` environment variable and its stream API
+  (`decode_stream_threaded`); `rusty_h265` has none (tiles and WPP decode serially). The
+  stretches from each IDR to a candidate are independent and could be decoded in parallel, but
+  this was not built or measured: after the range change below the largest stretch is a few
+  pictures, so the bound is the remaining 40-250 ms divided by the stretches, at the cost of a
+  second decoder's memory under the worker's 512 MiB limit and of CPU taken from parallel
+  conversions.
+
+### What was changed
+
+1. Decoding starts at the IDR picture before each wanted time (`video::restart`). The callback
+   now returns the time before which it needs no picture; without B-frames the samples before
+   the last IDR picture at or before the first sample presented at that time (1 ms margin) are
+   not decoded and a fresh decoder starts there. Allowed only when every skipped sample lies
+   inside the file (a file cut short still stops where it did), carries no parameter set other
+   than the track's own, and the restart sample's pictures are all IDR (H.264 type 5, HEVC
+   19/20; not CRA). A picture from that IDR on references nothing before it, so it is the one
+   sequential decoding gives. Samples decoded: H.264 101 -> 37-59, HEVC 102 -> 12-17.
+2. HEVC: `rusty_h265` finishes a picture only when the next one starts, so each candidate IDR
+   cost the following P picture. A sample at or after the wanted time is now flushed. When the
+   caller then wants a time with an IDR ahead, the flushed decoder is replaced anyway; otherwise
+   the stretch is decoded again from its IDR without passing its pictures on twice, and no
+   flush is tried again until the next restart. Never at the 140-packet limit (nothing is
+   flushed there, as before). Samples decoded: HEVC 6-11.
+3. The scaler's horizontal pass takes the filter window as one slice and the vertical pass sums
+   a whole row per tap. Integer sums (wrapping where the x86 rounding wraps), so the order does
+   not change them. 6 scalings: 6.1 -> 4.0 ms (H.264), 20 -> 11 ms (HEVC).
+
+### Tried and not applied
+
+| what | measured | why not |
+|---|---|---|
+| decoder SIMD features (`simd`, `asm`) | decoding 1.9x faster (above); 85/85 byte equal, 5,004/5,004 and 1,265/1,265 frames equal to FFmpeg, 40/40 failure cases, aarch64 `cargo check` passes | after 1-3 the thumbnail is already as fast as alpha.3 (H.264) or 1.8-3.1x faster (HEVC); the gain left is 15-25 ms per segment. It would add `rusty_h264-accel` (161 `unsafe fn`, 75 `unsafe` blocks by its own `UNSAFE.md`) and `rusty_h265-accel` with `simd` (761 `unsafe fn`/blocks counted in its source) on attacker-controlled bitstreams, with bounds proved by their dispatchers, not here; the NEON paths could not be run here (no qemu-aarch64), and the AVX2/SSE4.1 choice differs per machine |
+| `codegen-units = 1` for the decoder crates only | no change (within run ranges) | no effect |
+| `codegen-units = 1` for the whole binary | no change in speed; stripped binary 20.8 -> 16.1 MB | no thumbnail effect; the size change concerns the whole binary and belongs to its own change with a full regression |
+| `lto = "fat"` + `codegen-units = 1` | HEVC -9% (238 -> 217 ms, 314 -> 283 ms), H.264 -1 to -2% (in the range); stripped 20.8 -> 15.3 MB; release build 48 s -> 2 min 4 s (the latter partly concurrent with another build) | as above; worth its own evaluation for the image size and CI time |
+| decoder threads | not built (see above) | |
+| scaling the first picture lazily (it is used only when no candidate exists) | not built | about 1 ms (H.264) / 2 ms (HEVC), under 2% |
+
+### Correctness
+
+| check | result |
+|---|---|
+| 85 thumbnails (74 qcamera of 13 + 14 + 47 segments, 11 HEVC fcamera samples) vs the alpha.4 release binary | exit, stdout (second, score), `thumbnail.json`, JPEG size and JPEG bytes 85/85 equal; the five scaled candidates and the levelled picture before JPEG (measurement build) 85/85 equal; every picture the new worker outputs equals the alpha.4 picture of the same time (4,052 output pictures; alpha.4 output 8,622) |
+| 36 videos (13 converted qcamera, 6 + 6 qcamera and 6 + 5 fcamera samples), 140-packet window | 5,004/5,004 output pictures have the MD5 of `ffmpeg -threads 1` (139 per video: the product path withholds the 140th sample's picture, as before; the earlier count of 5,040 included it from a separate harness) |
+| the same 36, pictures a thumbnail run outputs | 1,265/1,265 equal to FFmpeg's. Pictures decoded only to be skipped or flushed away are not output and not compared |
+| 40 failure cases (`integration/thumbnail_faults.py`, fixed seeds), `prlimit --as=2147483648` | 40/40 same outcome and same result and JPEG as alpha.4, 18 thumbnails made by each, panics 0, killed / deadline 0, files left after a failure 0; largest peak RSS 121.0 MiB (alpha.4) / 121.7 MiB (new), the 4096x2160 HEVC case |
+| unit test | `skipping_to_an_idr_picture_gives_the_pictures_of_decoding_every_sample` (H.264 GOP 15, HEVC GOP 20, wanted times between IDR pictures, on one, at the window's end) |
+
+The 40 cases were rebuilt from the list above because the first scripts were removed; the
+interlaced H.264 case is now encoded at 528x336 (x264 needs a height divisible by 4) and fails
+in both binaries at the MP4 reader, not at the decoder. The JPEG encoder was not changed.
+
+### After
+
+Worker spawn to exit, median (range) of 7 alternating rounds after one warmup, load 2.29 -> 1.55:
+
+| input | alpha.3 (FFmpeg) | alpha.4 | new | CPU alpha.3 / alpha.4 / new | peak RSS alpha.3 / alpha.4 / new |
+|---|---|---|---|---|---|
+| 13-1 qcamera | 50.2 (48.0-51.4) | 106.3 (103.3-108.0) | 43.2 (42.6-44.1) | 68 / 104 / 42 ms | 47.4 / 14.4 / 14.4 MiB |
+| 14-0 qcamera | 47.6 (46.7-53.1) | 100.5 (99.0-101.8) | 56.6 (55.5-58.1) | 64 / 98 / 55 ms | 47.2 / 14.4 / 14.4 MiB |
+| 47-9 qcamera | 48.1 (46.9-49.4) | 99.9 (98.8-102.7) | 59.0 (58.4-61.1) | 65 / 97 / 58 ms | 47.1 / 14.4 / 14.4 MiB |
+| 14-0 fcamera | 499.5 (495.6-504.5) | 1,857.6 (1,843-1,868) | 161.9 (159.4-166.5) | 644 / 1,815 / 158 ms | 62.9 / 20.6 / 17.6 MiB |
+| 47-6 fcamera | 517.9 (510.2-522.7) | 1,802.9 (1,768-1,823) | 231.9 (225.5-234.9) | 685 / 1,756 / 227 ms | 62.7 / 20.6 / 21.7 MiB |
+| 14-8 fcamera | 459.4 (454.9-477.3) | 1,988.7 (1,966-2,048) | 254.1 (251.8-263.0) | 648 / 1,940 / 248 ms | 62.7 / 20.4 / 22.7 MiB |
+
+(Peak RSS here is `wait4` of the worker alone; it is lower than the 37 MiB of the first table,
+whose method is not recorded, so the two are not compared.)
+
+After, by stage (same build as before): H.264 decoding 36-53 ms (37-59 samples), scaling 4.0 ms,
+the rest about 3.5 ms; HEVC decoding about 150-245 ms (6-11 samples, flushes included), scaling
+11 ms, the rest about 4 ms.
+
+H.264, the thumbnail every segment gets, takes 0.86 to 1.23 times alpha.3's time (one input
+faster, two 9-11 ms slower), single-threaded, with 11-38% less CPU time than alpha.3's two
+threads. The HEVC fallback is 1.8 to 3.1 times faster than alpha.3. Release binary 27,377,048 bytes
+(stripped 20,875,688), +37,544 (+64,544 stripped) against alpha.4.
+Whole conversion of 3 original segments (warmup 1 + 5 alternating rounds): 7.69 s -> 7.53 s in
+total (medians; the per-segment ranges overlap). amd64 image 120.74 MB unpacked, 46.11 MB gzip
+(alpha.4: 120.7 / 46.1 MB).
+
+### What limits it now
+
+- H.264: scalar decoding of the 37-59 pictures from the IDR before each candidate (deblocking and
+  interpolation first). How far a candidate is from the IDR before it decides the time: 14-0 and
+  47-9 need more pictures than 13-1.
+- HEVC: decoding the 6-11 pictures, about 60% of it IDR pictures (inverse transform, CABAC).
+- SIMD would roughly halve both (measured above); not applied for the reasons above.
+
+### Not verified
+
+- aarch64: `cargo check --target aarch64-unknown-linux-gnu` of the thumbnail modules with both
+  decoders (default and SIMD builds) passes; the whole crate cannot be checked here (no aarch64
+  C compiler for `ring` and `zstd-sys`). No aarch64 run: qemu-aarch64 is not installed. All code
+  added here is safe, integer and target independent, so no `scripts/container_smoke.py` check
+  was added; an aarch64 run of the decoders remains for the CI container job.
+- A SIGKILL of the `__thumbnail` worker itself was not run separately; the worker start, its
+  limit, deadline and `PR_SET_PDEATHSIG` (`main.rs`, `media.rs`, `pure_remux.rs`) are unchanged,
+  and the existing worker-kill tests pass.
+- Streams with an IDR picture farther than 1 s apart, CRA-only HEVC, or in-band parameter sets
+  that differ from the track's decode sequentially as before; only the unit test and the corpus
+  cover the restart.
