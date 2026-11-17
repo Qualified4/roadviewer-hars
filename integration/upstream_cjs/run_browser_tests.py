@@ -443,6 +443,16 @@ def main():
     p.add_argument("--isolation-check", action="store_true",
                    help="run inside the namespace (after `ip link set lo up`): fail unless only loopback is reachable")
     args = p.parse_args()
+    # Paths become absolute before anything uses them: tests run in their own working folder, and the server
+    # adapter, Node's failure capture and the supervisors get these paths there (HARS_SHIM_LOG, HARS_WEB, ...).
+    # A bare interpreter name for --python-baseline is looked up on PATH as before.
+    for name in ("out", "hars_bin", "web", "node"):
+        if getattr(args, name):
+            setattr(args, name, os.path.abspath(getattr(args, name)))
+    if args.python_baseline and os.sep in args.python_baseline:
+        args.python_baseline = os.path.abspath(args.python_baseline)
+    if args.aggregate:
+        args.aggregate = [os.path.abspath(a) for a in args.aggregate]
     if args.supervise:
         sys.exit(supervise(json.loads(args.supervise)))
     if args.isolation_check:
