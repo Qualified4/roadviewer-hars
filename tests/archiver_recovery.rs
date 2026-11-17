@@ -531,9 +531,19 @@ async fn concurrent_archiving_uploads_cleanup_and_deletions_keep_every_file() {
         "admission with Drive in move mode never refuses a safe upload"
     );
     let _ = cycle.await;
+    // The upload's admission may have started a capacity run that still holds the cycle lock; a capacity run never
+    // processes queued deletions, and a cycle refused as busy yields nothing to let it finish.
+    tokio::time::timeout(Duration::from_secs(60), async {
+        while e.a().running() {
+            tokio::time::sleep(Duration::from_millis(20)).await;
+        }
+    })
+    .await
+    .expect("the capacity run did not end");
     // Drain: further cycles finish the moves and the queued deletions.
     for _ in 0..3 {
-        e.cycle().await;
+        let r = e.cycle().await;
+        assert_ne!(r.stopped.as_deref(), Some("busy"), "a drain cycle ran");
     }
     let (status, _) = e.req("GET", "/api/settings/storage", Value::Null).await;
     assert_eq!(status, StatusCode::OK);

@@ -13,6 +13,12 @@ jobs:
   rust:
     name: Rust checks
     runs-on: ubuntu-24.04
+    env:
+      # Neither is of use on a runner that starts from a cache, and both made the cached target
+      # directory large: incremental state, and full debug info (file and line stay in backtraces).
+      CARGO_INCREMENTAL: "0"
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      NEXTEST_VERSION: "0.9.100"
     steps:
       - uses: actions/checkout@v7
         with:
@@ -20,19 +26,26 @@ jobs:
       # The product builds without any media library. The ffmpeg CLI is a development tool here
       # only: tests make synthetic inputs with it and use it as an independent decoder and reader.
       - name: Native test dependencies
-        run: sudo apt-get update -qq && sudo apt-get install -y capnproto ffmpeg
-      - name: Rust stable
-        run: rustup update stable --no-self-update && rustup component add rustfmt clippy
+        run: |
+          # Rebuilding the manual page index after the install is the slowest part of it.
+          sudo rm -f /var/lib/man-db/auto-update
+          sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends capnproto ffmpeg
+      - name: Rust stable and the test runner
+        run: |
+          rustup update stable --no-self-update && rustup component add rustfmt clippy
+          curl -LsSf "https://get.nexte.st/$NEXTEST_VERSION/linux" | tar zxf - -C "${CARGO_HOME:-$HOME/.cargo}/bin"
       - uses: actions/cache@v6
         with:
           path: |
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: hars-rust-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'rust-toolchain.toml') }}
+          key: hars-rust-v2-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --all-targets -- -D warnings
-      - run: cargo test --locked --all-targets
+      # cargo-nextest runs the same tests as `cargo test --all-targets`, each in its own process and
+      # the test programs side by side.
+      - run: cargo nextest run --locked --all-targets
       - name: Original ccnc client and offline authentication migration
         run: |
           python3 -m venv /tmp/hars-compat-env
