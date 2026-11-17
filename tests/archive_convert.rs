@@ -156,7 +156,10 @@ async fn connecting_drive_queues_the_deferred_conversions_and_clears_their_warni
     })
     .await;
     let m = e.meta(&id).await;
-    assert_eq!((&m["status"], &m["error"]), (&json!("unconverted"), &json!(WARNING)));
+    assert_eq!(
+        (&m["status"], &m["error"]),
+        (&json!("unconverted"), &json!(WARNING))
+    );
 
     // While Drive is away the automatic queue leaves it deferred instead of queueing it under the warning.
     for _ in 0..3 {

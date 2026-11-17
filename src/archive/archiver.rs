@@ -773,15 +773,15 @@ impl Archive {
         // A row already queued under the mark was picked up by a version that did not wait for the archive:
         // it keeps its place in the queue and only loses the stale warning.
         let due = |m: &Value| {
-            m["deferred"] == "storage" && matches!(m["status"].as_str(), Some("unconverted" | "queued"))
+            m["deferred"] == "storage"
+                && matches!(m["status"].as_str(), Some("unconverted" | "queued"))
         };
         let mut rows = Vec::new();
         for id in self.host.ids().await {
             if let Some(m) = self.host.meta(&id).await
                 && due(&m)
                 && (m["status"] == "queued"
-                    || m["auto_excluded"] != true
-                        && (automatic || m["manual_conversion"] == true))
+                    || m["auto_excluded"] != true && (automatic || m["manual_conversion"] == true))
             {
                 rows.push((m["uploaded"].as_f64().unwrap_or(0.), id));
             }
