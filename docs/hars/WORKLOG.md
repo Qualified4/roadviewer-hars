@@ -169,5 +169,5 @@ Windows 작업 폴더 안의 소스를 WSL Ubuntu 24.04에서 빌드했다. Rust
 - 기능: 1.3.17 지도 차량 아이콘 색상(자동·흰색·민트·파랑·하늘·보라·분홍·주황·빨강, 지도 탭·영상 위 작은 지도·방향 화살표, `localStorage` `roadviewer-map-car-color`), 1.3.18 불투명 차체·창문, 구간 카드 밀어 올리기의 제목 위치와 끝에서 1.3배 확대.
 - 결정: 페이지 버전 치환을 문자열 `"1.3.16"` 고정에서 원본 릴리스 번호를 Python과 같은 곳(`library.html`의 `assets/style.css?v=`)에서 읽어 자산 `?v=`와 `>v…<` 표시만 바꾸는 방식으로 고쳤다. 고정 문자열이면 1.3.18 페이지의 자산 주소가 Python 버전에 묶였다. `tests/page_version.rs`가 지킨다.
 - 결정: `localStorage` 키는 원본 그대로 둔다. 같은 HA 출처(Ingress)에서 Python과 HARS가 키를 공유하는 것은 기존 키(차량 아이콘 모양·지도 테마 등)와 같은 방식이다.
-- 검증: `integration/ui_sync_check.py`(실주행 연속 3구간, 새 빌드 8/8 통과, `4f263bb` 빌드는 실패), `ui_view_check.py` 9/9, 원본 `segment_peek.cjs`를 HARS가 내보낸 파일로 통과, 원본 `maps.cjs`는 HARS에 붙였으나 110행에서 실패(원인 미확인, DEVELOPMENT.md "웹 화면 검사"), 실코퍼스 13구간 13/13 차이 없음.
+- 검증: `integration/ui_sync_check.py`(실주행 연속 3구간, 새 빌드 8/8 통과, `4f263bb` 빌드는 실패), `ui_view_check.py` 9/9, 원본 `segment_peek.cjs`를 HARS가 내보낸 파일로 통과, 원본 `maps.cjs`는 처음에 110행에서 실패했으나 원인은 HARS가 아니라 붙이는 어댑터의 조건 두 가지였고(연결 유지 방식, 테스트가 실행 중에 폴더에 직접 써 넣는 기록), 어댑터를 고친 뒤 전체가 3/3 통과(DEVELOPMENT.md "웹 화면 검사"), 실코퍼스 13구간 13/13 차이 없음.
 - 위험: 이미 배포된 `2.0.0-alpha.4`와 같은 버전으로 웹 파일이 바뀌므로, 그 버전 자산을 1년 캐시(`public, max-age=31536000`)한 브라우저는 다음 HARS 버전까지 이전 자산을 쓸 수 있다. 다음 배포 전에 버전을 올려야 한다.
