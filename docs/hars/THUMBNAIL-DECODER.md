@@ -638,6 +638,14 @@ the shortcut removes, so it is accepted:
 The H.264 probe panicking is not this case: it counts as refused and the file is decoded
 sample by sample.
 
+One more difference in kind, found by the third review and not reproduced: the survey probes
+every restart candidate in the 140-sample window, including samples `b94d8a4` never decodes
+because it stops once the wanted seconds are done (at sample 101 on the 4K inputs). A probe that
+aborts the process or runs past the deadline there, rather than panicking or failing, would fail
+a thumbnail `b94d8a4` makes. The probe decodes one sample with a bounded number of grey
+references in a crate that forbids `unsafe`, so the realistic ways to that are a memory
+allocation failure (bounded above) and a decoder loop that does not end (none known).
+
 Fixes for the review's other points:
 
 - The HEVC NAL header check had no test that failed without it: `80 01` is type 0 and so counted
