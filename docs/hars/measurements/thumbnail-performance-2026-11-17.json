@@ -218,7 +218,7 @@
   },
   "immediate_failure_run_ms": 1.62
  },
- "stages_note": "measurement build (integration/thumbnail_instrument.py), median of 5; inclusive scopes, HEVC decode after includes the flush scope nested in it",
+ "stages_note": "measurement build (integration/thumbnail_instrument.py), median of 5; inclusive scopes. stages_after is 8800338: its HEVC decode counted the early flush twice (a thumb_decode scope nested in the sample's own), so decode exceeds make there, and samples_read counts only the samples decoded, not those the restart search read. review_fixes.stages uses the corrected instrumentation: no nested scope, survey reads in thumb_survey.",
  "thumbnail_benchmark": {
   "loadavg_before": [
    2.29248046875,
@@ -1477,5 +1477,710 @@
   "packages": 107,
   "ffmpeg_file_bytes": 0,
   "binary_bytes": 20880528
+ },
+ "review_fixes": {
+  "commit": "68a56e0",
+  "against": "b94d8a4 release binary",
+  "premise": "docs/hars/THUMBNAIL-DECODER.md, \"When skipping is exact\" (video::shortcuts, video::finishes)",
+  "review_inputs": {
+   "cases": 4,
+   "same_as_b94d8a4": 4,
+   "with_controls": "9/9",
+   "8800338_differed": 4
+  },
+  "differential_fuzzing": {
+   "cases": 600,
+   "same": 600,
+   "different": 0,
+   "h264": 300,
+   "hevc": 300,
+   "thumbnail_made": 500,
+   "seed": 20261117,
+   "seeds": "2 synthetic (x264/x265) + 2 real camera files per codec",
+   "limit": "prlimit --as=2147483648"
+  },
+  "mutations_caught": {
+   "any_slice_counts_as_idr": true,
+   "no_shown_filter": true,
+   "no_parameter_set_check": true
+  },
+  "thumbnails_85": {
+   "inputs": 85,
+   "exit_same": 85,
+   "stdout_same": 85,
+   "json_same": 85,
+   "jpeg_same": 85,
+   "size_same": 85,
+   "instr_jpeg_same_as_release": 85,
+   "candidates_same": 85,
+   "levelled_same": 85,
+   "output_frames_equal_to_base": 85,
+   "frames_output_base_total": 8622,
+   "frames_output_new_total": 2918,
+   "seconds": [
+    1,
+    2,
+    3,
+    4,
+    5
+   ]
+  },
+  "frames_vs_ffmpeg": {
+   "window_frames": 5004,
+   "window_identical": 5004,
+   "thumbnail_frames_output": 1040,
+   "thumbnail_frames_identical": 1040,
+   "inputs": 36
+  },
+  "failure_cases": {
+   "summary": {
+    "limit": "prlimit --as=2147483648 per worker run",
+    "cases": 40,
+    "same_outcome": 40,
+    "same_result_and_jpeg": 40,
+    "panic": {
+     "base": 0,
+     "new": 0
+    },
+    "killed": {
+     "base": 0,
+     "new": 0
+    },
+    "outputs_left": {
+     "base": 0,
+     "new": 0
+    },
+    "made": {
+     "base": 18,
+     "new": 18
+    },
+    "peak_rss_kib_max": {
+     "base": 121504,
+     "new": 123048
+    },
+    "seconds_max": {
+     "base": 1.94,
+     "new": 1.76
+    }
+   }
+  },
+  "real13": {
+   "segments": 13,
+   "without_differences": 13,
+   "frames": 15600
+  },
+  "benchmark": {
+   "note": "warmup 1 + 7 alternating rounds of b94d8a4, 8800338 and 68a56e0; inputs copied to local ext4",
+   "loadavg_before": [
+    0.52783203125,
+    1.08251953125,
+    1.51025390625
+   ],
+   "loadavg_after": [
+    0.9345703125,
+    1.09375,
+    1.48388671875
+   ],
+   "rows": [
+    {
+     "input": "13-1-qcamera",
+     "b94d8a4": {
+      "ms": {
+       "median": 105.6,
+       "min": 103.9,
+       "max": 107.2
+      },
+      "cpu_ms": {
+       "median": 102.5,
+       "min": 100.8,
+       "max": 104.0
+      },
+      "peak_rss_kib_max": 14660
+     },
+     "8800338": {
+      "ms": {
+       "median": 43.0,
+       "min": 42.3,
+       "max": 45.1
+      },
+      "cpu_ms": {
+       "median": 41.6,
+       "min": 41.0,
+       "max": 43.6
+      },
+      "peak_rss_kib_max": 14660
+     },
+     "new": {
+      "ms": {
+       "median": 48.3,
+       "min": 47.4,
+       "max": 51.5
+      },
+      "cpu_ms": {
+       "median": 46.9,
+       "min": 46.0,
+       "max": 49.9
+      },
+      "peak_rss_kib_max": 14660
+     }
+    },
+    {
+     "input": "14-0-qcamera",
+     "b94d8a4": {
+      "ms": {
+       "median": 101.4,
+       "min": 98.7,
+       "max": 103.6
+      },
+      "cpu_ms": {
+       "median": 98.4,
+       "min": 95.8,
+       "max": 100.4
+      },
+      "peak_rss_kib_max": 14660
+     },
+     "8800338": {
+      "ms": {
+       "median": 55.8,
+       "min": 55.1,
+       "max": 58.2
+      },
+      "cpu_ms": {
+       "median": 54.1,
+       "min": 53.4,
+       "max": 56.4
+      },
+      "peak_rss_kib_max": 14660
+     },
+     "new": {
+      "ms": {
+       "median": 45.4,
+       "min": 45.2,
+       "max": 47.9
+      },
+      "cpu_ms": {
+       "median": 44.0,
+       "min": 43.8,
+       "max": 46.5
+      },
+      "peak_rss_kib_max": 14660
+     }
+    },
+    {
+     "input": "47-9-qcamera",
+     "b94d8a4": {
+      "ms": {
+       "median": 101.4,
+       "min": 100.2,
+       "max": 102.4
+      },
+      "cpu_ms": {
+       "median": 98.5,
+       "min": 97.2,
+       "max": 99.3
+      },
+      "peak_rss_kib_max": 14660
+     },
+     "8800338": {
+      "ms": {
+       "median": 59.8,
+       "min": 58.7,
+       "max": 61.6
+      },
+      "cpu_ms": {
+       "median": 57.9,
+       "min": 56.9,
+       "max": 59.7
+      },
+      "peak_rss_kib_max": 14660
+     },
+     "new": {
+      "ms": {
+       "median": 48.6,
+       "min": 48.0,
+       "max": 55.5
+      },
+      "cpu_ms": {
+       "median": 47.2,
+       "min": 46.5,
+       "max": 53.8
+      },
+      "peak_rss_kib_max": 14660
+     }
+    },
+    {
+     "input": "14-0-fcamera",
+     "b94d8a4": {
+      "ms": {
+       "median": 1877.2,
+       "min": 1861.3,
+       "max": 1895.4
+      },
+      "cpu_ms": {
+       "median": 1821.8,
+       "min": 1808.2,
+       "max": 1841.3
+      },
+      "peak_rss_kib_max": 22012
+     },
+     "8800338": {
+      "ms": {
+       "median": 163.1,
+       "min": 161.4,
+       "max": 165.5
+      },
+      "cpu_ms": {
+       "median": 158.3,
+       "min": 156.7,
+       "max": 160.6
+      },
+      "peak_rss_kib_max": 18864
+     },
+     "new": {
+      "ms": {
+       "median": 163.2,
+       "min": 162.1,
+       "max": 174.4
+      },
+      "cpu_ms": {
+       "median": 158.4,
+       "min": 157.4,
+       "max": 169.3
+      },
+      "peak_rss_kib_max": 19420
+     }
+    },
+    {
+     "input": "47-6-fcamera",
+     "b94d8a4": {
+      "ms": {
+       "median": 1790.3,
+       "min": 1777.8,
+       "max": 1853.3
+      },
+      "cpu_ms": {
+       "median": 1737.7,
+       "min": 1726.7,
+       "max": 1800.0
+      },
+      "peak_rss_kib_max": 21928
+     },
+     "8800338": {
+      "ms": {
+       "median": 223.8,
+       "min": 221.8,
+       "max": 232.2
+      },
+      "cpu_ms": {
+       "median": 217.2,
+       "min": 215.3,
+       "max": 225.4
+      },
+      "peak_rss_kib_max": 22920
+     },
+     "new": {
+      "ms": {
+       "median": 220.4,
+       "min": 217.6,
+       "max": 266.6
+      },
+      "cpu_ms": {
+       "median": 214.0,
+       "min": 211.2,
+       "max": 258.8
+      },
+      "peak_rss_kib_max": 23572
+     }
+    },
+    {
+     "input": "14-8-fcamera",
+     "b94d8a4": {
+      "ms": {
+       "median": 1988.6,
+       "min": 1969.4,
+       "max": 1994.8
+      },
+      "cpu_ms": {
+       "median": 1928.9,
+       "min": 1913.2,
+       "max": 1937.8
+      },
+      "peak_rss_kib_max": 21692
+     },
+     "8800338": {
+      "ms": {
+       "median": 256.8,
+       "min": 252.2,
+       "max": 261.9
+      },
+      "cpu_ms": {
+       "median": 246.9,
+       "min": 243.4,
+       "max": 254.3
+      },
+      "peak_rss_kib_max": 24040
+     },
+     "new": {
+      "ms": {
+       "median": 256.2,
+       "min": 253.6,
+       "max": 262.4
+      },
+      "cpu_ms": {
+       "median": 248.1,
+       "min": 246.2,
+       "max": 254.8
+      },
+      "peak_rss_kib_max": 24476
+     }
+    }
+   ]
+  },
+  "stages": {
+   "13-1-qcamera": {
+    "total_ms": 48.86,
+    "exit": 0,
+    "stages": {
+     "thumb_decode": {
+      "ms": 34.71,
+      "calls": 37
+     },
+     "thumb_image": {
+      "ms": 0.09,
+      "calls": 37
+     },
+     "thumb_jpeg": {
+      "ms": 0.55,
+      "calls": 1
+     },
+     "thumb_level": {
+      "ms": 0.04,
+      "calls": 1
+     },
+     "thumb_limit_memory": {
+      "ms": 0.05,
+      "calls": 1
+     },
+     "thumb_mp4": {
+      "ms": 0.05,
+      "calls": 1
+     },
+     "thumb_read": {
+      "ms": 0.15,
+      "calls": 37
+     },
+     "thumb_scale": {
+      "ms": 3.77,
+      "calls": 6
+     },
+     "thumb_score": {
+      "ms": 0.07,
+      "calls": 1
+     },
+     "thumb_survey": {
+      "ms": 0.22,
+      "calls": 1
+     },
+     "thumb_write": {
+      "ms": 0.1,
+      "calls": 1
+     },
+     "thumbnail_native": {
+      "ms": 46.43,
+      "calls": 1
+     }
+    }
+   },
+   "14-0-qcamera": {
+    "total_ms": 46.77,
+    "exit": 0,
+    "stages": {
+     "thumb_decode": {
+      "ms": 31.44,
+      "calls": 36
+     },
+     "thumb_image": {
+      "ms": 0.09,
+      "calls": 36
+     },
+     "thumb_jpeg": {
+      "ms": 0.57,
+      "calls": 1
+     },
+     "thumb_level": {
+      "ms": 0.03,
+      "calls": 1
+     },
+     "thumb_limit_memory": {
+      "ms": 0.05,
+      "calls": 1
+     },
+     "thumb_mp4": {
+      "ms": 0.05,
+      "calls": 1
+     },
+     "thumb_read": {
+      "ms": 0.15,
+      "calls": 36
+     },
+     "thumb_scale": {
+      "ms": 3.92,
+      "calls": 6
+     },
+     "thumb_score": {
+      "ms": 0.07,
+      "calls": 1
+     },
+     "thumb_survey": {
+      "ms": 0.26,
+      "calls": 1
+     },
+     "thumb_write": {
+      "ms": 0.09,
+      "calls": 1
+     },
+     "thumbnail_native": {
+      "ms": 44.46,
+      "calls": 1
+     }
+    }
+   },
+   "47-9-qcamera": {
+    "total_ms": 50.1,
+    "exit": 0,
+    "stages": {
+     "thumb_decode": {
+      "ms": 35.32,
+      "calls": 41
+     },
+     "thumb_image": {
+      "ms": 0.1,
+      "calls": 41
+     },
+     "thumb_jpeg": {
+      "ms": 0.6,
+      "calls": 1
+     },
+     "thumb_level": {
+      "ms": 0.04,
+      "calls": 1
+     },
+     "thumb_limit_memory": {
+      "ms": 0.06,
+      "calls": 1
+     },
+     "thumb_mp4": {
+      "ms": 0.06,
+      "calls": 1
+     },
+     "thumb_read": {
+      "ms": 0.17,
+      "calls": 41
+     },
+     "thumb_scale": {
+      "ms": 3.79,
+      "calls": 6
+     },
+     "thumb_score": {
+      "ms": 0.06,
+      "calls": 1
+     },
+     "thumb_survey": {
+      "ms": 0.3,
+      "calls": 1
+     },
+     "thumb_write": {
+      "ms": 0.11,
+      "calls": 1
+     },
+     "thumbnail_native": {
+      "ms": 47.7,
+      "calls": 1
+     }
+    }
+   },
+   "14-0-fcamera": {
+    "total_ms": 163.78,
+    "exit": 0,
+    "stages": {
+     "thumb_decode": {
+      "ms": 146.0,
+      "calls": 6
+     },
+     "thumb_jpeg": {
+      "ms": 0.57,
+      "calls": 1
+     },
+     "thumb_level": {
+      "ms": 0.04,
+      "calls": 1
+     },
+     "thumb_limit_memory": {
+      "ms": 0.05,
+      "calls": 1
+     },
+     "thumb_mp4": {
+      "ms": 0.06,
+      "calls": 1
+     },
+     "thumb_read": {
+      "ms": 0.05,
+      "calls": 6
+     },
+     "thumb_scale": {
+      "ms": 11.46,
+      "calls": 6
+     },
+     "thumb_score": {
+      "ms": 0.07,
+      "calls": 1
+     },
+     "thumb_survey": {
+      "ms": 0.61,
+      "calls": 1
+     },
+     "thumb_write": {
+      "ms": 0.15,
+      "calls": 1
+     },
+     "thumbnail_native": {
+      "ms": 160.99,
+      "calls": 1
+     }
+    }
+   },
+   "47-6-fcamera": {
+    "total_ms": 219.9,
+    "exit": 0,
+    "stages": {
+     "thumb_decode": {
+      "ms": 202.53,
+      "calls": 10
+     },
+     "thumb_image": {
+      "ms": 2.04,
+      "calls": 4
+     },
+     "thumb_jpeg": {
+      "ms": 0.61,
+      "calls": 1
+     },
+     "thumb_level": {
+      "ms": 0.04,
+      "calls": 1
+     },
+     "thumb_limit_memory": {
+      "ms": 0.05,
+      "calls": 1
+     },
+     "thumb_mp4": {
+      "ms": 0.05,
+      "calls": 1
+     },
+     "thumb_read": {
+      "ms": 0.07,
+      "calls": 10
+     },
+     "thumb_scale": {
+      "ms": 10.95,
+      "calls": 6
+     },
+     "thumb_score": {
+      "ms": 0.06,
+      "calls": 1
+     },
+     "thumb_survey": {
+      "ms": 0.5,
+      "calls": 1
+     },
+     "thumb_write": {
+      "ms": 0.16,
+      "calls": 1
+     },
+     "thumbnail_native": {
+      "ms": 217.16,
+      "calls": 1
+     }
+    }
+   },
+   "14-8-fcamera": {
+    "total_ms": 256.89,
+    "exit": 0,
+    "stages": {
+     "thumb_decode": {
+      "ms": 239.96,
+      "calls": 11
+     },
+     "thumb_image": {
+      "ms": 1.41,
+      "calls": 5
+     },
+     "thumb_jpeg": {
+      "ms": 0.58,
+      "calls": 1
+     },
+     "thumb_level": {
+      "ms": 0.04,
+      "calls": 1
+     },
+     "thumb_limit_memory": {
+      "ms": 0.05,
+      "calls": 1
+     },
+     "thumb_mp4": {
+      "ms": 0.05,
+      "calls": 1
+     },
+     "thumb_read": {
+      "ms": 0.09,
+      "calls": 11
+     },
+     "thumb_scale": {
+      "ms": 10.83,
+      "calls": 6
+     },
+     "thumb_score": {
+      "ms": 0.05,
+      "calls": 1
+     },
+     "thumb_survey": {
+      "ms": 0.48,
+      "calls": 1
+     },
+     "thumb_write": {
+      "ms": 0.15,
+      "calls": 1
+     },
+     "thumbnail_native": {
+      "ms": 254.17,
+      "calls": 1
+     }
+    }
+   },
+   "nonexistent": {
+    "total_ms": 1.59,
+    "exit": 1,
+    "stages": {}
+   }
+  },
+  "survey_cost_ms": {
+   "h264": [
+    0.22,
+    0.3
+   ],
+   "hevc": [
+    0.48,
+    0.61
+   ],
+   "on_9p_mount": [
+    21,
+    31
+   ],
+   "h264_probe": "one P picture per restart, about 1 ms"
+  },
+  "binary_bytes": {
+   "unstripped": 27394760,
+   "stripped": 20887032
+  }
  }
 }

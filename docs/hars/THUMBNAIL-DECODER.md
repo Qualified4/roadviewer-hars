@@ -454,8 +454,52 @@ pinned crates read from their source, not proved: slice parsing in `rusty_h264` 
 on the reference pictures, and the per-decoder pools of both crates (`GridPool`, picture and state
 pools) do not change pixels.
 
-Measured cost of the check on the camera files is in the table below; it reads every sample of the
-window once (a few MB of page cache for fcamera) and decodes one P picture per H.264 restart.
+Cost of the check on the camera files (measurement build, median of 5, inputs on local ext4):
+0.22-0.30 ms (H.264) and 0.48-0.61 ms (HEVC) to read and inspect the 140 samples, plus one P
+picture decoded per H.264 restart (about 1 ms each, 5 per qcamera thumbnail). On the 9P mount of
+the Windows drive the same reads took 21-31 ms, so a worker reading from such a mount pays that.
+The camera files inspected one by one pass it: in 4 qcamera files (14-0, 14-5, 47-3, 47-20) the
+probe finished every sample before a restart (samples 14, 29, 59, 74, 89), and in all 11 fcamera
+files every IDR sample (0, 20, ..., 120) is a restart point. For the other 70 qcamera files this
+was not printed; the decoded-sample counts below and the 2,918 pictures output by the 85 (8800338:
+4,052) show restarts happen.
+
+Results after the fixes (`68a56e0` against `b94d8a4` unless said):
+
+| check | result |
+|---|---|
+| the review's four inputs (plus its controls and the second junk-NAL variant), `prlimit --as=2147483648` | 4/4 (9/9 with the others) same second, score, JSON and JPEG bytes as `b94d8a4`; `8800338` differed on all four |
+| differential fuzzing, `integration/thumbnail_differential.py`, seed 20261117: 300 H.264 + 300 HEVC damaged inputs from 2 synthetic and 2 real camera files per codec (bit flips, NAL units deleted, duplicated, reordered, samples swapped, slices deleted, parameter sets put in band intact or damaged or with trailing zeros, junk and rewritten NAL headers, boxes renamed, files cut) | 600/600 same exit status, output line, `thumbnail.json` and JPEG bytes; 500 made a thumbnail in both, 100 failed in both |
+| 85 thumbnails, as before | 85/85 exit, stdout, JSON, size, JPEG bytes, candidates and levelled picture equal; 2,918 pictures output, each equal to the alpha.4 picture of its time (alpha.4: 8,622) |
+| 36 videos against `ffmpeg -threads 1` | window 5,004/5,004 MD5 equal; pictures a thumbnail run outputs 1,040/1,040 |
+| 40 failure cases | 40/40 same outcome, result and JPEG; 18 made by each; panics 0; killed 0; files left 0; peak RSS 118.7 / 120.2 MiB (`b94d8a4` / new) |
+| `integration/real_conversion_compare.py`, 13 original segments | 13/13 without differences |
+
+Speed after the fixes, worker spawn to exit, median (range) of 7 alternating rounds of the three
+binaries after one warmup, inputs copied to local ext4, load 0.53 -> 0.93:
+
+| input | `b94d8a4` | `8800338` | new | CPU `b94d8a4` / `8800338` / new | peak RSS (MiB) |
+|---|---|---|---|---|---|
+| 13-1 qcamera | 105.6 (103.9-107.2) | 43.0 (42.3-45.1) | 48.3 (47.4-51.5) | 102 / 42 / 47 ms | 14.3 / 14.3 / 14.3 |
+| 14-0 qcamera | 101.4 (98.7-103.6) | 55.8 (55.1-58.2) | 45.4 (45.2-47.9) | 98 / 54 / 44 ms | 14.3 / 14.3 / 14.3 |
+| 47-9 qcamera | 101.4 (100.2-102.4) | 59.8 (58.7-61.6) | 48.6 (48.0-55.5) | 98 / 58 / 47 ms | 14.3 / 14.3 / 14.3 |
+| 14-0 fcamera | 1,877.2 (1,861-1,895) | 163.1 (161.4-165.5) | 163.2 (162.1-174.4) | 1,822 / 158 / 158 ms | 21.5 / 18.4 / 19.0 |
+| 47-6 fcamera | 1,790.3 (1,778-1,853) | 223.8 (221.8-232.2) | 220.4 (217.6-266.6) | 1,738 / 217 / 214 ms | 21.4 / 22.4 / 23.0 |
+| 14-8 fcamera | 1,988.6 (1,969-1,995) | 256.8 (252.2-261.9) | 256.2 (253.6-262.4) | 1,929 / 248 / 248 ms | 21.2 / 23.5 / 23.9 |
+
+H.264 now takes 45-49 ms (`8800338`: 43-60 ms). 13-1 is 5 ms slower: the same 37 samples are
+decoded, plus the five probe pictures and the survey. 14-0 and 47-9 are 10-11 ms faster because
+`8800338` refused every restart whose skipped stretch held an IDR sample (its in-band PPS lacks the
+trailing zero byte, see condition 2); they now decode 36 and 41 samples. HEVC is unchanged within
+the ranges (6, 10 and 11 samples decoded); peak RSS is 0.4-0.6 MiB higher (the survey's sample
+buffer). `8800338` measured here agrees with the "After" table above (43-60 ms, 163-257 ms against
+43-59 ms, 162-254 ms).
+
+Measurement notes corrected: in the earlier `stages_after` the HEVC flush ran inside a second
+`thumb_decode` scope nested in the sample's own, so it was counted twice and `decode` exceeded
+`make`; `samples_read` counted only the samples decoded, not those the restart search read. The
+instrumentation no longer nests the scope, and the survey's reads are a scope of their own
+(`thumb_survey`, 140 samples once). The JSON's `review_fixes` holds the new numbers.
 
 Tests (`src/thumbnail/tests.rs`) compare the skipping path with `video::decode(.., skip: false, ..)`,
 the sequential path kept for this: the thumbnail (result, JPEG, JSON) and the pictures a caller

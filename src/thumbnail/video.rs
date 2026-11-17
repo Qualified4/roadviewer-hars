@@ -763,9 +763,15 @@ fn shortcuts(file: &mut File, track: &Track, work: &mut Work) -> anyhow::Result<
         return Ok(None);
     }
     // What the decoder keeps of a parameter set: its parsed fields (camera files repeat the
-    // track's sets in band without the trailing zero byte of `avcC`).
+    // track's sets in band without the trailing zero byte of `avcC`). A parser panic means no,
+    // and the decoder then meets it as before.
     let parsed = |nal: &[u8]| -> Option<String> {
-        Some(match (track.codec, kind(nal)) {
+        guarded(|| parsed_fields(track.codec, kind(nal), nal))
+            .ok()
+            .flatten()
+    };
+    fn parsed_fields(codec: Codec, kind: u8, nal: &[u8]) -> Option<String> {
+        Some(match (codec, kind) {
             (Codec::H264, 7) => format!(
                 "{:?}",
                 rusty_h264_decoder::Sps::parse(&h264_rbsp(&nal[1..])).ok()?
@@ -784,7 +790,7 @@ fn shortcuts(file: &mut File, track: &Track, work: &mut Work) -> anyhow::Result<
             }
             _ => return None,
         })
-    };
+    }
     let mut fields = Vec::new();
     for s in track.sets.iter().filter(|s| is_set(kind(s))) {
         let Some(f) = parsed(s) else {
