@@ -1,0 +1,59 @@
+{
+ "loadavg_before": [
+  "5.33",
+  "3.23",
+  "2.64"
+ ],
+ "bytes": {
+  "fcamera.hevc": 37742379,
+  "qcamera.mp4": 1935676,
+  "fcamera.mp4": 37444458
+ },
+ "finish_seconds": {
+  "inprocess": {
+   "fcamera.hevc": {
+    "median": 0.0677,
+    "min": 0.0653,
+    "max": 0.0683
+   },
+   "qcamera.mp4": {
+    "median": 0.0075,
+    "min": 0.0073,
+    "max": 0.0078
+   },
+   "fcamera.mp4": {
+    "median": 0.0632,
+    "min": 0.0624,
+    "max": 0.0645
+   }
+  },
+  "worker": {
+   "fcamera.hevc": {
+    "median": 0.0735,
+    "min": 0.0734,
+    "max": 0.0777
+   },
+   "qcamera.mp4": {
+    "median": 0.0105,
+    "min": 0.0103,
+    "max": 0.0129
+   },
+   "fcamera.mp4": {
+    "median": 0.0674,
+    "min": 0.0655,
+    "max": 0.0702
+   }
+  }
+ },
+ "worker_minus_inprocess_median_ms": {
+  "fcamera.hevc": 5.8,
+  "qcamera.mp4": 3.1,
+  "fcamera.mp4": 4.2
+ },
+ "loadavg_after": [
+  "4.99",
+  "3.20",
+  "2.63"
+ ],
+ "what": "finish request of a one-file browser upload (SHA-256 + upload check), in-process check (94ac06f) vs __probe worker (fix/a4-review), warmup 1 + 5 interleaved rounds, release builds"
+}

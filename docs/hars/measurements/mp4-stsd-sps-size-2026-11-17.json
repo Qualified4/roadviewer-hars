@@ -1,0 +1,28 @@
+{
+ "files": 40,
+ "same": 40,
+ "by_kind": {
+  "fcamera.mp4": {
+   "files": 18,
+   "same": 18,
+   "sizes": [
+    "hvc1 stsd 1344x760 sps 1344x760"
+   ]
+  },
+  "qcamera.mp4": {
+   "files": 18,
+   "same": 18,
+   "sizes": [
+    "avc1 stsd 526x330 sps 526x330"
+   ]
+  },
+  "ecamera.mp4": {
+   "files": 4,
+   "same": 4,
+   "sizes": [
+    "hvc1 stsd 1344x760 sps 1344x760"
+   ]
+  }
+ },
+ "what": "MP4 sample entry (stsd) size vs ffprobe (SPS) size: all 28 MP4s of the 14-segment corpus and 12 of the 47-segment corpus (4 per camera)"
+}

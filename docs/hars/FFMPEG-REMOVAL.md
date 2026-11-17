@@ -17,6 +17,16 @@
 - [불안정 시험 2건](#불안정-시험-2건)
 - [미검증과 남은 위험](#미검증과-남은-위험)
 - [재현(3단계)](#재현3단계)
+- [결론](#결론-1)
+  - [FFmpeg 의존 지점](#ffmpeg-의존-지점)
+  - [기준 이미지와 반사실 비교 (amd64)](#기준-이미지와-반사실-비교-amd64)
+  - [역변환 계약](#역변환-계약)
+  - [설계](#설계)
+  - [검증 결과](#검증-결과)
+  - [성능](#성능)
+  - [3단계에서 지울 것](#3단계에서-지울-것)
+  - [미검증과 남은 위험](#미검증과-남은-위험-1)
+  - [재현](#재현)
 <!-- /toc -->
 
 ## 결론
@@ -83,12 +93,15 @@ strip: 같은 실행 파일(로컬 release)이 27,166,832 → 20,724,744바이�
 | | 둘 다 수락 | 둘 다 거부 | **새 검사만 수락** | 새 검사만 거부 |
 |---|---|---|---|---|
 | 업로드 검사(`.hevc`·`.mp4`만, 제품과 같음) 104건 | 78 | 20 | **0** | 4 |
-| 원본 검사(`__inspect`) 138건 | 83 | 43 | **0** | 12 |
+| 원본 검사(`__inspect`) 138건 | 85 | 43 | **0** | 10 |
+
+최종 코드(`fix/a4-review`: SPS 크기 판정, `__probe` worker)로 다시 돌린 결과다. 처음 대조(원본 검사 83/43/0/12)와 갈린 것은 두 건뿐이다: 합성 `hev1.mp4`(그 대조 뒤 수락하도록 넓힘), 무작위 손상 `damaged-078-head-flip-h264.mp4`(앞부분 비트 반전이 sample entry 크기만 바꾼 파일. 이전에는 `stsd` 크기로 거부했고, 지금은 `ffprobe`처럼 SPS 크기로 판정해 양쪽 수락).
 
 실주행 38개는 모두 양쪽 수락(업로드 25, 검사 38). 갈린 것:
 
 - 업로드에서 새로 거부(4, 모두 무작위 손상 MP4): `truncated MP4 box` 2(moov 안 box 크기가 부모를 넘음), `inconsistent MP4 sample table` 1, moov를 못 찾음 1. `ffprobe`는 이들을 경고와 함께 받았다.
-- 원본 검사에서 새로 거부(12): 손상 TS 5(PSI의 stuffing·CRC 오류, 알 수 없는 PID, 파일 앞 쓰레기 바이트로 동기 바이트 불일치: FFmpeg은 재동기화하며 넘어간다), 손상 MP4 5(위 종류 + `truncated MP4 sample`, 손상된 sample entry의 `camera codec mismatch`), 합성 `bframes.mp4`(media를 미루는 edit list, 아래 표), 합성 `hev1.mp4`(이 대조 뒤 수락하도록 넓혔다, `tests/media.rs`).
+- 원본 검사에서 새로 거부(10): 손상 TS 5(PSI의 stuffing·CRC 오류, 알 수 없는 PID, 파일 앞 쓰레기 바이트로 동기 바이트 불일치: FFmpeg은 재동기화하며 넘어간다), 손상 MP4 4(위 종류 + `truncated MP4 sample`, 손상된 sample entry의 `camera codec mismatch`), 합성 `bframes.mp4`(media를 미루는 edit list, 아래 표).
+- MP4 크기: 업로드 검사와 원본 검사는 sample entry(`stsd`)의 폭·높이가 아니라 `avcC`/`hvcC`의 첫 SPS(hev1/avc3에 없으면 첫 sample의 SPS)에서 crop을 반영한 크기를 읽는다(`annexb::picture_size`, TS·HEVC 검사와 같은 코드). `ffprobe`(디코더)가 SPS 크기를 쓰기 때문이다. 실측: 14구간 MP4 28개 전부와 47구간 MP4 12개(카메라별 4)에서 `stsd`와 SPS 크기가 40/40 같았다([mp4-stsd-sps-size-2026-11-17.json](measurements/mp4-stsd-sps-size-2026-11-17.json)). 그래서 다를 때는 SPS로만 판정한다(정상 파일을 새로 거부하지 않음). 엔진이 쓴 MP4의 다시 읽기만은 두 값이 같아야 한다(같은 SPS에서 쓰므로). 시험: `tests/media.rs` `mp4_size_is_the_sps_size_not_the_sample_entry_size`(4224×96 H.264·HEVC의 `stsd`만 1920×1080으로 고친 파일 거부, 160×96의 `stsd`를 8000×8000으로 고친 파일은 160×96으로 수락).
 - 처음 대조에서 raw HEVC 4112 폭이 새 원본 검사만 통과했다(엔진은 나중에 거부). `inspect_file`이 모든 종류에 `validate_info`를 적용하게 고쳐 지금은 양쪽 거부다.
 
 ## 순수 엔진이 거부하는 입력
@@ -127,9 +140,24 @@ comma 카메라 원본(코퍼스 26영상, 14·47구간 MP4 12개)은 위 어느
 
 | 분류 | 로그 | 기록 상태(게시된 결과 없음) | 게시된 결과가 그 카메라를 재생할 때 |
 |---|---|---|---|
-| `unsupported`, `invalid` | `remux_failure` WARN | 그 카메라 없이 `ready`, `<카메라> 영상 준비 실패: …` | 이번 시도를 버리고 이전 결과로 `ready` + `(이전 변환 결과 유지)` 경고 (**새로 보호**: alpha.3은 FFmpeg 대체 뒤 실패면 카메라를 뺐다) |
+| `unsupported`, `invalid` | `remux_failure` WARN | 그 카메라 없이 `ready`, `<카메라> 영상 준비 실패: …` | **그 카메라만 이전 결과를 이어받고 나머지 카메라는 변환·게시**: 이전 MP4와 summary 항목을 새 결과에 넣고 `<카메라> 영상 준비 실패: … (이전 변환 결과 유지)` 경고, `conversion_carried_previous` WARN (**새로 보호**: alpha.3은 FFmpeg 대체 뒤 실패면 카메라를 뺐다) |
 | `internal`, `verification` | `remux_failure` ERROR | 같음 | 같음(새로 보호) |
-| `resource`(`low_space` 포함) | `remux_failure` WARN | `… resource (<code>): …` 경고 | 이전 결과 유지(alpha.3과 같음) |
+| `resource`(`low_space` 포함) | `remux_failure` WARN | `… resource (<code>): …` 경고 | 이번 시도 전체를 버리고 이전 결과로 `ready` + `(이전 변환 결과 유지)` 경고, `conversion_kept_previous` ERROR(alpha.3과 같음) |
+
+자원 실패는 공간·메모리·시한이 풀리면 다음 시도에 통과하므로 시도 전체를 멈추고 이전 결과를 지킨다. 자원이 아닌 실패는 같은 입력이면 매번 같으므로, 시도 전체를 멈추면 나중에 올라온 카메라(예: alpha.3에서 FFmpeg 대체로 게시된 qcamera가 있는 기록에 추가된 fcamera)가 영영 게시되지 않는다. 그래서 그 카메라만 이어받는다.
+
+이어받기(`convert::carry_previous`):
+
+- 재생 여부는 디스크로만 판단한다(`prepared/summary.json`에 그 카메라가 있고 MP4가 `prepared/`, 원본 옆, 보관소 중 한 곳에 있음). `meta.videos`는 보지 않는다.
+- `prepared/`의 MP4는 새 staging에 hard link로(안 되면 복사 후 fsync) 이름을 하나 더 만든다. 이전 파일은 쓰지 않는다. staging이 `prepared/`로 바뀌기 전에 죽으면 시작 시 staging만 지워지고 이전 `prepared/`가 그대로 남는다. 바뀐 뒤에는 기존 발행 순서(이전 `prepared/` → `.previous-<세대>`, staging → `prepared/`, 메타 저장, 일지 삭제, `.previous-` 삭제)를 그대로 따르므로 이전 결과와 새 결과 중 하나가 온전히 남는다. hard link라 `.previous-` 삭제는 이름 하나를 지울 뿐이다.
+- 원본 옆 MP4와 보관된 MP4는 그 자리에 둔다(새 결과는 summary 항목만 가진다).
+- summary 항목의 `start`는 이전 변환의 시작 기준이므로 이전 `data.json.gz`의 `logStart`로 같은 로그 시각에 다시 맞춘다. 나머지 필드(`frames`, `duration`, `width`, `height`, `codec`, `sourcePts`, `timestampSpreadMs`)는 그대로다.
+- 이어받은 MP4 목록은 발행 일지(`.conversion.json`의 `carried`)에만 적는다(`prepared/`의 파일 구성은 그대로). 발행은 원본 보존을 꺼도 이어받은 카메라의 MP4를 원본 옆으로 옮기지 않고 그 원본을 지우지 않는다.
+- 이어받기를 할 수 없으면(이전 `data.json.gz`를 못 읽음, 링크·복사 실패) 자원 실패와 같이 시도 전체를 멈추고 이전 결과를 유지한다(`conversion_carry_failed` WARN).
+- 같은 변환을 다시 돌리면 같은 상태로 수렴한다(시험).
+- 장치 업로드·브라우저 업로드로 카메라를 추가하면 `clear_prepared`가 `prepared/`를 먼저 지우므로(Python과 같음) 이 경로에서는 이어받을 게시 결과가 없다: 거부되는 카메라는 경고와 함께 빠진다. 이어받기는 `prepared/`를 남긴 채 다시 변환하는 경로(예: 변환 중 재시작된 기록의 재대기)에서 일어난다.
+
+확인: `tests/conversion_keep_previous.rs` `a_camera_the_engine_refuses_keeps_its_published_video_and_a_new_camera_publishes`(원본 보존 켬·끔, 이어받은 MP4 바이트·Range 206, 새 카메라 게시, 로그 시각 정렬 ±2 µs, 원본 그대로, 2회째 같은 상태)와 기존 자원 실패 시험.
 
 원본 형식 내보내기 실패는 같은 분류의 `reverse_failure`와 HTTP `media_export_failed`이고, 원본·MP4·게시 결과는 바뀌지 않는다. 확인: `tests/pure_remux_faults.rs`(분류별 이벤트, 남는 파일 없음, 이전 출력 유지), `tests/conversion_keep_previous.rs`, 제품 경로(아래).
 
@@ -141,6 +169,7 @@ comma 카메라 원본(코퍼스 26영상, 14·47구간 MP4 12개)은 위 어느
 - 거부 입력(각각 다른 구간에서 합성): B-frame TS → front만 `ready` + `unsupported` 경고, qcamera 원본 그대로. 패킷 손실 TS → front만, 경고, 원본 그대로. scrambling TS → 두 카메라 `ready`(넓힘). parameter set 중간 변경 HEVC → qcamera만 + `unsupported` 경고, fcamera 원본 그대로. 모두 `error` 아님.
 - 컨테이너(`scripts/container_smoke.py hars-a4-remove:new`): 통과.
 - 만들지 못해 미검증: interlaced·scaling matrix TS, 4 GiB 초과 내보내기, avcC/in-band SPS 불일치 MP4의 제품 경로.
+- 최종 코드(`fix/a4-review`) 재확인: 같은 스크립트로 3번 구간과 거부 입력 4종이 위와 같은 결과(Range 206·앞뒤 1 KiB 같음, 썸네일 200 JPEG, `/original/qcamera.ts` = 업로드 바이트, `/original/fcamera.hevc` 200, ZIP 3파일). 이어받기(release 서버, ffmpeg 없는 PATH, 원본 보존 켬, 5·6번 구간): qcamera만 게시한 뒤 qcamera 원본을 B-frame TS로 바꿔 둔 기록에 (가) 카메라 추가 업로드로 fcamera를 올리면 `clear_prepared`가 이전 결과를 먼저 지우므로 front만 `ready` + `unsupported` 경고(qcamera 원본 그대로), (나) fcamera를 두고 기록을 `processing`(변환 중 죽은 서버가 남기는 상태)으로 둔 채 다시 시작하면 front 게시 + qcamera 이어받기(`… (이전 변환 결과 유지)` 경고, `prepared/camera.mp4` 바이트 그대로, 두 카메라 Range 206, 썸네일 200). (나)의 디스크 준비는 손으로 했다.
 
 ## 성능 전후
 
@@ -153,7 +182,9 @@ comma 카메라 원본(코퍼스 26영상, 14·47구간 MP4 12개)은 위 어느
 | 9 | 2.574 (2.539–2.673) | 2.572 (2.446–2.585) |
 | 합 | 7.813 | 7.688 (−1.6 %, 범위 안) |
 
-업로드 검사: 실주행 fcamera.hevc(37.7 MB) 한 파일 업로드의 finish 요청(SHA-256 + 미디어 검사), 교차 5회: alpha.3 0.135 s(0.132–0.139), 지금 0.064 s(0.063–0.066). `ffprobe` 검사만은 평균 0.083 s였다(프로세스 기동 포함). 순수 검사는 첫 그림까지만 읽는다.
+업로드 검사: 실주행 fcamera.hevc(37.7 MB) 한 파일 업로드의 finish 요청(SHA-256 + 미디어 검사), 교차 5회: alpha.3 0.135 s(0.132–0.139), 서버 안 검사 0.064 s(0.063–0.066). `ffprobe` 검사만은 평균 0.083 s였다(프로세스 기동 포함). 순수 검사는 첫 그림까지만 읽는다.
+
+업로드 검사의 격리: alpha.3의 `ffprobe`처럼 검사는 서버 밖 worker 프로세스 `roadviewer-hars __probe FILE KIND`에서 돈다. 다른 media worker와 같은 `media::run`(동시 2개, 180초, 응답 64 MiB, `kill_on_drop`, `PR_SET_PDEATHSIG`)과 메모리 상한(`RLIMIT_AS` = 현재 + 256 MiB)이다. worker가 죽거나(할당 실패의 abort, OOM killer) 시한을 넘기면 그 파일은 `invalid_file`이고 서버는 계속 돈다(시험 `tests/upload_crash.rs` `a_dead_upload_check_worker_refuses_the_file_and_the_server_goes_on`). 라이브러리 내장(시험) 경로만 `spawn_blocking` + `catch_unwind`다. 늘어난 시간(finish 요청, release, warmup 1 + 교차 5회 중앙값, load average 5.3→5.0): fcamera.hevc 37.7 MB 0.0677 → 0.0735 s(+5.8 ms), qcamera.mp4 1.9 MB 0.0075 → 0.0105 s(+3.1 ms), fcamera.mp4 37.4 MB 0.0632 → 0.0674 s(+4.2 ms). 숫자: [upload-check-worker-2026-11-17.json](measurements/upload-check-worker-2026-11-17.json).
 
 ## 지운 시험과 대체 근거
 
@@ -178,7 +209,7 @@ comma 카메라 원본(코퍼스 26영상, 14·47구간 MP4 12개)은 위 어느
 | `ts_duration.rs` 두 시험 | `ffmpeg_next` 라이브러리 호출, FFmpeg 엔진 | `ffprobe -scan_all_pmts 0`(라이브러리 기본값)으로 같은 모델 검사, 순수 출력의 `ffprobe` duration |
 | `src/pure_remux/mp4.rs` 단위 시험 | `falls_back` 단언 | 분류 `unsupported` 단언 유지 |
 
-새 시험: `tests/media.rs` `other_muxers_mp4_inputs_are_read_or_refused_explicitly`.
+새 시험: `tests/media.rs` `other_muxers_mp4_inputs_are_read_or_refused_explicitly`, `mp4_size_is_the_sps_size_not_the_sample_entry_size`, `a_damaged_ts_packet_is_refused_without_a_build_path`, `tests/conversion_keep_previous.rs` `a_camera_the_engine_refuses_keeps_its_published_video_and_a_new_camera_publishes`, `tests/upload_crash.rs` `a_dead_upload_check_worker_refuses_the_file_and_the_server_goes_on`.
 
 ## 불안정 시험 2건
 
@@ -189,7 +220,7 @@ comma 카메라 원본(코퍼스 26영상, 14·47구간 MP4 12개)은 위 어느
 
 - aarch64 이미지 크기·FFmpeg 부재·변환은 로컬 미검증(CI 컨테이너 작업이 검사한다).
 - TS 원본 검사의 독립성: 이전에는 FFmpeg 판독과 순수 demuxer가 따로 TS를 읽어 서로 대조했다. 이제 원본 검사와 엔진이 같은 `mpeg2ts` demuxer를 쓰므로 "입력 서명 일치" 검사는 같은 코드끼리의 비교다. 출력 MP4는 여전히 엔진과 코드를 공유하지 않는 판독기(`readback`)로 확인하고, 시험·코퍼스 대조는 호스트 FFmpeg(개발 전용)으로 한다. 별도의 TS 판독기를 두는 것은 하지 않았다.
-- 원본 검사 worker의 실패 이유가 사용자 경고에 나오지 않는다(`native media validation failed (exit status: 1)`, alpha.3과 같음). 순수 엔진 실패 이유의 `mpeg2ts` 오류 문자열에는 빌드 기계의 crate 경로가 들어간다(alpha.3부터).
+- 원본 검사 worker의 실패 이유가 사용자 경고에 나오지 않는다(`native media validation failed (exit status: 1)`, alpha.3과 같음). `mpeg2ts` 오류 문자열 끝의 소스 위치(빌드 기계의 `~/.cargo/registry/...` 경로, alpha.3부터)는 이제 떼어 낸다(`ts::packet_error`, 시험 `a_damaged_ts_packet_is_refused_without_a_build_path`). 원본 검사 worker의 실패 경고는 종료 상태만 담지만, 엔진 worker의 실패 경고는 실패 이유를 담는다(제품 경로 실측: `qcamera 영상 준비 실패: unsupported: reading the camera original: unsupported by pure remux: H.264 picture reordering in TS`). 같은 `mpeg2ts` demuxer의 원본 검사가 먼저 실패하므로 TS 패킷 오류가 엔진 단계까지 가는 일은 코드상 드물지만, 그때는 경로가 기록의 `warnings`(API 응답)에 들어갈 수 있었다. 이제 그 경로가 없다. 로그(`remux_failure`의 `reason`)와 worker stderr도 같다. `shiguredo_mp4` 오류는 `(at src/…:줄)`처럼 crate 안 상대 경로만 남긴다(빌드 기계 경로 아님).
 - 업로드 검사는 첫 그림까지만 읽는다: 첫 access unit에 SPS/PPS(HEVC는 VPS 포함)가 없는 원본은 거부한다(`ffprobe`는 뒤에서 찾으면 받았다). 대조에서 이런 실입력은 없었다.
 - interlaced·scaling matrix TS, PAFF MP4, 4 GiB 초과 내보내기는 실제 입력으로 확인하지 못했다.
 - 역변환은 hev1·다중 트랙 MP4를 받지 않는다(변환은 받는다).
@@ -215,7 +246,7 @@ PATH=DIR_WITHOUT_FFMPEG python integration/real_conversion_compare.py CORPUS BIN
 
 ## 결론
 
-- 원본 형식 내보내기(역변환, MP4 → `qcamera.ts`/`fcamera.hevc`/`ecamera.hevc`)의 기본 엔진은 순수 Rust(`src/pure_reverse.rs`, `src/pure_reverse/`)다. 기존 FFmpeg CLI 역변환(`media::reverse_ffmpeg`)은 대체 경로로 남는다(3단계에서 제거).
+- 원본 형식 내보내기(역변환, MP4 → `qcamera.ts`/`fcamera.hevc`/`ecamera.hevc`)의 기본 엔진은 순수 Rust(`src/pure_reverse.rs`, `src/pure_reverse/`)다. 기존 FFmpeg CLI 역변환(`media::reverse_ffmpeg`)은 1단계 당시 대체 경로로 남았고 3단계에서 지웠다.
 - 실주행 13구간 26영상의 왕복(원본 → 순수 정방향 MP4 → 순수 역변환)에서 **qcamera.ts 13/13은 업로드한 원본과 파일 바이트가 같다.** fcamera.hevc 13/13은 정규화 NAL·프레임·키프레임·parameter set·디코딩 프레임 MD5가 원본과 같고, 파일은 IRAP마다 PPS 뒤 0 바이트 하나(영상당 60곳, +60 B)만 다르다. 이 HEVC 결과는 기존 FFmpeg CLI 역변환·Python 내보내기와 바이트가 같다.
 - FFmpeg 런타임 패키지(`ffmpeg`)와 그것만 끌어오던 의존 패키지 192개를 뺀 반사실 이미지와 직접 비교하면 amd64 이미지는 **풀린 크기 580.9 MB → 125.2 MB(−455.7 MB, −78.5 %)**, 레지스트리 전송 크기(layer blob, gzip) **217.5 MB → 46.5 MB(−171.0 MB, −78.6 %)**다. 이 숫자는 FFmpeg 패키지만 뺀 값이고, 빌더의 libav dev 패키지·`ffmpeg-next`를 뺀 실행 파일 크기 변화는 3단계에서 따로 잰다.
 
@@ -280,14 +311,14 @@ PATH=DIR_WITHOUT_FFMPEG python integration/real_conversion_compare.py CORPUS BIN
 ### 설계
 
 - 위치: `src/pure_reverse.rs`(작업·검증), `src/pure_reverse/annexb.rs`(sample → Annex B), `src/pure_reverse/ts.rs`(MPEG-TS writer). `src/media.rs`는 `reverse`가 `reverse_using(Engine::configured()?, …)`를 부르게만 바꿨고 기존 FFmpeg 코드는 `reverse_ffmpeg`로 이름만 바꿔 그대로 둔다.
-- 엔진 선택: 정방향과 같은 내부 설정 `HARS_REMUX_ENGINE=pure|ffmpeg`(기본 `pure`, 다른 값이면 서버가 시작하지 않음)를 역변환도 따른다. 공개 API·파일명·메타는 엔진과 무관하다. 어느 엔진이 썼는지는 구조화 로그 `reverse_engine`(`engine`, `kind`, 대체 때 `requested`)에만 남는다.
-- 실패와 대체: 순수 엔진의 실패는 정방향과 같은 5분류(`pure_remux::FailureClass`)와 같은 정책(`media::falls_back`)이다. `unsupported`·`invalid`·`internal`·`verification`이면 FFmpeg 역변환을 한 번 시도하고 `reverse_fallback`(정방향의 `remux_fallback`과 같은 수준·필드)을 남긴다. `resource`(ENOSPC·EFBIG·EDQUOT·ENOMEM, 180초, worker SIGKILL·SIGABRT, 종료 코드 75)는 대체 없이 `reverse_failure`와 함께 실패한다. HTTP 응답은 기존과 같이 `media_export_failed`다.
+- 엔진 선택(1단계 당시): 정방향과 같은 내부 설정 `HARS_REMUX_ENGINE=pure|ffmpeg`를 역변환도 따랐다. 3단계 뒤에는 순수 엔진만 있고, `ffmpeg` 값은 경고(`remux_engine_setting`)와 함께 순수 엔진으로 시작하며 그 밖의 값이면 서버가 시작하지 않는다. 공개 API·파일명·메타는 엔진과 무관하다. 구조화 로그 `reverse_engine`은 `engine`, `kind`를 남긴다.
+- 실패: 순수 엔진의 실패는 정방향과 같은 5분류(`pure_remux::FailureClass`)다. 1단계 당시에는 `unsupported`·`invalid`·`internal`·`verification`이면 FFmpeg 역변환을 한 번 시도했으나 3단계에서 지웠다. 지금은 모든 분류가 다른 엔진 시도 없이 `reverse_failure`와 함께 실패하고(`resource`: ENOSPC·EFBIG·EDQUOT·ENOMEM, 180초, worker SIGKILL·SIGABRT, 종료 코드 75 포함), HTTP 응답은 기존과 같이 `media_export_failed`다.
 - 격리: 서버·CLI에서는 worker 프로세스 `roadviewer-hars __pure-reverse MP4 KIND OFFSET_TICKS OUTPUT`이다. `media::run`(동시 2개, 180초, 응답 64 MiB, `kill_on_drop`, `PR_SET_PDEATHSIG`)과 정방향 worker의 메모리 상한(`RLIMIT_AS` = 현재 + 256 MiB)을 그대로 쓴다. 라이브러리 내장(시험) 경로는 `spawn_blocking` + `catch_unwind`.
 - 두 번 읽기: (1) `pure_remux::readback::inspect_copy`가 MP4를 검사하고 내보내기가 담아야 할 것(서명, 프레임 수, sync sample, PTS/DTS)을 정한다. (2) 쓰기는 이와 코드를 공유하지 않는 `shiguredo_mp4`의 `Mp4FileDemuxer`가 읽은 sample 표로 한다. (3) 쓴 파일을 `NalHasher`(HEVC) 또는 정방향 엔진의 TS demuxer(`pure_remux::ts::demux`, `mpeg2ts`)로 다시 읽어 (1)과 비교한다. 두 판독기가 입력을 다르게 읽으면 `verification`이다.
 - Annex B: 각 sample의 4바이트 길이 NAL을 그대로 옮기고, libavcodec `h264_mp4toannexb`/`hevc_mp4toannexb`가 하는 선택(decoder configuration을 넣는 자리, start code 길이)을 따른다. H.264는 in-band SPS/PPS가 없는 IDR 앞에 avcC의 SPS/PPS를 넣고, HEVC는 sample의 첫 IRAP NAL 앞에 hvcC의 NAL을 모두 넣는다. FFmpeg 코드는 옮기지 않았다(동작만 맞춤).
 - MPEG-TS: 원본이 가진 libavformat `mpegts` 배치를 따른다. 프로그램 1, PMT PID 0x1000, 영상 PID 0x100(PCR 운반), stream type 0x1B, SDT(서비스 이름 `Service01`, 제공자 `FFmpeg`: 원본에 있는 값 그대로), PAT/PMT는 첫 PES·100 ms마다·키프레임 묶음의 첫 키프레임에, SDT는 500 ms마다, PES 길이 0, 모든 PES 첫 패킷에 PCR(= DTS × 300, muxdelay 0)과 키프레임의 random access 표시, 마지막 패킷은 adaptation field stuffing, AUD로 시작하지 않는 access unit에는 AUD를 붙인다. PTS/DTS = MP4 시각을 90 kHz로(반올림) + offset 틱. offset 틱은 `round(video_origins × 90000)`.
-- 한도: MP4 메타 16 MiB, sample 32 MiB, sample 수 262,144(판독기), NAL·parameter set 한도(`NalHasher`), 출력 4 GiB, 33비트 PES 시각. 넘으면 `unsupported`/`invalid`로 실패하고 FFmpeg 대체로 넘어간다. 메모리는 sample 하나와 해시 버퍼로 묶이고(파일을 통째로 읽지 않음), `unsafe`는 새 코드에 없다.
-- 순수 엔진이 거부하는 정상 입력(→ FFmpeg 대체): 첫 항목이 media time 0이 아닌 edit list(FFmpeg가 B-frame MP4에 쓰는 것), 트랙이 둘 이상, sample entry 변경, hev1·in-band HEVC parameter set, 길이 필드 4바이트가 아닌 avcC/hvcC, 음수 composition 시각, 33비트를 넘는 시각.
+- 한도: MP4 메타 16 MiB, sample 32 MiB, sample 수 262,144(판독기), NAL·parameter set 한도(`NalHasher`), 출력 4 GiB, 33비트 PES 시각. 넘으면 `unsupported`/`invalid`로 실패한다(1단계 당시에는 FFmpeg 역변환으로 넘어갔고, 3단계에서 그 경로를 지워 지금은 `reverse_failure`와 `media_export_failed`로 끝난다). 메모리는 sample 하나와 해시 버퍼로 묶이고(파일을 통째로 읽지 않음), `unsafe`는 새 코드에 없다.
+- 순수 엔진이 거부하는 정상 입력(지금은 내보내기 실패, 1단계 당시에는 FFmpeg 역변환으로 넘어갔다): 첫 항목이 media time 0이 아닌 edit list(FFmpeg가 B-frame MP4에 쓰는 것), 트랙이 둘 이상, sample entry 변경, hev1·in-band HEVC parameter set, 길이 필드 4바이트가 아닌 avcC/hvcC, 음수 composition 시각, 33비트를 넘는 시각.
 
 ### 검증 결과
 
@@ -308,7 +339,7 @@ TS에서 FFmpeg CLI 역변환과의 차이: CLI는 MP4에서 읽은 평균 frame
 
 (b) 14구간 MP4 6개(qcamera 3, fcamera 3), 47구간 MP4 6개(qcamera 2, fcamera 2, ecamera 2), offset 0(MP4로 올라온 기록의 제품 값). 순수 ↔ FFmpeg 역변환: 정규화 NAL·프레임·키프레임·parameter set·TS 시각 12/12 같음, HEVC 7/7(fcamera 5, ecamera 2) 파일 바이트 같음, TS 5개 중 1개 바이트 같음·4개는 PCR 배치만 다름(2개는 크기도 같고 PCR 위치만 다름). 디코딩 프레임 MD5(`-fps_mode passthrough`): 순수 = FFmpeg = MP4 자체 디코딩 12/12(각 1,200프레임). 처음에 기본 constant-rate 출력으로 돌렸을 때는 MP4 쪽만 1,197·1,199프레임이 나와 3건이 달랐다: 출력 단계가 시각에 따라 프레임을 버리거나 반복한 것이고 내보내기 차이가 아니어서 passthrough로 다시 쟀다.
 
-(c) 손상·합성·무작위 변형 300건(`integration/pure_reverse_faults.py`, 시드 20261117, `systemd-run --user --scope -p MemoryMax=2G -p MemorySwapMax=0` 아래, 기본 입력 3개: 합성 H.264·HEVC MP4와 실주행 qcamera MP4 1개). 변형 10종 × 30건: 잘림, box 크기, sample 표 값, 빈 트랙, 과대 선언(sample 크기·moov 크기·config·NAL 길이), moov 비트 반전, payload 비트 반전, avcC/hvcC 개수, 가짜 box 삽입, 무작위 바이트. 결과: `invalid` 258, `verification` 5, 성공 37(payload 비트 반전 29처럼 구조가 맞는 입력), **panic 0, 비정상 종료 0, 실패 뒤 남은 출력 0**, worker 최고 RSS 37.3 MiB, 최장 0.047초(상한 256 MiB 추가·180초 대비). `verification` 5건은 avcC의 SPS를 바꾼 입력이다: 독립 판독기는 바뀐 avcC SPS를 기대 parameter set에 넣는데 sample에는 in-band SPS가 있어 쓰기가 avcC를 넣지 않으므로 일치하지 않는다(→ FFmpeg 대체). 단위 시험(`tests/pure_reverse.rs`)은 빈 파일, 쓰레기, 절반 잘림, moov만, moov 크기 초과, sample 수·크기 초과, sample 0개, mdat 앞 chunk offset, sample 밖 NAL 길이, 다른 코덱을 두 코덱 모두에서 확인한다.
+(c) 손상·합성·무작위 변형 300건(`integration/pure_reverse_faults.py`, 시드 20261117, `systemd-run --user --scope -p MemoryMax=2G -p MemorySwapMax=0` 아래, 기본 입력 3개: 합성 H.264·HEVC MP4와 실주행 qcamera MP4 1개). 변형 10종 × 30건: 잘림, box 크기, sample 표 값, 빈 트랙, 과대 선언(sample 크기·moov 크기·config·NAL 길이), moov 비트 반전, payload 비트 반전, avcC/hvcC 개수, 가짜 box 삽입, 무작위 바이트. 결과: `invalid` 258, `verification` 5, 성공 37(payload 비트 반전 29처럼 구조가 맞는 입력), **panic 0, 비정상 종료 0, 실패 뒤 남은 출력 0**, worker 최고 RSS 37.3 MiB, 최장 0.047초(상한 256 MiB 추가·180초 대비). `verification` 5건은 avcC의 SPS를 바꾼 입력이다: 독립 판독기는 바뀐 avcC SPS를 기대 parameter set에 넣는데 sample에는 in-band SPS가 있어 쓰기가 avcC를 넣지 않으므로 일치하지 않는다(1단계 당시 FFmpeg 대체, 지금은 내보내기 실패). 단위 시험(`tests/pure_reverse.rs`)은 빈 파일, 쓰레기, 절반 잘림, moov만, moov 크기 초과, sample 수·크기 초과, sample 0개, mdat 앞 chunk offset, sample 밖 NAL 길이, 다른 코덱을 두 코덱 모두에서 확인한다.
 
 (d) 제품 경로(`integration/pure_reverse_product.py`, release 실행 파일, 새 임시 데이터 폴더, loopback 18610/18611, `HARS_INGRESS_ONLY=0`, 원본 보존 끔). 13구간 원본의 3·7번 구간을 브라우저 업로드 API로 올리고 자동 변환(`unconverted → processing → ready`) 뒤 업로드 TS/HEVC가 지워진 상태에서:
 
@@ -336,7 +367,7 @@ TS에서 FFmpeg CLI 역변환과의 차이: CLI는 MP4에서 읽은 평균 frame
 
 ### 3단계에서 지울 것
 
-FFmpeg를 완전히 없앨 때 이 단계가 남긴 대체 경로와 그것만 검사하는 것:
+FFmpeg를 완전히 없앨 때 이 단계가 남긴 대체 경로와 그것만 검사하는 것(3단계에서 처리했다: 위 [제거한 것](#제거한-것)과 [지운 시험과 대체 근거](#지운-시험과-대체-근거)):
 
 - `src/media.rs`: `reverse_ffmpeg`, `signature`(ffmpeg CLI), `reverse_using`의 대체 분기와 `reverse_fallback` 기록(순수 실패는 그대로 실패로), `probe`·`validate_upload`(`ffprobe`, 업로드·가져오기 검사의 순수 대체 필요), `input_format`.
 - `tests/pure_reverse.rs`: `pure_export_holds_what_the_ffmpeg_export_holds`의 FFmpeg 엔진 비교 부분, `an_edit_list_the_engine_does_not_copy_falls_back_to_ffmpeg`의 엔진 비교(순수 `unsupported` 확인은 유지). 합성 입력 생성(`ffmpeg` CLI)은 개발 도구로 남길지 정해야 한다.
@@ -347,8 +378,8 @@ FFmpeg를 완전히 없앨 때 이 단계가 남긴 대체 경로와 그것만 �
 ### 미검증과 남은 위험
 
 - aarch64(HAOS) 이미지 크기와 역변환 실행은 미검증. 새 코드는 정수 연산과 `f64` 곱셈·반올림 한 번(offset 틱)만 쓴다.
-- 실주행 B-frame MP4, field 부호화, 다중 트랙 MP4, hev1 MP4는 코퍼스에 없다. 순수 엔진은 이들을 거부하고 FFmpeg 대체로 넘긴다. 3단계에서 FFmpeg가 없어지면 이 입력의 원본 형식 내보내기는 실패한다(현재 FFmpeg 역변환도 B-frame edit list MP4는 시각 검사에서 실패한다: 시험 `an_edit_list_…`).
-- avcC SPS/PPS와 sample의 in-band SPS/PPS가 다른 MP4는 `verification`으로 FFmpeg 대체에 간다(위 (c)). 3단계 뒤에는 실패다.
+- 실주행 B-frame MP4, field 부호화, 다중 트랙 MP4, hev1 MP4는 코퍼스에 없다. 순수 엔진은 이들을 거부한다. 3단계에서 FFmpeg를 없앤 지금 이 입력의 원본 형식 내보내기는 실패한다(1단계 당시의 FFmpeg 역변환도 B-frame edit list MP4는 시각 검사에서 실패했다: 시험 `an_edit_list_…`).
+- avcC SPS/PPS와 sample의 in-band SPS/PPS가 다른 MP4는 `verification`으로 내보내기가 실패한다(위 (c); 1단계 당시에는 FFmpeg 역변환으로 넘어갔다).
 - AUD 없는 H.264 MP4: muxer가 AUD를 붙여 "기타 NAL" 서명이 달라지므로 두 엔진 모두 실패한다(기존 동작과 같음). 제품의 MP4는 TS에서 왔으므로 AUD가 있다.
 - TS 바이트가 원본과 같은 것은 원본이 libavformat `mpegts`로 만든 Road Viewer 원본 형식 내보내기였기 때문이다. 카메라가 처음 쓴 TS(다른 muxer)라면 PES 내용·시각은 같아도 PSI·PCR 배치는 다를 수 있다(코퍼스에 없음).
 - 역변환 결과는 요청마다 임시 파일로 만들고 응답 뒤 지운다(기존과 같음). 새로 넣은 fsync는 이 임시 파일에도 적용된다(성능 표에 포함).

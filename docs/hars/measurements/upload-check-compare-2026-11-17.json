@@ -6,10 +6,10 @@
   "upload_both_reject": 20,
   "upload_new_accepts_base_rejected": 0,
   "upload_new_rejects_base_accepted": 4,
-  "inspect_both_accept": 83,
+  "inspect_both_accept": 85,
   "inspect_both_reject": 43,
   "inspect_new_accepts_base_rejected": 0,
-  "inspect_new_rejects_base_accepted": 12,
+  "inspect_new_rejects_base_accepted": 10,
   "timeouts": 0
  },
  "seed": 20261117,
@@ -455,9 +455,9 @@
    "base_upload": "accepted",
    "base_inspect": "accepted",
    "new_upload": "accepted",
-   "new_inspect": "rejected",
+   "new_inspect": "accepted",
    "upload_differs": false,
-   "inspect_differs": true
+   "inspect_differs": false
   },
   {
    "case": "synthetic-bframes.mp4",
@@ -1449,9 +1449,9 @@
    "base_upload": "accepted",
    "base_inspect": "accepted",
    "new_upload": "accepted",
-   "new_inspect": "rejected",
+   "new_inspect": "accepted",
    "upload_differs": false,
-   "inspect_differs": true
+   "inspect_differs": false
   },
   {
    "case": "synthetic-damaged-079-head-flip-hevc.mp4",
