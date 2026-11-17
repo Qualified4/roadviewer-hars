@@ -127,16 +127,16 @@ Node 22가 PATH에 있어야 한다(`--node`로 지정할 수도 있다). 종료
 
 ## CI 구성
 
-`.github/workflows/ci.yml`. `Browser build`는 `Rust checks`와 같은 캐시를 복원만 하고, `cargo build --locked --bin roadviewer-hars`를 한 번 돌려 실행 파일을 넘긴다. 그다음 `Browser shard 1~9`가 돌고, `Browser checks`와 `HARS required`가 이어진다.
+`.github/workflows/ci.yml`. 브라우저 작업은 PR과 수동 실행에서만 돈다(`main` 푸시에서는 `Cache refresh (browser)`가 npm·Playwright 캐시만 저장한다. [DEVELOPMENT.md](DEVELOPMENT.md#cicd)). `Browser build`는 `Rust tests`와 같은 캐시(`hars-rust-test-v1-*`, `main`의 `Cache refresh (Rust tests)`가 저장)를 복원만 하고, `cargo build --locked --bin roadviewer-hars`를 한 번 돌려 실행 파일을 넘긴다. 그다음 `Browser shard 1~9`가 돌고, `Browser checks`와 `HARS required`가 이어진다. 같은 실행 파일을 `Compatibility`도 받아 쓴다.
 
 | 작업 | 하는 일 |
 |---|---|
 | `Browser shard N`(N = 1~9) | `browser-groups.json`의 `gN` 하나를 직렬로 돈다. matrix는 `fail-fast: false`, 작업 상한은 20분이다. Node 22.13.1과 `npm ci`(Playwright 1.64.1)를 쓰고, `chromium-headless-shell`만 설치한다. 공유 라이브러리는 `ldd`로 확인한다. sysctl로 AppArmor 제한을 푼 뒤 `unshare -rn` 안에서 `--isolation-check`를 돌린다. 실행기 종료 코드는 `exit-code`에 적는다 |
-| `Browser checks` | `test_gate_rules.py`(게이트 데이터·판정 규칙)를 돌린다. 그다음 `browser-summary-1..9`를 받아 `--aggregate`로 다시 판정한다. 필수 검사 이름은 이것 하나다 |
+| `Browser checks` | `test_gate_rules.py`(게이트 데이터·판정 규칙)를 돌린다. 그다음 `browser-summary-1..9`를 받아 `--aggregate`로 다시 판정한다. 이 결과는 `HARS required`(필수 검사 이름은 이것 하나다)가 요구한다 |
 
 묶음은 이전에 5개였다(두 그룹씩). 러너에서 84/164/168/169/174초로 고르지 않았고, 가장 긴 경로가 build 62초 + 174초였다. 그래서 한 그룹에 묶음 하나로 바꿨다. `test_gate_rules.py`는 matrix가 manifest 그룹을 각각 정확히 한 번 부르는지 확인한다.
 
-러너 실측(9묶음): `e6331a8`에서 전 작업 통과. `Browser build` 1분 14초, 묶음 9개 각 1분 26초~2분 3초, 집계 9초. 같은 실행에서 `Rust checks` 3분 43초, `Container` 2분 57초·3분 7초. 
+러너 실측(9묶음): `e6331a8`에서 전 작업 통과. `Browser build` 1분 14초, 묶음 9개 각 1분 26초~2분 3초, 집계 9초. 같은 실행에서 `Rust checks` 3분 43초, `Container` 2분 57초·3분 7초. (`Rust checks`는 이후 `Rust lint`·`Rust tests`·`Compatibility`·`Repository checks`로 나뉘었다.)
 
 ## 시간
 
