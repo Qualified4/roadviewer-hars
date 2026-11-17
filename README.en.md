@@ -2,9 +2,9 @@
 
 [한국어](README.md) · English
 
-> **This repository is Road Viewer 2.x, rebuilt in Rust. It is a prerelease (alpha), not yet officially released, and cutover validation is in progress.** See the [implementation and validation status](docs/hars/STATUS.md) (Korean) for the current version. No stable release or production cutover has been made.
+> **This repository is Road Viewer 2.x, rebuilt in Rust.** The current version is **2.0.0**.
 >
-> The Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha) remains maintained as a separate product. This app is meant to be installed next to the existing Python app for testing; the Home Assistant app store and sidebar show it as **Road Viewer HARS**. Features that are not ported never report success. Do not install the current build as a complete replacement for Python 1.x or move production uploads to it.
+> It succeeds the Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha), whose repository no longer receives new features. The Home Assistant app store and sidebar show it as **Road Viewer**. It is a separate app with a different slug, so the 1.x app is not updated to it automatically. To move from 1.x, see [cutover and rollback](docs/hars/CUTOVER.md) (Korean). Unverified environments and remaining risks are listed in the [implementation and validation status](docs/hars/STATUS.md) (Korean).
 >
 > The feature descriptions below follow Python Road Viewer 1.3.18. HARS 2.x serves the same web UI and implements the same API; intentional differences from Python are listed in the [implementation and validation status](docs/hars/STATUS.md#python과-의도적으로-다른-점) (Korean).
 >
@@ -29,7 +29,7 @@ Switch the right panel to the road view to compare a top-down view of lanes, pat
 ## Getting started
 
 1. Add `https://github.com/Qualified4/roadviewer-hars` under Home Assistant **Settings → Apps → App store → ⋮ → Repositories**. Some versions call apps “add-ons.”
-2. Install the entry shown as **Road Viewer HARS** in the app store, start it and open its web UI. Automatic start is off by default (`boot: manual`), so start it yourself after the host restarts.
+2. Install the entry shown as **Road Viewer** in the app store, start it and open its web UI. Automatic start is on by default (`boot: auto`).
 3. On the **업로드** (Upload) tab, select files with **파일 추가** (Add files) or drag them into the upload area, then press **업로드** (Upload). Uploads keep running when you switch tabs; the header shows progress.
 4. When conversion finishes, press **재생** (Play) on the **로그** (Logs) tab. If automatic conversion is disabled, first press **변환** (Convert).
 
@@ -274,16 +274,16 @@ Even with the same Drive account or NAS as Python 1.x, HARS 2.x writes only to i
 
 ## Documentation and validation
 
-Screenshots were captured on 2026-11-07 from version 1.0.11 using example data, in light and dark mode; the one matching your theme is shown. The three driving/wide introduction photos composite the earlier footage's video area into the new UI. Device, capacity, and pairing values are synthetic; the displayed code cannot connect a device. See the [screenshot guide](docs/images/README.en.md). The screenshots were taken with Python 1.x. HARS serves the Python 1.3.18 web files unchanged and changes only the displayed name and version to Road Viewer HARS and the HARS version.
+Screenshots were captured on 2026-11-07 from version 1.0.11 using example data, in light and dark mode; the one matching your theme is shown. The three driving/wide introduction photos composite the earlier footage's video area into the new UI. Device, capacity, and pairing values are synthetic; the displayed code cannot connect a device. See the [screenshot guide](docs/images/README.en.md). The screenshots were taken with Python 1.x. HARS serves the Python 1.3.18 web files unchanged and changes only the displayed version to this app's version.
 
 - [User guide](roadviewer_hars/DOCS.en.md) · [한국어](roadviewer_hars/DOCS.md): installation, playback, route maps, conversion, storage, backups and troubleshooting
 - [roadviewer-mcp](https://github.com/Qualified4/roadviewer-mcp): MCP server for AI agents, using only the existing Ingress login and API
 - [Device API v1](docs/device-api.en.md) · [한국어](docs/device-api.md): HTTPS, pairing/signing, upload recovery and tests without openpilot
 - [AppArmor security](docs/apparmor-security.en.md) · [한국어](docs/apparmor-security.md)
 - [Historical Android picker analysis](docs/android-multiple-file-fix/README.en.md) · [한국어](docs/android-multiple-file-fix/README.md)
-- [Current release notes](roadviewer_hars/CHANGELOG.en.md) · [Full Korean history](roadviewer_hars/CHANGELOG.md): 2.0.0 in preparation and the full Python 1.x history
+- [Current release notes](roadviewer_hars/CHANGELOG.en.md) · [Full Korean history](roadviewer_hars/CHANGELOG.md): 2.0.0 and the full Python 1.x history
 
-The repository root is the Docker build context (`Dockerfile`). It builds the Rust executable `roadviewer-hars` onto `debian:bookworm-slim` and serves the preserved Python 1.3.18 web files (`reference/python/roadviewer/app/web`) unchanged. The only runtime packages are `nginx` and `ca-certificates`; the image contains neither FFmpeg nor Python. GitHub Actions (**HARS CI**) runs the Rust checks (fmt, clippy, all tests), original ccnc client compatibility and upload fault injection, a Python/Rust replay conversion comparison, and the preserved-source (`scripts/verify_reference.py`), release-identity (`scripts/check_release.py`) and coexistence (`scripts/check_coexistence.py`) checks, and it builds the image on native amd64 and aarch64 runners with FFmpeg-absence, container boot and TLS checks. Browser UI checks run outside CI ([development and testing](docs/hars/DEVELOPMENT.md), Korean).
+The repository root is the Docker build context (`Dockerfile`). It builds the Rust executable `roadviewer-hars` onto `debian:bookworm-slim` and serves the HARS-owned web files (`web/`), initially copied from Python 1.3.18. The only runtime packages are `nginx` and `ca-certificates`; the image contains neither FFmpeg nor Python. GitHub Actions (**HARS CI**) runs the Rust checks (fmt, clippy, all tests), original ccnc client compatibility and upload fault injection, a Python/Rust replay conversion comparison, and the preserved-source (`scripts/verify_reference.py`), release-identity (`scripts/check_release.py`) and coexistence (`scripts/check_coexistence.py`) checks, and it builds the image on native amd64 and aarch64 runners with FFmpeg-absence, container boot and TLS checks. Browser UI checks (`tests/browser`) run in the required CI check `Browser checks` ([browser tests](docs/hars/BROWSER-TESTS.md), [development and testing](docs/hars/DEVELOPMENT.md), Korean).
 
 The original Python history and MIT license are kept, and the reference code, tests, schema and UI are preserved under `reference/python`. This repository does not modify the original Python repository.
 
@@ -310,13 +310,13 @@ The UI listens on `http://127.0.0.1:8099` and the internal device API listener o
 
 ### Prebuilt release workflow
 
-This repository does not create a stable `2.0.0` tag or Release. Publishing automation accepts only `2.0.0-alpha.N`, `beta.N` and `rc.N` prereleases ([stable release gate](docs/hars/ARCHITECTURE.md#정식-릴리스-게이트), Korean).
+Publishing automation accepts stable version tags (`N.N.N`, for example `2.0.0`) and prerelease tags (`2.0.0-alpha.N`, `beta.N`, `rc.N`) ([stable release gate](docs/hars/ARCHITECTURE.md#정식-릴리스-게이트), Korean).
 
 1. Set the version in `Cargo.toml`, `roadviewer_hars/config.yaml` and the `Dockerfile` `BUILD_VERSION` together; `scripts/check_release.py` checks that they match. Never reuse a published version. Web assets are cached for a year under versioned URLs, so the next publication must raise the version.
-2. Confirm that `main` is a validated commit with passing CI, then push a tag named after the version (for example `2.0.0-alpha.N`) on that commit. The push starts `.github/workflows/prerelease.yml` (**HARS prerelease**).
+2. Confirm that `main` is a validated commit with passing CI, then push a tag named after the version (for example `2.0.0`) on that commit. The push starts `.github/workflows/release.yml` (**HARS release**).
 3. The `gate` job runs `scripts/check_release.py --tag` (tag and version match), fmt, clippy and all tests.
 4. The `image` job builds on native amd64 and aarch64 runners and pushes `ghcr.io/qualified4/roadviewer-hars:<tag>-<arch>` only after the FFmpeg-absence check (`scripts/image_report.py --require-no-ffmpeg`) and `scripts/container_smoke.py` pass.
-5. The `manifest` job combines both images as `ghcr.io/qualified4/roadviewer-hars:<tag>` and creates a GitHub prerelease with `docs/hars/STATUS.md` as its notes. If either architecture fails, no manifest or prerelease is created.
+5. The `manifest` job combines both images as `ghcr.io/qualified4/roadviewer-hars:<tag>` and creates a GitHub release with `docs/hars/STATUS.md` as its notes: a prerelease when the tag has a `-` suffix, otherwise the stable, latest release. No `latest` image tag is published; Home Assistant pulls by version. If either architecture fails, no manifest or release is created.
 6. Ensure the GHCR package is public; Home Assistant cannot pull a private image. Without credentials, `docker manifest inspect ghcr.io/qualified4/roadviewer-hars:<tag>` should list both architectures.
 
 A published tag is never rewritten; fix problems in the next version. See [image build and publication](docs/hars/HAOS-VALIDATION.md#이미지-빌드게시-설정) (Korean) for details.

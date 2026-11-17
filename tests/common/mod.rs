@@ -25,7 +25,7 @@ use tokio::{
 pub const DEADLINE: Duration = Duration::from_secs(30);
 
 pub fn web() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("reference/python/roadviewer/app/web")
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web")
 }
 
 pub struct Server {

@@ -24,10 +24,10 @@
 ## 이미지 빌드·게시 설정
 
 - 앱 설정의 `image`에 아키텍처 자리표시자가 없으므로 HAOS는 `ghcr.io/qualified4/roadviewer-hars:<version>` 하나를 받는다. 이 태그는 amd64와 aarch64를 묶은 manifest여야 한다.
-- 게시는 `.github/workflows/prerelease.yml`이 한다. `2.0.0-alpha.*` 태그가 push되면 다음 순서로 돈다.
+- 게시는 `.github/workflows/release.yml`(2.0.0 전에는 `prerelease.yml`)이 한다. `2.0.0-alpha.*` 등 prerelease 태그나 정식 버전 태그(`N.N.N`)가 push되면 다음 순서로 돈다.
   1. `gate`: `scripts/check_release.py --tag`(태그와 `Cargo.toml`·`config.yaml`·`Dockerfile`의 버전 일치), fmt, clippy, 전체 테스트.
   2. `image`(amd64, aarch64 각각의 네이티브 러너): 빌드 → FFmpeg 잔존 검사 → `scripts/container_smoke.py`(기동, TLS, 변환, 내보내기, 썸네일) → 통과한 뒤에만 `:<tag>-<arch>` push.
-  3. `manifest`: 두 이미지를 `:<tag>`로 묶고 GitHub prerelease를 만든다(본문은 `STATUS.md`).
+  3. `manifest`: 두 이미지를 `:<tag>`로 묶고 GitHub 릴리스를 만든다(본문은 `STATUS.md`). 태그에 `-`가 있으면 prerelease, 없으면 정식(latest) 릴리스다.
 - 게시 상태(2026-11-17): 태그 `2.0.0-alpha.4`를 push해 이 워크플로가 처음 실행됐고 네 작업이 모두 통과했다. `ghcr.io/qualified4/roadviewer-hars:2.0.0-alpha.4`(amd64·arm64 manifest)가 인증 없이 조회되며 GitHub prerelease가 만들어졌다. 그 전에는 태그·릴리스·패키지가 없어 저장소를 추가해도 설치가 실패하는 상태였다.
 - `main`의 CI는 같은 Dockerfile을 두 아키텍처에서 빌드·검사한다(`cf94bba`에서 통과). 게시 워크플로 자체는 한 번도 실행된 적이 없으므로 첫 실행이 곧 검증이다.
 
@@ -35,7 +35,7 @@
 
 1. `main`이 검증된 커밋인지, CI가 통과했는지 확인한다.
 2. `git tag 2.0.0-alpha.4 <main 커밋>` 후 `git push origin 2.0.0-alpha.4`. 이 push가 게시를 시작한다.
-3. `HARS prerelease` 워크플로의 세 작업이 모두 통과했는지 확인한다. 한 아키텍처라도 실패하면 manifest와 릴리스는 만들어지지 않는다.
+3. `HARS release`(2.0.0 전에는 `HARS prerelease`) 워크플로의 세 작업이 모두 통과했는지 확인한다. 한 아키텍처라도 실패하면 manifest와 릴리스는 만들어지지 않는다.
 4. **GHCR 패키지 공개 여부를 확인한다.** 개인 계정의 새 컨테이너 패키지는 비공개로 만들어질 수 있다. 비공개면 HAOS가 이미지를 받지 못한다. GitHub의 패키지 설정에서 공개로 바꾸거나 HAOS에 레지스트리 인증을 등록한다. 공개 전환은 웹 UI에서만 할 수 있다.
 5. 인증 없이 `docker manifest inspect ghcr.io/qualified4/roadviewer-hars:2.0.0-alpha.4`로 두 아키텍처가 보이는지 확인한다.
 
@@ -45,7 +45,7 @@
 
 설치 전: 운영 중인 Python 앱에서 진행 중인 업로드·변환·보관 작업이 없는 시간대를 고른다. HARS 설치 자체는 Python을 재시작시키지 않지만 호스트의 CPU·디스크를 함께 쓴다. 호스트의 남은 디스크 공간을 기록한다.
 
-설치: HAOS 앱 저장소에 `https://github.com/Qualified4/roadviewer-hars`를 추가하고 "Road Viewer HARS"를 설치한다. 옵션은 기본값 그대로 둔다(외부 HTTPS 끔, 포트 null). 수동으로 시작한다.
+설치: HAOS 앱 저장소에 `https://github.com/Qualified4/roadviewer-hars`를 추가하고 "Road Viewer"(2.0.0-alpha.5까지는 "Road Viewer HARS")를 설치한다. 옵션은 기본값 그대로 둔다(외부 HTTPS 끔, 포트 null). 수동으로 시작한다.
 
 | 단계 | 확인 | 통과 기준 |
 |---|---|---|

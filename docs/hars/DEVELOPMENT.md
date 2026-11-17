@@ -66,7 +66,7 @@ Rust 구조화 로그는 요청 ID, 경로, 서버 진입, 인증/파일 락 대
 
 ## 웹 화면 검사 (브라우저)
 
-웹 파일은 `reference/python/roadviewer/app/web/`의 보존 원본을 그대로 쓴다. 원본을 새 릴리스로 올릴 때는 `scripts/verify_reference.py`의 `SOURCE`와 `scripts/inventory.py`의 기준을 함께 바꾼다. 페이지의 버전·제목 치환은 브라우저 없이 `tests/page_version.rs`가 CI에서 지킨다(원본 릴리스 번호가 페이지에 남거나, 치환 대상이 사라지거나, HARS 표기가 제목·버전 줄 밖으로 나가 워드마크 `<h1>`을 바꾸면 실패).
+웹 파일은 HARS가 소유하는 `web/`에 있다. Python Road Viewer 1.3.18에서 무변경 복사한 커밋 `a3687c9` 이후의 변경은 `git diff a3687c9 -- web`로 확인한다. `reference/`는 원본 대조용으로 보존하며 제품 화면 변경과 독립적으로 `scripts/verify_reference.py`가 검증한다. 페이지의 버전·제목 치환은 브라우저 없이 `tests/page_version.rs`가 CI에서 지킨다(원본 릴리스 번호가 페이지에 남거나, 치환 대상이 사라지거나, HARS 표기가 제목·버전 줄 밖으로 나가 워드마크 `<h1>`을 바꾸면 실패).
 
 **CI 안.** 브라우저 테스트 51개 항목(`tests/browser/*.cjs`, Python Road Viewer 1.3.18에서 복사해 HARS가 소유)은 `HARS CI`의 `Browser checks`(필수)가 HARS debug 실행 파일과 HARS가 내보낸 화면에 붙여 돌린다. 게이트(제외 1개 `replay_format2`, 재시도·예상 실패 없음, `integration/upstream_cjs/expectations.json`), 실패 산출물, 9묶음 구성, HARS가 고친 대기 지점은 [BROWSER-TESTS.md](BROWSER-TESTS.md)에 있다. 로컬에서는 `python3 integration/upstream_cjs/run_browser_tests.py --hars-bin target/debug/roadviewer-hars --out /tmp/rv-browser`(Node 22, `npm ci --prefix integration/upstream_cjs`, `npx --prefix integration/upstream_cjs playwright install --only-shell chromium`).
 

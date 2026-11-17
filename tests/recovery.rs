@@ -9,7 +9,7 @@ use std::path::PathBuf;
 async fn app(root: &std::path::Path) -> App {
     App::open(
         root.to_path_buf(),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("reference/python/roadviewer/app/web"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web"),
         false,
         512,
     )
@@ -201,7 +201,7 @@ async fn failed_temporary_sweep_and_leftover_exports_do_not_block_startup() {
     );
     let opened = App::open(
         temp.path().to_path_buf(),
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("reference/python/roadviewer/app/web"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web"),
         false,
         512,
     )

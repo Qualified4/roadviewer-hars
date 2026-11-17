@@ -18,7 +18,8 @@ hars_text = (ROOT / "roadviewer_hars/config.yaml").read_text(encoding="utf-8")
 python_text = (ROOT / "reference/python/roadviewer/config.yaml.reference").read_text(encoding="utf-8")
 hars, python = top_level(hars_text), top_level(python_text)
 
-for key in ("slug", "image", "name", "panel_title", "url"):
+# The display name may match: this app is named Road Viewer and replaces the Python one. Identity stays separate.
+for key in ("slug", "image", "url"):
     assert hars[key] != python[key], f"{key} must differ from the Python app"
 assert hars["ingress"] == "true" and hars["ingress_port"] == python["ingress_port"], "each app keeps its own container-private Ingress listener"
 
@@ -33,7 +34,7 @@ assert hars_roots == {"roadviewer-hars"} and python_roots == {"roadviewer"}
 
 # The device network panel reads and writes this app's own port mapping through Supervisor.
 assert hars.get("hassio_api") == "true" and python.get("hassio_api") == "true"
-assert hars["boot"] == "manual", "HARS must not start on boot before cutover is approved"
+assert hars["boot"] == "auto", "Road Viewer starts with the host, like the Python app it replaces"
 source = (ROOT / "src/main.rs").read_text(encoding="utf-8")
 assert '"/data/roadviewer-hars"' in source and '"/data/roadviewer"' not in source, "HARS default data root must be its own"
 print("HAOS coexistence invariants verified:", hars["slug"], "next to", python["slug"])

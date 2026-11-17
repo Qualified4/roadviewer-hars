@@ -3,7 +3,7 @@
 ## 원본과 범위
 
 - Python Road Viewer `main`: `d3de13472ea242dab9866d485b5777ad67d5b1dd`, 버전 1.3.18. 프런트엔드 기능 기준: Python Road Viewer 1.3.18(`d3de134`). 서버 API·분석 코드는 이전 보존 기준 1.3.16(`71add1a0`)과 같다(`git diff 71add1a d3de134 -- 'roadviewer/app/*.py'` 변경 없음). 1.3.16 → 1.3.18의 변경은 웹 파일(`roadviewer/app/web/`), 그 브라우저 테스트, 버전·문서뿐이다.
-- 웹 파일은 보존 원본 그대로 제공한다. HARS가 페이지를 내보낼 때만 원본 릴리스 번호(`library.html`의 `assets/style.css?v=` 값, Python `server.page_response`가 읽는 곳)를 자산 주소의 `?v=`와 버전 표시에서 HARS 버전으로 바꾸고 `Road Viewer`를 `Road Viewer HARS`로 바꾼다(`src/http.rs` `page_html`, 검사 `tests/page_version.rs`).
+- 웹 파일은 보존 원본 그대로 제공한다. HARS가 페이지를 내보낼 때만 원본 릴리스 번호(`library.html`의 `assets/style.css?v=` 값, Python `server.page_response`가 읽는 곳)를 자산 주소의 `?v=`와 버전 표시에서 HARS 버전으로 바꾼다. 제품 이름 `Road Viewer`는 바꾸지 않는다(`src/http.rs` `page_html`, 검사 `tests/page_version.rs`).
 - openpilot `Qualified4/openpilot`, `ccnc-hda1`: `5c2a8c7f6e14dac82678a390e408ef7a9c73eefa`.
 - 클라이언트 계약: `openpilot/selfdrive/carrot/server/road_viewer/client.py`, `uploader.py`.
 - Git 이력은 원본 커밋의 자손으로 유지한다. 원본 태그·브랜치·릴리스·Actions·이미지는 변경하거나 복제 게시하지 않는다.
@@ -44,4 +44,4 @@ raw HEVC는 `ffmpeg-next`의 libavformat 패킷 경로에서 프레임별 로그
 
 ## 정식 릴리스 게이트
 
-전체 기능·API·JSON·실제 업로더·실제 로그·브라우저 재생/시킹·저장소 장애 복구·HAOS 동시 설치가 검증되기 전 `2.0.0` 태그 또는 정식 Release를 만들지 않는다. 초기 게시 자동화는 `2.0.0-alpha.N`, `beta.N`, `rc.N`만 허용한다.
+alpha 단계에서는 전체 기능·API·JSON·실제 업로더·실제 로그·브라우저 재생/시킹·저장소 장애 복구·HAOS 동시 설치가 검증되기 전 `2.0.0` 태그 또는 정식 Release를 만들지 않았고, 초기 게시 자동화는 `2.0.0-alpha.N`, `beta.N`, `rc.N`만 허용했다. 실제 HAOS 운영 전환(2026-11-18) 뒤 정식 `2.0.0`을 내기로 했고, 게시 자동화(`.github/workflows/release.yml`, `scripts/check_release.py`)는 정식 버전(`N.N.N`)과 prerelease를 모두 받는다. 정식 태그는 GitHub 정식(latest) 릴리스가 되고, 이미지는 버전 태그만 만든다. 남은 미검증은 [STATUS.md](STATUS.md#남은-위험과-미검증)에 있다.

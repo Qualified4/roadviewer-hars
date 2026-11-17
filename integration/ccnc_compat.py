@@ -126,7 +126,7 @@ async def main(args):
             assert json.loads(imported.stdout)["imported_devices"] == 1
             rust_ui = "http://127.0.0.1:" + str(port())
             rust_device = "http://127.0.0.1:" + str(port())
-            env = {**os.environ,"HARS_DATA":str(target),"HARS_WEB":str(ROOT / "reference/python/roadviewer/app/web"),"HARS_INGRESS_ONLY":"0","HARS_BIND":rust_ui.removeprefix("http://"),"HARS_DEVICE_BIND":rust_device.removeprefix("http://")}
+            env = {**os.environ,"HARS_DATA":str(target),"HARS_WEB":str(ROOT / "web"),"HARS_INGRESS_ONLY":"0","HARS_BIND":rust_ui.removeprefix("http://"),"HARS_DEVICE_BIND":rust_device.removeprefix("http://")}
             rust = subprocess.Popen([args.rust],env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
             try:
                 await ready(http,rust_ui,rust)

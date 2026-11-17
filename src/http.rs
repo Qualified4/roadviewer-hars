@@ -407,9 +407,7 @@ async fn diagnostics(mut request: Request, next: Next) -> Response {
     response
 }
 async fn health() -> Json<Value> {
-    Json(
-        json!({"product":"Road Viewer HARS","version":env!("CARGO_PKG_VERSION"),"release_ready":false}),
-    )
+    Json(json!({"product":"Road Viewer","version":env!("CARGO_PKG_VERSION"),"release_ready":true}))
 }
 async fn page(
     State(app): State<App>,
@@ -456,9 +454,8 @@ fn upstream_version(library: &str) -> Option<&str> {
 /// The preserved pages stamp Python's release into asset URLs (`?v=`) and the version label
 /// (`>v…<`). HARS serves them under its own version so a HARS release, not a Python one,
 /// renews the year-long asset cache. Other version-like text (the font file name) is kept.
-/// HARS is named in the title and the version label only: the wordmark is sized for the
-/// preserved letters (a longer one shrinks out of a 320 px app bar), and the other mentions
-/// are prose that the scripts rewrite with the preserved text anyway.
+/// The product name on the pages stays the preserved "Road Viewer": this app is the Road Viewer
+/// that replaces the Python one, and the wordmark is sized for those letters.
 fn page_html(template: &str, upstream: Option<&str>, replay: bool) -> String {
     const VERSION: &str = env!("CARGO_PKG_VERSION");
     let mut html = template
@@ -472,11 +469,7 @@ fn page_html(template: &str, upstream: Option<&str>, replay: bool) -> String {
             .replace(&format!("?v={upstream}"), &format!("?v={VERSION}"))
             .replace(&format!(">v{upstream}<"), &format!(">v{VERSION}<"));
     }
-    html.replace("<title>Road Viewer ", "<title>Road Viewer HARS ")
-        .replace(
-            ">Road Viewer <span class=\"app-version\">",
-            ">Road Viewer HARS <span class=\"app-version\">",
-        )
+    html
 }
 async fn asset(
     State(app): State<App>,
@@ -812,9 +805,9 @@ async fn processing(
         }
         if fields
             .get("concurrency")
-            .is_some_and(|v| !v.as_u64().is_some_and(|v| (1..=4).contains(&v)))
+            .is_some_and(|v| !v.as_u64().is_some_and(|v| (1..=16).contains(&v)))
         {
-            return Err(invalid("동시 처리 개수는 1~4여야 합니다."));
+            return Err(invalid("동시 처리 개수는 1~16이어야 합니다."));
         }
         if fields.get("auto_convert").is_some_and(|v| !v.is_boolean()) {
             return Err(invalid("자동 변환 설정은 켜짐 또는 꺼짐이어야 합니다."));
@@ -834,7 +827,7 @@ async fn processing(
         }
         if !settings["concurrency"]
             .as_u64()
-            .is_some_and(|v| (1..=4).contains(&v))
+            .is_some_and(|v| (1..=16).contains(&v))
             || !settings["auto_convert"].is_boolean()
             || !settings["keep_original_video"].is_boolean()
         {

@@ -2,9 +2,9 @@
 
 한국어 · [English](README.en.md)
 
-> **이 저장소는 Rust 기반 Road Viewer 2.x입니다. 아직 정식 출시 전의 prerelease(alpha)이며 운영 전환 검증이 진행 중입니다.** 현재 버전은 **2.0.0-alpha.5**이며, 정식 릴리스와 운영 전환을 수행하지 않았습니다.
+> **이 저장소는 Rust로 다시 구현한 Road Viewer 2.x입니다.** 현재 버전은 **2.0.0**입니다.
 >
-> Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)는 별도 제품으로 계속 유지됩니다. 이 앱은 기존 Python 앱 옆에 병행 설치해 시험하는 용도이며, Home Assistant 앱 스토어와 사이드바에는 **Road Viewer HARS**로 표시됩니다. 미이식 기능은 성공으로 응답하지 않습니다. 현재 빌드를 Python 1.x의 완전한 대체 제품으로 설치하거나 운영 업로드를 전환하면 안 됩니다.
+> Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)의 후속이며, 1.x 저장소에는 더 이상 새 기능이 추가되지 않습니다. Home Assistant 앱 스토어와 사이드바에는 **Road Viewer**로 표시됩니다. 1.x 앱과는 slug가 다른 별도 앱이라 1.x 앱이 자동으로 업데이트되지 않습니다. 1.x에서 옮겨 오는 방법은 [전환·롤백 절차](docs/hars/CUTOVER.md)를 보세요. 확인하지 못한 환경과 남은 위험은 [구현·검증 현황](docs/hars/STATUS.md)에 있습니다.
 >
 > 아래 기능 설명은 Python Road Viewer 1.3.18 기준입니다. HARS 2.x는 같은 웹 화면을 쓰고 같은 API를 구현하며, Python과 의도적으로 다른 점은 [구현·검증 현황](docs/hars/STATUS.md#python과-의도적으로-다른-점)에 있습니다.
 >
@@ -29,7 +29,7 @@ openpilot 주행 로그와 전방·와이드 카메라 영상을 올리고, **�
 ## 시작하기
 
 1. Home Assistant의 **설정 → 앱 → 앱 스토어 → ⋮ → 저장소**에서 `https://github.com/Qualified4/roadviewer-hars`를 추가합니다. 버전에 따라 ‘앱’이 ‘애드온’으로 표시됩니다.
-2. 앱 스토어에 **Road Viewer HARS**로 표시되는 항목을 설치하고 시작한 뒤 **웹 UI 열기**를 누릅니다. 자동 시작은 기본으로 꺼져 있어(`boot: manual`) 호스트를 다시 켠 뒤에는 직접 시작해야 합니다.
+2. 앱 스토어에 **Road Viewer**로 표시되는 항목을 설치하고 시작한 뒤 **웹 UI 열기**를 누릅니다. 자동 시작은 기본으로 켜져 있습니다(`boot: auto`).
 3. **업로드** 탭에서 **파일 추가** 또는 드래그 앤 드롭으로 파일을 선택하고 **업로드**합니다. 다른 탭으로 옮겨도 업로드는 계속되며 헤더에 진행률이 표시됩니다.
 4. 변환이 끝나면 **로그** 탭에서 **재생**을 누릅니다. 자동 변환을 껐다면 목록에서 먼저 **변환**을 누릅니다.
 
@@ -277,16 +277,16 @@ HARS 2.x는 Python 1.x와 같은 Drive 계정·NAS를 쓰더라도 자기 위치
 
 ## 문서와 검증
 
-스크린샷은 2026-11-07에 1.0.11 버전 코드에 예시 데이터를 넣어 라이트·다크 모드로 촬영했으며, 보는 환경의 테마에 맞는 이미지를 보여 줍니다. 주행·와이드 소개 사진 3장은 기존 사진의 영상 영역을 새 UI에 합성했습니다. 페어링 코드·장치·저장공간 수치는 모두 예시이며 실제 연결에 쓸 수 없습니다. [스크린샷 안내](docs/images/README.md)를 참고하세요. 스크린샷은 Python 1.x에서 촬영했습니다. HARS는 Python 1.3.18의 웹 파일을 그대로 쓰고 화면의 이름·버전 표시만 Road Viewer HARS와 HARS 버전으로 바꿉니다.
+스크린샷은 2026-11-07에 1.0.11 버전 코드에 예시 데이터를 넣어 라이트·다크 모드로 촬영했으며, 보는 환경의 테마에 맞는 이미지를 보여 줍니다. 주행·와이드 소개 사진 3장은 기존 사진의 영상 영역을 새 UI에 합성했습니다. 페어링 코드·장치·저장공간 수치는 모두 예시이며 실제 연결에 쓸 수 없습니다. [스크린샷 안내](docs/images/README.md)를 참고하세요. 스크린샷은 Python 1.x에서 촬영했습니다. HARS는 Python 1.3.18의 웹 파일을 그대로 쓰고 화면의 버전 표시만 이 앱의 버전으로 바꿉니다.
 
 - [설치 및 사용 설명](roadviewer_hars/DOCS.md) · [English](roadviewer_hars/DOCS.en.md): 업로드, 변환, 재생, 주행 경로 지도, 선택 모드(일괄 관리), 저장 정책, 백업과 문제 해결
 - [AppArmor 보안 정책](docs/apparmor-security.md) · [English](docs/apparmor-security.en.md)
 - [Android 다중 파일 선택 분석 기록](docs/android-multiple-file-fix/README.md) · [English](docs/android-multiple-file-fix/README.en.md)
-- [변경 이력](roadviewer_hars/CHANGELOG.md): 버전별 변경 내용(준비 중인 2.0.0과 Python 1.x 전체 이력)
+- [변경 이력](roadviewer_hars/CHANGELOG.md): 버전별 변경 내용(2.0.0과 Python 1.x 전체 이력)
 - [roadviewer-mcp](https://github.com/Qualified4/roadviewer-mcp): AI 에이전트용 MCP 서버. 기존 Ingress 인증과 API만 사용
 - [장치 API v1](docs/device-api.md) · [English](docs/device-api.en.md): HTTPS 구성, 페어링·서명, 업로드·이어올리기와 openpilot 없이 테스트하는 방법
 
-저장소 루트가 Docker 빌드 컨텍스트입니다(`Dockerfile`). Rust 실행 파일 `roadviewer-hars`를 빌드해 `debian:bookworm-slim` 위에 넣고, 웹 파일은 보존한 Python 1.3.18 원본(`reference/python/roadviewer/app/web`)을 그대로 씁니다. 런타임 패키지는 `nginx`와 `ca-certificates`뿐이며 FFmpeg과 Python은 들어 있지 않습니다. GitHub Actions(**HARS CI**)는 Rust 검사(fmt·clippy·전체 테스트), 원본 ccnc 클라이언트 호환·업로드 장애 주입 검사, Python과 Rust의 재생 변환 대조, 보존 원본 검사(`scripts/verify_reference.py`)·릴리스 식별 검사(`scripts/check_release.py`)·병행 설치 검사(`scripts/check_coexistence.py`)를 실행하고, amd64·aarch64 각각의 네이티브 러너에서 이미지를 빌드해 FFmpeg 잔존 검사와 컨테이너 기동·TLS 검사를 합니다. 브라우저 화면 검사는 CI 밖에서 실행합니다([실행 및 테스트](docs/hars/DEVELOPMENT.md)).
+저장소 루트가 Docker 빌드 컨텍스트입니다(`Dockerfile`). Rust 실행 파일 `roadviewer-hars`를 빌드해 `debian:bookworm-slim` 위에 넣고, 웹 파일은 Python 1.3.18에서 복사한 HARS 소유 `web/`를 씁니다. 런타임 패키지는 `nginx`와 `ca-certificates`뿐이며 FFmpeg과 Python은 들어 있지 않습니다. GitHub Actions(**HARS CI**)는 Rust 검사(fmt·clippy·전체 테스트), 원본 ccnc 클라이언트 호환·업로드 장애 주입 검사, Python과 Rust의 재생 변환 대조, 보존 원본 검사(`scripts/verify_reference.py`)·릴리스 식별 검사(`scripts/check_release.py`)·병행 설치 검사(`scripts/check_coexistence.py`)를 실행하고, amd64·aarch64 각각의 네이티브 러너에서 이미지를 빌드해 FFmpeg 잔존 검사와 컨테이너 기동·TLS 검사를 합니다. 브라우저 화면 검사(`tests/browser`)는 필수 CI `Browser checks`로 실행합니다([브라우저 테스트](docs/hars/BROWSER-TESTS.md), [실행 및 테스트](docs/hars/DEVELOPMENT.md)).
 
 원본 Python 이력과 MIT 라이선스를 유지하고, 기준 코드·테스트·스키마·UI는 `reference/python`에 보존합니다. 원본 Python 저장소는 이 저장소에서 수정하지 않습니다.
 
@@ -313,13 +313,13 @@ UI는 `http://127.0.0.1:8099`, 장치 API 내부 수신기는 `127.0.0.1:8098`�
 
 ### 프리빌드 배포 순서
 
-이 저장소는 정식 `2.0.0` 태그와 Release를 만들지 않습니다. 게시 자동화는 `2.0.0-alpha.N`·`beta.N`·`rc.N` prerelease만 허용합니다([정식 릴리스 게이트](docs/hars/ARCHITECTURE.md#정식-릴리스-게이트)).
+게시 자동화는 정식 버전 태그(`N.N.N`, 예: `2.0.0`)와 prerelease 태그(`2.0.0-alpha.N`·`beta.N`·`rc.N`)를 받습니다([정식 릴리스 게이트](docs/hars/ARCHITECTURE.md#정식-릴리스-게이트)).
 
 1. 버전을 `Cargo.toml`, `roadviewer_hars/config.yaml`, `Dockerfile`의 `BUILD_VERSION`에 함께 적습니다. `scripts/check_release.py`가 세 값의 일치를 검사합니다. 이미 게시한 버전은 재사용하지 않습니다. 웹 자산은 버전이 붙은 주소로 1년간 캐시되므로 다음 게시는 반드시 버전을 올려서 합니다.
-2. `main`이 검증된 커밋이고 CI가 통과했는지 확인한 뒤, 버전과 같은 이름의 태그(예: `2.0.0-alpha.N`)를 그 커밋에 만들어 push합니다. 이 push가 `.github/workflows/prerelease.yml`(**HARS prerelease**)을 시작합니다.
+2. `main`이 검증된 커밋이고 CI가 통과했는지 확인한 뒤, 버전과 같은 이름의 태그(예: `2.0.0`)를 그 커밋에 만들어 push합니다. 이 push가 `.github/workflows/release.yml`(**HARS release**)을 시작합니다.
 3. `gate` 작업이 `scripts/check_release.py --tag`(태그와 버전 일치), fmt, clippy, 전체 테스트를 실행합니다.
 4. `image` 작업이 amd64·aarch64 각각의 네이티브 러너에서 이미지를 빌드하고, FFmpeg 잔존 검사(`scripts/image_report.py --require-no-ffmpeg`)와 `scripts/container_smoke.py`를 통과한 뒤에만 `ghcr.io/qualified4/roadviewer-hars:<태그>-<아키텍처>`를 push합니다.
-5. `manifest` 작업이 두 이미지를 `ghcr.io/qualified4/roadviewer-hars:<태그>`로 묶고, `docs/hars/STATUS.md`를 본문으로 GitHub prerelease를 만듭니다. 한 아키텍처라도 실패하면 manifest와 prerelease는 만들어지지 않습니다.
+5. `manifest` 작업이 두 이미지를 `ghcr.io/qualified4/roadviewer-hars:<태그>`로 묶고, `docs/hars/STATUS.md`를 본문으로 GitHub 릴리스를 만듭니다. 태그에 `-`가 있으면 prerelease, 없으면 정식(latest) 릴리스입니다. 이미지 태그 `latest`는 만들지 않습니다(Home Assistant는 버전 태그로 받습니다). 한 아키텍처라도 실패하면 manifest와 릴리스는 만들어지지 않습니다.
 6. GHCR 패키지가 공개인지 확인합니다. 비공개면 Home Assistant가 이미지를 받지 못합니다. 인증 없이 `docker manifest inspect ghcr.io/qualified4/roadviewer-hars:<태그>`로 두 아키텍처가 보이는지 확인합니다.
 
 이미 게시한 태그는 다시 쓰지 않고, 문제가 있으면 다음 버전으로 올립니다. 자세한 절차는 [이미지 빌드·게시 설정](docs/hars/HAOS-VALIDATION.md#이미지-빌드게시-설정)을 참고하세요.

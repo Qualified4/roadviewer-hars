@@ -1,8 +1,8 @@
 # Installation and use
 
-> **This is a prerelease (alpha) of Road Viewer 2.x, rebuilt in Rust. It is not yet officially released, and cutover validation is in progress.** It is meant to be installed next to the existing Python Road Viewer 1.x for testing; the Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha) remains maintained separately. It shares no data, device authentication or archive location with the Python app. Do not cut production over before full feature, real log, device and HAOS validation.
+> **This is Road Viewer 2.x, rebuilt in Rust.** It succeeds the Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha), whose repository no longer receives new features. It is a separate app that shares no slug, data, device authentication or archive location with 1.x; to move from 1.x, follow the [cutover procedure](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md) (Korean). Unverified environments and remaining risks are listed in the [implementation and validation status](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) (Korean).
 >
-> After installation the external HTTPS port stays disabled (null) and automatic start is off by default. Assign a port different from the production one only while testing. `device_https_enabled` requires certificate and key files under `/ssl`. Ingress works independently of the external upload port.
+> The external HTTPS (device upload) port is disabled (null) by default, and the app starts automatically with the host. Assign the device upload port yourself, and keep it different from ports other apps on the same host use. `device_https_enabled` requires certificate and key files under `/ssl`. Ingress works independently of the external upload port.
 >
 > As in the original app, recording folders and transfer/export temporary files are excluded from Home Assistant app backups. Do not assume a backup contains videos or driving logs; keep authentication/settings retention separate from data backup or archiving.
 >
@@ -16,7 +16,7 @@ Start with **업로드 tab → Add files → Upload → Convert → Play**. The 
 
 ## Installation and access
 
-Add `https://github.com/Qualified4/roadviewer-hars` to the Home Assistant app store repositories, install the entry shown as **Road Viewer HARS** (its app store and sidebar name), start it, then open its web UI. Automatic start is off by default (`boot: manual`). Some Home Assistant versions call apps “add-ons.” This is not a HACS integration. Home Assistant Container does not provide the Supervisor app store.
+Add `https://github.com/Qualified4/roadviewer-hars` to the Home Assistant app store repositories, install the entry shown as **Road Viewer** (its app store and sidebar name), start it, then open its web UI. Automatic start is on by default (`boot: auto`). Some Home Assistant versions call apps “add-ons.” This is not a HACS integration. Home Assistant Container does not provide the Supervisor app store.
 
 Supported platforms are **amd64** (64-bit Intel/AMD) and **aarch64** (64-bit ARM). Installation downloads only the matching prebuilt GHCR image (`ghcr.io/qualified4/roadviewer-hars`). ARM 32-bit and i386 are unsupported. Home Assistant may display download/extraction progress; it is not a reliable estimate of total startup time.
 
@@ -707,7 +707,7 @@ See the [English API specification](../docs/device-api.en.md) or [한국어 API 
 
 For stalled uploads, inspect file access, connectivity, capacity and the library's error. Application `Upload failure` logs include phase, offset, elapsed time, browser byte counters and error code. Browser bytes do not prove server persistence. Retry failed conversion after reading its reported cause.
 
-HARS CI runs the Rust checks and tests, original ccnc client compatibility and upload fault injection, a Python/Rust replay conversion comparison, and native amd64/aarch64 image builds with FFmpeg-absence, container boot and TLS checks. Browser UI checks run outside CI. Actual Home Assistant performance and native Android file selection depend on the environment.
+HARS CI runs the Rust checks and tests, original ccnc client compatibility and upload fault injection, a Python/Rust replay conversion comparison, and native amd64/aarch64 image builds with FFmpeg-absence, container boot and TLS checks. Browser UI checks run in the required CI check `Browser checks`. Actual Home Assistant performance and native Android file selection depend on the environment.
 
 The bundled openpilot schema may need updating for sufficiently different log formats. See [schema licensing](../reference/python/roadviewer/schema/OPENPILOT-LICENSE) and the historical [changelog](CHANGELOG.md).
 

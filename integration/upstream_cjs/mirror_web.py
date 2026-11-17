@@ -1,4 +1,4 @@
-"""Fill OUT/roadviewer/app/web with what a running HARS serves for every preserved web file, so
+"""Fill OUT/roadviewer/app/web with what a running HARS serves for every HARS-owned web file, so
 that a preserved browser test that reads its pages from disk (tests/segment_peek.cjs) runs
 against HARS's output when started with OUT as its working directory.
 usage: mirror_web.py SERVER WEB RECORD OUT"""

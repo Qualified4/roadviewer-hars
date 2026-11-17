@@ -90,7 +90,7 @@ def free(port):
 
 
 def start(binary, data, ports, crash=None):
-    env = {**os.environ, "HARS_DATA": str(data), "HARS_WEB": str(ROOT / "reference/python/roadviewer/app/web"),
+    env = {**os.environ, "HARS_DATA": str(data), "HARS_WEB": str(ROOT / "web"),
            "HARS_INGRESS_ONLY": "0", "HARS_BIND": f"127.0.0.1:{ports[0]}", "HARS_DEVICE_BIND": f"127.0.0.1:{ports[1]}",
            "RUST_LOG": "off"}
     env.pop("HARS_CRASH_POINT", None)

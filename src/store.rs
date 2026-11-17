@@ -183,7 +183,7 @@ impl Store {
         anyhow::ensure!(
             processing["concurrency"]
                 .as_u64()
-                .is_some_and(|v| (1..=4).contains(&v))
+                .is_some_and(|v| (1..=16).contains(&v))
                 && processing["auto_convert"].is_boolean()
                 && processing["keep_original_video"].is_boolean(),
             "invalid processing settings"

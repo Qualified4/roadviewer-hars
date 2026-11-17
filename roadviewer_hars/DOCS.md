@@ -1,8 +1,8 @@
 # 설치 및 사용
 
-> **Rust 기반 Road Viewer 2.x의 prerelease(alpha)입니다. 아직 정식 출시 전이며 운영 전환 검증이 진행 중입니다.** 기존 Python Road Viewer 1.x 옆에 병행 설치해 시험하는 용도이며, Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)는 별도로 계속 유지됩니다. 기존 Python 앱과 데이터·장치 인증·아카이브 경로를 공유하지 않습니다. 전체 기능·실제 로그·장치·HAOS 검증 전에는 운영 전환을 하지 않습니다.
+> **Rust로 다시 구현한 Road Viewer 2.x입니다.** Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)의 후속이며, 1.x 저장소에는 더 이상 새 기능이 추가되지 않습니다. 1.x 앱과 slug·데이터·장치 인증·아카이브 경로를 공유하지 않는 별도 앱이므로, 1.x에서 옮겨 오려면 [전환 절차](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md)를 따르세요. 확인하지 못한 환경과 남은 위험은 [구현·검증 현황](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md)에 있습니다.
 >
-> 설치 후에도 외부 HTTPS 포트는 기본 비활성(null)이며 자동 시작도 기본 비활성입니다. 테스트할 때만 기존 운영 포트와 다른 포트를 지정하세요. `device_https_enabled`를 켜려면 `/ssl`의 인증서·키 파일이 필요합니다. Ingress는 외부 업로드 포트와 별도로 동작합니다.
+> 외부 HTTPS(장치 업로드) 포트는 기본 비활성(null)이며 앱은 호스트와 함께 자동으로 시작합니다. 장치 업로드에 쓸 포트는 직접 지정하고, 같은 호스트의 다른 앱이 쓰는 포트와 겹치지 않게 하세요. `device_https_enabled`를 켜려면 `/ssl`의 인증서·키 파일이 필요합니다. Ingress는 외부 업로드 포트와 별도로 동작합니다.
 >
 > 원본 앱과 같은 정책으로 기록 폴더와 전송/내보내기 임시 파일은 HA 앱 백업에서 제외합니다. 백업에 영상·주행 기록까지 들어 있다고 가정하면 안 됩니다. 인증·설정 보존과 데이터 별도 백업/아카이빙을 구분해야 합니다.
 >
@@ -30,7 +30,7 @@
 
 ## 설치와 접속
 
-Home Assistant 앱 스토어의 저장소에 `https://github.com/Qualified4/roadviewer-hars`를 추가하고 **Road Viewer HARS**(앱 스토어·사이드바 표시 이름)를 설치·시작합니다. 자동 시작은 기본으로 꺼져 있습니다(`boot: manual`). **웹 UI 열기** 또는 사이드바로 접속합니다. Home Assistant 버전에 따라 ‘앱’이 ‘애드온’으로 표시됩니다. HACS용 통합 구성요소가 아닙니다.
+Home Assistant 앱 스토어의 저장소에 `https://github.com/Qualified4/roadviewer-hars`를 추가하고 **Road Viewer**(앱 스토어·사이드바 표시 이름)를 설치·시작합니다. 자동 시작은 기본으로 켜져 있습니다(`boot: auto`). **웹 UI 열기** 또는 사이드바로 접속합니다. Home Assistant 버전에 따라 ‘앱’이 ‘애드온’으로 표시됩니다. HACS용 통합 구성요소가 아닙니다.
 
 설치·업데이트는 GHCR에 미리 빌드한 이미지(`ghcr.io/qualified4/roadviewer-hars`)를 내려받습니다. 지원 플랫폼은 **amd64(Intel/AMD 64비트)**와 **aarch64(ARM 64비트)**이며, 기기에 맞는 이미지 하나만 받습니다. 여러 플랫폼을 배포해도 다른 플랫폼의 이미지까지 다운로드하지 않습니다. 32비트 ARM과 i386은 지원하지 않습니다.
 
@@ -453,7 +453,7 @@ Home Assistant 앱 백업에서는 다음을 제외합니다.
 
 업로드 실패 시 파일 접근 상태·네트워크·저장공간을 확인하세요. 전송 중 15초 동안 진척이 없으면 해당 조각을 중단하고 1초 후부터 최대 5회 재시도합니다. 재시도 사이 대기는 최대 4초이며, 느려도 전송이 계속되는 연결은 유지합니다. 화면에는 파일 읽기·전송 확인·서버 응답 대기를 구분해 표시합니다. 진행률은 서버가 확인한 용량 기준입니다. 앱 로그의 `Upload failure`에는 실패 단계, 전송 위치, 경과 시간(`elapsedMs`), 브라우저 전송량(`loaded`/`total`), 오류 코드(`errorCode`)가 남습니다. 브라우저 전송량은 서버 저장 완료를 뜻하지 않습니다. 변환 실패는 목록에 표시되는 오류와 앱 로그를 확인한 뒤 다시 변환할 수 있습니다.
 
-GitHub Actions(**HARS CI**)는 Rust 검사와 테스트, 원본 ccnc 클라이언트 호환·업로드 장애 주입 검사, Python과 Rust의 재생 변환 대조, amd64/aarch64 이미지 빌드와 FFmpeg 잔존·컨테이너 기동·TLS 검사를 실행합니다. 브라우저 화면 검사는 CI 밖에서 실행합니다. 실제 Home Assistant 장비의 처리 성능과 모바일 네이티브 파일 선택창은 환경에 따라 다릅니다.
+GitHub Actions(**HARS CI**)는 Rust 검사와 테스트, 원본 ccnc 클라이언트 호환·업로드 장애 주입 검사, Python과 Rust의 재생 변환 대조, amd64/aarch64 이미지 빌드와 FFmpeg 잔존·컨테이너 기동·TLS 검사를 실행합니다. 브라우저 화면 검사는 필수 CI `Browser checks`로 실행합니다. 실제 Home Assistant 장비의 처리 성능과 모바일 네이티브 파일 선택창은 환경에 따라 다릅니다.
 
 포함된 cereal/car 스키마는 사용 중인 openpilot 체크아웃을 기반으로 합니다. 다른 브랜치의 로그 형식과 차이가 크면 스키마 갱신이 필요할 수 있습니다. 스키마와 UI 리소스의 라이선스는 [OPENPILOT-LICENSE](../reference/python/roadviewer/schema/OPENPILOT-LICENSE)를 참고하세요.
 

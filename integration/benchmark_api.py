@@ -61,7 +61,7 @@ async def measure(kind,rust,base,legacy,count):
         env={**os.environ,"RV_DATA":str(data),"RV_INGRESS_ONLY":"0","RV_DEVICE_HOST_PORT":"0","RV_ARCHIVE_OPTIONS_JSON":json.dumps({"archive_enabled":False,"archive_path":"","archive_gdrive_fill_tracks":False})}
         command=[sys.executable,"-m","gunicorn","--chdir",str(legacy/"app"),"--bind",url.removeprefix("http://"),"--workers","1","--threads","8","server:app"]
     else:
-        env={**os.environ,"HARS_DATA":str(data),"HARS_WEB":str(ROOT/"reference/python/roadviewer/app/web"),"HARS_INGRESS_ONLY":"0","HARS_BIND":url.removeprefix("http://"),"HARS_DEVICE_BIND":"127.0.0.1:"+str(port())}
+        env={**os.environ,"HARS_DATA":str(data),"HARS_WEB":str(ROOT/"web"),"HARS_INGRESS_ONLY":"0","HARS_BIND":url.removeprefix("http://"),"HARS_DEVICE_BIND":"127.0.0.1:"+str(port())}
         command=[rust]
     process=subprocess.Popen(command,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     peak=0;stopped=False
