@@ -130,8 +130,15 @@ impl Jobs {
             if self.busy(record).await {
                 continue;
             }
+            // A job deferred for its archive waits for the archiver to queue it again once the archive
+            // answers: picked up here it would sit in the queue under the deferral warning, and loop
+            // through the same deferral while the archive is away.
+            let waiting = |m: &Value| m["status"] == "unconverted" && m["deferred"] == "storage";
             let eligible = row["status"] == "queued"
-                || (row["status"] == "unconverted" && automatic && row["auto_excluded"] != true);
+                || (row["status"] == "unconverted"
+                    && automatic
+                    && row["auto_excluded"] != true
+                    && !waiting(&row));
             if !eligible {
                 continue;
             }
@@ -141,7 +148,8 @@ impl Jobs {
             let Ok(mut meta) = self.store.meta(record).await else {
                 continue;
             };
-            if !matches!(meta["status"].as_str(), Some("queued" | "unconverted")) {
+            if !matches!(meta["status"].as_str(), Some("queued" | "unconverted")) || waiting(&meta)
+            {
                 continue;
             }
             let manual = meta["manual_conversion"] == true;

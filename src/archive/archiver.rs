@@ -427,9 +427,12 @@ impl Archive {
         };
         if a.connection.is_none() {
             let me = self.me.clone();
-            let on_change: super::drive::OnChange = Arc::new(move |_| {
+            let on_change: super::drive::OnChange = Arc::new(move |granted| {
                 if let Some(me) = me.upgrade() {
                     lock(&me.st).last_auth_error = None;
+                    if granted {
+                        me.requeue_when_storage_answers();
+                    }
                 }
             });
             a.connection = Some(DriveConnection::with_interval_unit(
@@ -488,6 +491,7 @@ impl Archive {
         lock(&self.st).needs_activation = true;
         let me = self.arc();
         tokio::spawn(async move { me.run_loop().await });
+        self.requeue_when_storage_answers();
         self.start_track_fill();
     }
 
@@ -736,16 +740,48 @@ impl Archive {
         rows
     }
 
+    /// Whether the archive the recordings were stored with answers right now.
+    async fn storage_answers(&self) -> bool {
+        match &*self.backend() {
+            WriteBackend::Drive(drive) => drive.read_state().await.state == State::Connected,
+            WriteBackend::Nas(nas) => self.nas_available(nas).await,
+        }
+    }
+
+    /// Queues the deferred conversions as soon as the archive answers, without waiting for the next cycle
+    /// (hours away, and a full interval after a start). It only changes conversion states: nothing is
+    /// archived, moved or deleted. Gives up quietly while the archive stays away; the cycle still does it.
+    pub(crate) fn requeue_when_storage_answers(&self) {
+        let me = self.arc();
+        tokio::spawn(async move {
+            for _ in 0..30 {
+                if me.stopping() {
+                    return;
+                }
+                if me.storage_answers().await {
+                    me.requeue_deferred().await;
+                    return;
+                }
+                tokio::time::sleep(Duration::from_secs(2)).await;
+            }
+        });
+    }
+
     /// Conversions deferred while the archive was unreachable, now that it answers (Python `requeue_deferred`).
     pub(crate) async fn requeue_deferred(&self) -> u64 {
         let automatic = self.host.store.processing.read().await["auto_convert"] == true;
+        // A row already queued under the mark was picked up by a version that did not wait for the archive:
+        // it keeps its place in the queue and only loses the stale warning.
+        let due = |m: &Value| {
+            m["deferred"] == "storage"
+                && matches!(m["status"].as_str(), Some("unconverted" | "queued"))
+        };
         let mut rows = Vec::new();
         for id in self.host.ids().await {
             if let Some(m) = self.host.meta(&id).await
-                && m["deferred"] == "storage"
-                && m["status"] == "unconverted"
-                && m["auto_excluded"] != true
-                && (automatic || m["manual_conversion"] == true)
+                && due(&m)
+                && (m["status"] == "queued"
+                    || m["auto_excluded"] != true && (automatic || m["manual_conversion"] == true))
             {
                 rows.push((m["uploaded"].as_f64().unwrap_or(0.), id));
             }
@@ -758,12 +794,14 @@ impl Archive {
             let Some(mut m) = self.host.meta(&id).await else {
                 continue;
             };
-            if m["deferred"] != "storage" || m["status"] != "unconverted" {
+            if !due(&m) {
                 continue;
             }
-            m["status"] = json!("queued");
+            if m["status"] != "queued" {
+                m["status"] = json!("queued");
+                m["queued_at"] = json!(crate::store::now());
+            }
             m["error"] = Value::Null;
-            m["queued_at"] = json!(crate::store::now());
             if let Some(o) = m.as_object_mut() {
                 o.remove("deferred");
             }
