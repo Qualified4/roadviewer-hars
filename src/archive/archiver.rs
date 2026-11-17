@@ -430,8 +430,10 @@ impl Archive {
             let on_change: super::drive::OnChange = Arc::new(move |granted| {
                 if let Some(me) = me.upgrade() {
                     lock(&me.st).last_auth_error = None;
+                    // The sign-in has just probed Drive: asking again here would show the storage
+                    // as "checking" to a page that is waiting for it to settle.
                     if granted {
-                        me.requeue_when_storage_answers();
+                        tokio::spawn(async move { me.requeue_deferred().await });
                     }
                 }
             });
@@ -740,17 +742,17 @@ impl Archive {
         rows
     }
 
-    /// Whether the archive the recordings were stored with answers right now.
-    async fn storage_answers(&self) -> bool {
+    /// The state of the archive the recordings were stored with.
+    async fn storage_state(&self) -> State {
         match &*self.backend() {
-            WriteBackend::Drive(drive) => drive.read_state().await.state == State::Connected,
-            WriteBackend::Nas(nas) => self.nas_available(nas).await,
+            WriteBackend::Drive(drive) => drive.read_state().await.state,
+            WriteBackend::Nas(nas) => nas.probe(false).await.state,
         }
     }
 
-    /// Queues the deferred conversions as soon as the archive answers, without waiting for the next cycle
-    /// (hours away, and a full interval after a start). It only changes conversion states: nothing is
-    /// archived, moved or deleted. Gives up quietly while the archive stays away; the cycle still does it.
+    /// After a start: queues the deferred conversions once the archive answers, without waiting for the
+    /// first cycle (a full interval away). It only changes conversion states: nothing is archived, moved
+    /// or deleted. An archive that is away or signed out is left to the cycle and to the next sign-in.
     pub(crate) fn requeue_when_storage_answers(&self) {
         let me = self.arc();
         tokio::spawn(async move {
@@ -758,11 +760,14 @@ impl Archive {
                 if me.stopping() {
                     return;
                 }
-                if me.storage_answers().await {
-                    me.requeue_deferred().await;
-                    return;
+                match me.storage_state().await {
+                    State::Connected => {
+                        me.requeue_deferred().await;
+                        return;
+                    }
+                    State::Checking => tokio::time::sleep(Duration::from_secs(2)).await,
+                    _ => return,
                 }
-                tokio::time::sleep(Duration::from_secs(2)).await;
             }
         });
     }
