@@ -437,7 +437,8 @@ struct Sequence {
 
 fn h264_sequence(sps: &[u8]) -> anyhow::Result<Sequence> {
     let mut b = Bits::new(sps.get(1..).context("truncated parameter set")?);
-    let chroma = h264_until_gaps(&mut b)?;
+    let chroma = h264_until_references(&mut b)?;
+    b.ue()?;
     b.bit()?;
     let width_mbs = u64::from(b.ue()?) + 1;
     let height_units = u64::from(b.ue()?) + 1;
@@ -480,8 +481,8 @@ fn h264_sequence(sps: &[u8]) -> anyhow::Result<Sequence> {
     })
 }
 
-/// Reads an SPS up to `gaps_in_frame_num_value_allowed_flag`; returns `chroma_format_idc`.
-fn h264_until_gaps(b: &mut Bits) -> anyhow::Result<u32> {
+/// Reads an SPS up to `max_num_ref_frames`; returns `chroma_format_idc`.
+fn h264_until_references(b: &mut Bits) -> anyhow::Result<u32> {
     let profile = b.bits(8)?;
     b.bits(16)?;
     b.ue()?;
@@ -529,24 +530,52 @@ fn h264_until_gaps(b: &mut Bits) -> anyhow::Result<u32> {
         }
         _ => {}
     }
-    b.ue()?;
     Ok(chroma)
 }
 
-/// The SPS with `gaps_in_frame_num_value_allowed_flag` set: a fresh `rusty_h264` decoder then
-/// gives a P picture grey pictures for the references it lacks, which it otherwise refuses.
-/// Nothing else reads the flag, so its slices parse as before.
-fn h264_with_gaps(sps: &[u8]) -> Option<Vec<u8>> {
+/// Bytes of grey reference pictures a restart probe may make (`h264_probe_sps`), at least one
+/// picture: 5 at 1920x1080, 1 at 4096x2160, and the stream's own count at 526x330.
+const PROBE_REFERENCE_BYTES: u64 = 16 * 1024 * 1024;
+
+/// The SPS a restart probe (`finishes`) decodes with. `gaps_in_frame_num_value_allowed_flag` is
+/// set: a fresh `rusty_h264` decoder then gives a P picture grey pictures for the references it
+/// lacks, which it otherwise refuses; nothing else reads the flag. `max_num_ref_frames` is
+/// lowered so that those pictures take at most `PROBE_REFERENCE_BYTES`: with fewer references a
+/// slice decodes the same macroblocks or fails, never the other way round
+/// (docs/hars/THUMBNAIL-DECODER.md, "Memory").
+pub(super) fn h264_probe_sps(sps: &[u8]) -> Option<Vec<u8>> {
     let mut b = Bits {
         rbsp: h264_rbsp(sps.get(1..)?),
         at: 0,
     };
-    h264_until_gaps(&mut b).ok()?;
-    let byte = b.rbsp.get_mut(b.at / 8)?;
-    *byte |= 0x80 >> (b.at % 8);
+    h264_until_references(&mut b).ok()?;
+    let references_at = b.at;
+    let references = u64::from(b.ue().ok()?);
+    b.bit().ok()?;
+    let rest = b.at;
+    let width = u64::from(b.ue().ok()?) + 1;
+    let height = (u64::from(b.ue().ok()?) + 1) * if b.bit().ok()? == 1 { 1 } else { 2 };
+    let picture = width.saturating_mul(height).saturating_mul(16 * 16 * 3 / 2);
+    let references = references.min((PROBE_REFERENCE_BYTES / picture).max(1));
+    let bit = |i: usize| (b.rbsp[i / 8] >> (7 - i % 8)) & 1 == 1;
+    // The last set bit is the stop bit; nothing after it is read.
+    let end = (rest..b.rbsp.len() * 8).rev().find(|i| bit(*i))?;
+    let mut bits: Vec<bool> = (0..references_at).map(bit).collect();
+    let code = references + 1;
+    let length = 63 - code.leading_zeros();
+    bits.extend((0..length).map(|_| false));
+    bits.extend((0..=length).rev().map(|i| (code >> i) & 1 == 1));
+    bits.push(true);
+    bits.extend((rest..end).map(bit));
+    bits.push(true);
+    let rbsp = bits.chunks(8).map(|c| {
+        c.iter()
+            .enumerate()
+            .fold(0u8, |v, (i, set)| v | (u8::from(*set) << (7 - i)))
+    });
     let mut out = vec![sps[0]];
     let mut zeros = 0;
-    for &v in &b.rbsp {
+    for v in rbsp {
         if zeros >= 2 && v <= 3 {
             out.push(3);
             zeros = 0;
@@ -655,7 +684,7 @@ pub struct Work {
     /// Samples given to a decoder, a stretch decoded again counted again.
     pub decoded: usize,
     /// Samples read before decoding to check the stream (`shortcuts`), and to probe the sample
-    /// before a restart.
+    /// before each H.264 restart candidate.
     pub surveyed: usize,
     /// The samples a fresh decoder started at.
     pub restarts: Vec<usize>,
@@ -666,7 +695,7 @@ pub struct Work {
 
 /// The RBSP `rusty_h264` reads (`rusty_h264_common::nal::emulation_unprevent`): an
 /// emulation-prevention byte is dropped only before a byte up to 3.
-fn h264_rbsp(ebsp: &[u8]) -> Vec<u8> {
+pub(super) fn h264_rbsp(ebsp: &[u8]) -> Vec<u8> {
     let mut out = Vec::with_capacity(ebsp.len());
     let mut zeros = 0;
     for (i, &b) in ebsp.iter().enumerate() {
@@ -724,7 +753,7 @@ fn hevc_irap_slice_type(nal: &[u8], pps: u8, extra: u8) -> Option<u32> {
 ///    slice is an I slice starting the picture, and for H.264 every slice is a reference;
 /// 5. for H.264 sample `s - 1` ends with its picture finished, since `rusty_h264` refuses an IDR
 ///    after an unfinished picture: it holds one picture whose first slice starts it, and a fresh
-///    decoder finishes it (`finishes`, run at the restart).
+///    decoder finishes it (`finishes`, run here for every candidate).
 ///
 /// What this cannot see is a decoder panic in a skipped sample, which decoding every sample
 /// would have turned into a failure.
@@ -806,6 +835,8 @@ fn shortcuts(file: &mut File, track: &Track, work: &mut Work) -> anyhow::Result<
             else {
                 return Ok(None);
             };
+            // Kept though `rusty_h264` drops a redundant slice having changed only the POC
+            // state, which an IDR picture resets: no stream with such slices was ever compared.
             if pps.redundant_pic_cnt_present_flag {
                 return Ok(None);
             }
@@ -830,6 +861,11 @@ fn shortcuts(file: &mut File, track: &Track, work: &mut Work) -> anyhow::Result<
             irap_pps = (pps.id, pps.num_extra_slice_header_bits);
         }
     }
+    let probe = if hevc {
+        None
+    } else {
+        set(7).and_then(|s| h264_probe_sps(s))
+    };
     let len = file.metadata()?.len();
     let mut bytes = Vec::new();
     let mut starts = Vec::with_capacity(track.samples.len());
@@ -905,36 +941,42 @@ fn shortcuts(file: &mut File, track: &Track, work: &mut Work) -> anyhow::Result<
                     && hevc_irap_slice_type(slices[0], irap_pps.0, irap_pps.1) == Some(2)
             }
         };
+        // Probed here, before any picture is decoded, so the probe never shares the memory
+        // limit with a decoder holding the stream's references.
+        let start = start
+            && match &probe {
+                None => track.codec == Codec::Hevc,
+                Some(sps) => {
+                    work.surveyed += 1;
+                    finishes(file, track, sps, starts.len() - 1, &mut bytes)?
+                }
+            };
         starts.push(start);
     }
     Ok(Some(starts))
 }
 
-/// Whether a fresh `rusty_h264` decoder, its missing references made grey (`h264_with_gaps`),
-/// finishes the one picture of sample `index` without an error. Slices parse the same whatever
-/// reference pictures a decoder holds, so the decoder that went through every sample ends that
-/// sample with the picture finished or after an error that replaced it: either way it meets the
-/// next IDR picture as a fresh one does.
-fn finishes(file: &mut File, track: &Track, index: usize, work: &mut Work) -> anyhow::Result<bool> {
-    let Some(sps) = track
-        .sets
-        .iter()
-        .find(|s| s[0] & 31 == 7)
-        .and_then(|s| h264_with_gaps(s))
-    else {
-        return Ok(false);
-    };
+/// Whether a fresh `rusty_h264` decoder given `sps` (`h264_probe_sps`, missing references made
+/// grey) finishes the one picture of sample `index` without an error. Slices parse the same
+/// whatever reference pictures a decoder holds, so the decoder that went through every sample
+/// ends that sample with the picture finished or after an error that replaced it: either way it
+/// meets the next IDR picture as a fresh one does. `bytes` is the caller's sample buffer.
+fn finishes(
+    file: &mut File,
+    track: &Track,
+    sps: &[u8],
+    index: usize,
+    bytes: &mut Vec<u8>,
+) -> anyhow::Result<bool> {
     let (position, size, _, _) = track.samples[index];
-    let mut bytes = vec![0u8; usize::try_from(size)?];
+    bytes.resize(usize::try_from(size)?, 0);
     file.seek(SeekFrom::Start(position))?;
-    file.read_exact(&mut bytes)?;
-    work.surveyed += 1;
+    file.read_exact(bytes)?;
     let mut au = Vec::with_capacity(bytes.len() + 64);
     let sets = track.sets.iter().filter(|s| s[0] & 31 != 7);
-    for nal in std::iter::once(&sps)
-        .chain(sets)
-        .map(Vec::as_slice)
-        .chain(units(&bytes, track.length_size)?)
+    for nal in std::iter::once(sps)
+        .chain(sets.map(Vec::as_slice))
+        .chain(units(bytes, track.length_size)?)
     {
         au.extend_from_slice(&[0, 0, 0, 1]);
         au.extend_from_slice(nal);
@@ -947,29 +989,17 @@ fn finishes(file: &mut File, track: &Track, index: usize, work: &mut Work) -> an
 /// (`shortcuts`) before the first sample presented at `wanted`, so the samples skipped present
 /// before it.
 fn restart(
-    file: &mut File,
     track: &Track,
     starts: &[bool],
     from: usize,
     wanted: f64,
     time: impl Fn(i64) -> f64,
-    work: &mut Work,
-) -> anyhow::Result<Option<usize>> {
-    let Some(needed) = (from..track.samples.len())
-        .find(|i| time(track.samples[*i].2 + track.samples[*i].3) >= wanted - SKIP_MARGIN)
-    else {
-        return Ok(None);
-    };
-    let Some(start) = (from + 1..=needed)
+) -> Option<usize> {
+    let needed = (from..track.samples.len())
+        .find(|i| time(track.samples[*i].2 + track.samples[*i].3) >= wanted - SKIP_MARGIN)?;
+    (from + 1..=needed)
         .rev()
         .find(|i| starts.get(*i) == Some(&true))
-    else {
-        return Ok(None);
-    };
-    if track.codec == Codec::H264 && !finishes(file, track, start - 1, work)? {
-        return Ok(None);
-    }
-    Ok(Some(start))
 }
 
 /// Decodes the first `limit` video samples of `path` and calls `each` with every picture FFmpeg
@@ -1067,8 +1097,7 @@ pub fn decode(
             && wanted.get() > planned
         {
             planned = wanted.get();
-            if let Some(start) = restart(&mut file, &track, starts, next, planned, time, &mut work)?
-            {
+            if let Some(start) = restart(&track, starts, next, planned, time) {
                 next = start;
                 began = start;
                 decoder = new_decoder(&track)?;

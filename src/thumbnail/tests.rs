@@ -396,20 +396,30 @@ fn hevc_skipping_needs_parsable_nal_units_and_no_reordering() {
     let base = temp.path().join("a.mp4");
     let mp4 = temp.path().join("camera.mp4");
     keyframed(&base, true, 20);
-    // A NAL unit whose header does not parse leaves its picture without a time.
+    // A NAL unit whose header does not parse leaves its picture without a time: a slice header
+    // too short to read, and a prefix SEI with the forbidden bit set, which only the header
+    // check refuses.
     let bytes = std::fs::read(&base).unwrap();
-    std::fs::write(
-        &mp4,
-        rewrite(&bytes, |i, mut nals| {
-            if i == 19 {
-                nals.insert(0, vec![0x80, 0x01]);
-            }
-            nals
-        }),
-    )
-    .unwrap();
-    let work = same(&mp4);
-    assert!(work.restarts.is_empty() && work.flushes == 0, "{work:?}");
+    for (at, nal) in [
+        (19, &[0x80, 0x01][..]),
+        (0, &[0xce, 0x01, 0x05, 0x05, 0x80]),
+    ] {
+        std::fs::write(
+            &mp4,
+            rewrite(&bytes, |i, mut nals| {
+                if i == at {
+                    nals.insert(0, nal.to_vec());
+                }
+                nals
+            }),
+        )
+        .unwrap();
+        let work = same(&mp4);
+        assert!(
+            work.restarts.is_empty() && work.flushes == 0,
+            "{at}: {work:?}"
+        );
+    }
     // B-frames with their composition offsets, then with the `ctts` box hidden.
     encoded(&base, true, 20, "bframes=3:b-pyramid=1");
     let mut bytes = std::fs::read(&base).unwrap();
@@ -424,4 +434,54 @@ fn hevc_skipping_needs_parsable_nal_units_and_no_reordering() {
     encoded(&base, true, 20, "open-gop=1");
     let work = same(&base);
     assert!(work.restarts.is_empty(), "{work:?}");
+}
+
+/// The first SPS of a two-picture x264 stream of `size` with `ref=16`.
+fn h264_sps(temp: &std::path::Path, size: &str) -> Vec<u8> {
+    let mp4 = temp.join(format!("{size}.mp4"));
+    let status = std::process::Command::new("ffmpeg")
+        .args(["-v", "error", "-nostdin", "-y", "-f", "lavfi", "-i"])
+        .arg(format!("testsrc2=size={size}:rate=20"))
+        .args(["-frames:v", "2", "-pix_fmt", "yuv420p", "-c:v", "libx264"])
+        .args(["-preset", "ultrafast", "-x264-params", "ref=16"])
+        .arg(&mp4)
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .status()
+        .unwrap();
+    assert!(status.success(), "fixture encoder failed");
+    let mp4 = std::fs::read(&mp4).unwrap();
+    let (at, _) = find(
+        &mp4,
+        &[STBL.as_slice(), &[b"stsd", b"avc1", b"avcC"]].concat(),
+    );
+    assert_eq!(mp4[at + 5] & 31, 1);
+    let n = u16::from_be_bytes([mp4[at + 6], mp4[at + 7]]) as usize;
+    mp4[at + 8..at + 8 + n].to_vec()
+}
+
+#[test]
+fn the_h264_restart_probe_holds_few_grey_references_on_large_pictures() {
+    let temp = tempfile::tempdir().unwrap();
+    let parsed = |sps: &[u8]| {
+        let rbsp = super::video::h264_rbsp(&sps[1..]);
+        format!("{:?}", rusty_h264_decoder::Sps::parse(&rbsp).unwrap())
+    };
+    // The grey pictures a probe makes take at most 16 MiB, and always one is allowed.
+    for (size, references) in [("4096x2160", 1), ("1920x1080", 5), ("526x330", 16)] {
+        let sps = h264_sps(temp.path(), size);
+        let probe = super::video::h264_probe_sps(&sps).unwrap();
+        let original = parsed(&sps);
+        assert!(original.contains("max_num_ref_frames: 16,"), "{original}");
+        let expected = original
+            .replace(
+                "max_num_ref_frames: 16,",
+                &format!("max_num_ref_frames: {references},"),
+            )
+            .replace(
+                "gaps_in_frame_num_allowed: false",
+                "gaps_in_frame_num_allowed: true",
+            );
+        assert_eq!(parsed(&probe), expected, "{size}");
+    }
 }
