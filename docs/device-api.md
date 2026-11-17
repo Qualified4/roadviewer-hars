@@ -23,6 +23,8 @@
 
 구현 기준: **Road Viewer 1.3.18**. 이 저장소는 서버와 웹 UI를 제공하며 호환 장치 업로더는 별도 저장소에서 관리합니다. 기존 브라우저 업로드와 Home Assistant Ingress는 유지됩니다.
 
+> 이 문서는 Python Road Viewer 1.x 기준 설명입니다. HARS 2.x는 Python 1.3.16의 API 라우트 53개를 구현하지만, Gunicorn·Flask·`tests/*.py` 테스트 명령 같은 구현·테스트 설명은 Python 1.x의 것입니다. HARS 2.x에서의 차이는 [구현·검증 현황](hars/STATUS.md), 테스트 방법은 [실행 및 테스트](hars/DEVELOPMENT.md)를 참고하세요. 데이터 경로는 HARS 기준(`/data/roadviewer-hars`)으로 적었습니다.
+
 공유 데이터 디렉터리는 **Gunicorn worker 1개와 여러 thread**를 전제로 합니다. 같은 디렉터리를 사용하는 worker나 서버 복제본을 추가하지 마세요.
 
 ## 배포와 HTTPS
@@ -73,7 +75,7 @@ Ingress의 **로그 업로드 → 외부 장치 연결 → 새 장치 연결**�
 
 장치는 두 값을 안전하게 영구 보관해야 합니다. UI/API에서 장기 키를 다시 조회할 수 없습니다. 응답을 잃으면 해당 장치를 연결 해제하고 새로 페어링합니다.
 
-서버는 `/data/roadviewer/.devices.json`에 256비트 루트 비밀값, 장치 기록, 재전송 방지 nonce와 완료 영수증을 저장합니다(권한 0600). 장치 키는 루트 비밀값과 고유 ID로 HMAC 파생하며 개별 키 원문은 보관하지 않습니다. 파일 손상 시 조용히 초기화하지 않습니다. 이 인증 설정은 백업 대상이며, 유출되면 모든 장치 키가 영향을 받습니다.
+서버는 `/data/roadviewer-hars/.devices.json`에 256비트 루트 비밀값, 장치 기록, 재전송 방지 nonce와 완료 영수증을 저장합니다(권한 0600). 장치 키는 루트 비밀값과 고유 ID로 HMAC 파생하며 개별 키 원문은 보관하지 않습니다. 파일 손상 시 조용히 초기화하지 않습니다. 이 인증 설정은 백업 대상이며, 유출되면 모든 장치 키가 영향을 받습니다.
 
 ## HMAC 요청 인증
 
@@ -370,7 +372,7 @@ docker run --rm -v "$PWD/tests:/tests:ro" --entrypoint python roadviewer:1.3.18 
 
 ## 관련 문서
 
-- [사용 설명서 한국어](../roadviewer/DOCS.md) · [English user guide](../roadviewer/DOCS.en.md)
+- [사용 설명서 한국어](../roadviewer_hars/DOCS.md) · [English user guide](../roadviewer_hars/DOCS.en.md)
 - [영문 API 문서](device-api.en.md)
 
 영상 검증은 전체 프레임 디코딩 대신 압축 프레임·디코더 헤더의 SHA-256과 패킷 수·로그 시간을 비교합니다. 포장 전후 데이터 보존을 확인하며 원본 자체의 모든 디코딩 오류를 검사하지는 않습니다.

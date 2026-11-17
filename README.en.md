@@ -2,6 +2,14 @@
 
 [한국어](README.md) · English
 
+> **This repository is Road Viewer 2.x, rebuilt in Rust. It is a prerelease (alpha), not yet officially released, and cutover validation is in progress.** See the [implementation and validation status](docs/hars/STATUS.md) (Korean) for the current version. No stable release or production cutover has been made.
+>
+> The Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha) remains maintained as a separate product. This app is meant to be installed next to the existing Python app for testing; the Home Assistant app store and sidebar show it as **Road Viewer HARS**. Features that are not ported never report success. Do not install the current build as a complete replacement for Python 1.x or move production uploads to it.
+>
+> The feature descriptions below follow Python Road Viewer 1.3.18. HARS 2.x serves the same web UI and implements the same API; intentional differences from Python are listed in the [implementation and validation status](docs/hars/STATUS.md#python과-의도적으로-다른-점) (Korean).
+>
+> [Implementation and validation status](docs/hars/STATUS.md) · [Side-by-side install, cutover and rollback](docs/hars/CUTOVER.md) · [Real HAOS validation](docs/hars/HAOS-VALIDATION.md) (Korean)
+
 Feature reference: **1.3.18**
 
 Upload openpilot driving logs and front/wide camera recordings to **replay video, road views and vehicle information graphs on the same timeline inside Home Assistant**.
@@ -20,8 +28,8 @@ Switch the right panel to the road view to compare a top-down view of lanes, pat
 
 ## Getting started
 
-1. Add `https://github.com/Qualified4/roadviewer-ha` under Home Assistant **Settings → Apps → App store → ⋮ → Repositories**. Some versions call apps “add-ons.”
-2. Install **Road Viewer**, start it and open its web UI.
+1. Add `https://github.com/Qualified4/roadviewer-hars` under Home Assistant **Settings → Apps → App store → ⋮ → Repositories**. Some versions call apps “add-ons.”
+2. Install the entry shown as **Road Viewer HARS** in the app store, start it and open its web UI. Automatic start is off by default (`boot: manual`), so start it yourself after the host restarts.
 3. On the **업로드** (Upload) tab, select files with **파일 추가** (Add files) or drag them into the upload area, then press **업로드** (Upload). Uploads keep running when you switch tabs; the header shows progress.
 4. When conversion finishes, press **재생** (Play) on the **로그** (Logs) tab. If automatic conversion is disabled, first press **변환** (Convert).
 
@@ -36,7 +44,7 @@ This is an **app-store repository, not a HACS integration**. The web UI uses Hom
 | `amd64` | `linux/amd64` | 64-bit Intel/AMD PCs, mini PCs and servers |
 | `aarch64` | `linux/arm64` | 64-bit ARM Home Assistant devices |
 
-Installation downloads **only the matching prebuilt GHCR image**, not every published architecture. ARM 32-bit and i386 are unsupported. Prebuilt images avoid compiling the application on your device. Home Assistant may show download/extraction progress; its presentation depends on Supervisor and is not an exact percentage of total installation time.
+Installation downloads **only the matching prebuilt GHCR image** (`ghcr.io/qualified4/roadviewer-hars`), not every published architecture. ARM 32-bit and i386 are unsupported. Prebuilt images avoid compiling the application on your device. Home Assistant may show download/extraction progress; its presentation depends on Supervisor and is not an exact percentage of total installation time. The image holds no FFmpeg, so the amd64 image is smaller than before FFmpeg was removed (local measurement: unpacked layers 580.9 MB → 120.6 MB, registry gzip 217.5 MB → 46.3 MB; [FFmpeg removal](docs/hars/FFMPEG-REMOVAL.md#이미지-전후-amd64-로컬), Korean).
 
 ## Supported uploads
 
@@ -90,6 +98,8 @@ Pairing supports code copy, remaining time and reissue. Codes last five minutes 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/roadviewer-device-pairing-dark.png"><img src="docs/images/roadviewer-device-pairing.png" alt="Road Viewer one-time pairing code dialog for a comma device" width="420"></picture>
 
 ## AI agent access (MCP)
+
+This section describes Python 1.x; see the [implementation and validation status](docs/hars/STATUS.md) (Korean) for differences in HARS 2.x.
 
 [roadviewer-mcp](https://github.com/Qualified4/roadviewer-mcp) is a local MCP server that lets clients such as Codex or Claude Code work with Road Viewer recordings. It signs in through the existing Home Assistant Ingress flow with a long-lived token and calls only the add-on's existing API, so nothing changes in the add-on and no port is opened or exposed. It supports searching and inspecting logs, bookmarks and storage status, time-window queries of replay data and vehicle telemetry, and video/log downloads (saved to a local directory, path returned). Writes are limited to adding or updating bookmarks and adding or removing tags; it never deletes, converts or changes settings. See that repository's README for installation and client registration.
 
@@ -156,7 +166,7 @@ Converting a log also stores its position once per second (about 1 KB per minute
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/roadviewer-video-minimap-dark.png"><img src="docs/images/roadviewer-video-minimap.png" alt="Small map over the driving video, under the speed and steering wheel readouts"></picture>
 
-The basemap is [OpenFreeMap](https://openfreemap.org)'s vector map built from OpenStreetMap data; no API key is needed. The layers button under the zoom buttons opens a **지도 표시** (map display) popover with two independent switches: **글자 숨기기** (hide labels) removes place and road names, place icons, road shields and one-way arrows while keeping the map's colours (such as the yellow main roads in light mode); **회색 지도** (grey map) switches to a calm grey style without 3D buildings, place icons, shields and arrows, keeping the names. With both on, only the drive lines stand out. The viewing browser fetches map tiles directly from OpenFreeMap, so requests for the area you look at go there. Positions are used only for the maps in the app and are never added to downloads, exports, the device API or archives. The routes in the screenshots are example routes along roads between public landmarks. See the [user guide](roadviewer/DOCS.en.md#drive-route-maps) for details.
+The basemap is [OpenFreeMap](https://openfreemap.org)'s vector map built from OpenStreetMap data; no API key is needed. The layers button under the zoom buttons opens a **지도 표시** (map display) popover with two independent switches: **글자 숨기기** (hide labels) removes place and road names, place icons, road shields and one-way arrows while keeping the map's colours (such as the yellow main roads in light mode); **회색 지도** (grey map) switches to a calm grey style without 3D buildings, place icons, shields and arrows, keeping the names. With both on, only the drive lines stand out. The viewing browser fetches map tiles directly from OpenFreeMap, so requests for the area you look at go there. Positions are used only for the maps in the app and are never added to downloads, exports, the device API or archives. The routes in the screenshots are example routes along roads between public landmarks. See the [user guide](roadviewer_hars/DOCS.en.md#drive-route-maps) for details.
 
 ## Organize segments with tags
 
@@ -247,45 +257,68 @@ MOVE deletes only the corresponding local file after remote transfer, integrity 
 
 Moved recordings **remain listed, playable, and downloadable**. Automatic local reclamation never deletes Drive files or recordings referencing them, including COPY references. Only explicit **Completely delete** can enqueue remote deletion. Unattributed deletion intents from older versions are retained without automatic execution.
 
-Outside Drive MOVE, the existing policy offers upload rejection or deletion of old unpinned segments after receipt and validation, never at reservation creation. Pins, active routes, and recordings referencing Drive are protected. See the [settings walkthrough](roadviewer/DOCS.en.md#reading-the-storage-screen). Manual move/copy-all first shows target files, size, and exclusions for confirmation; see the [manual-run safeguards](roadviewer/DOCS.en.md#manually-move-or-copy-all-eligible-data).
+Outside Drive MOVE, the existing policy offers upload rejection or deletion of old unpinned segments after receipt and validation, never at reservation creation. Pins, active routes, and recordings referencing Drive are protected. See the [settings walkthrough](roadviewer_hars/DOCS.en.md#reading-the-storage-screen). Manual move/copy-all first shows target files, size, and exclusions for confirmation; see the [manual-run safeguards](roadviewer_hars/DOCS.en.md#manually-move-or-copy-all-eligible-data).
 
 
 ## Storage, backups and updates
 
-Files reside under `/data/roadviewer` inside the app container. **Home Assistant app backups exclude original logs, videos and prepared data.** Keep originals separately. Processing/storage policies and device authentication configuration are included.
+Files reside under `/data/roadviewer-hars` inside the app container. **Home Assistant app backups exclude original logs, videos and prepared data.** Keep originals separately. Processing/storage policies and device authentication configuration are included.
 
 An update that changes the analysis format may clear prepared data and reprocess recordings. Rendering-only updates do not inherently require reconversion.
 
-The experimental **NAS archiving** option, enabled on the **저장공간** (Storage) tab, moves original videos and logs of converted recordings to network storage attached to Home Assistant with usage Share, freeing local space. It is off by default. Scheduled archiving moves pinned segments too (a manual move-all keeps them local), but NAS cleanup never removes them. The library and converted data stay local, an unreachable NAS never causes deletions, and there is no restore back to local storage. Files on the NAS are not part of Home Assistant backups. See [NAS archiving](roadviewer/DOCS.en.md#nas-archiving-experimental) for setup.
+The experimental **NAS archiving** option, enabled on the **저장공간** (Storage) tab, moves original videos and logs of converted recordings to network storage attached to Home Assistant with usage Share, freeing local space. It is off by default. Scheduled archiving moves pinned segments too (a manual move-all keeps them local), but NAS cleanup never removes them. The library and converted data stay local, an unreachable NAS never causes deletions, and there is no restore back to local storage. Files on the NAS are not part of Home Assistant backups. See [NAS archiving](roadviewer_hars/DOCS.en.md#nas-archiving-experimental) for setup.
 
-**Google Drive** can be used as the archive instead of a NAS (experimental, off by default). Enter the ID and secret of an OAuth client of your own in the app options, then press **Google Drive 연결** (Connect Google Drive) on the Storage tab and enter the displayed code on Google's device sign-in page. **연결 해제** (Disconnect) removes only this installation's token; records, local files and Drive files are unchanged. It defaults to copy (COPY) mode: verified copies go to Drive and local files are never deleted. Move (MOVE) mode, which deletes local originals, applies only when the Storage tab sets MOVE together with **검증 후 로컬 원본 삭제 허용** (allow deleting local originals after verification); there is no automatic Drive cleanup. Videos moved to Drive play through the app, which holds only the video being watched (up to 256 MB) in memory so seeks stay quick; nothing is written to disk, and it is freed after 10 minutes unwatched. The sign-in token is part of Home Assistant backups, so keep backups safe. See [Google Drive archiving](roadviewer/DOCS.en.md#google-drive-archiving-experimental).
+**Google Drive** can be used as the archive instead of a NAS (experimental, off by default). Enter the ID and secret of an OAuth client of your own in the app options, then press **Google Drive 연결** (Connect Google Drive) on the Storage tab and enter the displayed code on Google's device sign-in page. **연결 해제** (Disconnect) removes only this installation's token; records, local files and Drive files are unchanged. It defaults to copy (COPY) mode: verified copies go to Drive and local files are never deleted. Move (MOVE) mode, which deletes local originals, applies only when the Storage tab sets MOVE together with **검증 후 로컬 원본 삭제 허용** (allow deleting local originals after verification); there is no automatic Drive cleanup. Videos moved to Drive play through the app, which holds only the video being watched (up to 256 MB) in memory so seeks stay quick; nothing is written to disk, and it is freed after 10 minutes unwatched. The sign-in token is part of Home Assistant backups, so keep backups safe. See [Google Drive archiving](roadviewer_hars/DOCS.en.md#google-drive-archiving-experimental).
+
+Even with the same Drive account or NAS as Python 1.x, HARS 2.x writes only to its own location (the Drive folder `Road Viewer HARS`, a NAS sentinel owned by `roadviewer-hars`) and imports Python's archived records read-only. Real Google Drive and SMB mounts have not been validated yet ([sharing a Drive account or NAS](docs/hars/CUTOVER.md#같은-drive-계정nas를-함께-쓸-때), Korean).
 
 ## Documentation and validation
 
-Screenshots were captured on 2026-11-07 from version 1.0.11 using example data, in light and dark mode; the one matching your theme is shown. The three driving/wide introduction photos composite the earlier footage's video area into the new UI. Device, capacity, and pairing values are synthetic; the displayed code cannot connect a device. See the [screenshot guide](docs/images/README.en.md).
+Screenshots were captured on 2026-11-07 from version 1.0.11 using example data, in light and dark mode; the one matching your theme is shown. The three driving/wide introduction photos composite the earlier footage's video area into the new UI. Device, capacity, and pairing values are synthetic; the displayed code cannot connect a device. See the [screenshot guide](docs/images/README.en.md). The screenshots were taken with Python 1.x. HARS serves the Python 1.3.18 web files unchanged and changes only the displayed name and version to Road Viewer HARS and the HARS version.
 
-- [User guide](roadviewer/DOCS.en.md) · [한국어](roadviewer/DOCS.md): installation, playback, route maps, conversion, storage, backups and troubleshooting
+- [User guide](roadviewer_hars/DOCS.en.md) · [한국어](roadviewer_hars/DOCS.md): installation, playback, route maps, conversion, storage, backups and troubleshooting
 - [roadviewer-mcp](https://github.com/Qualified4/roadviewer-mcp): MCP server for AI agents, using only the existing Ingress login and API
 - [Device API v1](docs/device-api.en.md) · [한국어](docs/device-api.md): HTTPS, pairing/signing, upload recovery and tests without openpilot
 - [AppArmor security](docs/apparmor-security.en.md) · [한국어](docs/apparmor-security.md)
 - [Historical Android picker analysis](docs/android-multiple-file-fix/README.en.md) · [한국어](docs/android-multiple-file-fix/README.md)
-- [Current release notes](roadviewer/CHANGELOG.en.md) · [Full Korean history](roadviewer/CHANGELOG.md)
+- [Current release notes](roadviewer_hars/CHANGELOG.en.md) · [Full Korean history](roadviewer_hars/CHANGELOG.md): 2.0.0 in preparation and the full Python 1.x history
 
-`roadviewer/` is the Docker build context. GitHub Actions checks both architectures, Python dependencies, container vulnerabilities, real container HTTPS isolation, uploads, conversion and browser behavior. Actual Home Assistant devices and Android's native file picker may behave differently from browser tests.
+The repository root is the Docker build context (`Dockerfile`). It builds the Rust executable `roadviewer-hars` onto `debian:bookworm-slim` and serves the preserved Python 1.3.18 web files (`reference/python/roadviewer/app/web`) unchanged. The only runtime packages are `nginx` and `ca-certificates`; the image contains neither FFmpeg nor Python. GitHub Actions (**HARS CI**) runs the Rust checks (fmt, clippy, all tests), original ccnc client compatibility and upload fault injection, a Python/Rust replay conversion comparison, and the preserved-source (`scripts/verify_reference.py`), release-identity (`scripts/check_release.py`) and coexistence (`scripts/check_coexistence.py`) checks, and it builds the image on native amd64 and aarch64 runners with FFmpeg-absence, container boot and TLS checks. Browser UI checks run outside CI ([development and testing](docs/hars/DEVELOPMENT.md), Korean).
+
+The original Python history and MIT license are kept, and the reference code, tests, schema and UI are preserved under `reference/python`. This repository does not modify the original Python repository.
+
+### HARS technical documents (Korean)
+
+- [Feature and API inventory](docs/hars/inventory.json)
+- [Implementation and validation status](docs/hars/STATUS.md)
+- [Design and porting baseline](docs/hars/ARCHITECTURE.md)
+- [HAOS side-by-side install, cutover and rollback](docs/hars/CUTOVER.md) · [Real HAOS validation preparation](docs/hars/HAOS-VALIDATION.md)
+- [Running and testing](docs/hars/DEVELOPMENT.md)
+- [Validation evidence](docs/hars/VALIDATION.md) · [Preliminary API measurements](docs/hars/PERFORMANCE.md)
+- [Video format support](docs/hars/FORMAT-SUPPORT.md) · [FFmpeg removal](docs/hars/FFMPEG-REMOVAL.md)
+
+### Development
+
+Development run (Linux/WSL; needs Rust stable and `capnproto`. `ffmpeg` is not used by the product and is needed only for the tests' synthetic inputs and independent comparison):
+
+```sh
+cargo test --locked
+HARS_DATA=/tmp/hars-dev HARS_INGRESS_ONLY=0 cargo run --locked
+```
+
+The UI listens on `http://127.0.0.1:8099` and the internal device API listener on `127.0.0.1:8098`. UI change requests need `X-RoadViewer-Request: 1` in development mode too. External HTTPS uses a separate Nginx listener. The device API is not exposed on the UI listener.
 
 ### Prebuilt release workflow
 
-**Do not add `[skip ci]` to merge commits.** Main must run image verification and cache warming so subsequent PRs can use current caches.
+This repository does not create a stable `2.0.0` tag or Release. Publishing automation accepts only `2.0.0-alpha.N`, `beta.N` and `rc.N` prereleases ([stable release gate](docs/hars/ARCHITECTURE.md#정식-릴리스-게이트), Korean).
 
-The version comes from `roadviewer/config.yaml`. Full validation runs on the PR. Successful Python/browser/security/container tests produce both tested images as artifacts. Manual publication reuses these images without rebuilding. Ordinary branch pushes do not duplicate testing; `main` verifies the published image/source match and separately warms both platform build caches, Trivy databases, and browser caches. Warming is not another full PR test run or release-image publication.
+1. Set the version in `Cargo.toml`, `roadviewer_hars/config.yaml` and the `Dockerfile` `BUILD_VERSION` together; `scripts/check_release.py` checks that they match. Never reuse a published version. Web assets are cached for a year under versioned URLs, so the next publication must raise the version.
+2. Confirm that `main` is a validated commit with passing CI, then push a tag named after the version (for example `2.0.0-alpha.N`) on that commit. The push starts `.github/workflows/prerelease.yml` (**HARS prerelease**).
+3. The `gate` job runs `scripts/check_release.py --tag` (tag and version match), fmt, clippy and all tests.
+4. The `image` job builds on native amd64 and aarch64 runners and pushes `ghcr.io/qualified4/roadviewer-hars:<tag>-<arch>` only after the FFmpeg-absence check (`scripts/image_report.py --require-no-ffmpeg`) and `scripts/container_smoke.py` pass.
+5. The `manifest` job combines both images as `ghcr.io/qualified4/roadviewer-hars:<tag>` and creates a GitHub prerelease with `docs/hars/STATUS.md` as its notes. If either architecture fails, no manifest or prerelease is created.
+6. Ensure the GHCR package is public; Home Assistant cannot pull a private image. Without credentials, `docker manifest inspect ghcr.io/qualified4/roadviewer-hars:<tag>` should list both architectures.
 
-1. Update the app version, Dockerfile default, UI version and changelog on a release branch. Never reuse a published version.
-2. Push and open a PR against `main`. After full validation succeeds, manually run **Build, test and publish app** on that branch. It requires the latest successful PR validation for the current commit and uses that run/attempt's image artifacts.
-3. Ensure the GHCR package is public under **Packages → roadviewer-ha → Package settings → Change visibility → Public**. If public-access verification fails on a new package, make it public and rerun the failed publish job. Home Assistant does not need registry credentials.
-4. After publication and anonymous access/platform checks succeed, squash-merge the tested changes unchanged. Main verifies both image versions and source trees; a different squash commit ID is acceptable when file contents match. Publishing the version on main before the images exist can break installation/update checks.
+A published tag is never rewritten; fix problems in the next version. See [image build and publication](docs/hars/HAOS-VALIDATION.md#이미지-빌드게시-설정) (Korean) for details.
 
-Artifacts expire after seven days. If missing or the latest validation failed/cancelled, use **Re-run all jobs** on the PR. Rerunning only failed jobs can leave the new attempt without both image artifacts. If the tested PR merge tree differs from the release branch, synchronize with main and validate again. New commits cancel superseded PR validation.
-
-Temporary tags use `build-<validation-run>-<attempt>-amd64` / `arm64`. Release assembly references image digests; Home Assistant uses version tags. Existing versions are verified, not overwritten. For local source builds, follow the user guide's instructions to remove `image:` from the local app configuration.
-
-Road Viewer is distributed under the [MIT license](LICENSE). Raw driving logs/videos are not included in the repository; the introduction uses selected public screenshots. See [OPENPILOT-LICENSE](roadviewer/schema/OPENPILOT-LICENSE) for bundled schema and UI-resource licensing.
+Road Viewer is distributed under the [MIT license](LICENSE). Raw driving logs/videos are not included in the repository; the introduction uses selected public screenshots. See [OPENPILOT-LICENSE](reference/python/roadviewer/schema/OPENPILOT-LICENSE) for bundled schema and UI-resource licensing.

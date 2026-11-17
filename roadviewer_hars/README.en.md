@@ -2,6 +2,10 @@
 
 [한국어](README.md) · English
 
+> **A prerelease (alpha) of Road Viewer 2.x, rebuilt in Rust. It is not yet officially released, and cutover validation is in progress.** It is an independent app to install next to the existing Python Road Viewer 1.x for testing; the Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha) remains maintained separately. Do not move production uploads to it. External HTTPS is disabled by default.
+>
+> [Implementation and validation status](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) · [Side-by-side install, cutover and rollback](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md) · [Real HAOS validation](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/HAOS-VALIDATION.md) (Korean)
+
 Feature reference: **1.3.18**
 
 Replay and analyze openpilot logs with front/wide camera video inside Home Assistant.
@@ -46,7 +50,7 @@ See the [user guide](DOCS.en.md) · [한국어](DOCS.md), or the app's Documenta
 
 ## Platforms
 
-Supports `amd64` (64-bit Intel/AMD) and `aarch64` (64-bit ARM). Installation/update downloads only the matching prebuilt image. Download/extraction progress presentation depends on Home Assistant/Supervisor.
+Supports `amd64` (64-bit Intel/AMD) and `aarch64` (64-bit ARM). Installation/update downloads only the matching prebuilt image (`ghcr.io/qualified4/roadviewer-hars`). Download/extraction progress presentation depends on Home Assistant/Supervisor.
 
 ## MP4 storage and downloads
 

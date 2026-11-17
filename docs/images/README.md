@@ -44,4 +44,4 @@
 | [roadviewer-boundaries-probability.png](roadviewer-boundaries-probability.png) | 분석 패널 **차선·도로** 탭: 확률 모드 | 1.3.12 · 실제 주행 데이터(라이트: 낮 주행, 다크: 밤 주행 28초, 녹색 점선·주황 실선) |
 | [roadviewer-boundaries-distance.png](roadviewer-boundaries-distance.png) | 분석 패널 **차선·도로** 탭: y[0] 좌우 거리 모드 | 1.3.12 · 실제 주행 데이터(확률 모드와 같은 시각) |
 
-[메인 안내](../../README.md) · [사용 설명서](../../roadviewer/DOCS.md)
+[메인 안내](../../README.md) · [사용 설명서](../../roadviewer_hars/DOCS.md)

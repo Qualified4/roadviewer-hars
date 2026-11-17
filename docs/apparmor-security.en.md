@@ -1,5 +1,7 @@
 # AppArmor security policy
 
+> This describes the Python 1.x app's policy; HARS 2.x does not yet have this profile.
+
 <!-- toc -->
 **Contents**
 

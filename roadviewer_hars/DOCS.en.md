@@ -1,5 +1,13 @@
 # Installation and use
 
+> **This is a prerelease (alpha) of Road Viewer 2.x, rebuilt in Rust. It is not yet officially released, and cutover validation is in progress.** It is meant to be installed next to the existing Python Road Viewer 1.x for testing; the Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha) remains maintained separately. It shares no data, device authentication or archive location with the Python app. Do not cut production over before full feature, real log, device and HAOS validation.
+>
+> After installation the external HTTPS port stays disabled (null) and automatic start is off by default. Assign a port different from the production one only while testing. `device_https_enabled` requires certificate and key files under `/ssl`. Ingress works independently of the external upload port.
+>
+> As in the original app, recording folders and transfer/export temporary files are excluded from Home Assistant app backups. Do not assume a backup contains videos or driving logs; keep authentication/settings retention separate from data backup or archiving.
+>
+> The guide below follows Python Road Viewer 1.3.18. HARS 2.x serves the same web UI and implements the same API; intentional differences from Python are listed in the [implementation and validation status](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) (Korean). [Cutover and rollback](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md) · [Real HAOS validation](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/HAOS-VALIDATION.md)
+
 This guide describes **1.3.18**.
 
 [한국어](DOCS.md) · English
@@ -8,11 +16,13 @@ Start with **업로드 tab → Add files → Upload → Convert → Play**. The 
 
 ## Installation and access
 
-Add `https://github.com/Qualified4/roadviewer-ha` to the Home Assistant app store repositories, install **Road Viewer**, start it, then open its web UI. Some Home Assistant versions call apps “add-ons.” This is not a HACS integration. Home Assistant Container does not provide the Supervisor app store.
+Add `https://github.com/Qualified4/roadviewer-hars` to the Home Assistant app store repositories, install the entry shown as **Road Viewer HARS** (its app store and sidebar name), start it, then open its web UI. Automatic start is off by default (`boot: manual`). Some Home Assistant versions call apps “add-ons.” This is not a HACS integration. Home Assistant Container does not provide the Supervisor app store.
 
-Supported platforms are **amd64** (64-bit Intel/AMD) and **aarch64** (64-bit ARM). Installation downloads only the matching prebuilt GHCR image. ARM 32-bit and i386 are unsupported. Home Assistant may display download/extraction progress; it is not a reliable estimate of total startup time.
+Supported platforms are **amd64** (64-bit Intel/AMD) and **aarch64** (64-bit ARM). Installation downloads only the matching prebuilt GHCR image (`ghcr.io/qualified4/roadviewer-hars`). ARM 32-bit and i386 are unsupported. Home Assistant may display download/extraction progress; it is not a reliable estimate of total startup time.
 
 The UI uses Home Assistant Ingress, including remote access through your existing Home Assistant address. It needs no separate public Road Viewer port. External device HTTPS is optional and separate.
+
+This paragraph describes Python 1.x. HARS 2.x builds from the `Dockerfile` at the repository root (the `roadviewer_hars/` folder has no Dockerfile); see [running and testing](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/DEVELOPMENT.md) (Korean) for development runs.
 
 For local source builds, copy `roadviewer` to `/addons/roadviewer` and remove `image:` from that copy's `config.yaml`. Keeping it selects the published image instead of the local source.
 
@@ -364,7 +374,9 @@ Speed is based on `carState.vEgo`, not necessarily the dashboard speed. The whee
 
 ## Storage, cleanup and backups
 
-The container data root is `/data/roadviewer`, not necessarily the same path on the host. UUID recording directories contain originals, metadata and prepared files. Replay data is gzip-compressed JSON. From 1.0.7 it uses replay format 2, which thins near-straight lane/path coordinates and repeated values, roughly halving the prepared data per segment; older data is rewritten in the background, one log at a time, after the app starts. Data converted by 0.3.14 or earlier is migrated to compressed storage in the background; older application versions may need reconversion to read it.
+The storage-format migrations (replay format 2, compression of data converted by 0.3.14 or earlier) and update behavior in this section describe Python 1.x; see the [implementation and validation status](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) (Korean) for differences in HARS 2.x. Data paths and settings file names are those of HARS.
+
+The container data root is `/data/roadviewer-hars`, not necessarily the same path on the host. UUID recording directories contain originals, metadata and prepared files. Replay data is gzip-compressed JSON. From 1.0.7 it uses replay format 2, which thins near-straight lane/path coordinates and repeated values, roughly halving the prepared data per segment; older data is rewritten in the background, one log at a time, after the app starts. Data converted by 0.3.14 or earlier is migrated to compressed storage in the background; older application versions may need reconversion to read it.
 
 The cleanup timer checks incomplete uploads every minute; 15 minutes without progress expires them. **저장소 즉시 정리**, under **업로드가 중단되었나요?** on the Upload tab, force-cleans incomplete browser uploads before that timeout, potentially interrupting another browser's upload. It preserves registered recordings, active registration and valid device upload sessions.
 
@@ -372,11 +384,11 @@ Home Assistant app backups exclude originals (ZST, TS, HEVC), MP4s, analysis/gra
 
 | State | Container path |
 |---|---|
-| Processing options | `/data/roadviewer/.processing-settings.json` |
-| Storage policy and segment pins | `/data/roadviewer/.storage-settings.json` |
-| Archive settings (excluding client credentials) | `/data/roadviewer/.archive-settings.json` |
-| Device authentication | `/data/roadviewer/.devices.json` |
-| NAS archive storage ID (files on the NAS are not backed up) | `/data/roadviewer/.archive.json` |
+| Processing options | `/data/roadviewer-hars/.processing-settings.json` |
+| Storage policy and segment pins | `/data/roadviewer-hars/.storage-settings.json` |
+| Archive settings (excluding client credentials) | `/data/roadviewer-hars/.archive-settings.json` |
+| Device authentication | `/data/roadviewer-hars/.devices.json` |
+| NAS archive storage ID (files on the NAS are not backed up) | `/data/roadviewer-hars/.archive.json` |
 
 Supervisor manages external port mappings. Browser preferences are not included in app backups. Restoring a backup does not restore recordings: export them first (**Storage tab → 로컬 저장공간 → 내보내기**) and import the file after the restore (see below). Previously created backup archives are unchanged.
 
@@ -419,6 +431,8 @@ This is an upload-admission budget, not a filesystem quota: conversion output or
 
 ## NAS archiving (experimental)
 
+HARS 2.x writes only to its own folder, marked by a sentinel owned by `roadviewer-hars`, and imports Python 1.x NAS folders read-only. Pointing the HARS path at Python's shared folder is rejected as `not_owned`. See [sharing a Drive account or NAS](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md#같은-drive-계정nas를-함께-쓸-때) (Korean).
+
 Archiving moves original videos and log files of converted recordings to network storage (NAS) attached to Home Assistant, freeing local space. It is off by default; while off, nothing changes. There is no feature that moves archived files back to local storage.
 
 ### Setup
@@ -430,7 +444,7 @@ Archiving moves original videos and log files of converted recordings to network
 
 `archive_path` must be below `/share/`, and a sub-folder is required, e.g. `/share/<name>/roadviewer`; the share itself (`/share/<name>`) is rejected. The first folder name may use letters, digits and underscores; later names may also use dots and hyphens; `..` is rejected. Saving an invalid path is refused. An invalid migrated path disables archiving and reports `settings_error`.
 
-On first connection, and only while `/share/<name>` is actually mounted, the app writes `.roadviewer-storage.json` into the NAS folder and `.archive.json`, holding the same storage ID, into `/data/roadviewer`. The share counts as connected only when both IDs match, so an empty unmounted folder or another installation's folder is never used by mistake. Pointing `archive_path` at a different folder after the first connection shows **연결 불가** (unavailable). Do not delete either file.
+On first connection, and only while `/share/<name>` is actually mounted, the app writes `.roadviewer-storage.json` into the NAS folder and `.archive.json`, holding the same storage ID, into `/data/roadviewer-hars`. The share counts as connected only when both IDs match, so an empty unmounted folder or another installation's folder is never used by mistake. Pointing `archive_path` at a different folder after the first connection shows **연결 불가** (unavailable). Do not delete either file.
 
 ### Reading the storage screen
 
@@ -458,7 +472,7 @@ On first connection, and only while `/share/<name>` is actually mounted, the app
 
 Use **Storage tab → 아카이빙 기본 설정** (Archive basics) for enabled, backend, mode, local deletion permission, minimum age and local usage criteria. **실행 및 고급 설정** contains the interval and an expandable advanced section for batch size, NAS path/capacity and the Drive folder. Presets and custom inputs preserve the existing hour/minute/MB values. **현재 설정 요약** previews draft behavior; only **설정 저장** applies it. Partial saves identify remaining changes and retries save only those changes. The start threshold is entered in GB with decimals (e.g. 2.5) and stored as MB (1 GB = 1024 MB); the custom local storage limit also accepts decimal GB. MB means 1024² bytes. NAS always moves after verification regardless of the mode selector. The keys below identify saved preferences, rather than add-on options.
 
-Preferences are written atomically to `/data/roadviewer/.archive-settings.json` with mode 0600. Only `archive_gdrive_client_id` and `archive_gdrive_client_secret` remain add-on options; neither value is returned by the API or shown in the web UI. On the first update, if the file is absent, the old archive options in `/data/options.json` are migrated once. Enabled and disabled values are preserved, with defaults for missing fields. Afterwards the file is authoritative and old keys are ignored. Since 1.0.30 the old archive keys are no longer in the add-on configuration.
+Preferences are written atomically to `/data/roadviewer-hars/.archive-settings.json` with mode 0600. Only `archive_gdrive_client_id` and `archive_gdrive_client_secret` remain add-on options; neither value is returned by the API or shown in the web UI. On the first update, if the file is absent, the old archive options in `/data/options.json` are migrated once. Enabled and disabled values are preserved, with defaults for missing fields. Afterwards the file is authoritative and old keys are ignored. Since 1.0.30 the old archive keys are no longer in the add-on configuration.
 
 An unreadable/corrupt file or invalid migrated values disable archiving and show `settings_error`. The bad file is left untouched until the user saves from the UI. Saving is refused while a cycle runs. Saving starts no archive, deletion or eviction: startup and each save wait a full configured interval. **이동 가능한 데이터 모두 이동 / 복사 가능한 데이터 모두 복사** (Archive now) can run it manually. Migration never changes the token, storage identity or recordings.
 
@@ -524,7 +538,7 @@ With the **delete oldest unpinned** storage policy, recordings with files on the
 
 ### Deletion
 
-**완전 삭제** (Delete permanently) removes local data immediately and the NAS files as well. If the NAS is unreachable, the files to delete are recorded in `/data/roadviewer` and removed by the next run after it reconnects.
+**완전 삭제** (Delete permanently) removes local data immediately and the NAS files as well. If the NAS is unreachable, the files to delete are recorded in `/data/roadviewer-hars` and removed by the next run after it reconnects.
 
 ### NAS cleanup
 
@@ -537,9 +551,11 @@ Files of pinned segments and of recordings waiting for or undergoing conversion 
 
 ### Backups
 
-Files on the NAS are not part of Home Assistant backups. `.archive-settings.json`, the add-on options containing client credentials, and `/data/roadviewer/.archive.json`, holding the storage ID, are backed up with the app configuration. Back up the NAS itself separately.
+Files on the NAS are not part of Home Assistant backups. `.archive-settings.json`, the add-on options containing client credentials, and `/data/roadviewer-hars/.archive.json`, holding the storage ID, are backed up with the app configuration. Back up the NAS itself separately.
 
 ## Google Drive archiving (experimental)
+
+HARS 2.x writes only to the Drive folder `Road Viewer HARS` and only reads Python 1.x's folder. Reading files archived by Python needs the same OAuth client ID as Python, and disconnecting Drive in HARS revokes the token, which can also disconnect a Python app using the same client. Do not copy Python's `.archive.json` into the HARS data folder ([sharing a Drive account or NAS](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md#같은-drive-계정nas를-함께-쓸-때), Korean).
 
 Google Drive can be used as the archive instead of a NAS. It is experimental and off by default (`archive_enabled: false`, `archive_backend: smb`). Nothing changes while archiving is off or uses the NAS.
 
@@ -649,13 +665,15 @@ An explicit **Delete permanently** queues the recording’s moved files and veri
 
 ### Drive backups and security
 
-- The Drive sign-in (refresh token) is stored in `/data/roadviewer/.gdrive-auth.json` (mode 0600) and the Drive storage ID in `/data/roadviewer/.archive.json`. Both files and the app options (including the client secret) **are part of Home Assistant backups.** Anyone holding a backup can reach Road Viewer's Drive folder, so **keep backups as safe as a password.** Do not delete either file.
+- The Drive sign-in (refresh token) is stored in `/data/roadviewer-hars/.gdrive-auth.json` (mode 0600) and the Drive storage ID in `/data/roadviewer-hars/.archive.json`. Both files and the app options (including the client secret) **are part of Home Assistant backups.** Anyone holding a backup can reach Road Viewer's Drive folder, so **keep backups as safe as a password.** Do not delete either file.
 - Files on Drive are not part of Home Assistant backups.
 - No new port is opened. All traffic with Google (sign-in and Drive) is outgoing HTTPS from the app to Google; Google never connects to the app.
 - Changes such as connect, disconnect and retry are accepted only through the Home Assistant Supervisor (Ingress), like every other settings change.
 - Tokens, the client secret, upload session addresses and Drive file IDs are never shown in the UI, API responses or logs.
 
 ### Validation scope and limits
+
+This section describes Python 1.x. HARS 2.x's Google Drive and NAS archiving has been validated only against a mock Drive server and temporary folders, not against real Google Drive or SMB mounts ([implementation and validation status](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md), Korean).
 
 The 0.13.1 work verified connection, COPY/MOVE, integrity checks, local deletion, Range playback, and original-format download against real Google Drive in a test environment. Automated regression tests use `tests/fake_drive.py`. These real-account checks were not repeated for this documentation/screenshots update, and no operational data was changed.
 
@@ -689,11 +707,13 @@ See the [English API specification](../docs/device-api.en.md) or [한국어 API 
 
 For stalled uploads, inspect file access, connectivity, capacity and the library's error. Application `Upload failure` logs include phase, offset, elapsed time, browser byte counters and error code. Browser bytes do not prove server persistence. Retry failed conversion after reading its reported cause.
 
-CI covers both platforms, dependency/image security, real container HTTPS isolation, upload/storage/conversion and browser behavior. Actual Home Assistant performance and native Android file selection depend on the environment.
+HARS CI runs the Rust checks and tests, original ccnc client compatibility and upload fault injection, a Python/Rust replay conversion comparison, and native amd64/aarch64 image builds with FFmpeg-absence, container boot and TLS checks. Browser UI checks run outside CI. Actual Home Assistant performance and native Android file selection depend on the environment.
 
-The bundled openpilot schema may need updating for sufficiently different log formats. See [schema licensing](schema/OPENPILOT-LICENSE) and the historical [changelog](CHANGELOG.md).
+The bundled openpilot schema may need updating for sufficiently different log formats. See [schema licensing](../reference/python/roadviewer/schema/OPENPILOT-LICENSE) and the historical [changelog](CHANGELOG.md).
 
 
 ## Documentation screenshots
 
 Screenshots were captured on 2026-11-07 from version 1.0.0 (branch `feature/ui-redesign`) with example data, not real devices, accounts, or private driving logs; the three introduction photos composite the earlier footage into the new UI. Pairing codes cannot connect a device. See the [image inventory and capture scope](../docs/images/README.en.md).
+
+HARS implementation and validation status: [STATUS.md](../docs/hars/STATUS.md) (Korean).

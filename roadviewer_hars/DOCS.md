@@ -1,5 +1,13 @@
 # 설치 및 사용
 
+> **Rust 기반 Road Viewer 2.x의 prerelease(alpha)입니다. 아직 정식 출시 전이며 운영 전환 검증이 진행 중입니다.** 기존 Python Road Viewer 1.x 옆에 병행 설치해 시험하는 용도이며, Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)는 별도로 계속 유지됩니다. 기존 Python 앱과 데이터·장치 인증·아카이브 경로를 공유하지 않습니다. 전체 기능·실제 로그·장치·HAOS 검증 전에는 운영 전환을 하지 않습니다.
+>
+> 설치 후에도 외부 HTTPS 포트는 기본 비활성(null)이며 자동 시작도 기본 비활성입니다. 테스트할 때만 기존 운영 포트와 다른 포트를 지정하세요. `device_https_enabled`를 켜려면 `/ssl`의 인증서·키 파일이 필요합니다. Ingress는 외부 업로드 포트와 별도로 동작합니다.
+>
+> 원본 앱과 같은 정책으로 기록 폴더와 전송/내보내기 임시 파일은 HA 앱 백업에서 제외합니다. 백업에 영상·주행 기록까지 들어 있다고 가정하면 안 됩니다. 인증·설정 보존과 데이터 별도 백업/아카이빙을 구분해야 합니다.
+>
+> 아래 설명은 Python Road Viewer 1.3.18 기준입니다. HARS 2.x는 같은 웹 화면을 쓰고 같은 API를 구현하며, Python과 의도적으로 다른 점은 [구현·검증 현황](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md)에 있습니다. [전환·롤백 절차](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md) · [실제 HAOS 검증](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/HAOS-VALIDATION.md)
+
 현재 설명은 **1.3.18**의 기능을 기준으로 합니다.
 
 한국어 · [English](DOCS.en.md)
@@ -22,11 +30,13 @@
 
 ## 설치와 접속
 
-Home Assistant 앱 스토어의 저장소에 `https://github.com/Qualified4/roadviewer-ha`를 추가하고 **Road Viewer**를 설치·시작합니다. **웹 UI 열기** 또는 사이드바로 접속합니다. Home Assistant 버전에 따라 ‘앱’이 ‘애드온’으로 표시됩니다. HACS용 통합 구성요소가 아닙니다.
+Home Assistant 앱 스토어의 저장소에 `https://github.com/Qualified4/roadviewer-hars`를 추가하고 **Road Viewer HARS**(앱 스토어·사이드바 표시 이름)를 설치·시작합니다. 자동 시작은 기본으로 꺼져 있습니다(`boot: manual`). **웹 UI 열기** 또는 사이드바로 접속합니다. Home Assistant 버전에 따라 ‘앱’이 ‘애드온’으로 표시됩니다. HACS용 통합 구성요소가 아닙니다.
 
-설치·업데이트는 GHCR에 미리 빌드한 이미지를 내려받습니다. 지원 플랫폼은 **amd64(Intel/AMD 64비트)**와 **aarch64(ARM 64비트)**이며, 기기에 맞는 이미지 하나만 받습니다. 여러 플랫폼을 배포해도 다른 플랫폼의 이미지까지 다운로드하지 않습니다. 32비트 ARM과 i386은 지원하지 않습니다.
+설치·업데이트는 GHCR에 미리 빌드한 이미지(`ghcr.io/qualified4/roadviewer-hars`)를 내려받습니다. 지원 플랫폼은 **amd64(Intel/AMD 64비트)**와 **aarch64(ARM 64비트)**이며, 기기에 맞는 이미지 하나만 받습니다. 여러 플랫폼을 배포해도 다른 플랫폼의 이미지까지 다운로드하지 않습니다. 32비트 ARM과 i386은 지원하지 않습니다.
 
 Home Assistant가 제공하는 다운로드·압축 해제 진행률을 사용할 수 있습니다. 표시 방식은 Home Assistant/Supervisor 버전에 따라 다르며, 앱 시작까지의 남은 시간을 뜻하지 않습니다. 캐시된 이미지 계층은 재사용하므로 진행률이 건너뛸 수도 있습니다.
+
+이 단락은 Python 1.x 기준 설명입니다. HARS 2.x는 저장소 루트의 `Dockerfile`로 빌드하며(`roadviewer_hars/` 폴더에는 Dockerfile이 없습니다), 개발 실행 방법은 [실행 및 테스트](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/DEVELOPMENT.md)를 참고하세요.
 
 소스를 수정해 로컬 설치하려면 `roadviewer` 폴더를 Home Assistant의 `/addons/roadviewer`에 복사하고, 복사본 `config.yaml`의 `image:` 항목을 제거한 뒤 빌드합니다. `image:`를 유지하면 로컬 소스 대신 배포된 이미지를 사용합니다. 개발용 직접 빌드는 기존 Dockerfile로도 가능합니다.
 
@@ -395,7 +405,9 @@ TARGET 거리선과 빛의 폭은 **경로 차폭** 설정(기본 1.86m)을 따�
 
 ## 저장소 정리·백업·업데이트
 
-앱 내부 저장 경로는 `/data/roadviewer`입니다. 로그별 폴더에 원본과 변환 결과를 보관합니다. 재생·그래프 데이터는 gzip으로 압축해 저장합니다. 1.0.7부터는 재생 데이터에서 직선에 가까운 차선·경로 좌표와 반복 값을 줄인 형식(재생 형식 2)으로 저장해 구간당 변환 데이터가 약 절반이 되며, 이전 형식의 데이터는 앱 시작 후 백그라운드에서 하나씩 새 형식으로 바뀝니다. 또한 0.3.14 이하 버전에서 변환한 데이터는 앱 시작 후 백그라운드에서 하나씩 압축 형식으로 바뀝니다. 바뀐 데이터는 이전 버전에서 읽을 수 없으므로, 이전 버전으로 되돌리면 해당 로그를 다시 변환해야 합니다. 이는 앱 컨테이너 내부 경로이며 Home Assistant 호스트에서 보이는 경로와 같다고 가정하면 안 됩니다.
+이 절의 저장 형식 전환(재생 형식 2, 0.3.14 이하 데이터의 압축 전환)과 업데이트 동작은 Python 1.x 기준 설명이며 HARS 2.x에서의 차이는 [구현·검증 현황](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md)을 참고하세요. 데이터 경로와 설정 파일 이름은 HARS 기준입니다.
+
+앱 내부 저장 경로는 `/data/roadviewer-hars`입니다. 로그별 폴더에 원본과 변환 결과를 보관합니다. 재생·그래프 데이터는 gzip으로 압축해 저장합니다. 1.0.7부터는 재생 데이터에서 직선에 가까운 차선·경로 좌표와 반복 값을 줄인 형식(재생 형식 2)으로 저장해 구간당 변환 데이터가 약 절반이 되며, 이전 형식의 데이터는 앱 시작 후 백그라운드에서 하나씩 새 형식으로 바뀝니다. 또한 0.3.14 이하 버전에서 변환한 데이터는 앱 시작 후 백그라운드에서 하나씩 압축 형식으로 바뀝니다. 바뀐 데이터는 이전 버전에서 읽을 수 없으므로, 이전 버전으로 되돌리면 해당 로그를 다시 변환해야 합니다. 이는 앱 컨테이너 내부 경로이며 Home Assistant 호스트에서 보이는 경로와 같다고 가정하면 안 됩니다.
 
 미완료 업로드는 1분마다 검사하며, 15분 이상 전송이 없으면 정리합니다. **저장소 즉시 정리**는 업로드 탭의 **업로드가 중단되었나요?** 안내에서 누를 수 있으며, 15분이 지나지 않았어도 미완료 임시 업로드를 삭제합니다. 등록을 마무리 중인 파일과 등록된 로그는 보존하지만, 현재 브라우저 업로드는 중단하며 다른 브라우저의 업로드도 중단될 수 있습니다. 유효한 장치 API 업로드 세션은 보호합니다.
 
@@ -410,11 +422,11 @@ Home Assistant 앱 백업에서는 다음을 제외합니다.
 | 설정 | 저장 위치 |
 |---|---|
 | 업로드 용량·인증서 파일명 등 앱 옵션 | `/data/options.json` |
-| 자동 변환·동시 처리 | `/data/roadviewer/.processing-settings.json` |
-| 저장 한도·삭제 정책·구간 고정 | `/data/roadviewer/.storage-settings.json` |
-| 아카이빙 설정(클라이언트 자격 증명 제외) | `/data/roadviewer/.archive-settings.json` |
-| 장치 등록·인증 상태 | `/data/roadviewer/.devices.json` |
-| NAS 아카이빙 저장소 ID(NAS의 파일은 백업 대상 아님) | `/data/roadviewer/.archive.json` |
+| 자동 변환·동시 처리 | `/data/roadviewer-hars/.processing-settings.json` |
+| 저장 한도·삭제 정책·구간 고정 | `/data/roadviewer-hars/.storage-settings.json` |
+| 아카이빙 설정(클라이언트 자격 증명 제외) | `/data/roadviewer-hars/.archive-settings.json` |
+| 장치 등록·인증 상태 | `/data/roadviewer-hars/.devices.json` |
+| NAS 아카이빙 저장소 ID(NAS의 파일은 백업 대상 아님) | `/data/roadviewer-hars/.archive.json` |
 
 외부 API 포트 매핑은 Supervisor가 관리합니다. 화면 모드·화면 배치·표시 항목·그래프 선택 및 순서·접힘 상태는 브라우저에 저장하며 다른 기기와 자동으로 동기화하지 않습니다.
 
@@ -441,9 +453,9 @@ Home Assistant 앱 백업에서는 다음을 제외합니다.
 
 업로드 실패 시 파일 접근 상태·네트워크·저장공간을 확인하세요. 전송 중 15초 동안 진척이 없으면 해당 조각을 중단하고 1초 후부터 최대 5회 재시도합니다. 재시도 사이 대기는 최대 4초이며, 느려도 전송이 계속되는 연결은 유지합니다. 화면에는 파일 읽기·전송 확인·서버 응답 대기를 구분해 표시합니다. 진행률은 서버가 확인한 용량 기준입니다. 앱 로그의 `Upload failure`에는 실패 단계, 전송 위치, 경과 시간(`elapsedMs`), 브라우저 전송량(`loaded`/`total`), 오류 코드(`errorCode`)가 남습니다. 브라우저 전송량은 서버 저장 완료를 뜻하지 않습니다. 변환 실패는 목록에 표시되는 오류와 앱 로그를 확인한 뒤 다시 변환할 수 있습니다.
 
-GitHub Actions에는 amd64/aarch64 빌드, 이미지 메타데이터, API·업로드·변환·스키마 관련 검사와 브라우저 테스트가 구성되어 있습니다. 실제 Home Assistant 장비의 처리 성능과 모바일 네이티브 파일 선택창은 환경에 따라 다릅니다.
+GitHub Actions(**HARS CI**)는 Rust 검사와 테스트, 원본 ccnc 클라이언트 호환·업로드 장애 주입 검사, Python과 Rust의 재생 변환 대조, amd64/aarch64 이미지 빌드와 FFmpeg 잔존·컨테이너 기동·TLS 검사를 실행합니다. 브라우저 화면 검사는 CI 밖에서 실행합니다. 실제 Home Assistant 장비의 처리 성능과 모바일 네이티브 파일 선택창은 환경에 따라 다릅니다.
 
-포함된 cereal/car 스키마는 사용 중인 openpilot 체크아웃을 기반으로 합니다. 다른 브랜치의 로그 형식과 차이가 크면 스키마 갱신이 필요할 수 있습니다. 스키마와 UI 리소스의 라이선스는 [OPENPILOT-LICENSE](schema/OPENPILOT-LICENSE)를 참고하세요.
+포함된 cereal/car 스키마는 사용 중인 openpilot 체크아웃을 기반으로 합니다. 다른 브랜치의 로그 형식과 차이가 크면 스키마 갱신이 필요할 수 있습니다. 스키마와 UI 리소스의 라이선스는 [OPENPILOT-LICENSE](../reference/python/roadviewer/schema/OPENPILOT-LICENSE)를 참고하세요.
 
 ## 외부 comma 장치 연결
 
@@ -495,9 +507,11 @@ API 포트 상태는 시작 시 Supervisor에서 이 앱의 네트워크 매핑�
 
 저장 설정과 Pin은 `.storage-settings.json`, 인증 구성은 `.devices.json`에 보관하며 모두 앱 설정으로 백업됩니다. 인증 구성 파일에는 장기 키를 유도하는 비밀값이 있으므로 백업도 안전하게 보관하세요. 실제 주행 로그·영상·변환 데이터와 임시 세션은 기존처럼 백업에서 제외합니다.
 
-장치 개발자는 [Device API v1](https://github.com/Qualified4/roadviewer-ha/blob/main/docs/device-api.md)을 참고하세요. 이 저장소는 서버와 웹 UI를 제공하며 장치 업로더 구현은 별도입니다.
+장치 개발자는 [Device API v1](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/device-api.md)을 참고하세요. 이 저장소는 서버와 웹 UI를 제공하며 장치 업로더 구현은 별도입니다.
 
 ## NAS 아카이빙 (실험 기능)
+
+HARS 2.x는 owner가 `roadviewer-hars`인 sentinel이 있는 자기 폴더에만 쓰고, Python 1.x의 NAS 폴더는 읽기 전용으로 가져옵니다. HARS 경로를 Python의 공유 폴더로 지정하면 `not_owned`로 거부됩니다. 자세한 내용은 [같은 Drive 계정·NAS를 함께 쓸 때](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md#같은-drive-계정nas를-함께-쓸-때)를 참고하세요.
 
 변환을 마친 로그의 원본 영상과 로그 파일을 Home Assistant에 연결한 네트워크 저장소(NAS)로 옮겨 로컬 저장공간을 확보합니다. 기본값은 꺼짐이며, 끈 상태에서는 기존 동작이 바뀌지 않습니다. 옮긴 파일을 로컬로 되돌리는 복원 기능은 없습니다.
 
@@ -510,7 +524,7 @@ API 포트 상태는 시작 시 Supervisor에서 이 앱의 네트워크 매핑�
 
 `archive_path`는 `/share/` 아래 경로만 허용하며 하위 폴더가 있어야 합니다. 예: `/share/<이름>/roadviewer`. 공유 자체(`/share/<이름>`)는 거부합니다. 첫 폴더 이름은 영문·숫자·밑줄만, 이후 폴더 이름은 영문·숫자·밑줄·점·하이픈만 쓸 수 있고 `..`은 거부합니다. 잘못된 경로는 저장을 거부하며 이전 설정의 경로가 잘못되면 아카이빙을 끄고 `settings_error`를 표시합니다.
 
-처음 연결할 때(`/share/<이름>`이 실제로 마운트되어 있을 때만) NAS 폴더에 `.roadviewer-storage.json`, `/data/roadviewer`에 같은 저장소 ID를 담은 `.archive.json`을 만듭니다. 두 ID가 같아야 연결됨으로 판단하므로 NAS가 마운트되지 않은 빈 폴더나 다른 설치의 폴더를 잘못 사용하지 않습니다. 이미 연결한 뒤에 다른 폴더로 바꾸면 **연결 불가**로 표시됩니다. 두 파일을 지우지 마세요.
+처음 연결할 때(`/share/<이름>`이 실제로 마운트되어 있을 때만) NAS 폴더에 `.roadviewer-storage.json`, `/data/roadviewer-hars`에 같은 저장소 ID를 담은 `.archive.json`을 만듭니다. 두 ID가 같아야 연결됨으로 판단하므로 NAS가 마운트되지 않은 빈 폴더나 다른 설치의 폴더를 잘못 사용하지 않습니다. 이미 연결한 뒤에 다른 폴더로 바꾸면 **연결 불가**로 표시됩니다. 두 파일을 지우지 마세요.
 
 ### 저장공간 화면 읽기
 
@@ -538,7 +552,7 @@ API 포트 상태는 시작 시 Supervisor에서 이 앱의 네트워크 매핑�
 
 **저장공간 탭 → 아카이빙 기본 설정**에서 사용 여부·저장소·보관 방식·로컬 원본 삭제 허용·보관 기간·사용량 기준을 바꿉니다. 실행 간격은 **실행 및 고급 설정**, 배치·NAS 경로·용량·Drive 폴더는 그 아래 **고급 설정**에 있습니다. 기간·간격·시작 기준은 프리셋과 직접 입력을 지원하며 기존 값은 보존됩니다. **현재 설정 요약**은 편집값을 미리 보여주며 **설정 저장** 전에는 적용하지 않습니다. 저장 일부만 성공하면 남은 변경을 표시하고 재시도 시 아직 저장하지 못한 부분만 저장합니다. 화면의 시작 기준은 GB 단위로 소수점(예: 2.5)까지 입력하며 저장할 때 MB(1 GB = 1024 MB)로 바꿉니다. 로컬 저장 한도의 직접 입력도 GB 소수점을 받습니다. MB는 1024² bytes 기준입니다. NAS는 모드 선택과 관계없이 항상 검증 후 이동합니다. 아래 키는 저장 파일의 이름이며 애드온 옵션에서 편집하지 않습니다.
 
-설정은 `/data/roadviewer/.archive-settings.json`에 원자적으로 저장됩니다(권한 0600). OAuth 클라이언트 ID·보안 비밀만 애드온 옵션 `archive_gdrive_client_id`, `archive_gdrive_client_secret`에 남으며 API와 웹 UI에 반환하지 않습니다. 처음 업데이트할 때 파일이 없으면 기존 `/data/options.json`의 아카이빙 값을 한 번만 이전합니다. 꺼짐도 그대로 유지하며 빠진 값은 아래 기본값을 씁니다. 이후에는 파일이 우선이고 이전 옵션 키는 무시합니다. 1.0.30부터 이전 아카이빙 키는 앱 구성 화면에서 빠졌습니다.
+설정은 `/data/roadviewer-hars/.archive-settings.json`에 원자적으로 저장됩니다(권한 0600). OAuth 클라이언트 ID·보안 비밀만 애드온 옵션 `archive_gdrive_client_id`, `archive_gdrive_client_secret`에 남으며 API와 웹 UI에 반환하지 않습니다. 처음 업데이트할 때 파일이 없으면 기존 `/data/options.json`의 아카이빙 값을 한 번만 이전합니다. 꺼짐도 그대로 유지하며 빠진 값은 아래 기본값을 씁니다. 이후에는 파일이 우선이고 이전 옵션 키는 무시합니다. 1.0.30부터 이전 아카이빙 키는 앱 구성 화면에서 빠졌습니다.
 
 파일이 손상되거나 읽을 수 없거나 이전 값이 잘못되면 아카이빙을 끄고 `settings_error`를 표시합니다. 잘못된 파일은 덮어쓰지 않으며 화면에서 저장해야 복구됩니다. 설정 저장은 실행 중이면 거부됩니다. 저장 자체는 아카이브·삭제·정리를 시작하지 않고, 시작 및 저장 후에는 설정한 주기를 온전히 기다립니다. **이동 가능한 데이터 모두 이동 / 복사 가능한 데이터 모두 복사**로 직접 실행할 수도 있습니다. 이전 과정은 토큰·저장소 ID·기록 파일을 변경하지 않습니다.
 
@@ -604,7 +618,7 @@ NAS에 연결할 수 없거나, NAS 여유가 파일 크기 + 100MiB보다 작�
 
 ### 삭제
 
-**완전 삭제**하면 로컬 데이터를 바로 지우고 NAS 파일도 지웁니다. NAS에 연결할 수 없으면 삭제할 파일을 `/data/roadviewer`에 기록해 두고, 연결된 뒤 다음 실행에서 마저 지웁니다.
+**완전 삭제**하면 로컬 데이터를 바로 지우고 NAS 파일도 지웁니다. NAS에 연결할 수 없으면 삭제할 파일을 `/data/roadviewer-hars`에 기록해 두고, 연결된 뒤 다음 실행에서 마저 지웁니다.
 
 ### NAS 정리
 
@@ -617,9 +631,11 @@ NAS 폴더 사용량이 `archive_nas_max_mb`를 넘거나 NAS 여유가 `archive
 
 ### 백업
 
-NAS의 파일은 Home Assistant 백업 대상이 아닙니다. 아카이빙 설정 파일 `.archive-settings.json`, 클라이언트 자격 증명을 담은 앱 옵션과 저장소 ID를 담은 `/data/roadviewer/.archive.json`은 앱 설정과 함께 백업됩니다. NAS 자체의 백업은 NAS에서 따로 관리하세요.
+NAS의 파일은 Home Assistant 백업 대상이 아닙니다. 아카이빙 설정 파일 `.archive-settings.json`, 클라이언트 자격 증명을 담은 앱 옵션과 저장소 ID를 담은 `/data/roadviewer-hars/.archive.json`은 앱 설정과 함께 백업됩니다. NAS 자체의 백업은 NAS에서 따로 관리하세요.
 
 ## Google Drive 아카이빙 (실험 기능)
+
+HARS 2.x는 Drive의 `Road Viewer HARS` 폴더에만 쓰고 Python 1.x의 폴더는 읽기만 합니다. Python이 보관한 파일을 읽으려면 Python과 같은 OAuth client ID가 필요하고, HARS에서 Drive 연결을 해제하면 토큰을 revoke하므로 같은 client를 쓰는 Python의 연결도 끊길 수 있습니다. Python의 `.archive.json`을 HARS 데이터 폴더에 복사하지 마세요([같은 Drive 계정·NAS를 함께 쓸 때](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md#같은-drive-계정nas를-함께-쓸-때)).
 
 NAS 대신 Google Drive를 아카이브 저장소로 쓸 수 있습니다. 실험 기능이며 기본값은 꺼짐입니다(`archive_enabled: false`, `archive_backend: smb`). 끈 상태와 NAS를 쓰는 상태의 동작은 바뀌지 않습니다.
 
@@ -729,13 +745,15 @@ Drive로 옮긴 기록은 **목록·재생·다운로드에 그대로 남습니�
 
 ### Drive 백업과 보안
 
-- Drive 인증 정보(리프레시 토큰)는 `/data/roadviewer/.gdrive-auth.json`(권한 0600)에, Drive 저장소 ID는 `/data/roadviewer/.archive.json`에 저장합니다. 두 파일과 앱 옵션(클라이언트 보안 비밀 포함)은 **Home Assistant 백업에 포함됩니다.** 백업을 가진 사람은 Road Viewer의 Drive 폴더에 접근할 수 있으므로 **백업 파일을 비밀번호처럼 보관하세요.** 두 파일을 지우지 마세요.
+- Drive 인증 정보(리프레시 토큰)는 `/data/roadviewer-hars/.gdrive-auth.json`(권한 0600)에, Drive 저장소 ID는 `/data/roadviewer-hars/.archive.json`에 저장합니다. 두 파일과 앱 옵션(클라이언트 보안 비밀 포함)은 **Home Assistant 백업에 포함됩니다.** 백업을 가진 사람은 Road Viewer의 Drive 폴더에 접근할 수 있으므로 **백업 파일을 비밀번호처럼 보관하세요.** 두 파일을 지우지 마세요.
 - Drive의 파일은 Home Assistant 백업 대상이 아닙니다.
 - 새로 여는 포트는 없습니다. Google과의 통신(로그인, Drive)은 모두 앱에서 Google로 나가는 HTTPS 연결이며, Google이 앱으로 접속하지 않습니다.
 - 연결·연결 해제·재시도 같은 변경 요청은 다른 설정 변경과 마찬가지로 Home Assistant Supervisor(Ingress)를 거친 요청만 받습니다.
 - 토큰, 클라이언트 보안 비밀, 업로드 세션 주소, Drive 파일 ID는 화면·API 응답·로그에 표시하지 않습니다.
 
 ### 검증 범위와 한계
+
+이 절은 Python 1.x 기준 설명입니다. HARS 2.x의 Google Drive·NAS 아카이빙은 모의 Drive 서버와 임시 폴더로만 검증했고, 실제 Google Drive와 SMB 마운트에서는 검증하지 않았습니다([구현·검증 현황](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md)).
 
 0.13.1 작업에서 테스트 환경의 실제 Google Drive 연결·COPY/MOVE·무결성 확인·로컬 삭제·Range 재생·원본 다운로드를 검증했습니다. 자동 회귀 검사는 모의 서버(`tests/fake_drive.py`)를 사용합니다. 이번 문서·스크린샷 갱신에서 실제 계정이나 운영 데이터로 이를 반복 실행하지 않았습니다.
 
@@ -746,5 +764,6 @@ Drive로 옮긴 기록은 **목록·재생·다운로드에 그대로 남습니�
 스크린샷은 2026-11-07에 1.0.0 버전(브랜치 `feature/ui-redesign`) 코드와 예시 데이터로 촬영했습니다. 소개 사진 3장은 기존 주행 영상 영역을 새 UI에 합성했습니다. 실제 기기·계정·개인 주행 로그가 아니며 페어링 코드는 사용할 수 없습니다. [이미지 목록과 촬영 범위](../docs/images/README.md)를 참고하세요.
 
 - [English user guide](DOCS.en.md)
+- [HARS 구현·검증 현황](../docs/hars/STATUS.md)
 - [장치 API 한국어](../docs/device-api.md) · [Device API English](../docs/device-api.en.md)
 - [변경 이력](CHANGELOG.md): 당시 릴리스 기록을 유지합니다. 현재 동작은 이 문서를 기준으로 확인하세요.

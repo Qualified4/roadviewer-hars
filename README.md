@@ -2,6 +2,14 @@
 
 한국어 · [English](README.en.md)
 
+> **이 저장소는 Rust 기반 Road Viewer 2.x입니다. 아직 정식 출시 전의 prerelease(alpha)이며 운영 전환 검증이 진행 중입니다.** 현재 버전은 **2.0.0-alpha.4**이며, 정식 릴리스와 운영 전환을 수행하지 않았습니다.
+>
+> Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)는 별도 제품으로 계속 유지됩니다. 이 앱은 기존 Python 앱 옆에 병행 설치해 시험하는 용도이며, Home Assistant 앱 스토어와 사이드바에는 **Road Viewer HARS**로 표시됩니다. 미이식 기능은 성공으로 응답하지 않습니다. 현재 빌드를 Python 1.x의 완전한 대체 제품으로 설치하거나 운영 업로드를 전환하면 안 됩니다.
+>
+> 아래 기능 설명은 Python Road Viewer 1.3.18 기준입니다. HARS 2.x는 같은 웹 화면을 쓰고 같은 API를 구현하며, Python과 의도적으로 다른 점은 [구현·검증 현황](docs/hars/STATUS.md#python과-의도적으로-다른-점)에 있습니다.
+>
+> [구현·검증 현황](docs/hars/STATUS.md) · [HAOS 병행 설치와 전환·롤백](docs/hars/CUTOVER.md) · [실제 HAOS 검증](docs/hars/HAOS-VALIDATION.md)
+
 현재 기능 안내: **1.3.18**
 
 openpilot 주행 로그와 전방·와이드 카메라 영상을 올리고, **영상·주행 상황·차량 정보 그래프를 같은 시간축으로 확인하는 Home Assistant 앱**입니다.
@@ -20,8 +28,8 @@ openpilot 주행 로그와 전방·와이드 카메라 영상을 올리고, **�
 
 ## 시작하기
 
-1. Home Assistant의 **설정 → 앱 → 앱 스토어 → ⋮ → 저장소**에서 `https://github.com/Qualified4/roadviewer-ha`를 추가합니다. 버전에 따라 ‘앱’이 ‘애드온’으로 표시됩니다.
-2. **Road Viewer**를 설치하고 시작한 뒤 **웹 UI 열기**를 누릅니다.
+1. Home Assistant의 **설정 → 앱 → 앱 스토어 → ⋮ → 저장소**에서 `https://github.com/Qualified4/roadviewer-hars`를 추가합니다. 버전에 따라 ‘앱’이 ‘애드온’으로 표시됩니다.
+2. 앱 스토어에 **Road Viewer HARS**로 표시되는 항목을 설치하고 시작한 뒤 **웹 UI 열기**를 누릅니다. 자동 시작은 기본으로 꺼져 있어(`boot: manual`) 호스트를 다시 켠 뒤에는 직접 시작해야 합니다.
 3. **업로드** 탭에서 **파일 추가** 또는 드래그 앤 드롭으로 파일을 선택하고 **업로드**합니다. 다른 탭으로 옮겨도 업로드는 계속되며 헤더에 진행률이 표시됩니다.
 4. 변환이 끝나면 **로그** 탭에서 **재생**을 누릅니다. 자동 변환을 껐다면 목록에서 먼저 **변환**을 누릅니다.
 
@@ -36,7 +44,7 @@ openpilot 주행 로그와 전방·와이드 카메라 영상을 올리고, **�
 | `amd64` | `linux/amd64` | Intel/AMD 64비트 PC·미니 PC·서버 |
 | `aarch64` | `linux/arm64` | ARM 64비트 Home Assistant 기기 |
 
-설치 시 GHCR의 프리빌드 이미지 중 **기기에 맞는 하나만 다운로드**합니다. 플랫폼별 이미지를 함께 배포해도 사용자의 다운로드 용량이 합산되지 않습니다. 32비트 ARM·i386은 지원하지 않습니다.
+설치 시 GHCR의 프리빌드 이미지(`ghcr.io/qualified4/roadviewer-hars`) 중 **기기에 맞는 하나만 다운로드**합니다. 플랫폼별 이미지를 함께 배포해도 사용자의 다운로드 용량이 합산되지 않습니다. 32비트 ARM·i386은 지원하지 않습니다. 이미지에 FFmpeg이 없어 amd64 이미지가 FFmpeg 제거 전보다 작아졌습니다(로컬 측정: 풀린 레이어 580.9 MB → 120.6 MB, 레지스트리 gzip 217.5 MB → 46.3 MB, [FFmpeg 제거](docs/hars/FFMPEG-REMOVAL.md#이미지-전후-amd64-로컬)).
 
 기기에서 패키지를 설치하고 이미지를 빌드하는 과정을 줄이며, Home Assistant의 다운로드·압축 해제 진행률을 활용합니다. 표시 방식은 Home Assistant/Supervisor 버전에 따라 다르고, 전체 설치 시간의 정확한 백분율을 의미하지는 않습니다.
 
@@ -92,6 +100,8 @@ openpilot 주행 로그와 전방·와이드 카메라 영상을 올리고, **�
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/roadviewer-device-pairing-dark.png"><img src="docs/images/roadviewer-device-pairing.png" alt="콤마 장치 연결을 위한 Road Viewer 일회용 페어링 코드 팝업" width="420"></picture>
 
 ## AI 에이전트 연동 (MCP)
+
+이 절은 Python 1.x 기준 설명이며 HARS 2.x에서의 차이는 [구현·검증 현황](docs/hars/STATUS.md)을 참고하세요.
 
 [roadviewer-mcp](https://github.com/Qualified4/roadviewer-mcp)는 Codex·Claude Code 같은 MCP 클라이언트가 Road Viewer의 주행 로그를 다룰 수 있게 하는 로컬 서버입니다. Home Assistant 장기 토큰으로 기존 Ingress 인증을 그대로 통과해 애드온의 기존 API만 호출하므로 애드온 변경, 새 포트, 외부 공개가 없습니다. 로그 검색·상세·북마크·저장 공간 조회, 리플레이 데이터와 차량 정보의 구간 조회, 영상·로그 다운로드(로컬 디스크에 저장 후 경로 반환)를 지원하고, 쓰기는 북마크 추가·수정과 태그 추가·제거만 합니다. 삭제·변환·설정 변경은 하지 않습니다. 설치와 등록 방법은 해당 저장소의 README를 참고하세요.
 
@@ -159,7 +169,7 @@ openpilot 주행 로그와 전방·와이드 카메라 영상을 올리고, **�
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/roadviewer-video-minimap-dark.png"><img src="docs/images/roadviewer-video-minimap.png" alt="주행 영상 오른쪽 위 속도·핸들 표시 아래에 겹쳐진 작은 지도"></picture>
 
-지도 바탕은 OpenStreetMap 데이터로 만든 [OpenFreeMap](https://openfreemap.org) 벡터 지도이며 API 키가 필요 없습니다. 확대·축소 버튼 아래 레이어 버튼을 누르면 **지도 표시** 팝업이 열리고, 두 가지를 따로 켜고 끕니다. **글자 숨기기**는 지도 색(라이트 모드의 노란 큰길 등)은 그대로 두고 지명·도로 이름·장소 아이콘·도로 번호·일방통행 화살표를 지웁니다. **회색 지도**는 차분한 회색 스타일로 바꾸고 3D 건물·장소 아이콘·도로 번호·화살표를 빼며 글자는 남깁니다. 둘 다 켜면 주행 선만 또렷하게 남습니다. 지도 조각은 보는 브라우저가 OpenFreeMap에서 직접 받으므로, 보는 지역의 지도 요청이 OpenFreeMap으로 갑니다. 위치 좌표는 앱 화면의 지도에만 쓰고 다운로드·내보내기·장치 API·아카이브에는 넣지 않습니다. 스크린샷의 경로는 공개 지명 사이 도로를 따라 만든 예시 경로입니다. 자세한 동작은 [사용 설명서](roadviewer/DOCS.md#주행-경로-지도)를 참고하세요.
+지도 바탕은 OpenStreetMap 데이터로 만든 [OpenFreeMap](https://openfreemap.org) 벡터 지도이며 API 키가 필요 없습니다. 확대·축소 버튼 아래 레이어 버튼을 누르면 **지도 표시** 팝업이 열리고, 두 가지를 따로 켜고 끕니다. **글자 숨기기**는 지도 색(라이트 모드의 노란 큰길 등)은 그대로 두고 지명·도로 이름·장소 아이콘·도로 번호·일방통행 화살표를 지웁니다. **회색 지도**는 차분한 회색 스타일로 바꾸고 3D 건물·장소 아이콘·도로 번호·화살표를 빼며 글자는 남깁니다. 둘 다 켜면 주행 선만 또렷하게 남습니다. 지도 조각은 보는 브라우저가 OpenFreeMap에서 직접 받으므로, 보는 지역의 지도 요청이 OpenFreeMap으로 갑니다. 위치 좌표는 앱 화면의 지도에만 쓰고 다운로드·내보내기·장치 API·아카이브에는 넣지 않습니다. 스크린샷의 경로는 공개 지명 사이 도로를 따라 만든 예시 경로입니다. 자세한 동작은 [사용 설명서](roadviewer_hars/DOCS.md#주행-경로-지도)를 참고하세요.
 
 ## 태그로 구간 분류하기
 
@@ -250,47 +260,70 @@ MOVE는 원격 전송·무결성 검증·저장 기록 확정 후 해당 로컬 
 
 Drive로 옮긴 기록은 **목록·재생·다운로드에 그대로 남습니다.** 자동 로컬 정리는 Drive 파일이나 Drive 파일이 연결된 기록을 삭제하지 않습니다(COPY 사본도 보호). 원격 삭제는 사용자가 **완전 삭제**를 명시한 경우에만 예약합니다. 출처를 확인할 수 없는 이전 버전의 원격 삭제 대기는 자동 실행하지 않습니다.
 
-Drive MOVE가 아닌 기존 저장 정책에서는 업로드 거부 또는 오래된 미고정 구간 삭제를 선택합니다. 삭제는 예약만으로 실행하지 않고 파일 수신·검증 후 등록할 때 수행하며, 고정·처리 중·Drive 파일이 연결된 기록 등은 보호합니다. [전체 설정 안내](roadviewer/DOCS.md#저장공간-화면-읽기)를 참고하세요. 수동 전체 이동·복사는 대상 파일·용량·제외 사유를 먼저 확인한 뒤 실행합니다. [수동 실행 확인창과 보호 조건](roadviewer/DOCS.md#수동으로-적격-데이터-모두-이동복사)도 확인하세요.
+Drive MOVE가 아닌 기존 저장 정책에서는 업로드 거부 또는 오래된 미고정 구간 삭제를 선택합니다. 삭제는 예약만으로 실행하지 않고 파일 수신·검증 후 등록할 때 수행하며, 고정·처리 중·Drive 파일이 연결된 기록 등은 보호합니다. [전체 설정 안내](roadviewer_hars/DOCS.md#저장공간-화면-읽기)를 참고하세요. 수동 전체 이동·복사는 대상 파일·용량·제외 사유를 먼저 확인한 뒤 실행합니다. [수동 실행 확인창과 보호 조건](roadviewer_hars/DOCS.md#수동으로-적격-데이터-모두-이동복사)도 확인하세요.
 
 
 ## 저장·백업·업데이트
 
-데이터는 앱 컨테이너의 `/data/roadviewer`에 저장됩니다. **원본 로그·영상·변환 결과는 Home Assistant 앱 백업에서 제외**되므로 보관할 원본은 별도로 유지하세요. 처리·저장 정책·장치 인증 설정은 백업에 포함됩니다.
+데이터는 앱 컨테이너의 `/data/roadviewer-hars`에 저장됩니다. **원본 로그·영상·변환 결과는 Home Assistant 앱 백업에서 제외**되므로 보관할 원본은 별도로 유지하세요. 처리·저장 정책·장치 인증 설정은 백업에 포함됩니다.
 
 업데이트에서 분석 형식이 바뀌면 기존 변환 결과를 정리하고 다시 처리할 수 있습니다. 모든 업데이트가 재변환을 요구하는 것은 아닙니다.
 
-실험 기능인 **NAS 아카이빙**을 **저장공간** 탭에서 켜면 변환을 마친 로그의 원본 영상과 로그를 Home Assistant에 Share 용도로 연결한 네트워크 저장소로 옮겨 로컬 공간을 확보합니다. 기본값은 꺼짐이며, 자동 아카이빙은 고정한 구간도 옮기지만(수동 전체 이동은 고정 구간을 로컬에 둡니다) NAS 정리에서는 지우지 않습니다. 목록·변환 데이터는 로컬에 남고 NAS에 연결할 수 없어도 파일을 지우지 않으며, 로컬로 되돌리는 복원 기능은 없습니다. NAS의 파일은 Home Assistant 백업 대상이 아닙니다. 설정 방법은 [NAS 아카이빙 안내](roadviewer/DOCS.md#nas-아카이빙-실험-기능)를 참고하세요.
+실험 기능인 **NAS 아카이빙**을 **저장공간** 탭에서 켜면 변환을 마친 로그의 원본 영상과 로그를 Home Assistant에 Share 용도로 연결한 네트워크 저장소로 옮겨 로컬 공간을 확보합니다. 기본값은 꺼짐이며, 자동 아카이빙은 고정한 구간도 옮기지만(수동 전체 이동은 고정 구간을 로컬에 둡니다) NAS 정리에서는 지우지 않습니다. 목록·변환 데이터는 로컬에 남고 NAS에 연결할 수 없어도 파일을 지우지 않으며, 로컬로 되돌리는 복원 기능은 없습니다. NAS의 파일은 Home Assistant 백업 대상이 아닙니다. 설정 방법은 [NAS 아카이빙 안내](roadviewer_hars/DOCS.md#nas-아카이빙-실험-기능)를 참고하세요.
 
-NAS 대신 **Google Drive**를 아카이브 저장소로 쓸 수도 있습니다(실험 기능, 기본값 꺼짐). 직접 만든 OAuth 클라이언트의 ID·보안 비밀을 앱 옵션에 넣은 뒤, **저장공간** 탭에서 **Google Drive 연결**을 누르고 표시된 코드를 Google 기기 인증 페이지에 입력합니다. **연결 해제**는 이 기기의 토큰만 지우며 저장 기록·로컬 파일·Drive 파일은 바꾸지 않습니다. 기본은 로컬 파일을 지우지 않고 검증된 사본만 Drive에 두는 복제(COPY) 모드입니다. 로컬 원본을 지우는 이동(MOVE) 모드는 저장공간 탭에서 MOVE와 **검증 후 로컬 원본 삭제 허용**을 함께 켜야 적용되며, Drive 자동 정리는 없습니다. Drive로 옮긴 영상은 앱을 거쳐 재생하고, 시크가 빠르도록 지금 보는 영상 하나(256MB 이하)만 메모리에 받아 둡니다. 디스크에는 쓰지 않으며 10분 동안 보지 않으면 비웁니다. 인증 토큰은 Home Assistant 백업에 포함되므로 백업을 안전하게 보관하세요. 자세한 내용은 [Google Drive 아카이빙 안내](roadviewer/DOCS.md#google-drive-아카이빙-실험-기능)를 참고하세요.
+NAS 대신 **Google Drive**를 아카이브 저장소로 쓸 수도 있습니다(실험 기능, 기본값 꺼짐). 직접 만든 OAuth 클라이언트의 ID·보안 비밀을 앱 옵션에 넣은 뒤, **저장공간** 탭에서 **Google Drive 연결**을 누르고 표시된 코드를 Google 기기 인증 페이지에 입력합니다. **연결 해제**는 이 기기의 토큰만 지우며 저장 기록·로컬 파일·Drive 파일은 바꾸지 않습니다. 기본은 로컬 파일을 지우지 않고 검증된 사본만 Drive에 두는 복제(COPY) 모드입니다. 로컬 원본을 지우는 이동(MOVE) 모드는 저장공간 탭에서 MOVE와 **검증 후 로컬 원본 삭제 허용**을 함께 켜야 적용되며, Drive 자동 정리는 없습니다. Drive로 옮긴 영상은 앱을 거쳐 재생하고, 시크가 빠르도록 지금 보는 영상 하나(256MB 이하)만 메모리에 받아 둡니다. 디스크에는 쓰지 않으며 10분 동안 보지 않으면 비웁니다. 인증 토큰은 Home Assistant 백업에 포함되므로 백업을 안전하게 보관하세요. 자세한 내용은 [Google Drive 아카이빙 안내](roadviewer_hars/DOCS.md#google-drive-아카이빙-실험-기능)를 참고하세요.
+
+HARS 2.x는 Python 1.x와 같은 Drive 계정·NAS를 쓰더라도 자기 위치(Drive `Road Viewer HARS` 폴더, owner가 `roadviewer-hars`인 NAS sentinel)에만 쓰고, Python이 보관한 기록은 읽기 전용으로 가져옵니다. 실제 Google Drive와 SMB 마운트에서는 아직 검증하지 않았습니다([같은 Drive 계정·NAS를 함께 쓸 때](docs/hars/CUTOVER.md#같은-drive-계정nas를-함께-쓸-때)).
 
 ## 문서와 검증
 
-스크린샷은 2026-11-07에 1.0.11 버전 코드에 예시 데이터를 넣어 라이트·다크 모드로 촬영했으며, 보는 환경의 테마에 맞는 이미지를 보여 줍니다. 주행·와이드 소개 사진 3장은 기존 사진의 영상 영역을 새 UI에 합성했습니다. 페어링 코드·장치·저장공간 수치는 모두 예시이며 실제 연결에 쓸 수 없습니다. [스크린샷 안내](docs/images/README.md)를 참고하세요.
+스크린샷은 2026-11-07에 1.0.11 버전 코드에 예시 데이터를 넣어 라이트·다크 모드로 촬영했으며, 보는 환경의 테마에 맞는 이미지를 보여 줍니다. 주행·와이드 소개 사진 3장은 기존 사진의 영상 영역을 새 UI에 합성했습니다. 페어링 코드·장치·저장공간 수치는 모두 예시이며 실제 연결에 쓸 수 없습니다. [스크린샷 안내](docs/images/README.md)를 참고하세요. 스크린샷은 Python 1.x에서 촬영했습니다. HARS는 Python 1.3.18의 웹 파일을 그대로 쓰고 화면의 이름·버전 표시만 Road Viewer HARS와 HARS 버전으로 바꿉니다.
 
-- [설치 및 사용 설명](roadviewer/DOCS.md) · [English](roadviewer/DOCS.en.md): 업로드, 변환, 재생, 주행 경로 지도, 선택 모드(일괄 관리), 저장 정책, 백업과 문제 해결
+- [설치 및 사용 설명](roadviewer_hars/DOCS.md) · [English](roadviewer_hars/DOCS.en.md): 업로드, 변환, 재생, 주행 경로 지도, 선택 모드(일괄 관리), 저장 정책, 백업과 문제 해결
 - [AppArmor 보안 정책](docs/apparmor-security.md) · [English](docs/apparmor-security.en.md)
 - [Android 다중 파일 선택 분석 기록](docs/android-multiple-file-fix/README.md) · [English](docs/android-multiple-file-fix/README.en.md)
-- [변경 이력](roadviewer/CHANGELOG.md): 버전별 변경 내용
+- [변경 이력](roadviewer_hars/CHANGELOG.md): 버전별 변경 내용(준비 중인 2.0.0과 Python 1.x 전체 이력)
 - [roadviewer-mcp](https://github.com/Qualified4/roadviewer-mcp): AI 에이전트용 MCP 서버. 기존 Ingress 인증과 API만 사용
 - [장치 API v1](docs/device-api.md) · [English](docs/device-api.en.md): HTTPS 구성, 페어링·서명, 업로드·이어올리기와 openpilot 없이 테스트하는 방법
 
-`roadviewer/`가 Docker 빌드 컨텍스트입니다. GitHub Actions에서 amd64/aarch64 이미지 빌드와 API·변환·브라우저 검사를 실행합니다. 브라우저 검사는 반응형 배치, 설정 저장, 마우스·터치 피드백 등을 확인하며 실제 Home Assistant 기기와 Android 파일 선택창은 환경에 따라 다를 수 있습니다.
+저장소 루트가 Docker 빌드 컨텍스트입니다(`Dockerfile`). Rust 실행 파일 `roadviewer-hars`를 빌드해 `debian:bookworm-slim` 위에 넣고, 웹 파일은 보존한 Python 1.3.18 원본(`reference/python/roadviewer/app/web`)을 그대로 씁니다. 런타임 패키지는 `nginx`와 `ca-certificates`뿐이며 FFmpeg과 Python은 들어 있지 않습니다. GitHub Actions(**HARS CI**)는 Rust 검사(fmt·clippy·전체 테스트), 원본 ccnc 클라이언트 호환·업로드 장애 주입 검사, Python과 Rust의 재생 변환 대조, 보존 원본 검사(`scripts/verify_reference.py`)·릴리스 식별 검사(`scripts/check_release.py`)·병행 설치 검사(`scripts/check_coexistence.py`)를 실행하고, amd64·aarch64 각각의 네이티브 러너에서 이미지를 빌드해 FFmpeg 잔존 검사와 컨테이너 기동·TLS 검사를 합니다. 브라우저 화면 검사는 CI 밖에서 실행합니다([실행 및 테스트](docs/hars/DEVELOPMENT.md)).
+
+원본 Python 이력과 MIT 라이선스를 유지하고, 기준 코드·테스트·스키마·UI는 `reference/python`에 보존합니다. 원본 Python 저장소는 이 저장소에서 수정하지 않습니다.
+
+### HARS 기술 문서
+
+- [기능·API 인벤토리](docs/hars/inventory.json)
+- [구현·검증 현황](docs/hars/STATUS.md)
+- [설계와 이식 기준](docs/hars/ARCHITECTURE.md)
+- [HAOS 병행 설치와 전환·롤백](docs/hars/CUTOVER.md) · [실제 HAOS 검증 준비](docs/hars/HAOS-VALIDATION.md)
+- [실행 및 테스트](docs/hars/DEVELOPMENT.md)
+- [검증 증거](docs/hars/VALIDATION.md) · [API 예비 측정](docs/hars/PERFORMANCE.md)
+- [영상 형식 지원 범위](docs/hars/FORMAT-SUPPORT.md) · [FFmpeg 제거](docs/hars/FFMPEG-REMOVAL.md)
+
+### 개발 실행
+
+개발 실행(Linux/WSL, Rust stable 및 `capnproto` 필요. `ffmpeg`은 제품에는 쓰이지 않고 테스트의 합성 입력 생성과 독립 대조에만 필요):
+
+```sh
+cargo test --locked
+HARS_DATA=/tmp/hars-dev HARS_INGRESS_ONLY=0 cargo run --locked
+```
+
+UI는 `http://127.0.0.1:8099`, 장치 API 내부 수신기는 `127.0.0.1:8098`입니다. 개발 모드 UI의 변경 요청도 `X-RoadViewer-Request: 1`이 필요합니다. 외부 HTTPS는 별도 Nginx 수신기를 사용합니다. 원본 장치 API는 UI 수신기에 노출하지 않습니다.
 
 ### 프리빌드 배포 순서
 
-병합 커밋에 **`[skip ci]`를 넣지 마세요.** main의 이미지 확인과 캐시 예열이 실행되어야 다음 PR도 최신 캐시를 사용할 수 있습니다.
+이 저장소는 정식 `2.0.0` 태그와 Release를 만들지 않습니다. 게시 자동화는 `2.0.0-alpha.N`·`beta.N`·`rc.N` prerelease만 허용합니다([정식 릴리스 게이트](docs/hars/ARCHITECTURE.md#정식-릴리스-게이트)).
 
-버전은 `roadviewer/config.yaml`에서 읽습니다. 전체 검증은 **PR에서 한 번** 수행합니다. 모든 브라우저·API 테스트, dependency audit, 두 플랫폼의 Trivy·컨테이너 검사를 통과한 이미지를 GitHub Actions 산출물로 보관하고, 수동 배포에서는 그 이미지를 그대로 사용합니다. 일반 브랜치 push는 중복 검사를 실행하지 않습니다. `main` push는 이미 배포된 이미지와 소스의 일치를 확인하고, 별도 작업에서 양쪽 플랫폼 빌드·Trivy DB·브라우저 캐시를 예열합니다. 이 캐시 예열은 전체 PR 검증을 반복하거나 릴리스 이미지를 다시 발행하는 단계가 아닙니다.
+1. 버전을 `Cargo.toml`, `roadviewer_hars/config.yaml`, `Dockerfile`의 `BUILD_VERSION`에 함께 적습니다. `scripts/check_release.py`가 세 값의 일치를 검사합니다. 이미 게시한 버전은 재사용하지 않습니다. 웹 자산은 버전이 붙은 주소로 1년간 캐시되므로 다음 게시는 반드시 버전을 올려서 합니다.
+2. `main`이 검증된 커밋이고 CI가 통과했는지 확인한 뒤, 버전과 같은 이름의 태그(예: `2.0.0-alpha.N`)를 그 커밋에 만들어 push합니다. 이 push가 `.github/workflows/prerelease.yml`(**HARS prerelease**)을 시작합니다.
+3. `gate` 작업이 `scripts/check_release.py --tag`(태그와 버전 일치), fmt, clippy, 전체 테스트를 실행합니다.
+4. `image` 작업이 amd64·aarch64 각각의 네이티브 러너에서 이미지를 빌드하고, FFmpeg 잔존 검사(`scripts/image_report.py --require-no-ffmpeg`)와 `scripts/container_smoke.py`를 통과한 뒤에만 `ghcr.io/qualified4/roadviewer-hars:<태그>-<아키텍처>`를 push합니다.
+5. `manifest` 작업이 두 이미지를 `ghcr.io/qualified4/roadviewer-hars:<태그>`로 묶고, `docs/hars/STATUS.md`를 본문으로 GitHub prerelease를 만듭니다. 한 아키텍처라도 실패하면 manifest와 prerelease는 만들어지지 않습니다.
+6. GHCR 패키지가 공개인지 확인합니다. 비공개면 Home Assistant가 이미지를 받지 못합니다. 인증 없이 `docker manifest inspect ghcr.io/qualified4/roadviewer-hars:<태그>`로 두 아키텍처가 보이는지 확인합니다.
 
-1. 릴리스 브랜치에서 앱 버전·Dockerfile 기본 버전·화면 버전·변경 이력을 함께 갱신합니다. 이미 배포한 버전은 재사용하지 않습니다.
-2. 해당 브랜치를 push하고 `main` 대상 PR을 만듭니다. PR의 전체 검증이 성공한 뒤 **Actions → Build, test and publish app → Run workflow**에서 같은 브랜치를 선택합니다. 수동 실행은 현재 커밋의 최신 PR 검증 성공 여부를 확인하고, 해당 실행·재시도 번호의 산출물 ID로 이미지를 가져옵니다. 다시 빌드하지 않습니다.
-3. 최초 GHCR 패키지는 비공개일 수 있습니다. GitHub의 **Packages → roadviewer-ha → Package settings → Change visibility → Public**을 확인합니다. 공개 접근 검사에서 실패했다면 공개로 변경한 뒤 실패한 `publish` 작업을 다시 실행합니다. Home Assistant에 레지스트리 자격 증명을 넣는 방식은 사용하지 않습니다.
-4. 모든 작업과 익명 다운로드·플랫폼 검증이 성공한 뒤 **테스트한 변경을 그대로 squash merge로 `main`에 반영**합니다. `main`에서는 두 플랫폼 이미지의 버전·전체 소스 트리와 병합된 파일 내용을 비교합니다. squash로 커밋 ID가 바뀌어도 파일 내용이 같으면 통과합니다. 이미지가 만들어지기 전에 새 버전을 `main`에 올리면 이 검사와 설치·업데이트가 실패할 수 있습니다.
-
-이미지 산출물은 7일간 보관합니다. 만료·삭제됐거나 최신 검증이 실패/취소됐으면 배포하지 않습니다. **Re-run all jobs**로 전체 PR 검증을 다시 실행하세요. 실패한 작업만 재실행하면 이번 재시도 번호에 두 이미지가 없을 수 있습니다. PR에서 테스트한 병합 결과와 릴리스 브랜치의 파일 내용이 다르면 역시 배포를 차단하므로, 브랜치를 최신 `main`에 맞춘 뒤 다시 검증해야 합니다. 새 커밋을 push하면 이전 PR 검증은 취소하고 새 커밋을 검증합니다.
-
-수동 배포의 `build-<검증 실행 번호>-<재시도 번호>-amd64` / `arm64` 태그는 검증한 플랫폼별 이미지입니다. 릴리스는 변경 가능한 태그 대신 이미지 digest를 참조해 구성하며 Home Assistant는 버전 태그를 사용합니다. 이미 있는 버전 태그는 덮어쓰지 않고 소스 일치를 확인합니다. 수정본을 배포하려면 반드시 새 버전을 사용합니다. 로컬 소스를 직접 빌드하려면 [설치 설명](roadviewer/DOCS.md#설치와-접속)의 `image:` 제거 안내를 따르세요.
+이미 게시한 태그는 다시 쓰지 않고, 문제가 있으면 다음 버전으로 올립니다. 자세한 절차는 [이미지 빌드·게시 설정](docs/hars/HAOS-VALIDATION.md#이미지-빌드게시-설정)을 참고하세요.
 
 Road Viewer는 [MIT 라이선스](LICENSE)로 배포합니다.
 
-원본 주행 로그·영상은 저장소에 포함하지 않습니다. 위 소개 화면은 공개용으로 선택한 스크린샷입니다. 포함된 openpilot 스키마와 UI 리소스의 라이선스는 [OPENPILOT-LICENSE](roadviewer/schema/OPENPILOT-LICENSE)를 참고하세요.
+원본 주행 로그·영상은 저장소에 포함하지 않습니다. 위 소개 화면은 공개용으로 선택한 스크린샷입니다. 포함된 openpilot 스키마와 UI 리소스의 라이선스는 [OPENPILOT-LICENSE](reference/python/roadviewer/schema/OPENPILOT-LICENSE)를 참고하세요.

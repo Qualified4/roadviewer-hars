@@ -2,6 +2,10 @@
 
 한국어 · [English](README.en.md)
 
+> **Rust 기반 Road Viewer 2.x의 prerelease(alpha)입니다. 아직 정식 출시 전이며 운영 전환 검증이 진행 중입니다.** 기존 Python Road Viewer 1.x와 병행 설치해 시험하는 독립 앱이며, Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)는 별도로 계속 유지됩니다. 운영 업로드를 전환하지 마세요. 외부 HTTPS는 기본적으로 비활성화되어 있습니다.
+>
+> [구현·검증 현황](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) · [병행 설치·전환·롤백 절차](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md) · [실제 HAOS 검증](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/HAOS-VALIDATION.md)
+
 현재 기능 안내: **1.3.18**
 
 openpilot 로그와 전방·와이드 카메라 영상을 Home Assistant 안에서 함께 재생하고 분석하는 앱입니다.
@@ -46,7 +50,7 @@ Drive MOVE 이외의 기존 저장 정책에서는 예약만으로 삭제하지 
 
 ## 지원 플랫폼
 
-`amd64`(Intel/AMD 64비트)와 `aarch64`(ARM 64비트)를 지원합니다. 설치·업데이트 시 미리 빌드한 이미지 중 해당 기기에 맞는 하나만 내려받습니다. Home Assistant의 다운로드·압축 해제 진행률을 활용하며 표시 방식은 Home Assistant/Supervisor 버전에 따라 다릅니다.
+`amd64`(Intel/AMD 64비트)와 `aarch64`(ARM 64비트)를 지원합니다. 설치·업데이트 시 미리 빌드한 이미지(`ghcr.io/qualified4/roadviewer-hars`) 중 해당 기기에 맞는 하나만 내려받습니다. Home Assistant의 다운로드·압축 해제 진행률을 활용하며 표시 방식은 Home Assistant/Supervisor 버전에 따라 다릅니다.
 
 ## MP4 저장과 다운로드
 

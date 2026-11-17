@@ -23,6 +23,8 @@
 
 Implementation reference: **Road Viewer 1.3.18**.
 
+> This document describes Python Road Viewer 1.x. HARS 2.x implements the 53 API routes of Python 1.3.16, but implementation and test notes such as Gunicorn, Flask and the `tests/*.py` commands are those of Python 1.x. See the [implementation and validation status](hars/STATUS.md) for differences in HARS 2.x and [running and testing](hars/DEVELOPMENT.md) for its tests (Korean). Data paths are given for HARS (`/data/roadviewer-hars`).
+
 This repository provides the Road Viewer server and web UI. Compatible device uploaders are maintained separately. Existing browser uploads and Home Assistant Ingress remain supported. One Gunicorn worker with multiple threads is required; do not add workers/replicas sharing this data directory.
 
 ## Deployment and HTTPS
@@ -66,7 +68,7 @@ In the Ingress UI, open **로그 업로드 → 외부 장치 연결 → 새 장�
 
 The device must protect these values persistently. Neither is stored in browser localStorage. No UI/API can read back a device secret. If the response is lost, revoke that device and pair again.
 
-Road Viewer stores a random 256-bit root secret in `/data/roadviewer/.devices.json` with mode 0600, alongside device records, replay nonces and short-lived completion receipts. Per-device secrets are derived with HMAC-SHA256 from that root and the unique device ID; individual plaintext secrets are not recorded. HMAC verification cannot use only a one-way hash of the client key. A local persistent root secret is used rather than encryption with another colocated key; filesystem/backup protection remains essential. Compromise of this file compromises all device credentials. The file is retained by Home Assistant backups as authentication configuration; logs/video are excluded as before. Corrupt credential state is not silently reset.
+Road Viewer stores a random 256-bit root secret in `/data/roadviewer-hars/.devices.json` with mode 0600, alongside device records, replay nonces and short-lived completion receipts. Per-device secrets are derived with HMAC-SHA256 from that root and the unique device ID; individual plaintext secrets are not recorded. HMAC verification cannot use only a one-way hash of the client key. A local persistent root secret is used rather than encryption with another colocated key; filesystem/backup protection remains essential. Compromise of this file compromises all device credentials. The file is retained by Home Assistant backups as authentication configuration; logs/video are excluded as before. Corrupt credential state is not silently reset.
 
 ## HMAC request authentication
 
@@ -246,7 +248,7 @@ Moved recordings **remain listed, playable, and downloadable**. Automatic local 
 
 The logical rejection/eviction policy below applies outside effective Drive MOVE. Insufficient physical space retains the existing HTTP 507 storage error; no new waiting or retry API is introduced.
 
-The UI offers unlimited (default), 10/20/50/100 GB and custom; UI GB uses 1024³ bytes. `/data/roadviewer/.storage-settings.json` stores integer `max_bytes`, `policy` and segment UUID pins (`pinned_logs`). No database was added. Settings and pins persist and are backed up. UI exposes used bytes (all regular files below Road Viewer root), disk free bytes and remaining reserved bytes.
+The UI offers unlimited (default), 10/20/50/100 GB and custom; UI GB uses 1024³ bytes. `/data/roadviewer-hars/.storage-settings.json` stores integer `max_bytes`, `policy` and segment UUID pins (`pinned_logs`). No database was added. Settings and pins persist and are backed up. UI exposes used bytes (all regular files below Road Viewer root), disk free bytes and remaining reserved bytes.
 
 Before accepting a browser or device chunk batch, admission reserves **total declared bytes + 64 KiB**. Legacy multipart uploads reserve **2 × declared bytes + 64 KiB** because registration copies their staging data. Already received bytes count toward used space; only remaining reservation is added. Actual free disk must cover outstanding reservations, the new transfer and a **100 MiB safety margin** without relying on eviction. A shared registration/storage lock protects admission and reservation creation. Reservation files live in upload staging and are released on completion/cancellation/terminal failure/expiry. Valid device sessions survive restart; expired/browser reservations are cleared.
 
@@ -326,7 +328,7 @@ The long-term secret becomes a nonextractable Web Crypto HMAC key in page memory
 
 ## Related documentation
 
-- [User guide (English)](../roadviewer/DOCS.en.md) · [사용 설명서 (한국어)](../roadviewer/DOCS.md)
+- [User guide (English)](../roadviewer_hars/DOCS.en.md) · [사용 설명서 (한국어)](../roadviewer_hars/DOCS.md)
 - [API 한국어](device-api.md)
 
 Video verification compares SHA-256 hashes of compressed pictures and decoder headers, packet counts and log timestamps without full-frame decoding. It checks preservation across remuxing rather than screening the source for every possible decoding error.
