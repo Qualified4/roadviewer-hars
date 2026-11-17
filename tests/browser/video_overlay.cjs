@@ -521,6 +521,7 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   assert(draws.some(p=>p.y>draws[0].y+1&&p.y<draws.at(-1).y-1),'height moves smoothly to ground');
   const idleCount=draws.length;await page.waitForTimeout(80);
   assert.equal(await page.evaluate(()=>overlayDraws.length),idleCount,'settled paused overlays do not keep redrawing');
+  const groundY=draws.at(-1).y;
   await page.evaluate(()=>{setTime(0);overlayDraws=[];toggle();document.getElementById('overlayHeight').click()});
   await settleOverlay();
   draws=await page.evaluate(()=>overlayDraws);
@@ -529,9 +530,20 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   assert(draws.at(-1).y<draws[0].y-5,'vehicle rises during playback');
   await page.evaluate(()=>pause());
   // Reverse a height change mid-flight and finish at the saved target, without a jump.
-  await page.evaluate(()=>{overlayDraws=[];document.getElementById('overlayHeight').click()});
-  await page.waitForTimeout(90);
-  const reverse=await page.evaluate(()=>{const before=overlayDraws.at(-1).y;document.getElementById('overlayHeight').click();return {before,after:overlayDraws.at(-1).y}});
+  // HARS: reversed when the change is observed between a quarter and three quarters of the way to the ground (the
+  // ground position is the settled one drawn above), drawn and reversed in one task, instead of 90 ms after the start
+  // with the last tick's drawing (on a loaded machine that was either too late or a stale position).
+  const reverse=await page.evaluate(ground=>{
+   overlayDraws=[];document.getElementById('overlayHeight').click();
+   const start=overlayDraws.at(-1).y,span=ground-start,began=performance.now();
+   for(;;){
+    render();const before=overlayDraws.at(-1).y,moved=(before-start)/span;
+    if(moved>=.25&&moved<=.75){document.getElementById('overlayHeight').click();return {start,ground,moved,before,after:overlayDraws.at(-1).y}}
+    if(moved>.75||performance.now()-began>2000)return {start,ground,moved,missed:true};
+   }
+  },groundY);
+  assert(Math.abs(reverse.ground-reverse.start)/4>=10,'the height change is long enough to show a jump '+JSON.stringify(reverse));
+  assert(!reverse.missed,'the height change is reversed in flight '+JSON.stringify(reverse));
   assert(Math.abs(reverse.after-reverse.before)<10,'height reversal starts from the current position');
   await settleOverlay();
   // Switching reduced motion on settles an in-flight fade and height change immediately.
