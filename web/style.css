@@ -785,7 +785,7 @@ select,.rv-choice-trigger{font-weight:500}
 .replay-page.hud-idle .video-gap{translate:0 calc(-1 * var(--gap-cover,0px))}
 .video-wrap.video-map-large .video-gap{opacity:0}
 @container(max-width:520px){.video-gap{left:8px;bottom:8px}}
-.camera-panel:fullscreen .video-gap{bottom:calc(var(--transport-height,130px) + 12px)}
+.camera-panel:fullscreen .video-gap{bottom:calc(var(--transport-height,130px) + 12px);transition:bottom .18s var(--m2-standard,ease),translate .18s var(--m2-standard,ease),opacity .18s var(--m2-standard,ease)}
 .replay-page.compact-media .camera-panel:not(:fullscreen) .video-gap{--gap-cover:var(--video-cover,0px)}
 @media(prefers-reduced-motion:reduce){.video-gap{transition:none}}
 /* Short or touch screens: the app bar also folds up while playing; the content moves up into its place. */
@@ -878,8 +878,12 @@ select,.rv-choice-trigger{font-weight:500}
 @media(prefers-color-scheme:light){:root:not([data-theme=dark]) .camera-panel:fullscreen{--fs-bar:rgba(246,247,249,.92)}}
 .replay-page.hud-idle .camera-panel:fullscreen .playback{opacity:0;pointer-events:none;transition-duration:.3s}
 .camera-panel:fullscreen :is(.video-tools,.video-fullscreen){bottom:calc(var(--transport-height,130px) + 12px)}
-.camera-panel:fullscreen .video-messages{bottom:calc(var(--transport-height,130px) + var(--hud-h) + 20px)}
-@media(prefers-reduced-motion:reduce){.camera-panel:fullscreen .playback{transition:none}}
+.camera-panel:fullscreen .video-messages{bottom:calc(var(--transport-height,130px) + var(--hud-h) + 20px);transition:bottom .18s var(--m2-standard,ease)}
+/* Once the transport and video tools fade, only the outer safe-area margin remains.
+   Enter/exit durations match the fullscreen transport; ordinary playback keeps its layout. */
+.replay-page.hud-idle .camera-panel:fullscreen :is(.video-gap,.video-messages){bottom:calc(12px + env(safe-area-inset-bottom));transition-duration:.3s}
+.replay-page.hud-idle .camera-panel:fullscreen .video-gap{translate:0 0}
+@media(prefers-reduced-motion:reduce){.camera-panel:fullscreen :is(.playback,.video-gap,.video-messages){transition:none}}
 /* Glass panes (tokens at the top); last so they win over the base card rules of the same elements. */
 .glass-panel{background:var(--glass-bg);border:1px solid var(--glass-border);-webkit-backdrop-filter:var(--glass-filter);backdrop-filter:var(--glass-filter);box-shadow:var(--glass-shadow)}
 @supports not ((backdrop-filter:blur(1px)) or (-webkit-backdrop-filter:blur(1px))){.glass-panel{background:var(--glass-solid)}}
