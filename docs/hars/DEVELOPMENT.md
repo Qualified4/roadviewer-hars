@@ -88,7 +88,14 @@ cd "$REPO/reference/python" && HARS_BIN=... HARS_WEB=... RV_PYTHON="$REPO/integr
   RV_TEST_VIDEO=SYNTHETIC.mp4 NODE_PATH=PLAYWRIGHT_NODE_MODULES node tests/maps.cjs
 ```
 
-2026-11-17 1.3.18 동기화(`feat/ui-sync-1.3.18`)에서 `segment_peek.cjs`는 통과했다. `maps.cjs`는 110행(목록 카드 경로 버튼 안의 경로 선 2개)에서 0개로 실패해 그 뒤(1.3.17 색상 단언 포함)는 실행되지 않았다. 같은 기록의 `/api/tracks`는 Python과 점이 같고 `distance_m` 표기(`900` 대 `900.0`)만 달랐다. 원인은 확인하지 않았다.
+어댑터는 Python 서버와 같은 조건을 두 가지 만든다.
+
+- 요청마다 연결을 닫는다(HTTP/1.0). 테스트의 werkzeug 서버가 `Connection: close`로 답하기 때문이다. 목록 카드의 지도 버튼은 `/api/tracks` 응답 전에 먼저 나타나고(maps.js의 의도된 대기 상태), 경로 선은 응답을 받은 뒤 그려진다. 110행은 버튼이 보이자마자 선을 센다. keep-alive 프록시에서는 그 사이에 세는 경우가 30회 페이지 열기 중 2~5회 나왔다. Python 서버를 같은 프록시 뒤에 두어도 3/30이었고, Python 직접 연결과 HTTP/1.0 프록시(Python·HARS 모두)에서는 0/30이었다.
+- 데이터 폴더의 기록 폴더 목록이 바뀌면 다음 요청 전에 HARS를 다시 띄운다. HARS는 기록을 시작할 때 한 번 읽고 그 뒤에는 자기 API로만 새 기록을 알게 되는데, 테스트의 `many` 부분은 서버가 도는 중에 기록 100개를 폴더에 직접 써 넣는다(Python은 요청마다 폴더를 읽는다).
+
+브라우저 외부 요청은 `unshare -rn`(루프백만 있는 네트워크 이름공간) 안에서 실행해 막는다. 그 안에서는 Chromium 자체 샌드박스가 뜨지 않으므로 `ui_sync_check.py`·`ui_view_check.py`에는 `--no-sandbox`를 붙이는 래퍼를 `--browser`로 준다(Playwright는 스스로 붙인다).
+
+2026-11-17 1.3.18 동기화(`feat/ui-sync-1.3.18`)에서 `segment_peek.cjs`는 통과했다. `maps.cjs`는 처음 110행(목록 카드 경로 버튼 안의 경로 선 2개)에서 0개로 실패했다. 원인은 어댑터 쪽 조건이었고 HARS 응답 때문이 아니었다. HARS 응답의 `distance_m` 표기(`900.0` 대 Python `900`)를 Python과 같게 바꿔도 실패율이 같았다(3/30). 위 두 조건을 넣은 뒤 `maps.cjs` 전체(main·many·leak, 어두운·밝은 테마)를 HARS에서 3/3 통과했고 Python에서도 1/1 통과했다. HTTP/1.0만 넣고 돌린 3회 가운데 2회는 `many` 부분(781행, 직접 써 넣은 기록)에서 실패했고, 1회는 113행(지도 버튼과 재생 버튼이 한 줄에 있는지)에서 실패했다. 이 실패는 같은 단계를 30회씩 반복한 Python·HARS 측정에서는 다시 나오지 않았다.
 
 ## 재생 변환 비교
 
