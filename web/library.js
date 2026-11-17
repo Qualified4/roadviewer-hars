@@ -612,7 +612,7 @@ async function refresh({poll=false}={}){
   const data=JSON.parse(text);if(revision!==listRevision)return;
   // A list that reads again clears its own earlier failure (other messages stay).
   listFailures=0;if(listErrorShown!==null&&$('error').textContent===listErrorShown)error('');listErrorShown=null;
-  if(!concurrencySaving&&settingsRevision===concurrencyRevision){savedConcurrency=[1,2,3,4].includes(data.concurrency)?data.concurrency:1;const select=$('concurrency');select.value=String(savedConcurrency);select.disabled=false;select.dispatchEvent(new Event('rv:sync'));savedAutoConvert=data.auto_convert!==false;syncAutoConvert()}
+  if(!concurrencySaving&&settingsRevision===concurrencyRevision){savedConcurrency=(Number.isInteger(data.concurrency)&&data.concurrency>=1&&data.concurrency<=16)?data.concurrency:1;const select=$('concurrency');select.value=String(savedConcurrency);select.disabled=false;select.dispatchEvent(new Event('rv:sync'));savedAutoConvert=data.auto_convert!==false;syncAutoConvert()}
   updateTagCatalog(data.logs);
   headerStorage.used=data.storage_used_bytes;headerStorage.logs=data.logs.length;syncHeaderStorage();
   // Uploads from a device or another browser show in the header chip too (this page's own upload drives it itself).

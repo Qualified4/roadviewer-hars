@@ -23,7 +23,8 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   await page.goto('https://rv.test/#settings');
   await page.waitForFunction(()=>document.getElementById('concurrencyChoice')&&!document.getElementById('concurrencyChoice').disabled);
   assert.equal(await page.locator('#concurrencyChoice').textContent(),'1개');
-  for(const value of [2,3,4]){
+  assert.deepEqual(await page.locator('#concurrency option').evaluateAll(nodes=>nodes.map(n=>Number(n.value))),Array.from({length:16},(_,i)=>i+1));
+  for(const value of Array.from({length:15},(_,i)=>i+2)){
    await page.locator('#concurrencyChoice').click();await page.getByRole('option',{name:value+'개',exact:true}).click();
    await page.waitForFunction(value=>document.getElementById('concurrencyChoice').textContent===value+'개',value);
    assert.equal(concurrency,value);assert.equal(writes,value-1);

@@ -805,9 +805,9 @@ async fn processing(
         }
         if fields
             .get("concurrency")
-            .is_some_and(|v| !v.as_u64().is_some_and(|v| (1..=4).contains(&v)))
+            .is_some_and(|v| !v.as_u64().is_some_and(|v| (1..=16).contains(&v)))
         {
-            return Err(invalid("동시 처리 개수는 1~4여야 합니다."));
+            return Err(invalid("동시 처리 개수는 1~16이어야 합니다."));
         }
         if fields.get("auto_convert").is_some_and(|v| !v.is_boolean()) {
             return Err(invalid("자동 변환 설정은 켜짐 또는 꺼짐이어야 합니다."));
@@ -827,7 +827,7 @@ async fn processing(
         }
         if !settings["concurrency"]
             .as_u64()
-            .is_some_and(|v| (1..=4).contains(&v))
+            .is_some_and(|v| (1..=16).contains(&v))
             || !settings["auto_convert"].is_boolean()
             || !settings["keep_original_video"].is_boolean()
         {
