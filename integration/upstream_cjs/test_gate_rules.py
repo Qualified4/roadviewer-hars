@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-"""Rules of the browser gate that a real run reaches only by chance: the known upstream defect's rerun (signature,
-attempt limit, hits) and the refusal of expectations.json. No browser, no HARS; builds results the way the runner
-records them and calls the runner's own functions.
+"""Rules of the browser gate that a real run reaches only by chance, and the gate data itself: the excluded set is
+exactly {replay_format2}, only maps[map_parts=many,leak] may restart HARS, and no other kind of exception (expected
+failures, reruns) exists. No browser, no HARS; builds results the way the runner records them and calls the runner's
+own functions. CI runs it in Browser checks.
   python3 integration/upstream_cjs/test_gate_rules.py"""
 import copy, sys, unittest
 from pathlib import Path
@@ -10,127 +11,91 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import run_browser_tests as rb  # noqa: E402
 
 EXPECTATIONS = rb.load_expectations()
-DEFECT = EXPECTATIONS["known_upstream_defects"]["video_overlay"]
-CHECK = DEFECT["guarded_by"]
+LABELS = [e["label"] for e in rb.entries()]
 
 
-def run(outcome="fail", errors=1, error="AssertionError", message="closing hands focus to nothing", line=77, **extra):
-    failure = {"errors": errors, "error": error, "message": message, "line": line} if outcome != "pass" else {"errors": 0}
-    return {"label": "video_overlay", "outcome": outcome, "failure": failure, "iteration": 1, **extra}
+def result(label="tags", outcome="pass", **extra):
+    failure = {"errors": 0} if outcome == "pass" else {"errors": 1, "error": "AssertionError", "message": "x", "line": 1}
+    return {"label": label, "outcome": outcome, "failure": failure, "leftover_processes": [],
+            "shim": {"restarts": 0, "refused_restarts": 0}, **extra}
 
 
-def final(*attempts):
-    """The base result the runner keeps: the last attempt, carrying the earlier ones."""
-    last = copy.deepcopy(attempts[-1])
-    if len(attempts) > 1:
-        last["earlier_attempts"] = [copy.deepcopy(a) for a in attempts[:-1]]
-    return last
+def full(**changes):
+    rows = [result(label) for label in LABELS if label not in EXPECTATIONS["excluded"]]
+    for label, row in changes.items():
+        rows = [row if r["label"] == label else r for r in rows]
+    return rows
 
 
-def rerun_sequence(outcomes):
-    """What the runner's loop does with these attempt outcomes (taken in order while it asks for another attempt)."""
-    attempts = [outcomes[0]]
-    while rb.another_attempt(attempts, DEFECT) and len(attempts) < len(outcomes):
-        attempts.append(outcomes[len(attempts)])
-    return attempts
+class GateData(unittest.TestCase):
+    def test_excluded_is_exactly_replay_format2(self):
+        self.assertEqual(set(EXPECTATIONS["excluded"]), {"replay_format2"})
+        self.assertFalse((rb.TESTS / "replay_format2.cjs").exists(), "replay_format2 is not imported")
+
+    def test_only_the_many_leak_entry_may_restart(self):
+        self.assertEqual(EXPECTATIONS["restart_allowed"], ["maps[map_parts=many,leak]"])
+
+    def test_no_other_kind_of_exception(self):
+        self.assertEqual(set(EXPECTATIONS), {"about", "entries", "excluded", "restart_allowed"})
+        for kind in ("expected_failures", "known_upstream_defects", "hars_checks"):
+            e = copy.deepcopy(EXPECTATIONS)
+            e[kind] = {}
+            self.assertIn("unknown keys", rb.expectation_problem(e))
+
+    def test_entry_count_is_the_manifest(self):
+        self.assertEqual(EXPECTATIONS["entries"], len(LABELS))
+        self.assertEqual(len(set(LABELS)), len(LABELS))
+        for e in rb.entries():
+            if e["label"] not in EXPECTATIONS["excluded"]:
+                self.assertTrue((rb.TESTS / e["file"]).is_file(), e["file"])
+
+    def test_no_rerun_option(self):
+        import inspect
+        source = inspect.getsource(rb)
+        for word in ("attempt", "--repeat", "earlier_attempts", "variant"):
+            self.assertNotIn(word, source)
 
 
-SIG, PASS = run(), run("pass")
+class Judge(unittest.TestCase):
+    def test_pass_and_fail(self):
+        self.assertEqual(rb.judge(result(), EXPECTATIONS), "pass")
+        for outcome in ("fail", "timeout", "supervisor-failed", "isolation-failed", "interrupted"):
+            self.assertEqual(rb.judge(result(outcome=outcome), EXPECTATIONS), "fail", outcome)
 
+    def test_leftover_process_fails_a_pass(self):
+        self.assertEqual(rb.judge(result(leftover_processes=["node x"]), EXPECTATIONS), "fail")
 
-class DefectRerun(unittest.TestCase):
-    def judged(self, *outcomes):
-        attempts = rerun_sequence(list(outcomes))
-        r = final(*attempts)
-        return len(attempts), rb.judge(r, EXPECTATIONS), rb.defect_hits(r, EXPECTATIONS)
-
-    def test_pass_first_time(self):
-        self.assertEqual(self.judged(PASS), (1, "pass", 0))
-
-    def test_signature_then_pass(self):
-        self.assertEqual(self.judged(SIG, PASS), (2, "pass", 1))
-        self.assertEqual(self.judged(SIG, SIG, PASS), (3, "pass", 2))
-
-    def test_three_signature_failures_fail(self):
-        self.assertEqual(self.judged(SIG, SIG, SIG, PASS), (3, "fail", 3))
-        self.assertFalse(rb.another_attempt([SIG, SIG, SIG], DEFECT))
-
-    def test_other_failures_are_not_rerun(self):
-        for other in (run(line=78), run(line=None), run(message="ground mode has no vertical stem"),
-                      run(errors=2), run(error="TimeoutError"), run("timeout", errors=0),
-                      run("supervisor-failed", errors=0)):
-            with self.subTest(other=other):
-                self.assertFalse(rb.another_attempt([other], DEFECT))
-                self.assertEqual(self.judged(other, PASS), (1, "fail", 0))
-
-    def test_signature_then_other_failure_fails(self):
-        self.assertEqual(self.judged(SIG, run(line=120), PASS), (2, "fail", 1))
-
-    def test_recorded_attempts_are_rechecked(self):
-        # What --aggregate reads back: more attempts than the limit, or a rerun after a different failure.
-        self.assertEqual(rb.judge(final(SIG, SIG, SIG, PASS), EXPECTATIONS), "fail")
-        self.assertEqual(rb.judge(final(run(line=78), PASS), EXPECTATIONS), "fail")
-        other = dict(PASS, label="tags", earlier_attempts=[dict(SIG, label="tags")])
-        self.assertEqual(rb.judge(other, EXPECTATIONS), "fail")
-
-    def test_rule_is_only_for_the_defect_entry(self):
-        self.assertEqual(rb.judge(dict(SIG, label="motion"), EXPECTATIONS), "fail")
-        self.assertEqual(rb.defect_hits(dict(SIG, label="motion"), EXPECTATIONS), 0)
+    def test_restart_only_where_allowed(self):
+        restarted = {"restarts": 1, "refused_restarts": 0}
+        self.assertEqual(rb.judge(result("maps[map_parts=many,leak]", shim=restarted), EXPECTATIONS), "pass")
+        self.assertEqual(rb.judge(result("tags", shim=restarted), EXPECTATIONS), "fail")
+        refused = {"restarts": 0, "refused_restarts": 1}
+        self.assertEqual(rb.judge(result("tags", shim=refused), EXPECTATIONS), "fail")
+        self.assertEqual(rb.judge(result("maps[map_parts=many,leak]", shim=refused), EXPECTATIONS), "fail")
 
 
 class Verdict(unittest.TestCase):
-    labels = ["video_overlay"]
+    def gate(self, rows, labels=LABELS, full_manifest=True):
+        return rb.verdict(rows, ["replay_format2"], labels, EXPECTATIONS, full_manifest)
 
-    def gate(self, *results):
-        return rb.verdict(list(results), [], self.labels, 1, EXPECTATIONS, False)
-
-    def check(self, outcome="pass"):
-        return {"label": CHECK, "hars_check": CHECK, "runs_with": "video_overlay", "outcome": outcome,
-                "failure": {"errors": 0}, "iteration": 1}
-
-    def test_hits_are_counted_when_passing(self):
-        g = self.gate(final(SIG, SIG, PASS), self.check())
+    def test_whole_manifest_passes(self):
+        g = self.gate(full())
         self.assertTrue(g["ok"], g["reasons"])
-        self.assertEqual(g["counts"]["known_upstream_defect_hits"], 2)
-        self.assertEqual(g["counts"]["hars_checks_passed"], 1)
+        self.assertEqual(g["counts"], {"pass": 50, "excluded": 1, "fail": 0})
 
-    def test_hars_check_failure_fails_the_gate(self):
-        g = self.gate(final(PASS), self.check("fail"))
-        self.assertFalse(g["ok"])
+    def test_missing_duplicated_excluded_run_or_nothing_fails(self):
+        rows = full()
+        self.assertFalse(self.gate(rows[1:])["ok"])
+        self.assertFalse(self.gate(rows + rows[:1])["ok"])
+        self.assertFalse(self.gate(rows + [result("replay_format2")])["ok"])
+        self.assertIn("no test ran", self.gate([], labels=["replay_format2"], full_manifest=False)["reasons"])
 
-    def test_hars_check_must_run_with_its_entry(self):
-        g = self.gate(final(PASS))
-        self.assertFalse(g["ok"])
-        self.assertIn(f"{CHECK} ran 0 times", " ".join(g["reasons"]))
+    def test_one_failure_fails(self):
+        self.assertFalse(self.gate(full(tags=result("tags", outcome="fail")))["ok"])
 
-    def test_three_signature_failures_fail_the_gate(self):
-        g = self.gate(final(SIG, SIG, SIG), self.check())
-        self.assertFalse(g["ok"])
-        self.assertEqual(g["counts"]["known_upstream_defect_hits"], 3)
-
-
-class Refusal(unittest.TestCase):
-    def test_current_file_is_accepted(self):
-        self.assertIsNone(rb.expectation_problem(EXPECTATIONS))
-
-    def changed(self, change):
-        e = copy.deepcopy(EXPECTATIONS)
-        change(e)
-        return rb.expectation_problem(e)
-
-    def test_two_defect_entries_are_refused(self):
-        def two(e):
-            e["known_upstream_defects"]["motion"] = dict(DEFECT, guarded_by=CHECK)
-        self.assertIn("at most 1", self.changed(two))
-
-    def test_higher_attempt_limit_is_refused(self):
-        self.assertIn("max_attempts", self.changed(lambda e: e["known_upstream_defects"]["video_overlay"].update(max_attempts=4)))
-
-    def test_defect_without_its_check_is_refused(self):
-        self.assertIn("guarded_by", self.changed(lambda e: e["hars_checks"].clear()))
-
-    def test_defect_without_signature_is_refused(self):
-        self.assertIn("lacks", self.changed(lambda e: e["known_upstream_defects"]["video_overlay"].pop("line")))
+    def test_entry_count_must_match(self):
+        e = dict(EXPECTATIONS, entries=50)
+        self.assertFalse(rb.verdict(full(), ["replay_format2"], LABELS, e, True)["ok"])
 
 
 if __name__ == "__main__":

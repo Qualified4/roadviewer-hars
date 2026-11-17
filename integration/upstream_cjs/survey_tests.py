@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Inventory of the preserved browser tests (reference/python/tests/*.cjs) as JSON: how each test gets its server, the
+"""Inventory of HARS's browser tests (tests/browser/*.cjs) as JSON: how each test gets its server, the
 fixtures and Python pieces it uses, and countable units. Read from the test text only; nothing is run.
 
   assertions    assert(...) / assert.<name>(...) call sites in the file (a call site inside a loop counts once)
@@ -7,8 +7,8 @@ fixtures and Python pieces it uses, and countable units. Read from the test text
 import json, re, sys
 from pathlib import Path
 
-TESTS = Path(__file__).resolve().parents[2] / "reference/python/tests"
-SKIP = {"browser-helpers.cjs", "run_group.cjs"}
+TESTS = Path(__file__).resolve().parents[2] / "tests/browser"
+SKIP = {"browser-helpers.cjs"}
 
 
 def survey(file):

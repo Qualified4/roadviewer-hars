@@ -1,47 +1,48 @@
 #!/usr/bin/env python3
-"""Runs the preserved Python Road Viewer browser tests (reference/python/tests/*.cjs, Node + Playwright) against a HARS
-executable and the web files HARS serves, without changing the test files, and judges the run (the gate).
+"""Runs HARS's browser tests (tests/browser/*.cjs, Node + Playwright, copied from Python Road Viewer 1.3.18 and owned
+by HARS since) against a HARS executable and the web files HARS serves, and judges the run (the gate).
 
 Each test runs in its own working folder: roadviewer/app/web holds what HARS served for every preserved web file
-(mirror_web.py), roadviewer/config.yaml is HARS's add-on config, and tests/ links to the preserved tests folder (its
-fixtures and Python helpers). Tests that start the Python server get hars_as_python.py as RV_PYTHON (pyshim/). TMPDIR
-points into the working folder, so the test's own temporary folders and the browser profile go with it. Node loads
-failure_capture.cjs first: a failed test leaves screenshots of its open pages.
+(mirror_web.py), roadviewer/config.yaml is HARS's add-on config, and tests/ links to tests/browser (its fixtures and
+Python helpers). Tests that start the Python server get hars_as_python.py as RV_PYTHON (pyshim/). TMPDIR points into
+the working folder, so the test's own temporary folders and the browser profile go with it. HARS_EXPECTED_VERSION is
+the package version in Cargo.toml. Node loads failure_capture.cjs first: a failed test leaves screenshots of its open
+pages.
 
 Every test runs under a supervisor process that is a child subreaper: whatever the test started (Node, the browser,
 the Python helpers, HARS) stays below it however it was detached, and is killed when the test ends, times out or the
 run is interrupted. With --isolate (default) the supervisor runs in a new user+network namespace (unshare -rn) that
 has only loopback, and checks that before the test starts, so the browser cannot reach outside hosts (map tiles).
 
-The gate (expectations.json): every browser-groups.json entry runs and passes, except the excluded entries (not run)
-and the expected failures, which must fail with exactly the recorded assertion; each expected failure also runs once
-more on a mirror copy changed in the one place it names, and that run must pass. A HARS check (hars_checks, a test
-file in this folder) runs with the entry it names and must pass. The one known upstream test defect
-(known_upstream_defects, at most one entry) is run again, up to its attempt limit, only while it fails with exactly
-the recorded assertion; it passes if an attempt passes, and every such failure is counted (known_upstream_defect_hits,
-always printed). A failed test is run once more with a Playwright trace for the artifacts only; that run does not
-change the verdict.
+The gate (expectations.json): every browser-groups.json entry runs once and passes, except the excluded entries (not
+run, each with its reason). Nothing is run again for the verdict. A passing test also fails the gate when it leaves
+processes behind or when the server adapter saw a recording folder change where expectations.json does not allow a
+HARS restart. A failed test is run once more with a Playwright trace for the artifacts only; that run does not change
+the verdict.
 
   integration/upstream_cjs/run_browser_tests.py --hars-bin target/debug/roadviewer-hars --out /tmp/rv-browser
   integration/upstream_cjs/run_browser_tests.py --aggregate /tmp/shard1 /tmp/shard2 --out /tmp/rv-browser
 
 Python (not Node) because the server adapter is Python and process supervision needs prctl and /proc."""
 import argparse, concurrent.futures, ctypes, datetime, errno, json, os, re, shutil, signal, socket, subprocess, sys
-import tempfile, threading, time
+import tempfile, threading, time, tomllib
 from pathlib import Path
 
 # Supervisors run from a copy of this file made when the run starts (an edit during a run must not change the
 # runs still to come), so they are told where the original lives.
 HERE = Path(os.environ.get("HARS_BROWSER_RUNNER_HOME") or Path(__file__).resolve().parent)
 REPO = HERE.parents[1]
-TESTS = REPO / "reference/python/tests"
+TESTS = REPO / "tests/browser"
 WEB = REPO / "reference/python/roadviewer/app/web"
+sys.path.insert(0, str(HERE / "pyshim"))
+from hars_shim import listening_owner  # noqa: E402
+
 PR_SET_CHILD_SUBREAPER = 36
 PORT_FIRST, PORT_LAST, PORTS_PER_SLOT = 19000, 19199, 40
-MIRROR_PORTS = (19180, 19181)
+MIRROR_RANGE = range(19180, 19200)
 # Inside the namespace this must fail with "network unreachable"; outside it, it is an ordinary public address.
 OUTSIDE = ("1.1.1.1", 443)
-RELEASE_VERSION = re.compile(r'(<span class="app-version">v\d+\.\d+\.\d+)-[0-9A-Za-z.-]+(</span>)')
+EXPECTATION_KEYS = {"about", "entries", "excluded", "restart_allowed"}
 
 
 def subreaper():
@@ -111,7 +112,7 @@ def kill_tree(root=None):
 
 
 def static_counts(file):
-    text = file.read_text()
+    text = file.read_text() if file.is_file() else ""
     return {"assertions": len(re.findall(r"\bassert(?:\.\w+)?\(", text)),
             "pass_markers": len(re.findall(r"console\.log\(\s*[`'\"]PASS", text))}
 
@@ -127,10 +128,14 @@ def entries():
     return out
 
 
+def hars_version():
+    return tomllib.loads((REPO / "Cargo.toml").read_text())["package"]["version"]
+
+
 def failure_of(log, path):
     """The errors a test printed (Node prints an uncaught or caught-and-logged error as `Name [CODE]: message` at the
     start of a line, then its stack): how many, and the first one's name, message and line in the test file (`path`,
-    the end of its file name in the stack, e.g. tests/maps.cjs)."""
+    the end of its file name in the stack, e.g. browser/maps.cjs)."""
     headers = list(re.finditer(r"^([A-Za-z]*Error)(?: \[[A-Z_]+\])?: (.*)$", log, re.M))
     if not headers:
         return {"errors": 0}
@@ -140,162 +145,85 @@ def failure_of(log, path):
             "line": int(frame.group(1)) if frame else None}
 
 
+def shim_events(log_path):
+    """What the server adapter did (hars.log): HARS restarts on a changed recording folder, and changes it saw where
+    a restart is not allowed."""
+    text = log_path.read_text(errors="replace") if log_path.exists() else ""
+    return {"restarts": len(re.findall(r"^\[shim [^]]*\] restart: ", text, re.M)),
+            "refused_restarts": len(re.findall(r"^\[shim [^]]*\] restart refused: ", text, re.M))}
+
+
 # ---------------------------------------------------------------------------------------------------------------- gate
-MAX_KNOWN_DEFECTS, MAX_DEFECT_ATTEMPTS = 1, 3
-DEFECT_FIELDS = ("kind", "reason", "error", "message", "line", "max_attempts", "upstream_fix", "guarded_by")
-
-
 def expectation_problem(expectations):
-    """Why expectations.json is refused, or None. known_upstream_defects reruns a failing test, so it holds at most
-    one entry, with its exact signature, an attempt limit of at most MAX_DEFECT_ATTEMPTS and a HARS check that runs
-    with it; a list that could grow would be a way round the gate."""
-    defects, checks = expectations.get("known_upstream_defects", {}), expectations.get("hars_checks", {})
-    if len(defects) > MAX_KNOWN_DEFECTS:
-        return f"known_upstream_defects has {len(defects)} entries, at most {MAX_KNOWN_DEFECTS} is accepted"
-    for name, d in defects.items():
-        missing = [k for k in DEFECT_FIELDS if k not in d]
-        if missing:
-            return f"known_upstream_defects.{name} lacks {missing}"
-        if d["kind"] != "known upstream test defect":
-            return f"known_upstream_defects.{name}: kind {d['kind']!r}"
-        if type(d["max_attempts"]) is not int or not 1 <= d["max_attempts"] <= MAX_DEFECT_ATTEMPTS:
-            return f"known_upstream_defects.{name}: max_attempts {d['max_attempts']!r}, must be 1..{MAX_DEFECT_ATTEMPTS}"
-        if type(d["line"]) is not int or not d["error"] or not d["message"]:
-            return f"known_upstream_defects.{name}: signature needs an error, a message and a line number"
-        if name in expectations["expected_failures"] or name in expectations["excluded"]:
-            return f"known_upstream_defects.{name} is also an expected failure or excluded"
-        if checks.get(d["guarded_by"], {}).get("runs_with") != name:
-            return f"known_upstream_defects.{name}: guarded_by {d['guarded_by']!r} is not a hars_checks entry run with it"
-    for name, c in checks.items():
-        if not (HERE / c.get("file", "")).is_file() or not c.get("runs_with"):
-            return f"hars_checks.{name}: needs runs_with and an existing file in {HERE}"
+    """Why expectations.json is refused, or None. Only exclusions (each with its reason) and the entries whose
+    adapter may restart HARS are recorded; anything else (expected failures, reruns) is not a kind the gate has."""
+    unknown = set(expectations) - EXPECTATION_KEYS
+    if unknown:
+        return f"unknown keys {sorted(unknown)}"
+    if type(expectations.get("entries")) is not int:
+        return "entries must be the manifest's entry count"
+    for name, e in expectations.get("excluded", {}).items():
+        if not isinstance(e, dict) or not e.get("reason"):
+            return f"excluded.{name} needs a reason"
+    if not isinstance(expectations.get("restart_allowed", []), list):
+        return "restart_allowed must be a list of entries"
     return None
 
 
-def is_base(result):
-    """A run of a manifest entry itself (not its release-version copy or a HARS check run with it)."""
-    return not result.get("variant") and not result.get("hars_check")
-
-
-def failure_matches(result, signature):
-    """The run failed with exactly one error: that name and message, first at that line of the test file."""
-    f = result.get("failure") or {}
-    return (result["outcome"] == "fail" and f.get("errors") == 1 and f.get("error") == signature["error"]
-            and f.get("message") == signature["message"] and f.get("line") == signature["line"])
-
-
-def attempts_of(result):
-    return [*result.get("earlier_attempts", []), result]
-
-
-def another_attempt(attempts, defect):
-    """Run a known upstream defect again: only after a failure with exactly its signature, up to its attempt limit."""
-    return len(attempts) < defect["max_attempts"] and failure_matches(attempts[-1], defect)
-
-
-def judge_defect(attempts, defect):
-    """pass when an attempt passed, every earlier one failed with the defect's signature, and the limit holds."""
-    if len(attempts) > defect["max_attempts"] or not all(failure_matches(a, defect) for a in attempts[:-1]):
-        return "fail"
-    return "pass" if attempts[-1]["outcome"] == "pass" else "fail"
-
-
-def defect_hits(result, expectations):
-    """How many attempts of this run failed with its known upstream defect's signature."""
-    defect = expectations.get("known_upstream_defects", {}).get(result["label"]) if is_base(result) else None
-    return sum(1 for a in attempts_of(result) if failure_matches(a, defect)) if defect else 0
-
-
 def judge(result, expectations):
-    """pass | expected-failure | fail | unexpected-pass, from what the run recorded (outcome and parsed failure)."""
-    defect = expectations.get("known_upstream_defects", {}).get(result["label"]) if is_base(result) else None
-    if defect:
-        return judge_defect(attempts_of(result), defect)
-    if result.get("earlier_attempts"):
+    """pass | fail, from what the run recorded: it passed, left no process and needed no HARS restart it may not have."""
+    if result["outcome"] != "pass" or result.get("leftover_processes"):
         return "fail"
-    expected = expectations["expected_failures"].get(result["label"]) if is_base(result) else None
-    if not expected:
-        return "pass" if result["outcome"] == "pass" else "fail"
-    if result["outcome"] == "pass":
-        return "unexpected-pass"
-    return "expected-failure" if failure_matches(result, expected) else "fail"
+    shim = result.get("shim") or {}
+    allowed = result["label"] in expectations.get("restart_allowed", [])
+    if shim.get("refused_restarts") or (shim.get("restarts") and not allowed):
+        return "fail"
+    return "pass"
 
 
-def verdict(results, excluded, labels, iterations, expectations, require_full):
-    """The gate over `results` (every run of every iteration) for the entries `labels`. `require_full`: `labels` must
-    be the whole manifest and its size the recorded entry count."""
+def verdict(results, excluded, labels, expectations, require_full):
+    """The gate over `results` for the entries `labels`. `require_full`: `labels` must be the whole manifest and its
+    size the recorded entry count."""
     reasons = []
     manifest = {e["label"] for e in entries()}
     if require_full and (len(manifest) != expectations["entries"] or set(labels) != manifest):
         reasons.append(f"entries: manifest has {len(manifest)}, expectations.json records {expectations['entries']}, "
                        f"this verdict covers {len(set(labels))}")
-    checks = expectations.get("hars_checks", {})
-    unknown = (set(expectations["expected_failures"]) | set(expectations["excluded"])
-               | set(expectations.get("known_upstream_defects", {})) | {c["runs_with"] for c in checks.values()}) - manifest
+    unknown = (set(expectations["excluded"]) | set(expectations.get("restart_allowed", []))) - manifest
     if unknown:
         reasons.append(f"expectations.json names entries not in the manifest: {sorted(unknown)}")
-    counts = {"pass": 0, "expected-failure": 0, "excluded": 0, "fail": 0, "unexpected-pass": 0,
-              "release_version_runs_passed": 0, "hars_checks_passed": 0, "known_upstream_defect_hits": 0}
-    for iteration in range(1, iterations + 1):
-        mine = [r for r in results if r["iteration"] == iteration]
-        base = [r["label"] for r in mine if is_base(r)]
-        dup = sorted({x for x in base if base.count(x) > 1})
-        skipped = [x for x in excluded if x in labels]
-        covered = set(base) | set(skipped)
-        if dup or covered != set(labels) or set(base) & set(skipped):
-            reasons.append(f"run {iteration}: entries run {len(base)} + excluded {len(skipped)} != {len(labels)} "
-                           f"(missing {sorted(set(labels) - covered)[:5]}, duplicated {dup[:5]})")
-        if any(r["label"] in expectations["excluded"] for r in mine if is_base(r)):
-            reasons.append(f"run {iteration}: an excluded entry was run")
-        counts["excluded"] += len(skipped)
-        for r in mine:
-            if r.get("hars_check"):
-                if r["hars_check"] not in checks:
-                    reasons.append(f"run {iteration}: {r['hars_check']} is not a hars_checks entry")
-                elif r["outcome"] == "pass":
-                    counts["hars_checks_passed"] += 1
-                else:
-                    reasons.append(f"run {iteration}: {r['label']} {r['outcome']} ({r.get('failure')})")
-                continue
-            if r.get("variant"):
-                if r["outcome"] == "pass":
-                    counts["release_version_runs_passed"] += 1
-                else:
-                    reasons.append(f"run {iteration}: {r['label']} {r['outcome']}")
-                continue
-            status = judge(r, expectations)
-            counts[status] += 1
-            counts["known_upstream_defect_hits"] += defect_hits(r, expectations)
-            if status in ("fail", "unexpected-pass"):
-                tried = f", attempts {len(attempts_of(r))}" if r.get("earlier_attempts") else ""
-                reasons.append(f"run {iteration}: {r['label']} {status} ({r['outcome']}, {r.get('failure')}{tried})")
-        for name, expected in expectations["expected_failures"].items():
-            if name in base and not any(r.get("variant") == name for r in mine):
-                reasons.append(f"run {iteration}: {expected['release_version_run']} did not run")
-        for name, check in checks.items():
-            ran = sum(1 for r in mine if r.get("hars_check") == name)
-            if ran != (1 if check["runs_with"] in base else 0):
-                reasons.append(f"run {iteration}: {name} ran {ran} times with {check['runs_with']} run "
-                               f"{base.count(check['runs_with'])} times")
-    executed = counts["pass"] + counts["expected-failure"] + counts["fail"] + counts["unexpected-pass"]
+    counts = {"pass": 0, "excluded": 0, "fail": 0}
+    ran = [r["label"] for r in results]
+    dup = sorted({x for x in ran if ran.count(x) > 1})
+    skipped = [x for x in excluded if x in labels]
+    covered = set(ran) | set(skipped)
+    if dup or covered != set(labels) or set(ran) & set(skipped):
+        reasons.append(f"entries run {len(ran)} + excluded {len(skipped)} != {len(labels)} "
+                       f"(missing {sorted(set(labels) - covered)[:5]}, duplicated {dup[:5]})")
+    if any(r["label"] in expectations["excluded"] for r in results):
+        reasons.append("an excluded entry was run")
+    counts["excluded"] = len(skipped)
+    for r in results:
+        status = judge(r, expectations)
+        counts[status] += 1
+        if status == "fail":
+            reasons.append(f"{r['label']} fail ({r['outcome']}, {r.get('failure')}"
+                           + (f", left {r['leftover_processes']}" if r.get("leftover_processes") else "")
+                           + (f", adapter {r['shim']}" if (r.get("shim") or {}).get("restarts")
+                              or (r.get("shim") or {}).get("refused_restarts") else "") + ")")
+    executed = counts["pass"] + counts["fail"]
     if executed == 0:
         reasons.append("no test ran")
-    if executed + counts["excluded"] != len(labels) * iterations:
-        reasons.append(f"run + excluded = {executed + counts['excluded']}, expected {len(labels) * iterations}")
+    if executed + counts["excluded"] != len(labels):
+        reasons.append(f"run + excluded = {executed + counts['excluded']}, expected {len(labels)}")
     return {"ok": not reasons, "counts": counts, "reasons": reasons}
 
 
 def expectation_lines(expectations):
-    ef, ex = expectations["expected_failures"], expectations["excluded"]
-    kd, hc = expectations.get("known_upstream_defects", {}), expectations.get("hars_checks", {})
-    lines = [f"expected failures ({len(ef)}): " + ", ".join(ef)]
-    lines += [f"  {k}: line {v['line']} {v['error']} '{v['message']}' — {v['reason']}" for k, v in ef.items()]
-    lines += [f"known upstream test defects ({len(kd)}): " + ", ".join(kd)]
-    lines += [f"  {k}: rerun only after line {v['line']} {v['error']} '{v['message']}', at most {v['max_attempts']} "
-              f"attempts; guarded by {v['guarded_by']} — {v['reason']}" for k, v in kd.items()]
-    lines += [f"HARS checks ({len(hc)}): " + ", ".join(f"{k} (with {v['runs_with']})" for k, v in hc.items())]
-    lines += [f"excluded ({len(ex)}): " + ", ".join(ex)]
+    ex = expectations["excluded"]
+    lines = [f"excluded ({len(ex)}): " + ", ".join(ex)]
     lines += [f"  {k}: {v['reason']}" for k, v in ex.items()]
+    lines += ["HARS restart allowed in: " + ", ".join(expectations.get("restart_allowed", []))]
     return lines
 
 
@@ -339,7 +267,8 @@ def supervise(spec):
         temp_left = sorted(p.name for p in (work / "tmp").iterdir()) if (work / "tmp").is_dir() else []
         shutil.rmtree(work, ignore_errors=True)
         result.update(outcome=outcome, leftover_processes=[c for _, c in leftovers],
-                      leftover_temp=temp_left, work_removed=not work.exists(), **extra)
+                      leftover_temp=temp_left, work_removed=not work.exists(),
+                      shim=shim_events(artifacts / "hars.log"), **extra)
         (artifacts / "result.json").write_text(json.dumps(result, ensure_ascii=False, indent=1))
 
     def on_term(*_):
@@ -368,7 +297,7 @@ def supervise(spec):
     env.update(spec["env"])
     env.update(PATH=os.pathsep.join([str(Path(spec["node"]).parent), env.get("PATH", "")]),
                NODE_PATH=str(HERE / "node_modules"), TMPDIR=str(work / "tmp"),
-               RV_TEST_VIDEO=str(TESTS / "fixtures/black.mp4"))
+               RV_TEST_VIDEO=str(TESTS / "fixtures/black.mp4"), HARS_EXPECTED_VERSION=spec["version"])
     if spec["failure_shots"]:
         env["HARS_FAILURE_SHOTS"] = str(shots)
     if spec.get("trace"):
@@ -378,6 +307,8 @@ def supervise(spec):
     else:
         env.update(RV_PYTHON=str(HERE / "hars_as_python.py"), HARS_BIN=spec["hars_bin"], HARS_WEB=spec["web"],
                    HARS_PORT_RANGE=spec["ports"], HARS_SHIM_LOG=str(artifacts / "hars.log"))
+        if spec["restart_allowed"]:
+            env["HARS_SHIM_RESTART"] = "1"
     if spec.get("pw_debug"):
         env["DEBUG"] = "pw:api"
     node = [spec["node"]] + (["--require", str(HERE / "failure_capture.cjs")] if spec["failure_shots"] else [])
@@ -407,48 +338,54 @@ def supervise(spec):
 
 
 # ---------------------------------------------------------------------------------------------------------------- main
+def free_ports(count, candidates):
+    """`count` loopback ports from `candidates` that nothing listens on now."""
+    found = []
+    for port in candidates:
+        with socket.socket() as s:
+            try:
+                s.bind(("127.0.0.1", port))
+            except OSError:
+                continue
+        found.append(port)
+        if len(found) == count:
+            return found
+    sys.exit(f"no {count} free loopback ports in {candidates}")
+
+
 def start_mirror(args, root):
-    """Start HARS once on a throwaway data folder with one recording and copy what it serves."""
+    """Start HARS once on a throwaway data folder with one recording and copy what it serves. Another runner on the
+    same machine may use the same port range: the ports are free ones, and the copy starts only once the HARS
+    started here is alive and is the process listening on the port."""
     sys.path.insert(0, str(HERE))
     from mirror_web import mirror
     data, out, record = root / "mirror-data", root / "mirror", "f" * 32
     (data / record).mkdir(parents=True)
     (data / record / "meta.json").write_text(json.dumps({"id": record, "status": "unconverted", "name": record,
                                                          "uploaded": 1, "files": {}}))
-    ui, device = MIRROR_PORTS
+    ui, device = free_ports(2, MIRROR_RANGE)
     env = dict(os.environ, HARS_DATA=str(data), HARS_WEB=args.web, HARS_INGRESS_ONLY="0",
                HARS_BIND=f"127.0.0.1:{ui}", HARS_DEVICE_BIND=f"127.0.0.1:{device}")
     with open(Path(args.out) / "mirror-hars.log", "wb") as log:
         hars = subprocess.Popen([args.hars_bin], env=env, stdout=log, stderr=log)
     try:
         for _ in range(300):
-            try:
-                socket.create_connection(("127.0.0.1", ui), timeout=.2).close()
+            if hars.poll() is not None:
+                sys.exit("mirror HARS exited, see mirror-hars.log")
+            if listening_owner(ui) == hars.pid:
                 break
-            except OSError:
-                if hars.poll() is not None:
-                    sys.exit("mirror HARS exited, see mirror-hars.log")
-                time.sleep(.1)
+            time.sleep(.1)
+        else:
+            sys.exit(f"mirror HARS (pid {hars.pid}) is not listening on 127.0.0.1:{ui}")
         count = mirror(f"http://127.0.0.1:{ui}", args.web, record, out)
+        if hars.poll() is not None:
+            sys.exit("mirror HARS exited while it was copied, see mirror-hars.log")
     finally:
         hars.terminate()
         hars.wait(timeout=10)
     shutil.copy(REPO / "roadviewer_hars/config.yaml", out / "roadviewer/config.yaml")
     shutil.rmtree(data)
     return out, count
-
-
-def release_version_mirror(mirror_root, root):
-    """A copy of the mirror whose replay page's version label has its pre-release suffix removed (v2.0.0-alpha.4 ->
-    v2.0.0); nothing else differs. None when the label has no suffix (or is not there once)."""
-    page = mirror_root / "roadviewer/app/web/index.html"
-    html, n = RELEASE_VERSION.subn(r"\1\2", page.read_text())
-    if n != 1:
-        return None
-    out = root / "mirror-release-version"
-    shutil.copytree(mirror_root, out, symlinks=True)
-    (out / "roadviewer/app/web/index.html").write_text(html)
-    return out
 
 
 def python_tree(root):
@@ -459,6 +396,11 @@ def python_tree(root):
                     ignore=shutil.ignore_patterns("__pycache__"))
     shutil.copy(REPO / "reference/python/roadviewer/config.yaml.reference", out / "roadviewer/config.yaml")
     return out, 0
+
+
+def python_version():
+    text = (REPO / "reference/python/roadviewer/config.yaml.reference").read_text()
+    return re.search(r'^version:\s*"?([^"\s]+)"?', text, re.M).group(1)
 
 
 def tool_versions(node):
@@ -480,7 +422,6 @@ def print_gate(gate, expectations):
     for line in expectation_lines(expectations):
         print(line)
     print("gate: " + ("ok" if gate["ok"] else "FAILED") + " " + json.dumps(gate["counts"]))
-    print(f"known_upstream_defect_hits: {gate['counts'].get('known_upstream_defect_hits', 0)}")
     for reason in gate["reasons"]:
         print("  " + reason)
 
@@ -489,7 +430,7 @@ def aggregate(args):
     """The gate over shard folders (each with summary.json and exit-code, the shard command's real exit status):
     together they must cover the whole manifest once, each shard's exit status must agree with its own summary and
     with the verdict recomputed here from its results."""
-    expectations, reasons, results, excluded, iterations = load_expectations(), [], [], [], set()
+    expectations, reasons, results, excluded = load_expectations(), [], [], []
     for folder in map(Path, args.aggregate):
         try:
             s = json.loads((folder / "summary.json").read_text())
@@ -497,27 +438,20 @@ def aggregate(args):
         except (OSError, ValueError) as e:
             reasons.append(f"{folder}: no summary.json or exit-code ({e})")
             continue
-        mine = verdict(s["results"], s["excluded"], s["selected"], s["repeat"], expectations, False)
+        mine = verdict(s["results"], s["excluded"], s["selected"], expectations, False)
         if code != s.get("exit_code") or (code == 0) != mine["ok"] or s["gate"]["ok"] != mine["ok"]:
             reasons.append(f"{folder}: exit status {code}, summary exit_code {s.get('exit_code')}, summary gate "
                            f"{s['gate']['ok']}, recomputed gate {mine['ok']}")
-        iterations.add(s["repeat"])
         results += s["results"]
         excluded += s["excluded"]
-    gate = {"ok": False, "counts": {}, "reasons": []}
-    if len(iterations) == 1:
-        labels = [e["label"] for e in entries()]
-        gate = verdict(results, excluded, labels, iterations.pop(), expectations, True)
-    elif not reasons:
-        reasons.append(f"shards ran different repeat counts {sorted(iterations)}")
+    gate = verdict(results, excluded, [e["label"] for e in entries()], expectations, True)
     gate["reasons"] = reasons + gate["reasons"]
     gate["ok"] = not gate["reasons"]
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     print_gate(gate, expectations)
-    return write_summary(out, {"aggregate": args.aggregate, "gate": gate,
-                               "known_upstream_defect_hits": gate["counts"].get("known_upstream_defect_hits", 0),
-                               "results": results}, 0 if gate["ok"] else 1)
+    return write_summary(out, {"aggregate": args.aggregate, "gate": gate, "results": results},
+                         0 if gate["ok"] else 1)
 
 
 def main():
@@ -528,8 +462,8 @@ def main():
     p.add_argument("--out", help="artifact folder (created)")
     p.add_argument("--node", default=shutil.which("node"))
     p.add_argument("--jobs", type=int, default=1)
-    p.add_argument("--repeat", type=int, default=1)
-    p.add_argument("--timeout", type=int, default=900, help="seconds per test run (run_group.cjs uses 900)")
+    p.add_argument("--timeout", type=int, default=300,
+                   help="seconds per test run (the slowest entry, maps main, takes 61-75 s)")
     p.add_argument("--groups", nargs="*", help="browser-groups.json groups to run (default: all)")
     p.add_argument("--only", nargs="*", help="labels or file names (maps.cjs selects its three entries)")
     p.add_argument("--isolate", choices=["on", "off"], default="on",
@@ -566,19 +500,19 @@ def main():
         sys.exit(aggregate(args))
     if not ((args.hars_bin or args.python_baseline) and args.out and args.node):
         p.error("--hars-bin (or --python-baseline), --out and node (on PATH or --node) are required")
-    if args.jobs < 1 or args.jobs * PORTS_PER_SLOT > MIRROR_PORTS[0] - PORT_FIRST:
-        p.error(f"--jobs must be 1..{(MIRROR_PORTS[0] - PORT_FIRST) // PORTS_PER_SLOT}")
+    if args.jobs < 1 or args.jobs * PORTS_PER_SLOT > MIRROR_RANGE[0] - PORT_FIRST:
+        p.error(f"--jobs must be 1..{(MIRROR_RANGE[0] - PORT_FIRST) // PORTS_PER_SLOT}")
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
     expectations = load_expectations()
     if args.python_baseline:
-        expectations = {**expectations, "expected_failures": {}, "excluded": {}, "known_upstream_defects": {}}
-    all_entries = entries()
-    selected = [e for e in all_entries if (not args.groups or e["group"] in args.groups)
+        expectations = {**expectations, "excluded": {}}
+    selected = [e for e in entries() if (not args.groups or e["group"] in args.groups)
                 and (not args.only or e["label"] in args.only or e["file"] in args.only)]
+    version = python_version() if args.python_baseline else hars_version()
     summary = {"started": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
-               "jobs": args.jobs, "repeat": args.repeat, "isolate": args.isolate, "groups": args.groups,
-               "only": args.only, "selected": [e["label"] for e in selected],
+               "jobs": args.jobs, "isolate": args.isolate, "groups": args.groups, "only": args.only,
+               "selected": [e["label"] for e in selected], "expected_version": version,
                "expectations": expectations if not args.python_baseline else None}
     if args.hars_bin:
         args.hars_bin = str(Path(args.hars_bin).resolve())
@@ -594,11 +528,7 @@ def main():
     subreaper()
     excluded = [e["label"] for e in selected if e["label"] in expectations["excluded"]]
     runnable = [e for e in selected if e["label"] not in expectations["excluded"]]
-    variants = {k: v["release_version_run"] for k, v in expectations["expected_failures"].items()}
     root = Path(tempfile.mkdtemp(prefix="hars-browser-", dir=out))
-    runner = root / "runner.py"
-    shutil.copy(Path(__file__).resolve(), runner)
-    os.environ["HARS_BROWSER_RUNNER_HOME"] = str(HERE)
     stop = threading.Event()
     running = {}
     lock = threading.Lock()
@@ -613,71 +543,57 @@ def main():
     signal.signal(signal.SIGINT, interrupt)
     signal.signal(signal.SIGTERM, interrupt)
     began = time.monotonic()
-    mirror_root, mirrored = python_tree(root) if args.python_baseline else start_mirror(args, root)
-    release_root = None if args.python_baseline else release_version_mirror(mirror_root, root)
     free_slots = list(range(args.jobs))
-    results = []
+    results, collected, mirrored = [], [], 0
 
-    defects = expectations.get("known_upstream_defects", {})
-    checks = expectations.get("hars_checks", {})
-
-    def run(entry, iteration, variant=None, collect=False, check=None, attempt=1):
+    def run(entry, collect=False):
         if stop.is_set():
             return None
         with lock:
             slot = free_slots.pop()
-        label = variants[entry["label"]] if variant else check or entry["label"]
-        script = HERE / checks[check]["file"] if check else TESTS / entry["file"]
+        label, script = entry["label"], TESTS / entry["file"]
         try:
             first = PORT_FIRST + slot * PORTS_PER_SLOT
-            artifacts = (out / f"run{iteration}" / label / (f"attempt-{attempt}" if attempt > 1 else "")
-                         / ("collect" if collect else ""))
+            artifacts = out / label / ("collect" if collect else "")
             artifacts.mkdir(parents=True, exist_ok=True)
+            work = root / f"work-{slot}"
             spec = {"label": label, "file": entry["file"], "env": entry["env"], "artifacts": str(artifacts),
-                    "script": str(script), "frame": f"{script.parent.name}/{script.name}",
-                    "work": str(root / f"work-{iteration}-{slot}"),
-                    "mirror": str(release_root if variant else mirror_root), "node": args.node,
+                    "script": str(script), "frame": f"{script.parent.name}/{script.name}", "work": str(work),
+                    "mirror": str(mirror_root), "node": args.node, "version": version,
                     "hars_bin": args.hars_bin, "web": args.web, "ports": f"{first}-{first + PORTS_PER_SLOT - 1}",
                     "timeout": args.timeout, "isolate": args.isolate == "on", "pw_debug": args.pw_debug,
                     "python_baseline": args.python_baseline, "failure_shots": not args.no_failure_shots,
-                    "trace": collect}
-            if variant and not release_root:
-                result = {"label": label, "file": entry["file"], "env": entry["env"], "outcome": "not-run",
-                          "why": "the mirrored replay page has no pre-release version label to remove"}
-            else:
-                command = [sys.executable, str(runner), "--supervise", json.dumps(spec)]
-                if spec["isolate"]:
-                    command = ["unshare", "-rn", "--", *command]
-                with lock:
-                    if stop.is_set():
-                        return None
-                    proc = subprocess.Popen(command, start_new_session=True, stdin=subprocess.DEVNULL)
-                    running[label, iteration, collect] = proc
-                try:
-                    proc.wait(timeout=args.timeout + 60)
-                except subprocess.TimeoutExpired:
-                    os.killpg(proc.pid, signal.SIGKILL)
-                    proc.wait()
-                with lock:
-                    running.pop((label, iteration, collect), None)
-                try:
-                    result = json.loads((artifacts / "result.json").read_text())
-                except (OSError, ValueError):
-                    result = {"label": label, "file": entry["file"], "env": entry["env"],
-                              "outcome": "supervisor-failed", "supervisor_exit": proc.returncode}
-            result.update(iteration=iteration, group=entry["group"], **static_counts(script))
-            if variant:
-                result["variant"] = entry["label"]
-            if check:
-                result.update(hars_check=check, runs_with=entry["label"], script=str(script.relative_to(REPO)))
-            if attempt > 1:
-                result["attempt"] = attempt
+                    "trace": collect, "restart_allowed": label in expectations.get("restart_allowed", [])}
+            command = [sys.executable, str(runner), "--supervise", json.dumps(spec)]
+            if spec["isolate"]:
+                command = ["unshare", "-rn", "--", *command]
+            with lock:
+                if stop.is_set():
+                    return None
+                proc = subprocess.Popen(command, start_new_session=True, stdin=subprocess.DEVNULL)
+                running[label, collect] = proc
+            try:
+                proc.wait(timeout=args.timeout + 60)
+            except subprocess.TimeoutExpired:
+                # The supervisor is stuck: end what it started (the test runs in a session of its own) and its
+                # working folder now, not when the whole run ends.
+                kill_tree(proc.pid)
+                os.killpg(proc.pid, signal.SIGKILL)
+                proc.wait()
+                shutil.rmtree(work, ignore_errors=True)
+            with lock:
+                running.pop((label, collect), None)
+            try:
+                result = json.loads((artifacts / "result.json").read_text())
+            except (OSError, ValueError):
+                result = {"label": label, "file": entry["file"], "env": entry["env"],
+                          "outcome": "supervisor-failed", "supervisor_exit": proc.returncode}
+            result.update(group=entry["group"], **static_counts(script))
             if collect:
                 result["collection_rerun"] = True
             tail = (artifacts / "test.log").read_text(errors="replace")[-600:] if (artifacts / "test.log").exists() else ""
             shown = "collect" if collect else result["outcome"]
-            print(f"[{iteration}] {shown:>8} {result.get('seconds', '-'):>6}s  {label}"
-                  + (f" (attempt {attempt}, known upstream defect rerun)" if attempt > 1 else "")
+            print(f"{shown:>8} {result.get('seconds', '-'):>6}s  {label}"
                   + ("" if result["outcome"] == "pass" or collect else "\n    " + tail.strip().replace("\n", "\n    ")[-400:]),
                   flush=True)
             return result
@@ -685,49 +601,22 @@ def main():
             with lock:
                 free_slots.append(slot)
 
-    def run_entry(entry, iteration):
-        first = run(entry, iteration)
-        defect = defects.get(entry["label"])
-        if first and defect:
-            # Only the known upstream defect, only after exactly its failure, only up to its limit (another_attempt).
-            attempts = [first]
-            while another_attempt(attempts, defect):
-                again = run(entry, iteration, attempt=len(attempts) + 1)
-                if not again:
-                    break
-                attempts.append(again)
-            first = attempts[-1]
-            if len(attempts) > 1:
-                first["earlier_attempts"] = attempts[:-1]
-        found = [first] if first else []
-        if first and entry["label"] in variants:
-            second = run(entry, iteration, variant=True)
-            found += [second] if second else []
-        for name, check in checks.items():
-            if first and check["runs_with"] == entry["label"]:
-                third = run(entry, iteration, check=name)
-                found += [third] if third else []
-        return found
-
-    collected = []
+    leftovers = []
     try:
+        runner = root / "runner.py"
+        shutil.copy(Path(__file__).resolve(), runner)
+        os.environ["HARS_BROWSER_RUNNER_HOME"] = str(HERE)
+        mirror_root, mirrored = python_tree(root) if args.python_baseline else start_mirror(args, root)
         with concurrent.futures.ThreadPoolExecutor(args.jobs) as pool:
-            for iteration in range(1, args.repeat + 1):
-                for found in pool.map(lambda e: run_entry(e, iteration), runnable):
-                    results.extend(found)
-                if stop.is_set():
-                    break
-            # Judged first; the traced reruns only gather artifacts for what already failed.
-            failed = [r for r in results if r["outcome"] != "pass"
-                      and (not is_base(r) or judge(r, expectations) != "expected-failure")]
-            if not args.no_collect and not stop.is_set():
-                by_label = {e["label"]: e for e in runnable}
-                for r in failed:
-                    entry = by_label[r.get("variant") or r.get("runs_with") or r["label"]]
-                    again = run(entry, r["iteration"], variant=bool(r.get("variant")), check=r.get("hars_check"),
-                                collect=True)
-                    if again:
-                        collected.append(again)
+            results = [r for r in pool.map(run, runnable) if r]
+        # Judged first; the traced reruns only gather artifacts for what already failed.
+        failed = [r for r in results if judge(r, expectations) != "pass"]
+        if not args.no_collect and not stop.is_set():
+            by_label = {e["label"]: e for e in runnable}
+            for r in failed:
+                again = run(by_label[r["label"]], collect=True)
+                if again:
+                    collected.append(again)
     finally:
         leftovers = kill_tree()
         shutil.rmtree(root, ignore_errors=True)
@@ -735,12 +624,10 @@ def main():
     if (HERE / "classification.json").exists():
         classification = json.loads((HERE / "classification.json").read_text())
     for r in results + collected:
-        r["classification"] = classification.get(r.get("variant") or r["label"])
+        r["classification"] = classification.get(r["label"])
         if not r.get("collection_rerun"):
-            r["gate"] = judge(r, expectations) if is_base(r) else ("pass" if r["outcome"] == "pass" else "fail")
-            if r["label"] in defects and is_base(r):
-                r["known_upstream_defect_hits"] = defect_hits(r, expectations)
-    gate = verdict(results, excluded, [e["label"] for e in selected], args.repeat, expectations, False)
+            r["gate"] = judge(r, expectations)
+    gate = verdict(results, excluded, [e["label"] for e in selected], expectations, False)
     if stop.is_set():
         gate["ok"] = False
         gate["reasons"].append("interrupted")
@@ -748,17 +635,15 @@ def main():
         gate["ok"] = False
         gate["reasons"].append(f"runner left processes: {[c for _, c in leftovers]}")
     summary.update(seconds=round(time.monotonic() - began, 1), hars_bin=args.hars_bin, mirrored_files=mirrored,
-                   release_version_mirror=bool(release_root), interrupted=stop.is_set(),
-                   runner_leftover_processes=[c for _, c in leftovers], temp_root_removed=not root.exists(),
-                   **tool_versions(args.node), excluded=excluded,
+                   interrupted=stop.is_set(), runner_leftover_processes=[c for _, c in leftovers],
+                   temp_root_removed=not root.exists(), **tool_versions(args.node), excluded=excluded,
                    totals={k: sum(1 for r in results if r["outcome"] == k) for k in sorted({r["outcome"] for r in results})},
-                   gate=gate, known_upstream_defect_hits=gate["counts"].get("known_upstream_defect_hits", 0),
-                   results=results, collection_reruns=collected)
+                   gate=gate, results=results, collection_reruns=collected)
     print_gate(gate, expectations)
-    print(json.dumps({k: summary[k] for k in ("seconds", "totals", "known_upstream_defect_hits", "interrupted",
-                                              "runner_leftover_processes", "temp_root_removed")}, ensure_ascii=False))
+    print(json.dumps({k: summary[k] for k in ("seconds", "totals", "interrupted", "runner_leftover_processes",
+                                              "temp_root_removed")}, ensure_ascii=False))
     for r in collected:
-        print(f"collection rerun (artifacts only, not judged): run{r['iteration']}/{r['label']}/collect {r['outcome']}")
+        print(f"collection rerun (artifacts only, not judged): {r['label']}/collect {r['outcome']}")
     return write_summary(out, summary, 130 if stop.is_set() else 0 if gate["ok"] else 1)
 
 
