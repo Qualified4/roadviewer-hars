@@ -2,7 +2,7 @@
 
 한국어 · [English](README.en.md)
 
-> **이 저장소는 Rust 기반 Road Viewer 2.x입니다. 아직 정식 출시 전의 prerelease(alpha)이며 운영 전환 검증이 진행 중입니다.** 현재 버전은 **2.0.0-alpha.4**이며, 정식 릴리스와 운영 전환을 수행하지 않았습니다.
+> **이 저장소는 Rust 기반 Road Viewer 2.x입니다. 아직 정식 출시 전의 prerelease(alpha)이며 운영 전환 검증이 진행 중입니다.** 현재 버전은 **2.0.0-alpha.5**이며, 정식 릴리스와 운영 전환을 수행하지 않았습니다.
 >
 > Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)는 별도 제품으로 계속 유지됩니다. 이 앱은 기존 Python 앱 옆에 병행 설치해 시험하는 용도이며, Home Assistant 앱 스토어와 사이드바에는 **Road Viewer HARS**로 표시됩니다. 미이식 기능은 성공으로 응답하지 않습니다. 현재 빌드를 Python 1.x의 완전한 대체 제품으로 설치하거나 운영 업로드를 전환하면 안 됩니다.
 >

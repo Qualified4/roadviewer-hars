@@ -1,6 +1,6 @@
 # 구현 및 검증 현황
 
-현재 버전은 **2.0.0-alpha.4**이다. 2.0.0-alpha.4에서 FFmpeg 의존성(CLI, `ffprobe`, `ffmpeg-next`, libav*)을 제품 빌드·실행·배포 이미지에서 완전히 제거했다([FFMPEG-REMOVAL.md](FFMPEG-REMOVAL.md)). Python Road Viewer 1.3.16의 53개 API 라우트가 모두 등록되어 있고 `501 feature_not_ported`를 반환하는 경로는 없다(1.3.18까지 Python 서버 코드 변경이 없어 API 기준은 그대로다). 프런트엔드 기능 기준: Python Road Viewer 1.3.18(`d3de134`). `main`의 웹 자산과 썸네일 처리는 게시된 `2.0.0-alpha.4` 이미지와 다르다. 자산이 버전이 붙은 주소로 1년간 캐시되므로 **다음 게시는 반드시 버전을 올려서 한다**(같은 버전으로 다시 내면 브라우저가 새 페이지와 옛 자산을 섞어 쓸 수 있다). 운영 전환 후보는 아니다. 실제 HAOS, 실제 Google Drive·NAS, 실제 차량 장치에서의 검증이 남아 있다. 정식 `2.0.0` 릴리스, 운영 포트 승계, Python 설정 변경, openpilot 목적지 변경은 수행하지 않았다.
+현재 버전은 **2.0.0-alpha.5**이다. 2.0.0-alpha.4에서 FFmpeg 의존성(CLI, `ffprobe`, `ffmpeg-next`, libav*)을 제품 빌드·실행·배포 이미지에서 완전히 제거했다([FFMPEG-REMOVAL.md](FFMPEG-REMOVAL.md)). Python Road Viewer 1.3.16의 53개 API 라우트가 모두 등록되어 있고 `501 feature_not_ported`를 반환하는 경로는 없다(1.3.18까지 Python 서버 코드 변경이 없어 API 기준은 그대로다). 프런트엔드 기능 기준: Python Road Viewer 1.3.18(`d3de134`). 2.0.0-alpha.5는 alpha.4 이후의 썸네일 최적화, 프런트엔드 1.3.18 동기화, 좁은 화면 워드마크 수정을 담는다. 자산이 버전이 붙은 주소로 1년간 캐시되므로 **웹 자산이 바뀌는 게시는 반드시 버전을 올려서 한다**(같은 버전으로 다시 내면 브라우저가 새 페이지와 옛 자산을 섞어 쓸 수 있다). 브라우저 테스트는 HARS가 소유하며(`tests/browser`) 필수 CI `Browser checks`로 돈다([BROWSER-TESTS.md](BROWSER-TESTS.md)). 운영 전환 후보는 아니다. 실제 HAOS, 실제 Google Drive·NAS, 실제 차량 장치에서의 검증이 남아 있다. 정식 `2.0.0` 릴리스, 운영 포트 승계, Python 설정 변경, openpilot 목적지 변경은 수행하지 않았다.
 
 검증 근거는 [VALIDATION.md](VALIDATION.md), 측정 조건과 수치는 [PERFORMANCE.md](PERFORMANCE.md), 라우트별 상태는 [api-parity.json](api-parity.json)(Python 라우트 목록의 출처는 [inventory.json](inventory.json)), 전환 절차는 [CUTOVER.md](CUTOVER.md)에 있다.
 
@@ -37,6 +37,7 @@
 | 변환 큐·취소·복구 | 완료 | worker 강제 종료, 쓰기 한도, 프로세스 그룹 종료 | |
 | HAOS 독립 설치 구성 | 완료 | `scripts/check_coexistence.py`, amd64·aarch64 컨테이너 기동·TLS | 실제 HAOS 병행 설치·재시작·Ingress |
 | 인증 오프라인 승계 | 완료 | Python 발급 상태로 재페어링 없이 업로드(CI) | 실제 운영 스냅샷 |
+| 브라우저 테스트(화면 + Rust 서버) | HARS 소유 `tests/browser`, 필수 CI `Browser checks`(9묶음, 재시도·예상 실패 없음) | 51개 항목 중 50개 실행(`replay_format2`는 Python 모듈 의존으로 가져오지 않음), GitHub 러너 통과. 시간 가정으로 실패하던 4곳을 상태 대기로 고침 | 39개 항목은 API를 가짜로 채워 화면 코드만 확인. `maps.cjs`의 시간 의존 2곳(113행, 686행)은 후속 수정 대상. 고정 대기 약 160곳이 남아 있음 |
 
 ## Python과 의도적으로 다른 점
 

@@ -283,3 +283,20 @@ aarch64에서의 실제 디코딩·속도·메모리(CI는 컨테이너 기동·
 스레드를 도입하지 않아 썸네일 테스트 50회 반복은 하지 않았다. `integration/no_ffmpeg_product.py`는 alpha.4와 새 실행 파일 모두에서 `/api/logs/{id}/download?source=...&format=mp4`가 404라 첫 구간에서 멈춘다(이 변경과 무관, 고치지 않음). 제품 경로 확인은 같은 서버 도우미(`pure_default_product.py`)로 따로 했다.
 
 미검증: aarch64 실행, 썸네일 worker 자체를 SIGKILL하는 시험, IDR 간격이 1초보다 길거나 CRA만 있는 HEVC 실주행 입력, 14·47구간 전체 회귀(조정자). 건너뛴 샘플에서 디코더가 panic하는 입력(전부 디코딩하면 실패할 썸네일이 건너뛰면 만들어진다)은 구조 검사로 막지 못하며 차등 퍼징 1,500건(600 + 보강 뒤 600 + 300)에서는 나오지 않았다. 따라서 계약은 "디코더가 panic하지 않는 입력에서 `b94d8a4`와 같다"이다(THUMBNAIL-DECODER.md "What the equality covers"). 4096x2160 H.264의 메모리는 `cargo test`로 직접 시험하지 않고 고정 입력으로만 확인했다.
+
+## 브라우저 테스트 CI와 2.0.0-alpha.5 (2026-11-18)
+
+브랜치 `ci/browser-checks`(PR #22, `main` `46b3c1a`). 세부는 [BROWSER-TESTS.md](BROWSER-TESTS.md).
+
+| 검사 | 결과 |
+|---|---|
+| GitHub 러너, 최종 커밋 `e238440` | 전 작업 통과. `Browser build` 1분 14초, 묶음 9개 1분 28초~1분 58초, `Rust checks` 3분 47초, 컨테이너 2분 54초·2분 57초 |
+| 상태 대기로 고친 4곳(`video_overlay` 77·529행, `conversion_controls` 99행, `replay_gzip` 57행) | CPU 경쟁 부하에서 각 8/8. 수정 전 `conversion_controls` 4/8, `replay_gzip` 2/8~4/8 통과 |
+| 고친 단언의 검출력 | 지키는 동작을 화면 사본에서 깨뜨리면 실패(`video_overlay` 두 곳, `replay_gzip`, `replay_layout`). `conversion_controls`는 확인하지 못함 |
+| 게이트 무결성(각 1회, 모두 게이트 실패로 판정) | 단언 하나가 실패하는 화면 사본, 묶음 누락, 실행 파일 없음, 네트워크 차단 실패, 테스트 0개, 남의 listener, 허용되지 않은 재기동, 제외 목록 추가 |
+| 워드마크 수정(`src/http.rs`) | `tests/page_version.rs`가 수정 전 실패·수정 후 통과, `library_tabs` 183행 통과 |
+| `cargo nextest run --locked --all-targets` | 312/312 |
+| 실주행 회귀(`f9ad0cb`, 이후 `src/` 변경 없음) | 원본 13구간 13/13, 14구간 14/14, 47구간 47/47 차이 없음(15,600·16,350·56,399프레임) |
+| 독립 검토 2회 | 차단 사유 없음. 지적(미러 포트, 제외 집합 고정, 어댑터 대기열, 재기동 범위)은 같은 PR에서 반영 |
+
+미검증: `maps.cjs` 113행(새 clone 실행에서 1회 실패)과 686행(과부하에서 실패)의 시간 의존은 이 시점에 고치지 않았다. 모킹형 39개 항목은 HARS API를 부르지 않는다. alpha.5 이미지의 실제 HAOS 업데이트는 수행하지 않았다.
