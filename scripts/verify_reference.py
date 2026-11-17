@@ -3,7 +3,7 @@ from pathlib import Path
 import subprocess
 
 ROOT = Path(__file__).resolve().parents[1]
-SOURCE = "71add1a04ed505fc2cb6982052db4a9945d0808f"
+SOURCE = "d3de13472ea242dab9866d485b5777ad67d5b1dd"
 rows = subprocess.check_output(["git", "ls-tree", "-r", SOURCE], cwd=ROOT, text=True).splitlines()
 count = 0
 for row in rows:
