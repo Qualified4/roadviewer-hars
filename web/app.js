@@ -306,7 +306,20 @@ function preferredQuality(network){
  try{const saved=localStorage.getItem(choice.key);if(saved==='front'||saved==='qcamera')return saved}catch{}
  return choice.default;
 }
-const videoOrder=()=>preferredQuality(videoNetwork().network)==='qcamera'?['qcamera','front','wide']:['front','qcamera','wide'];
+// 마지막으로 고른 화질 유지 (off by default, kept in this browser): while on, the camera last picked from the camera list
+// (wide too) opens first on every log, ahead of the connection's default quality; turning it on keeps the camera now shown.
+// A camera the page fell back to after a failure is not a pick.
+const KEEP_SOURCE_KEY='roadviewer-video-keep-last',LAST_SOURCE_KEY='roadviewer-video-last-source';
+const keepingSource=()=>{try{return localStorage.getItem(KEEP_SOURCE_KEY)==='1'}catch{return false}};
+function keptSource(){
+ if(!keepingSource())return null;
+ try{const saved=localStorage.getItem(LAST_SOURCE_KEY);return Object.hasOwn(videoLabels,saved)?saved:null}catch{return null}
+}
+function rememberSource(source){if(keepingSource()&&Object.hasOwn(videoLabels,source))try{localStorage.setItem(LAST_SOURCE_KEY,source)}catch{}}
+const videoOrder=()=>{
+ const order=preferredQuality(videoNetwork().network)==='qcamera'?['qcamera','front','wide']:['front','qcamera','wide'],kept=keptSource();
+ return kept?[kept,...order.filter(key=>key!==kept)]:order;
+};
 function setupVideoSources(){
  failedVideos.clear();resumeAfterVideo=false;
  const choices=data.videos|| (data.video?{qcamera:data.video}:{}),select=$('videoSource');
@@ -389,7 +402,7 @@ async function videoError(){
  if(status===503)videoFailure(typeof body?.message==='string'&&body.message?body.message:STORAGE_FAILURE,true);
  else videoFailure('브라우저가 영상을 읽지 못했습니다. Home Assistant 연결을 확인하고 새로고침해 주세요.');
 }
-$('videoSource').onchange=()=>{failedVideos.clear();selectVideo($('videoSource').value)};
+$('videoSource').onchange=()=>{failedVideos.clear();rememberSource($('videoSource').value);selectVideo($('videoSource').value)};
 let dataRetryTimer=null,recordingNameFiles={};
 async function loadData(){const id=location.pathname.split('/').filter(Boolean).at(-1);clearTimeout(dataRetryTimer);const res=await fetch(replayUrl('../../api/logs/'+id+'/data'),{cache:'no-cache'});
  if(res.status===409){
@@ -1705,9 +1718,11 @@ settingsDialog($('layoutWidthDialog'),$('layoutWidthButton'),$('layoutWidthClose
  const sync=()=>{
   for(const [network,name] of Object.entries(groups)){const value=preferredQuality(network);for(const input of document.getElementsByName(name))input.checked=input.value===value}
   const {network,known}=videoNetwork();
+  $('keepVideoSource').checked=keepingSource();
   $('videoQualityNetwork').textContent=known?`현재 연결: ${videoQuality[network].label}`:`현재 연결을 확인할 수 없어 ${videoQuality[network].label} 설정을 따릅니다.`;
  };
  for(const [network,name] of Object.entries(groups))for(const input of document.getElementsByName(name))input.onchange=()=>{try{localStorage.setItem(videoQuality[network].key,input.value)}catch{}};
+ $('keepVideoSource').onchange=()=>{const on=$('keepVideoSource').checked;try{localStorage.setItem(KEEP_SOURCE_KEY,on?'1':'0')}catch{}if(on&&videoSource)rememberSource(videoSource)};
  // The connection object outlives the page: its listener goes with the page, or it kept the whole page (and its log) alive.
  {const changed=()=>{if($('videoQualityDialog').open)sync()};navigator.connection?.addEventListener?.('change',changed);if(typeof onPageDispose==='function')onPageDispose(()=>navigator.connection?.removeEventListener?.('change',changed))}
  // Opened from the camera choice list's 기본 화질 button (choices.js).

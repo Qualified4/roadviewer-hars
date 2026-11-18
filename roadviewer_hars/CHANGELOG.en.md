@@ -4,6 +4,11 @@
 
 These are the English release notes from 0.13.0 on. Earlier release entries remain in the [original Korean history](CHANGELOG.md); they describe behavior at their release date, not necessarily current behavior. See the [current user guide](DOCS.en.md) for present settings and policies.
 
+## 2.0.1
+
+- The replay page's **기본 재생 화질** window (**기본 화질** in the camera list) has a new **마지막으로 고른 화질 유지** switch (keep the last chosen quality, off by default). While on, the camera shown when it is turned on and any camera picked from the list after that (wide included) are remembered in this browser and open first, ahead of the per-connection default quality, when another segment or log opens (automatic next segment or a move to another segment). A log without that camera uses the default quality, and a camera the page switched to after a playback failure is not remembered.
+- In full screen, the buttons, map, speed and wheel and messages over the video stay inside the picture, sized to the video's aspect ratio, instead of sitting on the black bars when the screen has another shape. The transport bar still spans the screen.
+
 ## 2.0.0
 
 The first stable release of Road Viewer rebuilt in Rust. It succeeds Python Road Viewer 1.x, whose repository no longer receives new features. See the [implementation and validation status](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) for unverified environments and remaining risks and the [work log](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/WORKLOG.md) for each alpha (Korean).
