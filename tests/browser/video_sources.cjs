@@ -5,14 +5,14 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   const page=await browser.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
   const videos={front:{start:0,duration:2,frames:20},qcamera:{start:.1,duration:2,frames:20},wide:{start:.2,duration:2,frames:20}};
   const data={route:'three cameras',key:'cameras',duration:2.2,warnings:[],video:videos.front,videos,defaultVideo:'front',frames:Array.from({length:45},(_,i)=>({t:i/20,id:i,valid:true,lanes:[],edges:[],lp:[],es:[],leads:[],cameraInfo:{device:'mici',sensor:'os04c10',wideSensor:'os04c10',calibrationStatus:'calibrated',rpy:[.02,.01,-.03],wideRpy:[.01,-.02,.04]},overlay:{geometry:{basis:[[.5,.5,1],[.85,0,0],[0,1.5,0]],height:1.22,lanes:[],edges:[],position:[[5,0,0],[20,1,0],[50,3,0]]}}}))};
-  let failFront=false,legacy=false,checking=0,driveDown=false;const requested=[];
+  let failFront=false,legacy=false,checking=0,driveDown=false,noWide=false;const requested=[];
   const serve=route=>{
    const url=new URL(route.request().url()),p=url.pathname;
    if(p.endsWith('/bookmarks'))return route.fulfill({json:{bookmarks:[]}});
    if(p==='/api/logs')return route.fulfill({json:{logs:[]}});
    // The replay loads vehicle data in the background for the event track; none here.
    if(p.endsWith('/telemetry'))return route.fulfill({status:404,json:{error:'차량 정보 없음'}});
-   if(p.endsWith('/data'))return route.fulfill({json:legacy?{...data,videos:undefined,video:videos.qcamera,defaultVideo:undefined}:data});
+   if(p.endsWith('/data'))return route.fulfill({json:legacy?{...data,videos:undefined,video:videos.qcamera,defaultVideo:undefined}:noWide?{...data,videos:{front:videos.front,qcamera:videos.qcamera}}:data});
    if(p.endsWith('/video')){
     // The page's background copy of the whole video (app.js) is not a choice of source.
     if(route.request().headers()['x-roadviewer-whole-video']!=='1')requested.push(url.searchParams.get('source'));
@@ -130,7 +130,30 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   p=await open(desktop,'qcamera','desktop set to low quality');
   await p.locator('#speedChoice').click();assert(await p.locator('.rv-choice-action').isHidden(),'only the camera list has 기본 화질');
   await p.keyboard.press('Escape');await desktop.close();
+  // 마지막으로 고른 화질 유지 (off by default): off, a camera picked on one log does not carry to the next. Turned on, it
+  // keeps the camera shown then, and afterwards the last one picked from the list (wide too), ahead of the default quality;
+  // a camera the page fell back to after a failure is not a pick, a log without the kept camera opens on the default,
+  // and turned off again the default quality applies.
+  const pick=async(p,name,source)=>{
+   await p.locator('#videoSourceChoice').click();await p.getByRole('option',{name,exact:true}).click();
+   await p.waitForFunction(source=>!loading&&videoSource===source,source);
+  };
+  const keep=async(p,on)=>{
+   await p.locator('#videoSourceChoice').click();await p.locator('.rv-choice-action').click();
+   assert.equal(await p.locator('#keepVideoSource').isChecked(),!on,'the switch shows the kept setting');
+   await p.locator('#keepVideoSource').setChecked(on);await p.locator('#videoQualityClose').click();
+  };
+  const kept=await browser.newContext();
+  p=await open(kept,'front','keep: default');await pick(p,'전방 · 저용량','qcamera');await p.close();
+  p=await open(kept,'front','keep off: a pick is not carried');await pick(p,'전방 · 저용량','qcamera');await keep(p,true);await p.close();
+  p=await open(kept,'qcamera','keep on: the camera shown when turned on');await pick(p,'와이드','wide');await p.close();
+  p=await open(kept,'wide','keep on: the last camera picked');
+  await p.evaluate(()=>videoFailure('test error'));await p.waitForFunction(()=>!loading&&videoSource!=='wide');await p.close();
+  p=await open(kept,'wide','keep on: a failure fallback is not a pick');await p.close();
+  noWide=true;p=await open(kept,'front','keep on: a log without the kept camera');noWide=false;
+  await keep(p,false);await p.close();
+  p=await open(kept,'front','keep off again: the default quality');await kept.close();
   assert.deepEqual(errors,[]);
-  console.log('PASS: front preference, per-connection default quality (phones, tablets, Android Wi-Fi, desktop), independent clocks, paused/playing switches, wide projection/cache/metadata guard, failure fallback, legacy qcamera, storage-checking retry, Drive failure message');
+  console.log('PASS: front preference, per-connection default quality (phones, tablets, Android Wi-Fi, desktop), keep the last chosen camera across logs, independent clocks, paused/playing switches, wide projection/cache/metadata guard, failure fallback, legacy qcamera, storage-checking retry, Drive failure message');
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exit(1)});

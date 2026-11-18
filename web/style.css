@@ -785,7 +785,7 @@ select,.rv-choice-trigger{font-weight:500}
 .replay-page.hud-idle .video-gap{translate:0 calc(-1 * var(--gap-cover,0px))}
 .video-wrap.video-map-large .video-gap{opacity:0}
 @container(max-width:520px){.video-gap{left:8px;bottom:8px}}
-.camera-panel:fullscreen .video-gap{bottom:calc(var(--transport-height,130px) + 12px);transition:bottom .18s var(--m2-standard,ease),translate .18s var(--m2-standard,ease),opacity .18s var(--m2-standard,ease)}
+.camera-panel:fullscreen .video-gap{bottom:calc(var(--fs-lift) + 12px);transition:bottom .18s var(--m2-standard,ease),translate .18s var(--m2-standard,ease),opacity .18s var(--m2-standard,ease)}
 .replay-page.compact-media .camera-panel:not(:fullscreen) .video-gap{--gap-cover:var(--video-cover,0px)}
 @media(prefers-reduced-motion:reduce){.video-gap{transition:none}}
 /* Short or touch screens: the app bar also folds up while playing; the content moves up into its place. */
@@ -873,12 +873,19 @@ select,.rv-choice-trigger{font-weight:500}
    glass). While playing it hides with the other video controls; a touch shows them all, another touch hides them;
    paused, everything stays. The bottom-left chips and the full-screen button sit just above the bar. */
 .camera-panel:fullscreen{position:relative}
+/* Full screen: the stage takes the picture's shape and sits centred on the black screen, so what floats on it (the map,
+   camera and overlay tools, title, speed and wheel, messages, fullscreen button) stays on the picture whatever the
+   screen's shape; only the transport bar spans the screen. The turned frame (.is-turned) swaps the screen's sides.
+   --fs-lift is how far the bar reaches up into the picture: none when the picture ends above it. */
+.camera-panel:fullscreen{--fs-w:100vw;--fs-h:100dvh;--fs-below:max(0px,calc((var(--fs-h) - var(--fs-w) / var(--video-ar,1.594)) / 2));--fs-lift:max(0px,calc(var(--transport-height,130px) - var(--fs-below)))}
+.camera-panel.is-turned:fullscreen{--fs-w:100vh;--fs-h:100vw}
+.camera-panel:fullscreen .video-wrap{flex:none;width:min(var(--fs-w),calc(var(--fs-h) * var(--video-ar,1.594)));height:min(var(--fs-h),calc(var(--fs-w) / var(--video-ar,1.594)));margin:auto}
 .camera-panel:fullscreen .playback{position:absolute;left:0;right:0;bottom:0;z-index:5;background:var(--fs-bar,rgba(11,14,19,.72));-webkit-backdrop-filter:blur(16px) saturate(140%);backdrop-filter:blur(16px) saturate(140%);padding-bottom:calc(12px + env(safe-area-inset-bottom));transition:opacity .18s var(--m2-standard,ease)}
 :root[data-theme=light] .camera-panel:fullscreen{--fs-bar:rgba(246,247,249,.92)}
 @media(prefers-color-scheme:light){:root:not([data-theme=dark]) .camera-panel:fullscreen{--fs-bar:rgba(246,247,249,.92)}}
 .replay-page.hud-idle .camera-panel:fullscreen .playback{opacity:0;pointer-events:none;transition-duration:.3s}
-.camera-panel:fullscreen :is(.video-tools,.video-fullscreen){bottom:calc(var(--transport-height,130px) + 12px)}
-.camera-panel:fullscreen .video-messages{bottom:calc(var(--transport-height,130px) + var(--hud-h) + 20px);transition:bottom .18s var(--m2-standard,ease)}
+.camera-panel:fullscreen :is(.video-tools,.video-fullscreen){bottom:calc(var(--fs-lift) + 12px)}
+.camera-panel:fullscreen .video-messages{bottom:calc(var(--fs-lift) + var(--hud-h) + 20px);transition:bottom .18s var(--m2-standard,ease)}
 /* Once the transport and video tools fade, only the outer safe-area margin remains.
    Enter/exit durations match the fullscreen transport; ordinary playback keeps its layout. */
 .replay-page.hud-idle .camera-panel:fullscreen :is(.video-gap,.video-messages){bottom:calc(12px + env(safe-area-inset-bottom));transition-duration:.3s}
@@ -1084,5 +1091,5 @@ select,.rv-choice-trigger{font-weight:500}
 .video-wrap.video-map-large .video-tools{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .18s,visibility 0s .18s}
 .video-wrap.video-map-large .video-messages{bottom:12px}
 @container(max-width:520px){.video-wrap.video-map-large .video-messages{bottom:8px}}
-.camera-panel:fullscreen .video-wrap.video-map-large .video-messages{bottom:calc(var(--transport-height,130px) + 20px)}
+.camera-panel:fullscreen .video-wrap.video-map-large .video-messages{bottom:calc(var(--fs-lift) + 20px)}
 @media(prefers-reduced-motion:reduce){.video-map,.map-car-body,.video-wrap.video-map-large .video-tools{transition:none}}

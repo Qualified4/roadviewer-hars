@@ -2,7 +2,7 @@
 
 [한국어](README.md) · English
 
-> **This repository is Road Viewer 2.x, rebuilt in Rust.** The current version is **2.0.0**.
+> **This repository is Road Viewer 2.x, rebuilt in Rust.** The current version is **2.0.1**.
 >
 > It succeeds the Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha), whose repository no longer receives new features. The Home Assistant app store and sidebar show it as **Road Viewer**. It is a separate app with a different slug, so the 1.x app is not updated to it automatically. To move from 1.x, see [cutover and rollback](docs/hars/CUTOVER.md) (Korean). Unverified environments and remaining risks are listed in the [implementation and validation status](docs/hars/STATUS.md) (Korean).
 >
@@ -128,7 +128,7 @@ Upload `ecamera.hevc` with the log to select **와이드** (Wide) in the camera 
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/roadviewer-wide-camera-dark.png"><img src="docs/images/roadviewer-wide-camera.png" alt="Road Viewer wide-camera video with lanes, model path, FF vehicle box, radar detections and a left turn signal overlay"></picture>
 
-A video opens on the **기본 화질** (default quality) chosen per connection: the small front video (qcamera) on mobile data and the high-quality front on Wi-Fi/wired by default. Change it with **기본 화질** beside 닫기 (close) in the camera list over the video; the choice is kept per browser. Where the browser does not report the connection type (iPhone, iPad, desktop browsers and others), phones and tablets follow the mobile-data choice and other devices the Wi-Fi/wired one. If that video is missing, the other front video is used, then wide. Switching preserves log time and playing/paused state. A failing video triggers an attempt to use another available source. Wide overlays use the wide sensor/calibration; missing information produces an explanation. Older prepared logs may need reanalysis to obtain wide calibration.
+A video opens on the **기본 화질** (default quality) chosen per connection: the small front video (qcamera) on mobile data and the high-quality front on Wi-Fi/wired by default. Change it with **기본 화질** beside 닫기 (close) in the camera list over the video; the choice is kept per browser. Where the browser does not report the connection type (iPhone, iPad, desktop browsers and others), phones and tablets follow the mobile-data choice and other devices the Wi-Fi/wired one. With **마지막으로 고른 화질 유지** (keep the last chosen quality, off by default) turned on in the same window, moving to another segment or log opens the camera last chosen (wide included). If that video is missing, the other front video is used, then wide. Switching preserves log time and playing/paused state. A failing video triggers an attempt to use another available source. Wide overlays use the wide sensor/calibration; missing information produces an explanation. Older prepared logs may need reanalysis to obtain wide calibration.
 
 Overlay settings control box height/opacity, path width, BSD wall height and individual labels. LF/FF/RF boxes reconstruct supported CCNC display commands recorded in the log. BSD, turn signals and target distance appear when the corresponding data is available. Camera overlays are independent of the road panel's 25/50/80m range; BSD walls retain a 40m limit.
 
