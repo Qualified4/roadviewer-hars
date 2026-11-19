@@ -4,6 +4,10 @@
 
 These are the English release notes from 0.13.0 on. Earlier release entries remain in the [original Korean history](CHANGELOG.md); they describe behavior at their release date, not necessarily current behavior. See the [current user guide](DOCS.en.md) for present settings and policies.
 
+## 2.0.3
+
+- All-drives map list: picking another drive folds the previous card's buttons (재생, 주행 지도, 목록에서 보기) away as they fade and unfolds the new card's as they fade in, so the list grows and shrinks smoothly instead of jumping, and a list scrolled to its end stays there. With reduced motion turned on the change is immediate, as before.
+
 ## 2.0.2
 
 - Light theme: the selected card on the drive map and the all-drives map (a segment card, a drive card) is easier to pick out. Instead of a faint green line at the middle of its top and bottom, gold light rises a short way in from its left and right edges, its side rims turn gold, and it alone has a soft lift shadow. Its centre stays white so the text reads as before, and the play button and status colours are unchanged. The dark theme is unchanged.
