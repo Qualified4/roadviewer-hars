@@ -4,6 +4,10 @@
 
 These are the English release notes from 0.13.0 on. Earlier release entries remain in the [original Korean history](CHANGELOG.md); they describe behavior at their release date, not necessarily current behavior. See the [current user guide](DOCS.en.md) for present settings and policies.
 
+## 2.0.2
+
+- Light theme: the selected card on the drive map and the all-drives map (a segment card, a drive card) is easier to pick out. Instead of a faint green line at the middle of its top and bottom, gold light rises a short way in from its left and right edges, its side rims turn gold, and it alone has a soft lift shadow. Its centre stays white so the text reads as before, and the play button and status colours are unchanged. The dark theme is unchanged.
+
 ## 2.0.1
 
 - The replay page's **기본 재생 화질** window (**기본 화질** in the camera list) has a new **마지막으로 고른 화질 유지** switch (keep the last chosen quality, off by default). While on, the camera shown when it is turned on and any camera picked from the list after that (wide included) are remembered in this browser and open first, ahead of the per-connection default quality, when another segment or log opens (automatic next segment or a move to another segment). A log without that camera uses the default quality, and a camera the page switched to after a playback failure is not remembered.
