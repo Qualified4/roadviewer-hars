@@ -318,7 +318,7 @@ button.bookmark-marker{position:absolute;top:17px;transform:translateX(-50%);wid
 /* ---------- Replay page: app bar · video column (video + transport) · analysis panel ---------- */
 .sr-only,.replay-page #status{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap;border:0}
 .replay-page{--layout-width:1420px;--app-bar-height:57px;overflow-anchor:none}
-:root:has(>body.replay-page),:root:has(.replay-page:not([hidden])){scroll-padding-top:var(--replay-scroll-top,64px)}
+:root:has(>body.replay-page),:root[data-page=replay]{scroll-padding-top:var(--replay-scroll-top,64px)}
 .replay-page main{max-width:var(--layout-width);padding:20px 24px 40px}
 @media(max-width:600px){.replay-page main{width:var(--mobile-layout-width,100%)}}
 /* App bar: replaces the brand header, toolbars and recording row. */
@@ -827,7 +827,7 @@ select,.rv-choice-trigger{font-weight:500}
 /* Touch screens: no fixed page background (it makes Chrome scroll on the main thread, so a busy playback frame can stop a
    fling), and no scroll anchoring while the sticky video shrinks (its corrections can cancel a fling as well). */
 
-:root:has(.replay-page.compact-media){overflow-anchor:none}
+:root:has(>body.replay-page.compact-media),:root[data-page=replay][data-compact-media]{overflow-anchor:none}
 /* Phones: 이전 / 다음 flank the title over the video as round glass buttons; narrow videos drop the start time from the title. */
 .video-title{display:flex;align-items:center;gap:6px}
 .video-title h1{flex:0 1 auto;min-width:0}

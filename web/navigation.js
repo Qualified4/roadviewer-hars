@@ -55,7 +55,7 @@ async function navigate(to,{replace=false,pop=false,pressed=0}={}){
   if(!pop){saveScroll();history[replace?'replaceState':'pushState']({},'',url)}
   if(brand)root.querySelector('.app-brand')?.replaceWith(brand);
   previous?.scope.dispose();document.getElementById('pageBase').href=url.href;
-  host.replaceChildren(root);root.hidden=false;libraryStyle.disabled=kind!=='library';current={url,scope,api};
+  host.replaceChildren(root);root.hidden=false;libraryStyle.disabled=kind!=='library';document.documentElement.dataset.page=kind;current={url,scope,api};
   document.title=html.title;notice.textContent='';
   scrollTo(0,pop?(history.state?.rvScroll||0):kind==='library'?libraryScroll:0);
   dispatchEvent(new Event('pageshow'));busy(false);
