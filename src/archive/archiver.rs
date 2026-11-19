@@ -34,6 +34,7 @@ pub const CACHE_SECONDS: f64 = 10.0;
 
 pub type Factory = Arc<dyn Fn(&ArchiveSettings, &Path) -> WriteBackend + Send + Sync>;
 
+pub use super::archiver_clean_stop::CLEAN_STOP;
 pub(crate) fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
 }
@@ -280,6 +281,7 @@ impl Archive {
             me: me.clone(),
         });
         *lock(&archive.job) = archive.load_job();
+        archive.adopt_clean_stop();
         *archive
             .host
             .store

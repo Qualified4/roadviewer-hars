@@ -322,6 +322,17 @@ async fn run() -> anyhow::Result<()> {
             std::future::pending::<anyhow::Result<()>>().await
         }
     };
+    // At the stop signal the archiver starts no new cycle, and with no cycle running the next start keeps the startup
+    // checks already done (record_clean_stop). This is done at once, not after the servers have closed their
+    // connections: a long one (a video stream) can outlast the Supervisor's stop timeout.
+    tokio::spawn({
+        let archive = archive.clone();
+        async move {
+            shutdown().await;
+            archive.shutdown();
+            archive.record_clean_stop();
+        }
+    });
     // Once serving ends the archiver starts no new cycle. The cycle in progress is not waited for: it is dropped with
     // the runtime, which cancels its share copy (the part is removed) and gives blocking work SHUTDOWN_LIMIT.
     let ui = async {

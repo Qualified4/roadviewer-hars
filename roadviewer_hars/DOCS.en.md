@@ -489,7 +489,7 @@ An unreadable/corrupt file or invalid migrated values disable archiving and show
 
 ### Manually move or copy all eligible data
 
-Choose **이동 가능한 데이터 모두 이동** (Move all eligible data) or **복사 가능한 데이터 모두 복사** (Copy all eligible data) to open a confirmation based on saved settings. Review file/segment counts, size, expected freed space for MOVE, and exclusions. No transfer or deletion occurs before confirmation.
+Choose **이동 가능한 데이터 모두 이동** (Move all eligible data) or **복사 가능한 데이터 모두 복사** (Copy all eligible data) to open a confirmation based on saved settings. Review file/segment counts, size, expected freed space for MOVE, and exclusions. No transfer or deletion occurs before confirmation. Before the first archiving after the app starts, startup checks that tidy up interrupted uploads and moves read every recording once (shown as "보관본 확인 n/total"). After a clean stop while archiving was idle (an update or restart) they are not run again; they run again only after a crash, a stop during archiving, or a change of archive target.
 
 Only the scheduled **batch size and start threshold** are bypassed while the existing engine repeats. Minimum age and in-use protection remain; pinned recordings are moved like the others. Drive MOVE without local-delete permission is presented as COPY. Only verified, committed local files are removed; remote files are never deleted, and verified copies are not uploaded again.
 
