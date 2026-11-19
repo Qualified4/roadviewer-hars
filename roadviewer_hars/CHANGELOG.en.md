@@ -1,3 +1,7 @@
+## 2.0.7
+
+- Conversion concurrency adjusts to available memory. Automatic and manual conversions wait for sufficient memory, and running conversions continue.
+
 # Release notes
 
 [한국어 전체 변경 이력](CHANGELOG.md) · English

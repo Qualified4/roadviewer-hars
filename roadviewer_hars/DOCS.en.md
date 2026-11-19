@@ -116,7 +116,7 @@ Newly completed conversions remux qcamera H.264 and front/wide HEVC into MP4 wit
 These options are on the **설정** (Settings) tab, together with **화면 모드** (display mode), the **처리 상태, 다운로드, 제거와 완전 삭제의 차이** help section and the app version.
 
 - **자동 변환:** enabled by default. Eligible recordings are queued oldest-upload first. Disabling clears automatic queued work; running and manually requested work continue.
-- **동시 처리 개수:** 1–4, default 1. Lowering the limit does not interrupt running jobs. Settings survive restart; parallel jobs may finish out of order.
+- **동시 처리 개수 (conversion concurrency):** Set a maximum between 1 and 16, default 1. Both automatic and manual conversions wait in the queue when available memory is low and start when it recovers. Running jobs continue, and the setting survives restarts.
 
 Settings-tab options save immediately; storage budget/policy on the **저장공간** tab have their own Save button. Failed videos retain their uploaded originals.
 
