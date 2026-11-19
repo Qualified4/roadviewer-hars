@@ -580,3 +580,64 @@ async fn concurrent_archiving_uploads_cleanup_and_deletions_keep_every_file() {
         }
     }
 }
+
+/// A clean stop (no cycle running, the startup checks done) carries the checks over the restart: the next start does
+/// not read every recording again. The note goes as it is read, so a crash after that start checks everything again,
+/// and a note made for another archive target, or while a cycle ran, is not used. A leftover local copy of a moved file
+/// shows which happened: the full checks finish that move, a carried-over start leaves it for the next full check.
+#[tokio::test]
+async fn a_clean_stop_carries_the_startup_checks_over_a_restart() {
+    use roadviewer_hars::archive::archiver::CLEAN_STOP;
+    let mut e =
+        drive_env(json!({"archive_mode": "move", "archive_allow_local_delete": true})).await;
+    let log = data(1000, 1);
+    let a = e.record('a', &[("rlog.zst", log.clone())], OLD).await;
+    go(&e).await;
+    e.cycle().await;
+    assert_eq!(e.loc(&a, "rlog.zst").await, "gdrive");
+    let note = e.root.join(CLEAN_STOP);
+    let leftover = |e: &Env| std::fs::write(e.root.join(&a).join("rlog.zst"), &log).unwrap();
+
+    // A cycle under way: no note (it is cut short at the stop).
+    {
+        let _running = e.a().cycle.clone().try_lock_owned().unwrap();
+        assert!(!e.a().record_clean_stop());
+        assert!(!note.exists());
+    }
+    // Stopped idle: noted, and no cycle starts after the note.
+    assert!(e.a().record_clean_stop());
+    assert!(note.exists());
+    assert!(
+        e.a().cycle.try_lock().is_err(),
+        "the stop keeps the cycle lock"
+    );
+    e.restart();
+    assert!(!note.exists(), "the note goes as it is read");
+    leftover(&e);
+    e.cycle().await;
+    assert!(
+        e.local(&a, "rlog.zst"),
+        "carried over: the start did not read every recording again"
+    );
+
+    // That start crashes: no note, the next start checks everything and finishes the move.
+    e.restart();
+    e.cycle().await;
+    assert!(!e.local(&a, "rlog.zst"), "the full checks ran");
+    assert_eq!(e.loc(&a, "rlog.zst").await, "gdrive");
+
+    // A note made for another Drive folder is not used.
+    assert!(e.a().record_clean_stop());
+    let mut other: Value = serde_json::from_slice(&std::fs::read(&note).unwrap()).unwrap();
+    other["target"]["gdrive_folder_name"] = json!("Another folder");
+    std::fs::write(&note, serde_json::to_vec(&other).unwrap()).unwrap();
+    e.restart();
+    assert!(!note.exists());
+    leftover(&e);
+    e.cycle().await;
+    assert!(
+        !e.local(&a, "rlog.zst"),
+        "another target's note: the full checks ran"
+    );
+    invariant(&e, &a).await;
+}
