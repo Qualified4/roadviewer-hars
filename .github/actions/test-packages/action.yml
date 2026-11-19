@@ -1,0 +1,37 @@
+name: Test packages
+description: >-
+  capnproto (builds the product) and the ffmpeg CLI (tests only: synthetic inputs, independent decoding), installed
+  from a cache of their .deb files. Since 2026-11-18 the runners' Ubuntu mirror has served ffmpeg's 65 MB at about
+  100 kB/s (10 to 16 minutes); with the cache, apt reads only the package lists from it.
+inputs:
+  save:
+    description: Save the .deb files when the cache did not hold them all (main pushes; pull requests and tags read main's caches).
+    default: 'false'
+runs:
+  using: composite
+  steps:
+    # One cache per runner image (its packages follow the image); a new image starts from the last one's files.
+    - id: image
+      shell: bash
+      run: echo "key=hars-apt-v1-${RUNNER_OS}-${RUNNER_ARCH}-${ImageOS:-unknown}-${ImageVersion:-unknown}" >> "$GITHUB_OUTPUT"
+    - id: debs
+      uses: actions/cache/restore@v6
+      with:
+        path: ~/apt-debs
+        key: ${{ steps.image.outputs.key }}
+        restore-keys: hars-apt-v1-${{ runner.os }}-${{ runner.arch }}-
+    - shell: bash
+      run: |
+        # Rebuilding the manual page index after the install is the slowest part of a fast install.
+        sudo rm -f /var/lib/man-db/auto-update
+        mkdir -p ~/apt-debs/partial
+        sudo apt-get update -qq
+        sudo apt-get install -y --no-install-recommends -o Dir::Cache::Archives="$HOME/apt-debs" \
+          -o APT::Keep-Downloaded-Packages=true capnproto ffmpeg
+        sudo chown -R "$(id -u):$(id -g)" ~/apt-debs
+        echo "packages: $(ls ~/apt-debs/*.deb | wc -l) .deb files, $(du -sh ~/apt-debs | cut -f1)"
+    - if: ${{ inputs.save == 'true' && steps.debs.outputs.cache-hit != 'true' }}
+      uses: actions/cache/save@v6
+      with:
+        path: ~/apt-debs
+        key: ${{ steps.image.outputs.key }}

@@ -55,9 +55,7 @@ jobs:
       # The product builds without any media library. The ffmpeg CLI is a development tool here
       # only: tests make synthetic inputs with it and use it as an independent decoder and reader.
       - name: Native test dependencies
-        run: |
-          sudo rm -f /var/lib/man-db/auto-update
-          sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends capnproto ffmpeg
+        uses: ./.github/actions/test-packages
       - name: Rust stable and the test runner
         run: |
           rustup update stable --no-self-update
@@ -82,9 +80,7 @@ jobs:
       - uses: actions/checkout@v7
       # pipeline_contract.py makes its synthetic inputs with the ffmpeg CLI (libx264, libx265).
       - name: Native test dependencies
-        run: |
-          sudo rm -f /var/lib/man-db/auto-update
-          sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends capnproto ffmpeg
+        uses: ./.github/actions/test-packages
       - name: Python compatibility environment
         run: |
           python3 -m venv /tmp/hars-compat-env
@@ -377,6 +373,17 @@ jobs:
             ~/.cargo/git
             target
           key: hars-rust-test-v1-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
+  # The .deb files of the test packages (capnproto, ffmpeg) for Rust tests, Compatibility and the release gate: the
+  # runners' Ubuntu mirror has been slow. Saved only when the runner image's cache does not hold them yet.
+  cache-packages:
+    name: Cache refresh (packages)
+    if: ${{ github.event_name == 'push' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v7
+      - uses: ./.github/actions/test-packages
+        with:
+          save: 'true'
   # The npm cache (setup-node, saved after the job on a miss) and the Playwright shell cache of the browser shards,
   # with the shards' steps. No browser starts.
   cache-browser:
