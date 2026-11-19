@@ -56,6 +56,15 @@ pub fn http() -> Arc<Http> {
 
 /// Drive through the fake, the NAS as in production (with any absolute path allowed).
 pub fn factory(url: &str, http: Arc<Http>) -> Factory {
+    factory_clocked(url, http, roadviewer_hars::archive::monotonic_clock())
+}
+
+/// [`factory`] whose backends read `clock`, so a test can let a probe result go stale.
+pub fn factory_clocked(
+    url: &str,
+    http: Arc<Http>,
+    clock: roadviewer_hars::archive::Clock,
+) -> Factory {
     let url = url.to_owned();
     Arc::new(move |s: &ArchiveSettings, root: &Path| match s.backend {
         Backend::Gdrive => {
@@ -73,20 +82,14 @@ pub fn factory(url: &str, http: Arc<Http>) -> Factory {
                 Some(&url),
                 Some(&format!("{url}/upload")),
             );
-            let mut b = DriveBackend::new(
-                drive_settings(s),
-                root,
-                auth,
-                client,
-                roadviewer_hars::archive::monotonic_clock(),
-            );
+            let mut b = DriveBackend::new(drive_settings(s), root, auth, client, clock.clone());
             b.set_upload_chunk(CHUNK);
             WriteBackend::Drive(Arc::new(b))
         }
         Backend::Smb => WriteBackend::Nas(Arc::new(NasBackend::new(
             nas_settings(s),
             root,
-            roadviewer_hars::archive::monotonic_clock(),
+            clock.clone(),
         ))),
     })
 }

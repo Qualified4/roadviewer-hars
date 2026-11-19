@@ -5,6 +5,7 @@
 //! `hars_owner=roadviewer-hars` (Drive appProperties) or `"owner": "roadviewer-hars"` (NAS sentinel). Data written by
 //! the Python Road Viewer is reached through [`DriveLegacy`] / [`NasLegacy`], which only implement [`ArchiveRead`].
 pub mod archiver;
+mod archiver_clean_stop;
 mod archiver_manual;
 mod archiver_nas;
 mod archiver_recover;

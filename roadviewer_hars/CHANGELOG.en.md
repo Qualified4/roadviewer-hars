@@ -4,6 +4,11 @@
 
 These are the English release notes from 0.13.0 on. Earlier release entries remain in the [original Korean history](CHANGELOG.md); they describe behavior at their release date, not necessarily current behavior. See the [current user guide](DOCS.en.md) for present settings and policies.
 
+## 2.0.4
+
+- Adding another camera (such as wide) to a segment moved to Google Drive failed at registration with `409 storage_unavailable` for every segment (the device showed "Road Viewer 요청에 실패했습니다"). An upload that matches an archived segment now checks the Drive connection itself before registering.
+- After a clean stop while archiving was idle (an update or restart), the next start no longer runs the "보관본 확인" startup checks over every recording again. They still run after a crash, a stop during archiving, or a change of archive target. The restart into this version runs them once more.
+
 ## 2.0.3
 
 - All-drives map list: picking another drive folds the previous card's buttons (재생, 주행 지도, 목록에서 보기) away as they fade and unfolds the new card's as they fade in, so the list grows and shrinks smoothly instead of jumping, and a list scrolled to its end stays there. With reduced motion turned on the change is immediate, as before.

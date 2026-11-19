@@ -874,11 +874,12 @@ impl Uploads {
             };
             // The archive is probed before any lock, and only for re-uploads of archived recordings.
             let archived = self.archived_matches(&digests).await;
+            let reachable = self.archive_reachable(!archived.is_empty()).await;
             // Registration never holds a shared UI/authentication lock. Hashing already completed.
             registration = self.store.registration.lock().await;
             let planned = async {
                 self.check_session(&s, device, headers).await?;
-                let plan = self.plan(&s, &digests, &archived).await?;
+                let plan = self.plan(&s, &digests, &archived, reachable).await?;
                 if ["records", "updates"]
                     .iter()
                     .any(|k| plan[k].as_array().is_some_and(|v| !v.is_empty()))
@@ -1000,6 +1001,21 @@ impl Uploads {
         }
         Ok(recovered)
     }
+    /// Whether the archive answers, decided before the registration lock. A re-upload of archived recordings probes
+    /// it here: their files were just resolved through Drive's read trust, which outlasts the 10 s probe cache that
+    /// `last_state` reads, so `last_state` alone refused every such upload once the cache ran out.
+    async fn archive_reachable(&self, matched: bool) -> bool {
+        let Some(archive) = self.store.archive() else {
+            return false;
+        };
+        let connected = Some(crate::archive::State::Connected);
+        if matched {
+            use crate::archive::ArchiveRead;
+            Some(archive.backend().probe(true).await.state) == connected
+        } else {
+            archive.last_state() == connected
+        }
+    }
     /// Python `archived_matches`: archived recordings whose log has one of these hashes, with the
     /// states of their archived files (resolved here, outside every lock).
     async fn archived_matches(&self, digests: &[String]) -> ArchivedMatches {
@@ -1039,6 +1055,7 @@ impl Uploads {
         s: &Session,
         digests: &[String],
         archived: &ArchivedMatches,
+        reachable: bool,
     ) -> Result<Value> {
         let mut groups: BTreeMap<String, Vec<(usize, String, String)>> = BTreeMap::new();
         for (i, f) in s.files.iter().enumerate() {
@@ -1131,11 +1148,6 @@ impl Uploads {
                         .push(json!({"id":old["id"],"name":log.2,"video_differs":video_differs}));
                     continue;
                 }
-                // Admission and this check read the archive state without probing (last_state).
-                let reachable = self
-                    .store
-                    .archive()
-                    .is_some_and(|a| a.last_state() == Some(crate::archive::State::Connected));
                 let states = archived.get(&old_id);
                 if let Some(refused) = crate::recording_update::refusal(old, reachable, states) {
                     return Err(refused);
