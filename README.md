@@ -317,7 +317,7 @@ UI는 `http://127.0.0.1:8099`, 장치 API 내부 수신기는 `127.0.0.1:8098`�
 
 1. 버전을 `Cargo.toml`, `roadviewer_hars/config.yaml`, `Dockerfile`의 `BUILD_VERSION`에 함께 적습니다. `scripts/check_release.py`가 세 값의 일치를 검사합니다. 이미 게시한 버전은 재사용하지 않습니다. 웹 자산은 버전이 붙은 주소로 1년간 캐시되므로 다음 게시는 반드시 버전을 올려서 합니다.
 2. `main`이 검증된 커밋이고 CI가 통과했는지 확인한 뒤, 버전과 같은 이름의 태그(예: `2.0.0`)를 그 커밋에 만들어 push합니다. 이 push가 `.github/workflows/release.yml`(**HARS release**)을 시작합니다.
-3. `gate` 작업이 `scripts/check_release.py --tag`(태그와 버전 일치), fmt, clippy, 전체 테스트를 실행합니다.
+3. `gate` 작업이 `scripts/check_release.py --tag`(태그와 버전 일치)를 확인합니다. fmt·clippy·전체 테스트는 그 커밋이 PR에서 통과한 `HARS required`로 갈음하고 다시 돌리지 않습니다.
 4. `image` 작업이 amd64·aarch64 각각의 네이티브 러너에서 이미지를 빌드하고, FFmpeg 잔존 검사(`scripts/image_report.py --require-no-ffmpeg`)와 `scripts/container_smoke.py`를 통과한 뒤에만 `ghcr.io/qualified4/roadviewer-hars:<태그>-<아키텍처>`를 push합니다.
 5. `manifest` 작업이 두 이미지를 `ghcr.io/qualified4/roadviewer-hars:<태그>`로 묶고, `docs/hars/STATUS.md`를 본문으로 GitHub 릴리스를 만듭니다. 태그에 `-`가 있으면 prerelease, 없으면 정식(latest) 릴리스입니다. 이미지 태그 `latest`는 만들지 않습니다(Home Assistant는 버전 태그로 받습니다). 한 아키텍처라도 실패하면 manifest와 릴리스는 만들어지지 않습니다.
 6. GHCR 패키지가 공개인지 확인합니다. 비공개면 Home Assistant가 이미지를 받지 못합니다. 인증 없이 `docker manifest inspect ghcr.io/qualified4/roadviewer-hars:<태그>`로 두 아키텍처가 보이는지 확인합니다.
