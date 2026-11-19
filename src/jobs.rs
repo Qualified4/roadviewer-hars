@@ -19,6 +19,88 @@ pub struct Jobs {
     active: Mutex<BTreeMap<String, Arc<Notify>>>,
     pub progress: RwLock<BTreeMap<String, Value>>,
 }
+
+const MIB: u64 = 1024 * 1024;
+// Representative concurrent conversions peaked at about 350 MiB each, including child workers
+// (docs/hars/PERFORMANCE.md). Allow for larger inputs and leave room for other services.
+const MEMORY_PER_CONVERSION: u64 = 512 * MIB;
+const MEMORY_HEADROOM: u64 = 256 * MIB;
+
+fn memory_slots(available: Option<u64>) -> usize {
+    available.map_or(1, |bytes| {
+        (bytes.saturating_sub(MEMORY_HEADROOM) / MEMORY_PER_CONVERSION) as usize
+    })
+}
+
+async fn available_memory() -> Option<u64> {
+    #[cfg(target_os = "linux")]
+    {
+        tokio::task::spawn_blocking(|| {
+            let host = std::fs::read_to_string("/proc/meminfo")
+                .ok()
+                .and_then(|info| memory_field(&info, "MemAvailable:"))
+                .map(|kib| kib * 1024);
+            let cgroup = std::fs::read_to_string("/proc/self/cgroup").unwrap_or_default();
+            host.into_iter()
+                .chain(cgroup_available(
+                    std::path::Path::new("/sys/fs/cgroup"),
+                    &cgroup,
+                ))
+                .min()
+        })
+        .await
+        .ok()
+        .flatten()
+    }
+    #[cfg(not(target_os = "linux"))]
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn memory_field(text: &str, name: &str) -> Option<u64> {
+    text.lines().find_map(|line| {
+        let mut fields = line.split_ascii_whitespace();
+        if fields.next()? != name {
+            return None;
+        }
+        fields.next()?.parse().ok()
+    })
+}
+
+#[cfg(target_os = "linux")]
+fn cgroup_available(root: &std::path::Path, membership: &str) -> Option<u64> {
+    use std::path::{Component, Path};
+
+    let group = membership
+        .lines()
+        .find_map(|line| line.strip_prefix("0::/"))
+        .map(Path::new)
+        .filter(|path| path.components().all(|c| matches!(c, Component::Normal(_))));
+    // A container usually sees its own cgroup at the mount root. On a host, an ancestor
+    // can set a smaller limit than the process's immediate cgroup.
+    let group = group.map_or_else(|| root.to_path_buf(), |path| root.join(path));
+    group
+        .ancestors()
+        .take_while(|dir| dir.starts_with(root))
+        .filter_map(|dir| {
+            let limit = std::fs::read_to_string(dir.join("memory.max"))
+                .ok()?
+                .trim()
+                .parse::<u64>()
+                .ok()?;
+            let current = std::fs::read_to_string(dir.join("memory.current"))
+                .ok()
+                .and_then(|value| value.trim().parse::<u64>().ok());
+            // Inactive file cache can be reclaimed under pressure, unlike anonymous memory.
+            let cache = std::fs::read_to_string(dir.join("memory.stat"))
+                .ok()
+                .and_then(|stats| memory_field(&stats, "inactive_file"))
+                .unwrap_or(0);
+            Some(current.map_or(0, |used| limit.saturating_sub(used.saturating_sub(cache))))
+        })
+        .min()
+}
+
 impl Jobs {
     pub async fn open(store: Arc<Store>, uploads: Arc<Uploads>) -> anyhow::Result<Arc<Self>> {
         let jobs = Arc::new(Self {
@@ -103,6 +185,7 @@ impl Jobs {
     pub async fn tick(self: &Arc<Self>) -> anyhow::Result<()> {
         let settings = self.store.processing.read().await.clone();
         let limit = settings["concurrency"].as_u64().unwrap_or(1) as usize;
+        let mut memory_limit = None;
         let automatic = settings["auto_convert"] == true;
         let (_, receiving) = self.uploads.snapshot().await;
         let mut rows = self
@@ -176,7 +259,17 @@ impl Jobs {
                     .insert(record.into(), json!({"stage":"waiting_upload","percent":0}));
                 continue;
             }
-            if self.active.lock().await.len() >= limit {
+            let active = self.active.lock().await.len();
+            if active >= limit {
+                continue;
+            }
+            // Reserve a full estimate for every active job, since it may still be below its
+            // peak. This deliberately counts some resident memory twice under pressure.
+            let memory_limit = match memory_limit {
+                Some(slots) => slots,
+                None => *memory_limit.insert(memory_slots(available_memory().await)),
+            };
+            if active >= memory_limit {
                 continue;
             }
             let generation = id();
@@ -801,4 +894,58 @@ pub(crate) async fn download_entries(folder: &std::path::Path) -> std::io::Resul
         );
     }
     Ok(json!(downloads))
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn conversion_slots_follow_the_tightest_memory_limit() {
+        let fixture = tempfile::tempdir().unwrap();
+        let root = fixture.path();
+        let group = root.join("system.slice/app");
+        std::fs::create_dir_all(&group).unwrap();
+        for (dir, limit, used, cache) in [
+            (root, 3072, 2048, 0),
+            (&root.join("system.slice"), 2048, 1900, 256),
+            (&group, 2048, 512, 0),
+        ] {
+            std::fs::write(dir.join("memory.max"), format!("{}\n", limit * MIB)).unwrap();
+            std::fs::write(dir.join("memory.current"), format!("{}\n", used * MIB)).unwrap();
+            std::fs::write(
+                dir.join("memory.stat"),
+                format!("anon 0\ninactive_file {}\n", cache * MIB),
+            )
+            .unwrap();
+        }
+        let membership = "0::/system.slice/app\n";
+        let host = Some(
+            memory_field(
+                "MemTotal: 3145728 kB\nMemAvailable: 1572864 kB\n",
+                "MemAvailable:",
+            )
+            .unwrap()
+                * 1024,
+        );
+        let slots = || {
+            memory_slots(
+                host.into_iter()
+                    .chain(cgroup_available(root, membership))
+                    .min(),
+            )
+        };
+
+        assert_eq!(slots(), 0);
+        std::fs::write(
+            root.join("system.slice/memory.current"),
+            (1024 * MIB).to_string(),
+        )
+        .unwrap();
+        assert_eq!(slots(), 1);
+        std::fs::write(root.join("memory.max"), "max\n").unwrap();
+        assert_eq!(slots(), 2);
+        assert_eq!(memory_slots(Some(0)), 0);
+        assert_eq!(memory_slots(None), 1);
+    }
 }

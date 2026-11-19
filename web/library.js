@@ -897,7 +897,6 @@ $('cleanupStorage').onclick=async()=>{
 };
 
 function syncAutoConvert(){
- $('concurrencyStatus').textContent='개수를 높이면 CPU와 메모리 사용량이 증가합니다. 설정을 낮춰도 진행 중인 작업은 완료합니다.';
  $('autoConvertState').textContent=savedAutoConvert?'켜짐':'꺼짐';
 
  $('autoConvert').checked=savedAutoConvert;$('autoConvert').disabled=concurrencySaving;

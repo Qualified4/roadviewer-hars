@@ -24,7 +24,7 @@ Select the segment's `rlog.zst` with whichever videos you need (`qcamera.ts`, hi
 - Compact app bar (start time · 구간 k (i/N), view and ⋯ menus) and a floating playback bar (segment strip, automatic-control/takeover track, bookmark markers)
 - Automatic, side-by-side and stacked layouts with adjustable width; Auto/Light/Dark display mode (the video area stays dark)
 - 24 selectable/reorderable graphs and camera installation information
-- Automatic/manual conversion, up to four concurrent jobs and lossless MP4 retention
+- Automatic/manual conversion with memory-aware concurrency and lossless MP4 retention
 - Later camera attachment, original-format export and log/video downloads
 - Segment tags and scene bookmarks on the bookmark tab
 - GPS route maps: all drives via the Logs tab's **목록 | 지도** (List | Map) switch, a map per drive, the replay **지도** (Map) tab and a small map over the video (OpenFreeMap, no API key); routes of logs kept only on Drive can be filled on request
