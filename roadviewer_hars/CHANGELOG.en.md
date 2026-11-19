@@ -4,6 +4,12 @@
 
 These are the English release notes from 0.13.0 on. Earlier release entries remain in the [original Korean history](CHANGELOG.md); they describe behavior at their release date, not necessarily current behavior. See the [current user guide](DOCS.en.md) for present settings and policies.
 
+## 2.0.5
+
+- The library page is lighter with many recordings. Segment rows are built ahead only for the cards near the top of the list; a card further down builds its rows when it opens (902 recordings: 52,000 page elements → 12,000). Search, filters, counts and selection mode work as before.
+- While the library page stays open, the 3-second check no longer goes through the list again when nothing changed (less battery use on phones).
+- The font file (2 MB) was downloaded twice; it is now fetched once and not again after an update. The steering wheel images of the replay page are kept by the browser too.
+
 ## 2.0.4
 
 - Adding another camera (such as wide) to a segment moved to Google Drive failed at registration with `409 storage_unavailable` for every segment (the device showed "Road Viewer 요청에 실패했습니다"). An upload that matches an archived segment now checks the Drive connection itself before registering.
