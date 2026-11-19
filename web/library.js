@@ -582,13 +582,18 @@ function prepareUnfold(group){
 }
 function buildAllRows(){for(const group of logGroups.values())buildGroupRows(group)}
 function ensureRow(id){const entry=logRows.get(id);if(entry&&!entry.row)buildGroupRows(groupOrder.find(group=>group.entries.includes(entry)));return entry}
+// The background fills the cards that start within the first BACKGROUND_ROWS rows of the list (the latest drives); a
+// card further down gets its rows when it opens. Building every row of a long list (900 logs: 52,000 elements) kept a
+// phone busy for 6 seconds after each load and made every later restyle of the page slower.
+const BACKGROUND_ROWS=120;
+function backgroundGroups(){const groups=[];let before=0;for(const group of groupOrder){if(before>=BACKGROUND_ROWS)break;if(group.entries.some(entry=>!entry.row))groups.push(group);before+=group.entries.length}return groups}
 function scheduleRowBuild(){
- if(rowBuild||!groupOrder.some(group=>group.entries.some(entry=>!entry.row)))return;
+ if(rowBuild||!backgroundGroups().length)return;
  rowBuild=window.requestIdleCallback?{idle:requestIdleCallback(buildSlice,{timeout:400})}:{timer:setTimeout(()=>buildSlice(null),16)};
 }
 function buildSlice(deadline){
  rowBuild=null;const start=performance.now(),budget=deadline&&!deadline.didTimeout?Math.max(2,Math.min(8,deadline.timeRemaining())):6,touched=new Set();
- outer:for(const group of groupOrder)for(const entry of group.entries){
+ outer:for(const group of backgroundGroups())for(const entry of group.entries){
   if(entry.row)continue;
   if(touched.size&&performance.now()-start>=budget)break outer;
   buildRow(entry);touched.add(group);
@@ -598,7 +603,7 @@ function buildSlice(deadline){
 // A card opened by code (or anything else that sets [open]) gets its rows before the next paint.
 new MutationObserver(records=>{for(const {target} of records)if(target.open&&target.matches('details.log-route'))buildGroupRows(logGroups.get(target.dataset.route))}).observe($('list'),{subtree:true,attributes:true,attributeFilter:['open']});
 // Keep the row/title/state connected when metadata changes so CSS animations retain their live timeline.
-const listError='로그 목록을 읽을 수 없습니다.';let listFailures=0,listErrorShown=null,listBody=null;
+const listError='로그 목록을 읽을 수 없습니다.';let listFailures=0,listErrorShown=null,listBody=null,listShown=null;
 async function refresh({poll=false}={}){
  if(busy||networkRestarting||bulkSelection?.running||document.hidden||(poll&&refreshing))return;
  // A user action supersedes any list snapshot taken before that action completed.
@@ -609,9 +614,12 @@ async function refresh({poll=false}={}){
   // unchanged list is handled exactly as a received one, without sending it.
   const r=await fetch('api/logs',{cache:'no-store',signal:request.signal,headers:listBody?{'If-None-Match':listBody.tag}:{}});
   let text;if(r.status===304&&listBody)text=listBody.text;else{if(!r.ok)throw Error(listError);text=await r.text();const tag=r.headers.get('ETag');listBody=tag?{tag,text}:null}
-  const data=JSON.parse(text);if(revision!==listRevision)return;
+  // The 3-second poll of a list already on the page stops here: reading it again cost a phone about a tenth of its
+  // time with 900 logs. A refresh after an action (not a poll) always goes through the list again.
+  const shown=poll&&r.status===304&&!!listBody&&listShown===listBody.tag,data=shown?null:JSON.parse(text);if(revision!==listRevision)return;
   // A list that reads again clears its own earlier failure (other messages stay).
   listFailures=0;if(listErrorShown!==null&&$('error').textContent===listErrorShown)error('');listErrorShown=null;
+  if(shown)return;
   if(!concurrencySaving&&settingsRevision===concurrencyRevision){savedConcurrency=(Number.isInteger(data.concurrency)&&data.concurrency>=1&&data.concurrency<=16)?data.concurrency:1;const select=$('concurrency');select.value=String(savedConcurrency);select.disabled=false;select.dispatchEvent(new Event('rv:sync'));savedAutoConvert=data.auto_convert!==false;syncAutoConvert()}
   updateTagCatalog(data.logs);
   headerStorage.used=data.storage_used_bytes;headerStorage.logs=data.logs.length;syncHeaderStorage();
@@ -636,7 +644,7 @@ async function refresh({poll=false}={}){
   const motion=window.RoadViewerMotion,before=new Map([...logRows].filter(([,cached])=>cached.row?.parentNode?.parentNode?.open).map(([id,cached])=>[id,motion.capture(cached.row)]));
   const ids=new Set(data.logs.map(m=>m.id));for(const id of logRows.keys())if(!ids.has(id))logRows.delete(id);
   arrangeLogGroups(data.logs,entries);renderChips();applyFilters();window.rvMaps?.listed(data.logs);if(motion.allowed())entries.forEach(entry=>entry.row&&before.has(entry.log.id)&&motion.play(entry.row,before.get(entry.log.id)));
-  scheduleRowBuild();
+  scheduleRowBuild();listShown=listBody?.tag??null;
  }catch(e){
   // Back from a long time in the background, the first request can fail before Home Assistant renews the ingress
   // session or the connection wakes up: one failure retries in a second, only a repeated one is shown.

@@ -8,12 +8,17 @@ const {settleLayout}=require('./browser-helpers.cjs');
   const context=await browser.newContext({viewport:{width:1280,height:900}});
   // Idle callbacks wait in a queue the test runs by hand (deadline: no idle time left, so each slice is ~2 ms).
   await context.addInitScript(()=>{window.__idle=[];window.requestIdleCallback=callback=>{window.__idle.push(callback);return window.__idle.length};window.cancelIdleCallback=()=>{}});
+  let tagged=false,unchanged=0;
   const page=await context.newPage(),errors=[];page.on('pageerror',e=>errors.push(e.message));
   const drives=['aaaaaaaaaa','bbbbbbbbbb','cccccccccc'];
   const logs=drives.flatMap((hash,d)=>Array.from({length:40},(_,i)=>({id:`${d}-${i}`,name:`0000039${d}--${hash}--${39-i}`,status:'ready',bytes:10,prepared_bytes:20,uploaded:1700000000-d*3600+i,video:true,tags:i===7?[{name:'찾기',color:'blue'}]:[]})));
   await page.route('**/*',route=>{
    const p=new URL(route.request().url()).pathname;
-   if(p==='/api/logs')return route.fulfill({json:{logs,concurrency:1,auto_convert:false,max_upload_mb:512,storage_used_bytes:0}});
+   if(p==='/api/logs'){
+    // tagged: the list carries an ETag and an unchanged one is answered 304, as HARS does.
+    if(tagged&&route.request().headers()['if-none-match']==='"long"'){unchanged++;return route.fulfill({status:304})}
+    return route.fulfill({json:{logs,concurrency:1,auto_convert:false,max_upload_mb:512,storage_used_bytes:0},headers:tagged?{ETag:'"long"'}:{}});
+   }
    if(p==='/api/progress')return route.fulfill({json:{progress:{}}});
    if(p.startsWith('/api/'))return route.fulfill({status:404,json:{error:'not_found'}});
    const name=p==='/'?'library.html':p.replace('/assets/',''),file='roadviewer/app/web/'+name;
@@ -71,7 +76,23 @@ const {settleLayout}=require('./browser-helpers.cjs');
   await page.locator('#bulkAll').check();assert.equal(await page.locator('#bulkCount').textContent(),'120개 구간 선택');
   await page.locator('#bulkClose').click();
 
+  // 5. A long list: the background fills the cards that start within the first 120 rows; a card further down gets its
+  // rows when it opens. The 3-second poll of an unchanged list (304) leaves the page as it is; a refresh goes through it.
+  drives.push('dddddddddd','eeeeeeeeee');tagged=true;
+  for(const d of [3,4])logs.push(...Array.from({length:40},(_,i)=>({id:`${d}-${i}`,name:`0000039${d}--${drives[d]}--${39-i}`,status:'ready',bytes:10,prepared_bytes:20,uploaded:1700000000-d*3600+i,video:true,tags:[]})));
+  await page.goto('https://rv.test/');await page.waitForFunction(()=>document.querySelectorAll('.log-route').length===5);
+  while(await slice());
+  assert.equal(await rowCount(),120,'the background stops after the cards near the top');
+  assert.equal(await rowCount(card(3)),0);assert.equal(await rowCount(card(4)),0);
+  assert.equal(await page.locator(card(4)+' .log-route-count').textContent(),'40개 구간','a card without rows still counts its segments');
+  await page.locator(card(4)+'>summary').click();await page.waitForFunction(selector=>document.querySelectorAll(selector+' .log-row').length===40,card(4));
+  assert.equal(await rowCount(card(3)),0,'opening one card builds only its own rows');
+  const count=page.locator(card(0)+' .log-route-count');
+  await count.evaluate(element=>{element.textContent='표시'});
+  await page.evaluate(()=>refresh({poll:true}));assert.equal(unchanged,1);assert.equal(await count.textContent(),'표시','a poll of an unchanged list does not go through the list again');
+  await page.evaluate(()=>refresh());assert.equal(unchanged,2);assert.equal(await count.textContent(),'40개 구간','a refresh does');
+
   assert.deepEqual(errors,[]);
-  console.log('lazy rows: cards before rows, background slices, open-before-built, selection mode ok');
+  console.log('lazy rows: cards before rows, background slices, open-before-built, selection mode, long list, unchanged poll ok');
  }finally{await browser.close()}
 })().catch(e=>{console.error(e);process.exit(1)});
