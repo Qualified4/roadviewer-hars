@@ -382,7 +382,7 @@ jobs:
             ~/.cargo/git
             target
           key: hars-rust-test-v1-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
-  # The .deb files of the test packages (capnproto, ffmpeg) for Rust tests, Compatibility and the release gate: the
+  # The .deb files of the test packages (capnproto, ffmpeg) for Rust tests and Compatibility: the
   # runners' Ubuntu mirror has been slow. Saved only when the runner image's cache does not hold them yet.
   cache-packages:
     name: Cache refresh (packages)

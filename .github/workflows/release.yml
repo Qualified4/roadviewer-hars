@@ -11,13 +11,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
+      # The tag must name the version the tree carries. fmt, clippy and the tests are not run again: a tag goes only
+      # on a main commit whose tree passed `HARS required` in its pull request (one person works on this repository,
+      # so no other merge lands untested in between). The images are still built and checked below.
       - run: python3 scripts/check_release.py --tag "$GITHUB_REF_NAME"
-      # capnproto builds the product. The ffmpeg CLI is a development tool for the tests only
-      # (synthetic inputs, independent decoding); the image is checked below to hold none of it.
-      - name: Native test dependencies
-        uses: ./.github/actions/test-packages
-      - run: rustup update stable --no-self-update && rustup component add rustfmt clippy
-      - run: cargo fmt --all --check && cargo clippy --locked --all-targets -- -D warnings && cargo test --locked --all-targets
   image:
     needs: gate
     permissions:

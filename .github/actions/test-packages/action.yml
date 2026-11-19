@@ -5,7 +5,7 @@ description: >-
   100 kB/s (10 to 16 minutes); with the cache, apt reads only the package lists from it.
 inputs:
   save:
-    description: Save the .deb files when the cache did not hold them all (main pushes; pull requests and tags read main's caches).
+    description: Save the .deb files when the cache did not hold them all (main pushes; pull requests read main's caches).
     default: 'false'
 runs:
   using: composite

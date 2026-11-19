@@ -25,7 +25,7 @@
 
 - 앱 설정의 `image`에 아키텍처 자리표시자가 없으므로 HAOS는 `ghcr.io/qualified4/roadviewer-hars:<version>` 하나를 받는다. 이 태그는 amd64와 aarch64를 묶은 manifest여야 한다.
 - 게시는 `.github/workflows/release.yml`(2.0.0 전에는 `prerelease.yml`)이 한다. `2.0.0-alpha.*` 등 prerelease 태그나 정식 버전 태그(`N.N.N`)가 push되면 다음 순서로 돈다.
-  1. `gate`: `scripts/check_release.py --tag`(태그와 `Cargo.toml`·`config.yaml`·`Dockerfile`의 버전 일치), fmt, clippy, 전체 테스트.
+  1. `gate`: `scripts/check_release.py --tag`(태그와 `Cargo.toml`·`config.yaml`·`Dockerfile`의 버전 일치). fmt·clippy·전체 테스트는 PR의 `HARS required`로 갈음한다(2026-11-19부터).
   2. `image`(amd64, aarch64 각각의 네이티브 러너): 빌드 → FFmpeg 잔존 검사 → `scripts/container_smoke.py`(기동, TLS, 변환, 내보내기, 썸네일) → 통과한 뒤에만 `:<tag>-<arch>` push.
   3. `manifest`: 두 이미지를 `:<tag>`로 묶고 GitHub 릴리스를 만든다(본문은 `STATUS.md`). 태그에 `-`가 있으면 prerelease, 없으면 정식(latest) 릴리스다.
 - 게시 상태(2026-11-17): 태그 `2.0.0-alpha.4`를 push해 이 워크플로가 처음 실행됐고 네 작업이 모두 통과했다. `ghcr.io/qualified4/roadviewer-hars:2.0.0-alpha.4`(amd64·arm64 manifest)가 인증 없이 조회되며 GitHub prerelease가 만들어졌다. 그 전에는 태그·릴리스·패키지가 없어 저장소를 추가해도 설치가 실패하는 상태였다.

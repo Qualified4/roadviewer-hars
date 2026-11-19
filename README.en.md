@@ -314,7 +314,7 @@ Publishing automation accepts stable version tags (`N.N.N`, for example `2.0.0`)
 
 1. Set the version in `Cargo.toml`, `roadviewer_hars/config.yaml` and the `Dockerfile` `BUILD_VERSION` together; `scripts/check_release.py` checks that they match. Never reuse a published version. Web assets are cached for a year under versioned URLs, so the next publication must raise the version.
 2. Confirm that `main` is a validated commit with passing CI, then push a tag named after the version (for example `2.0.0`) on that commit. The push starts `.github/workflows/release.yml` (**HARS release**).
-3. The `gate` job runs `scripts/check_release.py --tag` (tag and version match), fmt, clippy and all tests.
+3. The `gate` job runs `scripts/check_release.py --tag` (tag and version match). fmt, clippy and the tests are not run again: the commit passed them as `HARS required` in its pull request.
 4. The `image` job builds on native amd64 and aarch64 runners and pushes `ghcr.io/qualified4/roadviewer-hars:<tag>-<arch>` only after the FFmpeg-absence check (`scripts/image_report.py --require-no-ffmpeg`) and `scripts/container_smoke.py` pass.
 5. The `manifest` job combines both images as `ghcr.io/qualified4/roadviewer-hars:<tag>` and creates a GitHub release with `docs/hars/STATUS.md` as its notes: a prerelease when the tag has a `-` suffix, otherwise the stable, latest release. No `latest` image tag is published; Home Assistant pulls by version. If either architecture fails, no manifest or release is created.
 6. Ensure the GHCR package is public; Home Assistant cannot pull a private image. Without credentials, `docker manifest inspect ghcr.io/qualified4/roadviewer-hars:<tag>` should list both architectures.
