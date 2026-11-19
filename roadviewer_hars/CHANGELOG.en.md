@@ -4,6 +4,11 @@
 
 These are the English release notes from 0.13.0 on. Earlier release entries remain in the [original Korean history](CHANGELOG.md); they describe behavior at their release date, not necessarily current behavior. See the [current user guide](DOCS.en.md) for present settings and policies.
 
+## 2.0.6
+
+- On the replay page, after the first press of play the page kept working even while paused (the play button icon was redrawn on every frame). It now rests, which lowers battery use while the replay page stays open.
+- Screen updates during playback are lighter (about 35% less style calculation).
+
 ## 2.0.5
 
 - The library page is lighter with many recordings. Segment rows are built ahead only for the cards near the top of the list; a card further down builds its rows when it opens (902 recordings: 52,000 page elements → 12,000). Search, filters, counts and selection mode work as before.

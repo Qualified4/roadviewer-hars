@@ -39,6 +39,10 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   assert(await page.locator('#playbackControls').isHidden(),'real playback failure replaces controls with an explanation');
   await page.reload();await page.waitForFunction(()=>!document.getElementById('play').disabled);
   await page.evaluate(()=>{setTime(0);toggle()});await page.waitForFunction(()=>v.currentTime>.1);await page.evaluate(()=>pause());
+  // The play/pause icon stops being redrawn once its 240 ms change is over (it used to be redrawn on every frame for good).
+  await page.waitForTimeout(600);
+  const iconWrites=await page.evaluate(()=>new Promise(resolve=>{let n=0;const watch=new MutationObserver(records=>{n+=records.length});watch.observe(document.querySelector('#play .icon-playpause'),{subtree:true,attributes:true,attributeFilter:['d']});setTimeout(()=>{watch.disconnect();resolve(n)},400)}));
+  assert.equal(iconWrites,0,'the play icon rests after its change');
   await page.evaluate(()=>{playbackError('테스트 재생 오류');v.dispatchEvent(new Event('canplay'))});
   assert(await page.locator('#playbackControls').isHidden(),'late canplay must not clear a playback failure');
   assert.deepEqual(errors,[]);console.log('PASS: pending play cancellation at end/pause/resume, late resolution, real failures and subsequent playback');

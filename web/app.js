@@ -24,7 +24,8 @@ function morphPlayIcon(on){
  cancelAnimationFrame(playIconFrame);const from=playIconShape,to=on?PAUSE_ICON:PLAY_ICON;
  if(matchMedia('(prefers-reduced-motion: reduce)').matches){drawPlayIcon(to);return}
  const start=performance.now(),ease=x=>{let lo=0,hi=1;for(let i=0;i<24;i++){const m=(lo+hi)/2,bx=3*.4*m*(1-m)**2+3*.2*m*m*(1-m)+m**3;if(bx<x)lo=m;else hi=m}const m=(lo+hi)/2;return 3*m*m*(1-m)+m**3};
- const step=now=>{const k=ease(Math.min(1,(now-start)/240));drawPlayIcon(from.map((half,i)=>half.map((v,j)=>v+(to[i][j]-v)*k)));if(k<1)playIconFrame=requestAnimationFrame(step)};
+ // The curve's bisection ends a hair short of 1, so the end is taken from the time: the loop stops after 240 ms.
+ const step=now=>{const x=Math.min(1,(now-start)/240),k=x<1?ease(x):1;drawPlayIcon(from.map((half,i)=>half.map((v,j)=>v+(to[i][j]-v)*k)));if(k<1)playIconFrame=requestAnimationFrame(step)};
  playIconFrame=requestAnimationFrame(step);
 }
 function playLabel(on){const button=$('play'),was=button.dataset.playing==='true';button.querySelector('.play-label').textContent=on?'일시정지':'재생';button.dataset.playing=String(on);if(was!==on)morphPlayIcon(on)}
@@ -1112,7 +1113,9 @@ let barFoldChanged=()=>{};
  const schedule=()=>{if(!frame)frame=requestAnimationFrame(collapse)};
  function update(){
   const on=root.classList.contains('layout-stacked')&&!document.fullscreenElement;
-  set('compact-media',on);schedule();
+  // The root element carries the same flag: a :has() over the whole page on :root is looked at again on every change
+  // of the page (each frame during playback).
+  set('compact-media',on);document.documentElement.toggleAttribute('data-compact-media',on);schedule();
   if(!on){set('transport-mini',false);return}
   const y=scrollY,delta=y-lastY;lastY=y;
   // An open menu or dialog keeps the transport bar still, so nothing moves under the pointer.
