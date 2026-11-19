@@ -736,14 +736,23 @@
    selected=group;paintOverview();
    const wait=overviewWait(listShown()),inline=!!group&&listShown(),row=group&&mapRow.get(groupRoute(group)?.key);
    // A redraw (the list polls) keeps the selected row's buttons, and with them the focus.
-   for(const other of mapRows.querySelectorAll('.map-list-row.is-selected,.map-list-row:has(>.map-card-actions)'))if(other!==row||!inline){other.classList.remove('is-selected');other.querySelector(':scope>.map-card-actions')?.remove()}
+   // The buttons that leave are taken out of the layout while the new one is placed and centred (the list's final
+   // shape), then shown again to fold away (morphRows).
+   const leaving=[];let entering=null;
+   // Meanwhile the list keeps its height (a bottom padding as tall as the buttons taken out): a list scrolled to its end
+   // would otherwise be pulled up for that moment.
+   const pad=mapRows.style.paddingBottom;let held=0;
+   for(const other of mapRows.querySelectorAll('.map-list-row.is-selected,.map-list-row:has(>.map-card-actions:not(.is-folding))'))if(other!==row||!inline){const box=other.querySelector(':scope>.map-card-actions:not(.is-folding)');if(box){const s=getComputedStyle(box);box.rvFold={h:box.offsetHeight,height:s.height,pad:s.paddingBottom};held+=box.rvFold.h;leaving.push(box);const r=other.getBoundingClientRect(),a=mapRows.getBoundingClientRect();if(r.bottom>a.top&&r.top<a.bottom){box.rvFold.drawn=other;other.style.contentVisibility='visible'}}other.classList.remove('is-selected')}
+   if(held){mapRows.style.paddingBottom=parseFloat(getComputedStyle(mapRows).paddingBottom)+held+'px';for(const box of leaving)box.style.display='none'}
    showPill(card,!!group&&!inline,()=>{if(card.hidden)card.querySelector('.map-card-play')?.remove()},wait);
    if(fit&&group)fitOverview(group);
    if(row){
     row.classList.add('is-selected');
-    if(inline&&!row.querySelector(':scope>.map-card-actions'))row.append(rowActions(group));
+    if(inline&&!row.querySelector(':scope>.map-card-actions:not(.is-folding)')){entering=rowActions(group);row.append(entering)}
     if(scroll)centreRow(mapRows,row,from);
    }
+   for(const box of leaving)box.style.display='';if(held)mapRows.style.paddingBottom=pad;
+   morphRows(leaving,entering,row);
    if(!group||inline){if(card.hidden)card.querySelector('.map-card-play')?.remove();return}  // else once it has sunk out
    const route=groupRoute(group),date=logDate(group.firstLog),duration=group.logs.reduce((sum,log)=>sum+(Number.isFinite(log.duration)?log.duration:0),0);
    card.querySelector('.map-card-title').textContent=date?`${localeDate(date)} ${clockText(date)}`:group.route.title;
@@ -752,6 +761,35 @@
    card.querySelector('.map-card-play')?.remove();const ready=firstReady(group);
    if(ready){const play=document.createElement('a');play.className='replay map-card-play';play.dataset.glow='';play.href=`view/${ready.id}/`;play.innerHTML=PLAY_ICON;play.append('재생');card.querySelector('.map-card-actions').prepend(play)}
    card.dataset.color=PALETTE[(overviewLines.get(route?.key)?.rvIndex||0)%PALETTE.length];
+  }
+  // Selecting a drive morphs the list: the selected row's buttons unfold under its title (the row grows, the buttons
+  // fade in) while the row that loses them folds back, and the rows below follow both heights, so the list grows and
+  // shrinks smoothly instead of jumping. Both heights move over the same time and curve, so when one row's buttons
+  // replace another's the list keeps its total height throughout. The selected row's rim fades in. Reduced motion: the
+  // old jump.
+  const MORPH={duration:300,easing:'cubic-bezier(.2,0,0,1)'};
+  function morphRows(leaving,entering,row){
+   const still=reduced();
+   for(const box of leaving){
+    // Measured before its row was unselected: that row now skips its layout until the browser next decides it is in
+    // sight (content-visibility), and read now the buttons would measure 0 and vanish at once. A row in sight is kept
+    // drawn until they have folded (for a frame it would otherwise take its placeholder height and the list would jump);
+    // a row out of sight keeps its placeholder height, as it would without the fold.
+    const was=box.rvFold,done=()=>{box.remove();if(was?.drawn)was.drawn.style.contentVisibility=''};
+    if(still||!was?.h){done();continue}
+    box.inert=true;box.classList.add('is-folding');box.style.overflow='hidden';
+    const fold=box.animate([{height:was.height,paddingBottom:was.pad},{height:'0px',paddingBottom:'0px'}],MORPH);
+    box.animate([{opacity:1},{opacity:0}],{duration:160,easing:'cubic-bezier(.4,0,1,1)',fill:'forwards'});
+    fold.onfinish=fold.oncancel=done;
+   }
+   if(still)return;
+   if(entering&&entering.offsetHeight){
+    const s=getComputedStyle(entering);entering.style.overflow='hidden';
+    const grow=entering.animate([{height:'0px',paddingBottom:'0px'},{height:s.height,paddingBottom:s.paddingBottom}],MORPH);
+    grow.onfinish=grow.oncancel=()=>{entering.style.overflow=''};
+    entering.animate([{opacity:0},{opacity:1}],{duration:240,delay:80,easing:'cubic-bezier(0,0,.2,1)',fill:'backwards'});
+   }
+   if(entering&&row)try{row.animate([{opacity:0},{opacity:1}],{duration:280,easing:'cubic-bezier(0,0,.2,1)',pseudoElement:'::after'})}catch{}
   }
   const playLink=group=>{const ready=firstReady(group);if(!ready)return null;const play=document.createElement('a');play.className='replay map-card-play';play.dataset.glow='';play.href=`view/${ready.id}/`;play.innerHTML=PLAY_ICON;play.append('재생');return play};
   function rowActions(group){

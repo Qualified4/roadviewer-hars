@@ -297,12 +297,29 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
      await tapLine(page.locator('#logMap .leaflet-overlay-pane path.leaflet-interactive:not([stroke-width="6"])').first());await page.waitForFunction(()=>document.querySelectorAll('#logMapRows>.map-list-row')[1].classList.contains('is-selected'));await page.waitForTimeout(150)}
     // A tap on a card selects that drive and fits the map to it above the sheet. (lineBox(): the first card's line, the marked
     // one having been brought to the front, the last path).
-    const before=await lineBox();await rows.first().locator('.map-list-pick').tap();await page.waitForTimeout(450);
+    const before=await lineBox();await rows.first().locator('.map-list-pick').tap();
+    assert.equal(await page.locator('#logMapRows .map-card-actions').count(),1,'reduced motion: the buttons move at once, none left folding');
+    await page.waitForTimeout(450);
     assert(await rows.first().evaluate(r=>r.classList.contains('is-selected'))&&!await rows.nth(1).evaluate(r=>r.classList.contains('is-selected')));
     {const g=await page.evaluate(()=>{const m=document.getElementById('logMap').getBoundingClientRect(),s=document.getElementById('logMapList').getBoundingClientRect(),line=[...document.querySelectorAll('#logMap .leaflet-overlay-pane path.leaflet-interactive')].find(p=>Number(p.getAttribute('stroke-width'))===6).getBoundingClientRect();
       return {inside:line.top>=m.top-1&&line.bottom<=s.top+1&&line.left>=m.left-1&&line.right<=m.right+1,line:[line.top,line.bottom].map(Math.round),sheet:Math.round(s.top)}});
      const after=await lineBox(6);assert(g.inside&&after[3]>before[3]*2,'fitted above the sheet '+JSON.stringify({g,before,after}))}
     await shot('list-map-middle');
+    // Motion allowed: selecting another card morphs the list. The new card's buttons unfold while the old card's fold away
+    // (unclickable meanwhile); at the end one row of buttons is left, at its own height. With RV_MAP_SHOTS the morph runs
+    // slowed down and is photographed on its way.
+    {await page.emulateMedia({reducedMotion:'no-preference'});
+     const cdp=shots?await page.context().newCDPSession(page):null;if(cdp){await cdp.send('Animation.enable');await cdp.send('Animation.setPlaybackRate',{playbackRate:.12})}
+     await rows.nth(1).locator('.map-list-pick').tap();
+     const m=await page.evaluate(()=>{const r=[...document.querySelectorAll('#logMapRows>.map-list-row')],grow=r[1].querySelector(':scope>.map-card-actions:not(.is-folding)'),fold=r[0].querySelector(':scope>.map-card-actions.is-folding');
+      return {grow:!!grow&&grow.getAnimations().some(a=>a.playState==='running'),fold:!!fold&&fold.getAnimations().some(a=>a.playState==='running'),inert:!!fold?.inert}});
+     assert(m.grow&&m.fold&&m.inert,'the cards morph '+JSON.stringify(m));
+     if(cdp){for(let k=0;k<4;k++){await page.screenshot({path:path.join(shots,`morph-${k}-${scheme}.png`)});await page.waitForTimeout(450)}}
+     await page.waitForFunction(()=>!document.querySelector('#logMapRows .map-card-actions.is-folding')&&!document.querySelector('#logMapRows').getAnimations({subtree:true}).some(a=>a.playState==='running'),null,{timeout:8000});
+     if(cdp){await page.screenshot({path:path.join(shots,`morph-4-${scheme}.png`)});await cdp.send('Animation.setPlaybackRate',{playbackRate:1});await cdp.detach()}
+     const g=await page.evaluate(()=>{const box=document.querySelectorAll('#logMapRows>.map-list-row')[1].querySelector(':scope>.map-card-actions');return {count:document.querySelectorAll('#logMapRows .map-card-actions').length,h:box.offsetHeight,natural:box.scrollHeight,overflow:box.style.overflow}});
+     assert(g.count===1&&g.h>30&&Math.abs(g.h-g.natural)<=1&&g.overflow==='','settled after the morph '+JSON.stringify(g));
+     await page.emulateMedia({reducedMotion:'reduce'});await rows.first().locator('.map-list-pick').tap();await page.waitForTimeout(450)}
     // Raising and lowering the sheet keeps the map where it is; a drag snaps to the nearest height.
     const still=await lineBox(6);
     await drag(-160);{const g=await sheetState();assert(!g.hidden&&Math.abs(g.share-.7)<.02,JSON.stringify(g))}
