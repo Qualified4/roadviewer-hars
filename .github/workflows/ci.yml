@@ -40,6 +40,9 @@ jobs:
             ~/.cargo/git
             target
           key: hars-rust-lint-v1-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
+          # A release bumps the version in Cargo.toml and Cargo.lock: main's last cache still has the crates and
+          # most of the build.
+          restore-keys: hars-rust-lint-v1-${{ runner.os }}-
       - run: cargo fmt --all --check
       - run: cargo clippy --locked --all-targets -- -D warnings
   rust-tests:
@@ -67,6 +70,9 @@ jobs:
             ~/.cargo/git
             target
           key: hars-rust-test-v1-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
+          # A release bumps the version in Cargo.toml and Cargo.lock: main's last cache still has the crates and
+          # most of the build.
+          restore-keys: hars-rust-test-v1-${{ runner.os }}-
       # cargo-nextest runs the same tests as `cargo test --all-targets`, each in its own process and
       # the test programs side by side.
       - run: cargo nextest run --locked --all-targets
@@ -159,6 +165,9 @@ jobs:
             ~/.cargo/git
             target
           key: hars-rust-test-v1-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
+          # A release bumps the version in Cargo.toml and Cargo.lock: main's last cache still has the crates and
+          # most of the build.
+          restore-keys: hars-rust-test-v1-${{ runner.os }}-
       - run: cargo build --locked --bin roadviewer-hars
       - uses: actions/upload-artifact@v4
         with:
