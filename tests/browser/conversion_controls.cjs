@@ -1,6 +1,67 @@
 const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('playwright');
 const {showTab}=require('./browser-helpers.cjs');
 
+async function checkDriveConversion(browser){
+ const context=await browser.newContext({viewport:{width:320,height:844},reducedMotion:'reduce'}),page=await context.newPage();
+ const drive='00000474--a1b2c3d4e5',other='00000474--b2c3d4e5f6';
+ const log=(route,id,segment,status,extra={})=>({id,name:`${route}--${segment}`,status,bytes:10,prepared_bytes:0,uploaded:1700000000,...extra});
+ const logs=[
+  ...Array.from({length:26},(_,i)=>log(drive,'drive'+i,i,['ready','queued','processing','error'][i]||'unconverted',{pinned:i===3})),
+  log(other,'other0',0,'unconverted'),log(other,'other1',1,'unconverted')
+ ];
+ const calls=[],errors=[];page.on('pageerror',e=>errors.push(e.message));
+ let releaseFirst;
+ const firstRequest=new Promise(resolve=>{releaseFirst=resolve});
+ try{
+  await page.route('**/*',async route=>{
+   const request=route.request(),url=new URL(request.url()),p=url.pathname;
+   if(url.origin!=='https://rv.test')return route.abort();
+   if(p==='/api/logs')return route.fulfill({json:{logs,concurrency:1,auto_convert:false,max_upload_mb:512}});
+   const match=/^\/api\/logs\/([^/]+)\/convert$/.exec(p);
+   if(match){
+    assert.equal(request.method(),'POST');assert.equal(request.headers()['x-roadviewer-request'],'1');
+    const id=match[1];calls.push(id);
+    if(id==='drive3'){await firstRequest;return route.fulfill({status:409,json:{message:'원본 로그가 없습니다.'}})}
+    logs.find(log=>log.id===id).status='queued';return route.fulfill({json:{status:'queued'}});
+   }
+   if(p==='/api/progress')return route.fulfill({json:{progress:{}}});
+   if(p.startsWith('/api/'))return route.fulfill({status:404,json:{error:'not_found'}});
+   const name=p==='/'?'library.html':p.replace('/assets/',''),file='roadviewer/app/web/'+name;
+   if(!fs.existsSync(file))return route.abort();
+   return route.fulfill({path:file});
+  });
+  await page.goto('https://rv.test/');
+  const card=page.locator(`.log-route[data-route="${drive}"]`),header=card.locator(':scope>summary');
+  const convert=header.getByRole('button',{name:'변환',exact:true});
+  await header.getByRole('link',{name:'재생',exact:true}).waitFor();
+  assert.equal(await header.getByRole('link',{name:'재생',exact:true}).getAttribute('href'),'view/drive0/');
+  assert.equal(await header.locator('.route-more').count(),1,'some segments are collapsed into +');
+  const pinned=page.locator('#logChips [data-filter="filter:pinned"]');
+  await pinned.click();assert.equal(await header.locator('.log-route-count').textContent(),'1 / 26개 구간');
+  assert(await header.evaluate(e=>[...e.querySelectorAll('.log-route-actions .actions>*')].every(button=>button.getBoundingClientRect().right<=e.getBoundingClientRect().right)));
+  const first=page.waitForRequest(r=>r.url().endsWith('/drive3/convert'));
+  await convert.click();await first;
+  await page.evaluate(()=>refresh()); // Even a refreshed header must keep the in-flight action disabled.
+  assert(await convert.isDisabled());await convert.evaluate(button=>button.click());
+  releaseFirst();
+  await page.locator('#error').getByText('전체 구간 변환 요청 1개 실패 · 원본 로그가 없습니다.').waitFor();
+  assert.deepEqual(calls,logs.slice(3,26).map(log=>log.id),'all eligible segments, including filtered ones, are requested once');
+  assert.equal(await card.getAttribute('open'),null);
+  await page.waitForFunction(()=>document.querySelector('.log-route [role="img"]').getAttribute('aria-label').includes('대기 중 23'));
+  assert(await convert.isEnabled(),'the failed segment can be retried');
+
+  await pinned.click();
+  const otherCard=page.locator(`.log-route[data-route="${other}"]`);
+  await otherCard.getByRole('button',{name:'구간 펼치기'}).click();
+  const row=otherCard.locator('.log-row[data-id="other0"]');
+  await row.getByRole('button',{name:'변환',exact:true}).click();
+  await row.getByRole('button',{name:'대기 중',exact:true}).waitFor();
+  assert.deepEqual(calls.slice(23),['other0'],'the expanded row requests only its own segment');
+  assert(await otherCard.locator('.log-row[data-id="other1"]').getByRole('button',{name:'변환',exact:true}).isEnabled());
+  assert.deepEqual(errors,[]);
+ }finally{releaseFirst();await context.close()}
+}
+
 // Mutations must win over a list read already in flight, even when the next read fails.
 async function checkRemovalRefresh(browser){
  const deferred=()=>{let resolve;const promise=new Promise(done=>resolve=done);return {promise,resolve}};
@@ -57,8 +118,12 @@ async function checkRemovalRefresh(browser){
 }
 
 (async()=>{
- const browser=await chromium.launch({headless:true});require('./browser-helpers.cjs').openRouteGroups(browser);
+ const browser=await chromium.launch({headless:true});
  try{
+  await checkDriveConversion(browser);
+  console.log('PASS: mixed drive conversion, hidden segments, duplicate click, partial failure and expanded segment conversion');
+  if(process.argv.includes('--drive-conversion'))return;
+  require('./browser-helpers.cjs').openRouteGroups(browser);
   const page=await browser.newPage({viewport:{width:390,height:844}}),errors=[];page.on('pageerror',e=>errors.push(e.message));
   let keep=true,automatic=true,status='ready',excluded=false,fail=false,converted=0,removed=0,deleted=0;
   await page.route('https://rv.test/**',route=>{

@@ -1,3 +1,8 @@
+## 2.0.9
+
+- The Convert button on a drive card queues every eligible segment, including collapsed and filtered-out segments. The button on an expanded segment row queues that segment alone.
+- The conversion queue checks available memory before starting each job and before memory-intensive phases. It reserves memory for approved work so multiple jobs cannot claim the same available memory when concurrency is set to 16.
+
 ## 2.0.8
 
 - The per-conversion memory estimate is based on measured usage, allowing more conversions to run at once with the same available memory.
