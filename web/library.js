@@ -6,7 +6,7 @@ let concurrencySaving=false,concurrencyRevision=0,savedConcurrency=1,savedAutoCo
 const names={unconverted:'미변환',queued:'대기 중',processing:'처리 중',ready:'재생 가능',error:'변환 실패'};
 let bulkSelection=null;
 // Work-based weights: finish large writes at 100%, then show only the short summary/registration sweep.
-const STAGE_PROGRESS={log_prepare:[0,.01],log_decompress:[.01,.04],log_read:[.04,.45],log_analysis:[.45,.60],video_read:[.60,.64],video_convert:[.64,.74],video_verify:[.74,.80],telemetry_build:[.80,.85],telemetry_encode:[.85,.86],telemetry_compress:[.86,.88],replay_compact:[.88,.92],replay_encode:[.92,.96],replay_compress:[.96,1],summary_save:[1,1],registering:[1,1],saving:[.8,.8]};
+const STAGE_PROGRESS={log_prepare:[0,.01],waiting_memory:[.01,.01],log_decompress:[.01,.04],log_read:[.04,.45],log_analysis:[.45,.60],video_read:[.60,.64],video_convert:[.64,.74],video_verify:[.74,.80],telemetry_build:[.80,.85],telemetry_encode:[.85,.86],telemetry_compress:[.86,.88],replay_compact:[.88,.92],replay_encode:[.92,.96],replay_compress:[.96,1],summary_save:[1,1],registering:[1,1],saving:[.8,.8]};
 const FINAL_STAGE_LABELS={telemetry_build:'차량 그래프 생성 중',telemetry_encode:'차량 그래프 JSON 변환 중',telemetry_compress:'차량 그래프 압축·저장 중',replay_compact:'재생 데이터 정리 중',replay_encode:'재생 데이터 JSON 변환 중',replay_compress:'재생 데이터 압축·저장 중',summary_save:'요약 저장 중',registering:'결과 등록 중',saving:'결과 저장 중'};
 function showState(state,m){
  const text=processingText(m);let bar=state.querySelector('.state-progress');
@@ -34,6 +34,7 @@ function processingText(m,overallPercent=null){
  if(FINAL_STAGE_LABELS[p.stage])return `${FINAL_STAGE_LABELS[p.stage]} · ${pct}%`;
  switch(p.stage){
   case 'log_prepare':return '변환 준비 중';
+  case 'waiting_memory':return '메모리 대기 중';
   case 'log_decompress':return `로그 압축 해제 중 · ${pct}%`;
   case 'log_read':return p.frames==null?'로그 읽는 중':`로그 읽는 중 · ${frames}프레임 읽음`;
   case 'log_analysis':return `로그 분석 중 · ${frames}프레임 분석 완료`;

@@ -6,7 +6,6 @@ use std::{
     collections::BTreeMap,
     path::{Path, PathBuf},
 };
-use tokio::io::AsyncReadExt;
 
 const CAMERAS: [(&str, &str, &str, &str); 3] = [
     ("qcamera", "qcamera.ts", "camera.mp4", "qRoadEncodeIdx"),
@@ -18,7 +17,6 @@ const CAMERAS: [(&str, &str, &str, &str); 3] = [
 /// the recording folder, when the log is not read from it.
 pub const MEDIA_PATHS: &str = "HARS_MEDIA_PATHS";
 pub const RECORDING_DIR: &str = "HARS_RECORDING_DIR";
-pub const MEMORY_CONTROL: &str = "HARS_CONVERSION_MEMORY_CONTROL";
 pub const VIDEO_INPUTS: [&str; 6] = [
     "qcamera.ts",
     "fcamera.hevc",
@@ -261,86 +259,11 @@ async fn camera(
     Ok(result)
 }
 
-#[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub(crate) enum MemoryPhase {
-    LogRead,
-    Video,
-    Replay,
-    Thumbnail,
-}
-
-impl MemoryPhase {
-    pub(crate) fn is_optional(self) -> bool {
-        matches!(self, Self::Thumbnail)
-    }
-}
-
-#[derive(serde::Serialize, serde::Deserialize)]
-#[serde(
-    tag = "conversion_memory",
-    content = "phase",
-    rename_all = "snake_case"
-)]
-pub(crate) enum MemoryEvent {
-    Begin(MemoryPhase),
-    End,
-}
-
-struct MemoryControl(Option<tokio::io::Stdin>);
-
-impl MemoryControl {
-    async fn begin(&mut self, phase: MemoryPhase) -> anyhow::Result<bool> {
-        let Some(pipe) = &mut self.0 else {
-            return Ok(true);
-        };
-        println!("{}", serde_json::to_string(&MemoryEvent::Begin(phase))?);
-        match pipe.read_u8().await? {
-            1 => Ok(true),
-            0 if phase.is_optional() => Ok(false),
-            _ => anyhow::bail!("invalid conversion memory permission"),
-        }
-    }
-
-    fn end(&self) {
-        if self.0.is_some() {
-            println!("{}", json!(MemoryEvent::End));
-        }
-    }
-}
-
 pub async fn prepare(
     source: PathBuf,
     dest: PathBuf,
     label: String,
-    progress: impl FnMut(&str, f64),
-) -> anyhow::Result<Value> {
-    prepare_impl(source, dest, label, progress, MemoryControl(None)).await
-}
-
-/// The conversion queue sends permissions over stdin after each request on stdout.
-pub async fn prepare_with_memory_control(
-    source: PathBuf,
-    dest: PathBuf,
-    label: String,
-    progress: impl FnMut(&str, f64),
-) -> anyhow::Result<Value> {
-    prepare_impl(
-        source,
-        dest,
-        label,
-        progress,
-        MemoryControl(Some(tokio::io::stdin())),
-    )
-    .await
-}
-
-async fn prepare_impl(
-    source: PathBuf,
-    dest: PathBuf,
-    label: String,
     mut progress: impl FnMut(&str, f64),
-    mut memory: MemoryControl,
 ) -> anyhow::Result<Value> {
     let _profile = crate::profile::Scope::new("convert_total");
     anyhow::ensure!(source.is_file(), "missing rlog source");
@@ -360,7 +283,6 @@ async fn prepare_impl(
         Ok((decoded, origin))
     })
     .await??;
-    memory.end();
     progress("log_read", 100.);
     let recording = std::env::var_os(RECORDING_DIR)
         .map(PathBuf::from)
@@ -388,7 +310,6 @@ async fn prepare_impl(
         } else {
             continue;
         };
-        memory.begin(MemoryPhase::Video).await?;
         cache_seed.push_str(&format!(
             "{}:{:?}",
             path.display(),
@@ -466,7 +387,6 @@ async fn prepare_impl(
                                 videos.insert(name.to_string(), previous.entry.clone());
                                 carried.push((*name, *mp4, previous));
                                 warnings.push(format!("{warning} (이전 변환 결과 유지)"));
-                                memory.end();
                                 continue;
                             }
                             Err(error) => tracing::warn!(
@@ -495,7 +415,6 @@ async fn prepare_impl(
                 warnings.push(warning);
             }
         }
-        memory.end();
     }
     if videos.is_empty() {
         warnings.push("재생 가능한 영상이 없어 도로 형태만 표시합니다.".to_owned());
@@ -510,7 +429,6 @@ async fn prepare_impl(
     progress("video_verify", 100.);
     // Inspect cameras before allocating the frame tree. Native processes no
     // longer overlap the largest render allocation in the process-tree RSS.
-    memory.begin(MemoryPhase::Replay).await?;
     progress("log_analysis", 0.);
     let (mut decoded, mut frames) = tokio::task::spawn_blocking(move || -> anyhow::Result<_> {
         let mut decoded = decoded;
@@ -587,7 +505,6 @@ async fn prepare_impl(
         {let _p=crate::profile::Scope::new("replay_save");logs::write_gzip(&target.join("data.json.gz"),&data)?;}
         Ok(summary)
     }).await??;
-    memory.end();
     progress("telemetry_compress", 100.);
     // Optional pixel decoding is bounded separately from log/bitstream analysis.
     let mut thumbnail = false;
@@ -595,12 +512,10 @@ async fn prepare_impl(
         let Some((path, kind)) = playable.get(name) else {
             continue;
         };
-        if !memory.begin(MemoryPhase::Thumbnail).await? {
-            break;
-        }
-        let result = media::thumbnail(path, kind, &dest.join("thumbnail.jpg")).await;
-        memory.end();
-        if result.is_ok() {
+        if media::thumbnail(path, kind, &dest.join("thumbnail.jpg"))
+            .await
+            .is_ok()
+        {
             thumbnail = true;
             break;
         }
