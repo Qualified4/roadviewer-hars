@@ -36,10 +36,14 @@ const MIB: u64 = 1024 * 1024;
 // (docs/hars/PERFORMANCE.md). This is the estimate for the next conversion.
 const MEMORY_PER_CONVERSION: u64 = 320 * MIB;
 const MEMORY_HEADROOM: u64 = 256 * MIB;
+// Preparation resolves inputs and stages one file at a time per active job.
+// Allow a chunk, its file-read buffer, and Tokio's 2 MiB file-write buffer.
+const PREPARATION_BUFFERS: u64 = 2 * crate::archive::CHUNK as u64 + 2 * MIB;
 
 impl MemoryPhase {
     fn estimate(self) -> u64 {
         match self {
+            Self::LogRead => MEMORY_PER_CONVERSION,
             // The remux worker's address-space allowance, used as an estimate for a camera phase.
             Self::Video => crate::pure_remux::MEMORY_BUDGET_MIB * MIB,
             // The measured whole conversion peaked near 350 MiB, mostly during log analysis.
@@ -273,6 +277,27 @@ impl Jobs {
         self.active.lock().await.contains_key(record)
     }
 
+    async fn save_cancellation(&self, record: &str, generation: &str) -> anyhow::Result<()> {
+        let lock = self.store.record_lock(record).await;
+        let _guard = lock.lock().await;
+        let mut meta = self
+            .store
+            .meta(record)
+            .await
+            .map_err(|_| anyhow::anyhow!("record unavailable"))?;
+        if meta["conversion_id"] == generation {
+            meta["status"] = json!("unconverted");
+            meta["manual_conversion"] = json!(false);
+            meta["auto_excluded"] = json!(true);
+            meta["error"] = Value::Null;
+            self.store
+                .save_meta(meta)
+                .await
+                .map_err(|_| anyhow::anyhow!("save cancellation failed"))?;
+        }
+        Ok(())
+    }
+
     async fn try_start(
         &self,
         record: &str,
@@ -290,7 +315,7 @@ impl Jobs {
         // reservation only if the phase is granted under this same decision lock.
         let priority = phases.waiting().iter().copied().max().unwrap_or(0);
         let reservation =
-            MemoryReservation::try_new(&phases, MEMORY_PER_CONVERSION, priority, idle, read_memory)
+            MemoryReservation::try_new(&phases, PREPARATION_BUFFERS, priority, idle, read_memory)
                 .await?;
         let cancel = Arc::new(Notify::new());
         self.active
@@ -454,7 +479,7 @@ impl Jobs {
         record: &str,
         generation: &str,
         cancel: Arc<Notify>,
-        reservation: MemoryReservation,
+        preparation: MemoryReservation,
     ) -> anyhow::Result<()> {
         let folder = self
             .store
@@ -475,6 +500,7 @@ impl Jobs {
             }
             None => None,
         };
+        drop(preparation);
         let result = self
             .convert(
                 record,
@@ -484,7 +510,6 @@ impl Jobs {
                 &staging,
                 label,
                 inputs.as_ref(),
-                reservation,
             )
             .await;
         for path in inputs.iter().flat_map(|i| &i.staged) {
@@ -502,7 +527,6 @@ impl Jobs {
         staging: &std::path::Path,
         label: String,
         inputs: Option<&crate::media_read::Inputs>,
-        reservation: MemoryReservation,
     ) -> anyhow::Result<()> {
         if let Some(message) = inputs.and_then(|i| i.deferred) {
             // Converting without the archived files would replace a good result with one lacking its videos;
@@ -531,6 +555,26 @@ impl Jobs {
             Some(i) => i.states.get(kind) == Some(&"available"),
             None => folder.join(kind).is_file(),
         };
+        let timeout = if available("fcamera.hevc") || available("ecamera.hevc") {
+            1800
+        } else {
+            600
+        };
+        // Added input changes the generation and invalidates the current conversion.
+        let superseded = async {
+            loop {
+                tokio::time::sleep(Duration::from_millis(250)).await;
+                if self
+                    .store
+                    .meta(record)
+                    .await
+                    .is_ok_and(|m| m["conversion_id"] != generation)
+                {
+                    return;
+                }
+            }
+        };
+        tokio::pin!(superseded);
         let worker = std::env::current_exe()?;
         #[cfg(unix)]
         let mut command = {
@@ -566,6 +610,18 @@ impl Jobs {
         crate::media::die_with_parent(&mut command);
         #[cfg(unix)]
         command.process_group(0);
+        let deadline = tokio::time::Instant::now() + Duration::from_secs(timeout);
+        let reservation = tokio::select! {
+            biased;
+            _ = cancel.notified() => return self.save_cancellation(record, generation).await,
+            _ = &mut superseded => return Ok(()),
+            result = tokio::time::timeout_at(
+                deadline,
+                self.reserve_phase(MemoryPhase::LogRead, available_memory),
+            ) => result
+                .context("conversion deadline exceeded waiting for log memory; original data preserved")?
+                .context("log reading requires a memory reservation")?,
+        };
         let mut child = command
             .spawn()
             .context("conversion process could not start")?;
@@ -639,28 +695,8 @@ impl Jobs {
             );
             Ok::<_, anyhow::Error>(())
         };
-        let timeout = if available("fcamera.hevc") || available("ecamera.hevc") {
-            1800
-        } else {
-            600
-        };
-        // A camera added to the recording (Python terminates its process) gives the record another
-        // generation; this output would lack the new camera, so it is dropped without a status.
-        let superseded = async {
-            loop {
-                tokio::time::sleep(std::time::Duration::from_millis(250)).await;
-                if self
-                    .store
-                    .meta(record)
-                    .await
-                    .is_ok_and(|m| m["conversion_id"] != generation)
-                {
-                    return;
-                }
-            }
-        };
         tokio::select! {
-            result=tokio::time::timeout(std::time::Duration::from_secs(timeout),future)=>{
+            result=tokio::time::timeout_at(deadline,future)=>{
                 if let Err(error)=result.context("conversion deadline exceeded; original data preserved").and_then(|r|r){
                     // Nothing of this generation was published yet: its partial output goes with its
                     // processes. A reaped leader's id may belong to another group by now; its media
@@ -677,7 +713,7 @@ impl Jobs {
                     return Err(error);
                 }
             },
-            _=superseded=>{
+            _=&mut superseded=>{
                 stop(&mut child)?;
                 child.wait().await?;
                 let _=tokio::fs::remove_dir_all(&staging).await;
@@ -687,11 +723,7 @@ impl Jobs {
                 stop(&mut child)?;
                 child.wait().await?;
                 let _=tokio::fs::remove_dir_all(&staging).await;
-                let lock=self.store.record_lock(record).await;let _guard=lock.lock().await;
-                let mut meta=self.store.meta(record).await.map_err(|_|anyhow::anyhow!("record unavailable"))?;
-                meta["status"]=json!("unconverted");meta["manual_conversion"]=json!(false);meta["auto_excluded"]=json!(true);meta["error"]=Value::Null;
-                self.store.save_meta(meta).await.map_err(|_|anyhow::anyhow!("save cancellation failed"))?;
-                return Ok(());
+                return self.save_cancellation(record, generation).await;
             }
         }
         drop(reservation);
@@ -1137,19 +1169,23 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn conversion_admission_reserves_uncharged_starts_at_limit_sixteen() {
+    async fn conversion_admission_reserves_one_decode_and_refunds_on_cancel() {
         let (_fixture, jobs) = open_jobs().await;
+        let sample = async || Some(MEMORY_HEADROOM + MEMORY_PER_CONVERSION);
         let barrier = Arc::new(tokio::sync::Barrier::new(16));
         let mut attempts = tokio::task::JoinSet::new();
         for number in 0..16 {
+            let record = number.to_string();
+            drop(jobs.try_start(&record, 16, sample).await.unwrap().1);
             let (jobs, barrier) = (jobs.clone(), barrier.clone());
             attempts.spawn(async move {
                 barrier.wait().await;
-                jobs.try_start(&number.to_string(), 16, async || {
-                    tokio::task::yield_now().await;
-                    Some(MEMORY_HEADROOM + MEMORY_PER_CONVERSION)
-                })
-                .await
+                let granted = tokio::select! {
+                    biased;
+                    permit = jobs.reserve_phase(MemoryPhase::LogRead, sample) => permit,
+                    _ = std::future::ready(()) => None,
+                };
+                granted.map(|permit| (record, permit))
             });
         }
         let mut admitted = Vec::new();
@@ -1157,71 +1193,101 @@ mod tests {
             admitted.extend(result.unwrap());
         }
         assert_eq!(admitted.len(), 1);
-        assert_eq!(jobs.active.lock().await.len(), 1);
-        drop(admitted); // The decoded data is now included in the measured availability.
+        assert_eq!(jobs.active.lock().await.len(), 16);
         assert!(
-            jobs.try_start("next", 1, async || panic!("at the configured limit"))
+            jobs.try_start("extra", 16, async || panic!("at the configured limit"))
                 .await
                 .is_none()
         );
-        assert!(jobs.try_start("next", 16, async || None).await.is_none());
-        jobs.active.lock().await.clear();
-        assert!(jobs.try_start("next", 16, async || None).await.is_some());
-    }
-
-    #[tokio::test]
-    async fn conversion_admission_starts_fifth_when_waiting_phase_also_fits() {
-        let (_fixture, jobs) = open_jobs().await;
-        let available = AtomicU64::new(1861 * MIB);
-        let samples = std::cell::Cell::new(0);
-        let sample = async || {
-            samples.set(samples.get() + 1);
-            Some(available.load(Ordering::Relaxed))
-        };
-        let mut preparing = Vec::new();
-        for record in ["first", "second", "third", "replay"] {
-            preparing.push(jobs.try_start(record, 16, sample).await.unwrap());
-        }
-        drop(preparing.pop().unwrap()); // The Replay worker finished log preparation.
-        assert_eq!(jobs.active.lock().await.len(), 4);
-
-        // Three startups plus a granted Replay leave too little (1861 < 1886).
-        let replay = jobs
-            .reserve_phase(MemoryPhase::Replay, sample)
-            .await
-            .unwrap();
-        assert!(jobs.try_start("fifth", 16, sample).await.is_none());
-        drop(replay);
-
-        // A mandatory Replay request sleeps at lower availability (1500 < 1566).
-        available.store(1500 * MIB, Ordering::Relaxed);
-        let replay = jobs.reserve_phase(MemoryPhase::Replay, sample);
-        tokio::pin!(replay);
+        let (record, permit) = admitted.pop().unwrap();
+        let cancel = jobs.active.lock().await[&record].clone();
+        let worker = tokio::spawn(async move {
+            cancel.notified().await;
+            drop(permit); // The cancelled child has stopped allocating.
+        });
+        let next = jobs.reserve_phase(MemoryPhase::LogRead, sample);
+        tokio::pin!(next);
         tokio::select! {
             biased;
-            _ = &mut replay => panic!("replay fits only after memory recovers"),
+            _ = &mut next => panic!("reused the first decoder's reservation"),
             _ = std::future::ready(()) => {}
         }
-        available.store(1861 * MIB, Ordering::Relaxed);
-        let before = samples.get();
-        assert!(jobs.try_start("fifth", 16, sample).await.is_none());
-        assert_eq!(
-            samples.get(),
-            before + 1,
-            "must measure even while a phase waits"
-        );
-
-        // With one more startup settled, both fit (1861 >= 1566) with four active.
-        drop(preparing.pop().unwrap());
-        let fifth = jobs.try_start("fifth", 16, sample).await.unwrap();
-        assert_eq!(jobs.active.lock().await.len(), 5);
-        let replay = tokio::time::timeout(Duration::from_secs(2), replay)
+        assert!(jobs.cancel(&record).await);
+        worker.await.unwrap();
+        let next = tokio::time::timeout(Duration::from_secs(2), next)
             .await
             .unwrap()
             .unwrap();
         let phases = Arc::clone(&*jobs.memory.lock().await);
-        assert_eq!(phases.bytes.load(Ordering::Relaxed), (3 * 320 + 350) * MIB);
-        drop((fifth, replay, preparing));
+        assert_eq!(phases.bytes.load(Ordering::Relaxed), MEMORY_PER_CONVERSION);
+        drop(next);
+        assert_eq!(phases.bytes.load(Ordering::Relaxed), 0);
+    }
+
+    #[tokio::test]
+    async fn conversion_admission_overlaps_preparation_and_gates_heavy_phases() {
+        let (_fixture, jobs) = open_jobs().await;
+        let sample = async || Some(994 * MIB);
+        let mut preparing = Vec::new();
+        for record in 0..6 {
+            preparing.push(
+                jobs.try_start(&record.to_string(), 16, sample)
+                    .await
+                    .unwrap()
+                    .1,
+            );
+        }
+        let phases = Arc::clone(&*jobs.memory.lock().await);
+        assert_eq!(jobs.active.lock().await.len(), 6);
+        assert_eq!(
+            phases.bytes.load(Ordering::Relaxed),
+            6 * PREPARATION_BUFFERS
+        );
+
+        let mut decoding = Vec::new();
+        for _ in 0..2 {
+            drop(preparing.pop().unwrap()); // The Drive stream and its checksum have finished.
+            decoding.push(
+                jobs.reserve_phase(MemoryPhase::LogRead, sample)
+                    .await
+                    .unwrap(),
+            );
+        }
+        drop(preparing.pop().unwrap());
+        let next = jobs.reserve_phase(MemoryPhase::LogRead, sample);
+        tokio::pin!(next);
+        tokio::select! {
+            biased;
+            _ = &mut next => panic!("reused an outstanding decode reservation"),
+            _ = std::future::ready(()) => {}
+        }
+
+        // The current availability includes decoded logs. Video workers can
+        // still need incremental memory through their last allocation.
+        let mut videos = Vec::new();
+        for permit in decoding {
+            drop(permit);
+            videos.push(
+                jobs.reserve_phase(MemoryPhase::Video, sample)
+                    .await
+                    .unwrap(),
+            );
+        }
+        tokio::select! {
+            biased;
+            _ = &mut next => panic!("reused outstanding video reservations"),
+            _ = std::future::ready(()) => {}
+        }
+        drop(videos.pop().unwrap());
+        let next = tokio::time::timeout(Duration::from_secs(2), next)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            phases.bytes.load(Ordering::Relaxed),
+            3 * PREPARATION_BUFFERS + MemoryPhase::Video.estimate() + MEMORY_PER_CONVERSION
+        );
+        drop((next, videos, preparing));
     }
 
     #[tokio::test]
@@ -1235,7 +1301,7 @@ mod tests {
                     .unwrap(),
             );
         }
-        let available = AtomicU64::new(768 * MIB);
+        let available = AtomicU64::new(512 * MIB);
         let sample = async || Some(available.load(Ordering::Relaxed));
         let camera = jobs
             .reserve_phase(MemoryPhase::Video, sample)

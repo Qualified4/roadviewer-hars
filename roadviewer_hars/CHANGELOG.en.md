@@ -1,3 +1,7 @@
+## 2.0.12
+
+- Preparing conversion files from Drive reserves 4 MiB per job. Once the files are ready, log decoding starts after it secures a separate 320 MiB reservation.
+
 ## 2.0.11
 
 - The conversion queue leaves enough memory for one waiting required phase and starts the next conversion when there is room for both.
