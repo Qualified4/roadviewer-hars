@@ -203,6 +203,19 @@ function moreMenu(label){
 }
 function menuButton(menu,text,onclick,className=''){const button=document.createElement('button');button.type='button';button.textContent=text;if(className)button.className=className;button.onclick=onclick;menu.append(button);return button}
 async function pinRecording(m,button){button.disabled=true;try{await api(`api/logs/${m.id}/pin`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pinned:!m.pinned})});await refresh()}catch(e){error(e.message);button.disabled=false}}
+const canConvert=log=>log.status==='unconverted'||log.status==='error';
+const conversionRequests=new Map();
+function requestConversion(id){
+ let request=conversionRequests.get(id);
+ if(!request){
+  request=api(`api/logs/${id}/convert`,{method:'POST'}).then(({status})=>{
+   const current=logRows.get(id)?.log;
+   if(current)recordingChanged({...current,status,auto_excluded:false});
+  }).finally(()=>conversionRequests.delete(id));
+  conversionRequests.set(id,request);
+ }
+ return request;
+}
 // Segment row: one primary action (재생 / 변환 / 대기 중 / 처리 중) and the ⋯ menu with everything else.
 function recordingActions(m){
  const actions=document.createElement('div');actions.className='actions';
@@ -217,7 +230,14 @@ function recordingActions(m){
   if(removing&&!confirm(`${m.name}
 대기 중이면 변환을 취소하고, 변환된 분석·그래프와 재생용 임시 영상을 제거할까요? 원본 로그와 보관 영상은 유지되며 자동으로 다시 변환되지 않습니다.`))return;
   conversion.disabled=true;
-  try{const result=await api(`api/logs/${m.id}/${removing?'prepared':'convert'}`,{method:removing?'DELETE':'POST'});if(removing&&result.status!=='unconverted')throw Error('변환 데이터 제거가 완료되지 않았습니다. 새로고침 후 상태를 확인해 주세요.');recordingChanged({...m,status:result.status,auto_excluded:removing});await refresh()}
+  try{
+   if(removing){
+    const result=await api(`api/logs/${m.id}/prepared`,{method:'DELETE'});
+    if(result.status!=='unconverted')throw Error('변환 데이터 제거가 완료되지 않았습니다. 새로고침 후 상태를 확인해 주세요.');
+    recordingChanged({...m,status:result.status,auto_excluded:true});
+   }else await requestConversion(m.id);
+   await refresh();
+  }
   catch(e){error(e.message);conversion.disabled=false}
  };
  if(m.status==='queued'){const queued=document.createElement('button');queued.type='button';queued.textContent=names.queued;queued.disabled=true;queued.className='recording-pending';actions.append(queued)}
@@ -237,14 +257,16 @@ function recordingActions(m){
  };
  menu.append(document.createElement('hr'),del);actions.append(more);return actions;
 }
-// Route card: 재생 (first ready segment, else the first segment's own action), group pin and the ⋯ menu.
+// Route card: replay the first ready segment and convert all eligible segments.
 // The lowest-numbered ready segment of a route (the server's order may differ once segments arrive later).
 const firstReady=group=>group.logs.filter(log=>log.status==='ready').sort((a,b)=>(logRoute(a).segment??0)-(logRoute(b).segment??0))[0];
-function routeActions(group){
+function routeActions(group,ready,convertible){
  const actions=document.createElement('div');actions.className='actions';
- const ready=firstReady(group);
  if(ready){const replay=document.createElement('a');replay.className='replay';replay.dataset.glow='';replay.href=`view/${ready.id}/`;replay.innerHTML=PLAY_ICON;replay.append('재생');actions.append(replay)}
- else{const own=recordingActions(group.firstLog),primary=own.querySelector(':scope>button');if(primary)actions.append(primary)}
+ if(convertible){
+  const conversion=menuButton(actions,'변환',()=>convertLogGroup(group,conversion),'route-convert');
+  conversion.disabled=!!group.converting;
+ }else if(!ready){const own=recordingActions(group.firstLog),primary=own.querySelector(':scope>button');if(primary)actions.append(primary)}
  const pin=document.createElement('button');pin.type='button';pin.className='pin-recording';pin.dataset.noRipple='';pin.dataset.fill='';
  const allPinned=group.logs.every(log=>log.pinned),pinnedCount=group.logs.filter(log=>log.pinned).length,partial=!allPinned&&pinnedCount>0;
  pin.title=partial?`${pinnedCount}/${group.logs.length}개 구간 고정됨 · 전체 구간 고정`:allPinned?'전체 구간 고정 해제':'전체 구간 고정';pin.setAttribute('aria-label',pin.title);pin.setAttribute('aria-pressed',partial?'mixed':String(allPinned));pin.disabled=!!group.pinning;
@@ -451,13 +473,28 @@ function syncRouteCard(group,route){
  }
  syncRouteBar(group);
 }
-// The route header has group play/pin/menu actions; individual row actions stay unchanged.
 function syncGroupActions(group){
  if(group.pinning)return;
- const ready=firstReady(group),primary=ready||group.firstLog;
- const signature=JSON.stringify([primary.id,primary.name,primary.status,!!ready,group.logs.map(log=>[log.id,!!log.pinned])]);if(group.actionSignature===signature)return;
+ const ready=firstReady(group),primary=ready||group.firstLog,convertible=group.logs.some(canConvert);
+ const signature=JSON.stringify([primary.id,primary.name,primary.status,convertible,!!group.converting,group.logs.map(log=>[log.id,!!log.pinned])]);if(group.actionSignature===signature)return;
  // maps.js's 지도 button (a drive with GPS) stays first in the row.
- group.actions.replaceChildren(...group.actions.querySelectorAll(':scope>.route-map-button'),routeActions(group));group.actionSignature=signature;
+ group.actions.replaceChildren(...group.actions.querySelectorAll(':scope>.route-map-button'),routeActions(group,ready,convertible));group.actionSignature=signature;
+}
+async function convertLogGroup(group,button){
+ if(group.converting)return;
+ const targets=group.logs.filter(canConvert);let failed=0,firstFailure;
+ group.converting=true;button.disabled=true;
+ try{
+  for(const {id} of targets){
+   const current=logRows.get(id)?.log;
+   if(!current||!canConvert(current))continue;
+   try{await requestConversion(id)}
+   catch(e){failed++;firstFailure??=e.message}
+  }
+  if(failed)error(`전체 구간 변환 요청 ${failed}개 실패 · ${firstFailure}`);
+ }finally{
+  group.converting=false;button.disabled=false;syncGroupActions(group);await refresh();
+ }
 }
 async function pinLogGroup(group,pinned){
  if(group.pinning)return;

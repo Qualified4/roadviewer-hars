@@ -1,14 +1,23 @@
 //! Durable conversion scheduling. Native/CPU work runs in a disposable child.
 use crate::{
     archive::index,
+    convert::{MemoryEvent, MemoryPhase},
     store::{Store, atomic_json, id, now, read_json},
     upload::Uploads,
 };
 use anyhow::Context;
 use serde_json::{Value, json};
-use std::{collections::BTreeMap, process::Stdio, sync::Arc};
+use std::{
+    collections::BTreeMap,
+    process::Stdio,
+    sync::{
+        Arc,
+        atomic::{AtomicU64, AtomicUsize, Ordering},
+    },
+    time::Duration,
+};
 use tokio::{
-    io::{AsyncBufReadExt, BufReader},
+    io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
     process::Command,
     sync::{Mutex, Notify, RwLock},
 };
@@ -17,21 +26,77 @@ pub struct Jobs {
     store: Arc<Store>,
     uploads: Arc<Uploads>,
     active: Mutex<BTreeMap<String, Arc<Notify>>>,
+    memory: Mutex<Arc<PhaseReservations>>,
+    waiting_phases: AtomicUsize,
     pub progress: RwLock<BTreeMap<String, Value>>,
 }
 
 const MIB: u64 = 1024 * 1024;
 // HAOS reconversions on 2026-11-20 briefly raised app memory by about 300 MiB per job.
 // Earlier process-tree peaks were about 350 MiB per job and 1,467 MiB for four jobs
-// (docs/hars/PERFORMANCE.md). Active jobs also count against the slot limit after their
-// resident memory reduces availability, leaving a buffer for larger or overlapping peaks.
+// (docs/hars/PERFORMANCE.md). This is the estimate for the next conversion.
 const MEMORY_PER_CONVERSION: u64 = 320 * MIB;
 const MEMORY_HEADROOM: u64 = 256 * MIB;
 
-fn memory_slots(available: Option<u64>) -> usize {
-    available.map_or(1, |bytes| {
-        (bytes.saturating_sub(MEMORY_HEADROOM) / MEMORY_PER_CONVERSION) as usize
-    })
+impl MemoryPhase {
+    fn estimate(self) -> u64 {
+        match self {
+            // The remux worker's address-space allowance, used as an estimate for a camera phase.
+            Self::Video => crate::pure_remux::MEMORY_BUDGET_MIB * MIB,
+            // The measured whole conversion peaked near 350 MiB, mostly during log analysis.
+            Self::Replay => 350 * MIB,
+            Self::Thumbnail => crate::thumbnail::MEMORY_BUDGET_MIB * MIB,
+        }
+    }
+}
+
+#[derive(Default)]
+struct PhaseReservations {
+    bytes: AtomicU64,
+    changed: Notify,
+}
+
+struct MemoryReservation {
+    phases: Arc<PhaseReservations>,
+    bytes: u64,
+}
+
+impl MemoryReservation {
+    async fn try_new(
+        phases: &tokio::sync::MutexGuard<'_, Arc<PhaseReservations>>,
+        bytes: u64,
+        only_conversion: bool,
+        read_memory: impl std::ops::AsyncFnOnce() -> Option<u64>,
+    ) -> Option<Self> {
+        // Snapshot existing promises before measuring. If one ends during the read,
+        // the sample may predate its allocations, so keep its promise for this decision.
+        let promised = phases.bytes.load(Ordering::Acquire);
+        match read_memory().await {
+            Some(available) if available >= MEMORY_HEADROOM + promised + bytes => {}
+            None if only_conversion && promised == 0 => {}
+            _ => return None,
+        }
+        phases.bytes.fetch_add(bytes, Ordering::AcqRel);
+        Some(Self {
+            phases: Arc::clone(phases),
+            bytes,
+        })
+    }
+}
+
+impl Drop for MemoryReservation {
+    fn drop(&mut self) {
+        self.phases.bytes.fetch_sub(self.bytes, Ordering::AcqRel);
+        self.phases.changed.notify_waiters();
+    }
+}
+
+struct WaitingPhase<'a>(&'a AtomicUsize);
+
+impl Drop for WaitingPhase<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::Relaxed);
+    }
 }
 
 async fn available_memory() -> Option<u64> {
@@ -109,6 +174,8 @@ impl Jobs {
             store,
             uploads,
             active: Mutex::new(BTreeMap::new()),
+            memory: Mutex::new(Arc::new(PhaseReservations::default())),
+            waiting_phases: AtomicUsize::new(0),
             progress: RwLock::new(BTreeMap::new()),
         });
         let ids = jobs
@@ -184,11 +251,62 @@ impl Jobs {
     pub async fn busy(&self, record: &str) -> bool {
         self.active.lock().await.contains_key(record)
     }
+
+    async fn try_start(
+        &self,
+        record: &str,
+        limit: usize,
+        read_memory: impl std::ops::AsyncFnOnce() -> Option<u64>,
+    ) -> Option<(Arc<Notify>, MemoryReservation)> {
+        let phases = self.memory.lock().await;
+        let active = self.active.lock().await;
+        if active.len() >= limit || active.contains_key(record) {
+            return None;
+        }
+        let idle = active.is_empty();
+        drop(active);
+        if self.waiting_phases.load(Ordering::Relaxed) != 0 {
+            return None;
+        }
+        let reservation =
+            MemoryReservation::try_new(&phases, MEMORY_PER_CONVERSION, idle, read_memory).await?;
+        let cancel = Arc::new(Notify::new());
+        self.active
+            .lock()
+            .await
+            .insert(record.into(), cancel.clone());
+        Some((cancel, reservation))
+    }
+
+    async fn wait_for_phase(
+        &self,
+        phase: MemoryPhase,
+        read_memory: impl std::ops::AsyncFn() -> Option<u64>,
+    ) -> MemoryReservation {
+        self.waiting_phases.fetch_add(1, Ordering::Relaxed);
+        let _waiting = WaitingPhase(&self.waiting_phases);
+        let mut phases = self.memory.lock().await;
+        let state = Arc::clone(&phases);
+        loop {
+            let changed = state.changed.notified();
+            let alone = self.active.lock().await.len() == 1;
+            if let Some(reservation) =
+                MemoryReservation::try_new(&phases, phase.estimate(), alone, &read_memory).await
+            {
+                return reservation;
+            }
+            drop(phases);
+            // A phase can finish or the system can recover memory independently.
+            let _ = tokio::time::timeout(Duration::from_secs(1), changed).await;
+            phases = self.memory.lock().await;
+        }
+    }
+
     pub async fn tick(self: &Arc<Self>) -> anyhow::Result<()> {
         let settings = self.store.processing.read().await.clone();
         let limit = settings["concurrency"].as_u64().unwrap_or(1) as usize;
-        let mut memory_limit = None;
         let automatic = settings["auto_convert"] == true;
+        let mut admission_blocked = false;
         let (_, receiving) = self.uploads.snapshot().await;
         let mut rows = self
             .store
@@ -212,9 +330,6 @@ impl Jobs {
         });
         for row in rows {
             let record = row["id"].as_str().context("missing conversion id")?;
-            if self.busy(record).await {
-                continue;
-            }
             // A job deferred for its archive waits for the archiver to queue it again once the archive
             // answers: picked up here it would sit in the queue under the deferral warning, and loop
             // through the same deferral while the archive is away.
@@ -229,6 +344,9 @@ impl Jobs {
             }
             let lock = self.store.record_lock(record).await;
             let _guard = lock.lock().await;
+            if self.busy(record).await {
+                continue;
+            }
             // Deleted while this tick waited for its lock.
             let Ok(mut meta) = self.store.meta(record).await else {
                 continue;
@@ -261,25 +379,16 @@ impl Jobs {
                     .insert(record.into(), json!({"stage":"waiting_upload","percent":0}));
                 continue;
             }
-            let active = self.active.lock().await.len();
-            if active >= limit {
+            if admission_blocked {
                 continue;
             }
-            // Reserve a full estimate for every active job, since it may still be below its
-            // peak. This deliberately counts some resident memory twice under pressure.
-            let memory_limit = match memory_limit {
-                Some(slots) => slots,
-                None => *memory_limit.insert(memory_slots(available_memory().await)),
+            let Some((cancel, reservation)) = self.try_start(record, limit, available_memory).await
+            else {
+                // Retry on the next tick. This pass can still update queued records.
+                admission_blocked = true;
+                continue;
             };
-            if active >= memory_limit {
-                continue;
-            }
             let generation = id();
-            let cancel = Arc::new(Notify::new());
-            self.active
-                .lock()
-                .await
-                .insert(record.into(), cancel.clone());
             if let Some(m) = meta.as_object_mut() {
                 m.remove("deferred");
             }
@@ -297,7 +406,7 @@ impl Jobs {
             let jobs = self.clone();
             let record = record.to_owned();
             tokio::spawn(async move {
-                let result = jobs.run(&record, &generation, cancel).await;
+                let result = jobs.run(&record, &generation, cancel, reservation).await;
                 if let Err(error) = result {
                     tracing::warn!(record=%record,"conversion_worker_failed");
                     let lock = jobs.store.record_lock(&record).await;
@@ -316,7 +425,13 @@ impl Jobs {
         }
         Ok(())
     }
-    async fn run(&self, record: &str, generation: &str, cancel: Arc<Notify>) -> anyhow::Result<()> {
+    async fn run(
+        &self,
+        record: &str,
+        generation: &str,
+        cancel: Arc<Notify>,
+        reservation: MemoryReservation,
+    ) -> anyhow::Result<()> {
         let folder = self
             .store
             .folder(record)
@@ -345,6 +460,7 @@ impl Jobs {
                 &staging,
                 label,
                 inputs.as_ref(),
+                reservation,
             )
             .await;
         for path in inputs.iter().flat_map(|i| &i.staged) {
@@ -362,6 +478,7 @@ impl Jobs {
         staging: &std::path::Path,
         label: String,
         inputs: Option<&crate::media_read::Inputs>,
+        reservation: MemoryReservation,
     ) -> anyhow::Result<()> {
         if let Some(message) = inputs.and_then(|i| i.deferred) {
             // Converting without the archived files would replace a good result with one lacking its videos;
@@ -416,7 +533,9 @@ impl Jobs {
                 Value::Object(media).to_string(),
             )
             .env(crate::convert::RECORDING_DIR, folder)
+            .env(crate::convert::MEMORY_CONTROL, "1")
             .kill_on_drop(true)
+            .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null());
         // Its media workers die with it (they also die with it on its own SIGKILL).
@@ -435,12 +554,39 @@ impl Jobs {
             }
             child.start_kill()
         };
+        let mut permit_pipe = child.stdin.take().unwrap();
         let stdout = child.stdout.take().unwrap();
         let mut lines = BufReader::new(stdout).lines();
         let reaped = std::sync::atomic::AtomicBool::new(false);
+        let mut reservation = Some(reservation);
         let future = async {
             while let Some(line) = lines.next_line().await? {
-                if let Ok(v) = serde_json::from_str::<Value>(&line)
+                if let Ok(event) = serde_json::from_str::<MemoryEvent>(&line) {
+                    match event {
+                        MemoryEvent::End => {
+                            anyhow::ensure!(
+                                reservation.take().is_some(),
+                                "no conversion memory phase to end"
+                            );
+                        }
+                        MemoryEvent::Begin(phase) => {
+                            anyhow::ensure!(
+                                reservation.is_none(),
+                                "conversion memory phase already active"
+                            );
+                            let next = tokio::select! {
+                                permit = self.wait_for_phase(phase, available_memory) => permit,
+                                status = child.wait() => {
+                                    status?;
+                                    reaped.store(true, std::sync::atomic::Ordering::Relaxed);
+                                    anyhow::bail!("conversion exited while waiting for memory");
+                                }
+                            };
+                            reservation = Some(next);
+                            permit_pipe.write_all(&[1]).await?;
+                        }
+                    }
+                } else if let Ok(v) = serde_json::from_str::<Value>(&line)
                     && v["stage"].as_str().is_some_and(|s| s.len() < 64)
                     && v["percent"]
                         .as_f64()
@@ -514,6 +660,7 @@ impl Jobs {
                 return Ok(());
             }
         }
+        drop(reservation);
         let _summary: Value = read_json(&staging.join("summary.json"))
             .await
             .context("conversion summary missing")?;
@@ -903,7 +1050,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn conversion_slots_follow_the_tightest_memory_limit() {
+    fn conversion_memory_follows_the_tightest_limit() {
         let fixture = tempfile::tempdir().unwrap();
         let root = fixture.path();
         let group = root.join("system.slice/app");
@@ -930,24 +1077,125 @@ mod tests {
             .unwrap()
                 * 1024,
         );
-        let slots = || {
-            memory_slots(
-                host.into_iter()
-                    .chain(cgroup_available(root, membership))
-                    .min(),
-            )
+        let available = || {
+            host.into_iter()
+                .chain(cgroup_available(root, membership))
+                .min()
         };
 
-        assert_eq!(slots(), 0);
+        assert_eq!(available(), Some(404 * MIB));
         std::fs::write(
             root.join("system.slice/memory.current"),
             (1024 * MIB).to_string(),
         )
         .unwrap();
-        assert_eq!(slots(), 2);
+        assert_eq!(available(), Some(1024 * MIB));
         std::fs::write(root.join("memory.max"), "max\n").unwrap();
-        assert_eq!(slots(), 3);
-        assert_eq!(memory_slots(Some(0)), 0);
-        assert_eq!(memory_slots(None), 1);
+        assert_eq!(available(), Some(1280 * MIB));
+    }
+
+    async fn open_jobs() -> (tempfile::TempDir, Arc<Jobs>) {
+        let fixture = tempfile::tempdir().unwrap();
+        let store = Store::open(fixture.path().to_path_buf()).await.unwrap();
+        let auth = Arc::new(crate::auth::Auth::open(&store.root).await.unwrap());
+        let uploads = Uploads::open(store.clone(), auth, MIB).await.unwrap();
+        (fixture, Jobs::open(store, uploads).await.unwrap())
+    }
+
+    #[tokio::test]
+    async fn conversion_admission_reserves_uncharged_starts_at_limit_sixteen() {
+        let (_fixture, jobs) = open_jobs().await;
+        let barrier = Arc::new(tokio::sync::Barrier::new(16));
+        let mut attempts = tokio::task::JoinSet::new();
+        for number in 0..16 {
+            let (jobs, barrier) = (jobs.clone(), barrier.clone());
+            attempts.spawn(async move {
+                barrier.wait().await;
+                jobs.try_start(&number.to_string(), 16, async || {
+                    tokio::task::yield_now().await;
+                    Some(MEMORY_HEADROOM + MEMORY_PER_CONVERSION)
+                })
+                .await
+            });
+        }
+        let mut admitted = Vec::new();
+        while let Some(result) = attempts.join_next().await {
+            admitted.extend(result.unwrap());
+        }
+        assert_eq!(admitted.len(), 1);
+        assert_eq!(jobs.active.lock().await.len(), 1);
+        drop(admitted); // The decoded data is now included in the measured availability.
+        assert!(
+            jobs.try_start("next", 1, async || panic!("at the configured limit"))
+                .await
+                .is_none()
+        );
+        assert!(jobs.try_start("next", 16, async || None).await.is_none());
+        jobs.active.lock().await.clear();
+        assert!(jobs.try_start("next", 16, async || None).await.is_some());
+    }
+
+    #[tokio::test]
+    async fn conversion_admission_coordinates_later_phases_and_recovers() {
+        let (_fixture, jobs) = open_jobs().await;
+        for record in ["camera", "replay"] {
+            // Both jobs completed log reading. Their retained memory is in the sample.
+            drop(
+                jobs.try_start(record, 16, async || Some(1700 * MIB))
+                    .await
+                    .unwrap(),
+            );
+        }
+        let available = AtomicU64::new(768 * MIB);
+        let sample = async || Some(available.load(Ordering::Relaxed));
+        let camera = jobs.wait_for_phase(MemoryPhase::Video, sample).await;
+        assert!(jobs.try_start("next", 16, sample).await.is_none());
+
+        let replay = jobs.wait_for_phase(MemoryPhase::Replay, sample);
+        tokio::pin!(replay);
+        tokio::select! {
+            biased;
+            _ = &mut replay => panic!("reused the camera's uncharged memory"),
+            _ = std::future::ready(()) => {}
+        }
+        let threshold = MEMORY_HEADROOM + MemoryPhase::Replay.estimate();
+        available.store(threshold - 1, Ordering::Relaxed);
+        drop(camera);
+        tokio::select! {
+            biased;
+            _ = &mut replay => panic!("approved below the replay threshold"),
+            _ = std::future::ready(()) => {}
+        }
+        available.store(threshold, Ordering::Relaxed);
+        let phases = Arc::clone(&*jobs.memory.lock().await);
+        phases.changed.notify_waiters();
+        let replay = replay.await;
+
+        available.store(768 * MIB, Ordering::Relaxed);
+        tokio::select! {
+            biased;
+            _ = jobs.wait_for_phase(MemoryPhase::Thumbnail, sample) => panic!("reused the replay's reservation"),
+            _ = std::future::ready(()) => {}
+        }
+        assert_eq!(jobs.waiting_phases.load(Ordering::Relaxed), 0);
+        let cancel = jobs.active.lock().await.get("replay").unwrap().clone();
+        let stopped = tokio::spawn(async move {
+            cancel.notified().await;
+            // The conversion owns the reservation until the killed child is reaped.
+            drop(replay);
+        });
+        assert!(jobs.cancel("replay").await);
+        stopped.await.unwrap();
+        let thumbnail = jobs.wait_for_phase(MemoryPhase::Thumbnail, sample).await;
+
+        // With enough additional memory, the thumbnail can overlap another camera.
+        available.store(1024 * MIB, Ordering::Relaxed);
+        let camera = jobs.wait_for_phase(MemoryPhase::Video, sample).await;
+        assert_eq!(
+            phases.bytes.load(Ordering::Relaxed),
+            MemoryPhase::Thumbnail.estimate() + MemoryPhase::Video.estimate()
+        );
+        drop((thumbnail, camera));
+        assert_eq!(phases.bytes.load(Ordering::Relaxed), 0);
     }
 }

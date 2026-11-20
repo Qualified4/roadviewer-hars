@@ -115,9 +115,16 @@ async fn run(command: &mut Command) -> anyhow::Result<Vec<u8>> {
         }
         Ok(bytes)
     };
-    tokio::time::timeout(deadline(), work)
+    let result = tokio::time::timeout(deadline(), work)
         .await
-        .map_err(|_| anyhow::Error::new(Deadline))?
+        .map_err(|_| anyhow::Error::new(Deadline))
+        .and_then(|result| result);
+    // A conversion can proceed to another allocation phase as soon as this returns.
+    // Reap even on timeout or a pipe error so this child cannot keep growing.
+    if result.is_err() {
+        let _ = child.kill().await;
+    }
+    result
 }
 /// Whether a camera kind holds HEVC (otherwise H.264); `None` for a kind that is no camera video.
 fn hevc_kind(kind: &str) -> Option<bool> {
