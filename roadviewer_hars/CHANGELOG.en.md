@@ -1,3 +1,7 @@
+## 2.0.8
+
+- The per-conversion memory estimate is based on measured usage, allowing more conversions to run at once with the same available memory.
+
 ## 2.0.7
 
 - Conversion concurrency adjusts to available memory. Automatic and manual conversions wait for sufficient memory, and running conversions continue.
