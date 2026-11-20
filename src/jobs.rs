@@ -278,21 +278,25 @@ impl Jobs {
         Some((cancel, reservation))
     }
 
-    async fn wait_for_phase(
+    async fn reserve_phase(
         &self,
         phase: MemoryPhase,
         read_memory: impl std::ops::AsyncFn() -> Option<u64>,
-    ) -> MemoryReservation {
-        self.waiting_phases.fetch_add(1, Ordering::Relaxed);
-        let _waiting = WaitingPhase(&self.waiting_phases);
+    ) -> Option<MemoryReservation> {
+        let optional = phase.is_optional();
+        let _waiting = (!optional).then(|| {
+            self.waiting_phases.fetch_add(1, Ordering::Relaxed);
+            WaitingPhase(&self.waiting_phases)
+        });
         let mut phases = self.memory.lock().await;
         let state = Arc::clone(&phases);
         loop {
             let changed = state.changed.notified();
             let alone = self.active.lock().await.len() == 1;
-            if let Some(reservation) =
-                MemoryReservation::try_new(&phases, phase.estimate(), alone, &read_memory).await
-            {
+            let reservation =
+                MemoryReservation::try_new(&phases, phase.estimate(), alone, &read_memory).await;
+            // An optional phase gets one attempt. The recording can be published immediately.
+            if optional || reservation.is_some() {
                 return reservation;
             }
             drop(phases);
@@ -574,16 +578,26 @@ impl Jobs {
                                 reservation.is_none(),
                                 "conversion memory phase already active"
                             );
-                            let next = tokio::select! {
-                                permit = self.wait_for_phase(phase, available_memory) => permit,
+                            let sample = move || async move {
+                                if phase.is_optional()
+                                    && crate::fault::injected("thumbnail_memory_747_mib")
+                                {
+                                    Some(747 * MIB)
+                                } else {
+                                    available_memory().await
+                                }
+                            };
+                            reservation = tokio::select! {
+                                permit = self.reserve_phase(phase, sample) => permit,
                                 status = child.wait() => {
                                     status?;
                                     reaped.store(true, std::sync::atomic::Ordering::Relaxed);
                                     anyhow::bail!("conversion exited while waiting for memory");
                                 }
                             };
-                            reservation = Some(next);
-                            permit_pipe.write_all(&[1]).await?;
+                            permit_pipe
+                                .write_all(&[u8::from(reservation.is_some())])
+                                .await?;
                         }
                     }
                 } else if let Ok(v) = serde_json::from_str::<Value>(&line)
@@ -1148,10 +1162,13 @@ mod tests {
         }
         let available = AtomicU64::new(768 * MIB);
         let sample = async || Some(available.load(Ordering::Relaxed));
-        let camera = jobs.wait_for_phase(MemoryPhase::Video, sample).await;
+        let camera = jobs
+            .reserve_phase(MemoryPhase::Video, sample)
+            .await
+            .unwrap();
         assert!(jobs.try_start("next", 16, sample).await.is_none());
 
-        let replay = jobs.wait_for_phase(MemoryPhase::Replay, sample);
+        let replay = jobs.reserve_phase(MemoryPhase::Replay, sample);
         tokio::pin!(replay);
         tokio::select! {
             biased;
@@ -1169,14 +1186,15 @@ mod tests {
         available.store(threshold, Ordering::Relaxed);
         let phases = Arc::clone(&*jobs.memory.lock().await);
         phases.changed.notify_waiters();
-        let replay = replay.await;
+        let replay = replay.await.unwrap();
 
         available.store(768 * MIB, Ordering::Relaxed);
-        tokio::select! {
-            biased;
-            _ = jobs.wait_for_phase(MemoryPhase::Thumbnail, sample) => panic!("reused the replay's reservation"),
-            _ = std::future::ready(()) => {}
-        }
+        assert!(
+            jobs.reserve_phase(MemoryPhase::Thumbnail, sample)
+                .await
+                .is_none(),
+            "reused the replay's reservation"
+        );
         assert_eq!(jobs.waiting_phases.load(Ordering::Relaxed), 0);
         let cancel = jobs.active.lock().await.get("replay").unwrap().clone();
         let stopped = tokio::spawn(async move {
@@ -1186,11 +1204,17 @@ mod tests {
         });
         assert!(jobs.cancel("replay").await);
         stopped.await.unwrap();
-        let thumbnail = jobs.wait_for_phase(MemoryPhase::Thumbnail, sample).await;
+        let thumbnail = jobs
+            .reserve_phase(MemoryPhase::Thumbnail, sample)
+            .await
+            .unwrap();
 
         // With enough additional memory, the thumbnail can overlap another camera.
         available.store(1024 * MIB, Ordering::Relaxed);
-        let camera = jobs.wait_for_phase(MemoryPhase::Video, sample).await;
+        let camera = jobs
+            .reserve_phase(MemoryPhase::Video, sample)
+            .await
+            .unwrap();
         assert_eq!(
             phases.bytes.load(Ordering::Relaxed),
             MemoryPhase::Thumbnail.estimate() + MemoryPhase::Video.estimate()

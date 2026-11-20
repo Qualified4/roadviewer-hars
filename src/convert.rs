@@ -269,6 +269,12 @@ pub(crate) enum MemoryPhase {
     Thumbnail,
 }
 
+impl MemoryPhase {
+    pub(crate) fn is_optional(self) -> bool {
+        matches!(self, Self::Thumbnail)
+    }
+}
+
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(
     tag = "conversion_memory",
@@ -283,15 +289,16 @@ pub(crate) enum MemoryEvent {
 struct MemoryControl(Option<tokio::io::Stdin>);
 
 impl MemoryControl {
-    async fn begin(&mut self, phase: MemoryPhase) -> anyhow::Result<()> {
-        if let Some(pipe) = &mut self.0 {
-            println!("{}", serde_json::to_string(&MemoryEvent::Begin(phase))?);
-            anyhow::ensure!(
-                pipe.read_u8().await? == 1,
-                "invalid conversion memory permission"
-            );
+    async fn begin(&mut self, phase: MemoryPhase) -> anyhow::Result<bool> {
+        let Some(pipe) = &mut self.0 else {
+            return Ok(true);
+        };
+        println!("{}", serde_json::to_string(&MemoryEvent::Begin(phase))?);
+        match pipe.read_u8().await? {
+            1 => Ok(true),
+            0 if phase.is_optional() => Ok(false),
+            _ => anyhow::bail!("invalid conversion memory permission"),
         }
-        Ok(())
     }
 
     fn end(&self) {
@@ -587,7 +594,9 @@ async fn prepare_impl(
         let Some((path, kind)) = playable.get(name) else {
             continue;
         };
-        memory.begin(MemoryPhase::Thumbnail).await?;
+        if !memory.begin(MemoryPhase::Thumbnail).await? {
+            break;
+        }
         let result = media::thumbnail(path, kind, &dest.join("thumbnail.jpg")).await;
         memory.end();
         if result.is_ok() {

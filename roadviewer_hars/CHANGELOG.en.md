@@ -1,3 +1,7 @@
+## 2.0.10
+
+- When there is not enough memory for a thumbnail, the video and drive analysis are published immediately. Thumbnails are still generated when enough memory is available.
+
 ## 2.0.9
 
 - The Convert button on a drive card queues every eligible segment, including collapsed and filtered-out segments. The button on an expanded segment row queues that segment alone.
