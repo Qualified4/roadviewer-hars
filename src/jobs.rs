@@ -45,11 +45,20 @@ const PEAK_HISTORY: usize = 8;
 const RSS_SAMPLE: Duration = Duration::from_millis(500);
 const REFUSAL_LOG: Duration = Duration::from_secs(10);
 
-/// The next conversion's reservation: 15% over the largest of the recent successful peaks.
+/// The next conversion's reservation: the largest of the recent successful peaks.
 fn next_reservation(peaks: &VecDeque<u64>) -> u64 {
     peaks.iter().max().map_or(FIRST_RESERVATION, |peak| {
-        (peak + peak * 15 / 100).clamp(MIN_RESERVATION, MAX_RESERVATION)
+        (*peak).clamp(MIN_RESERVATION, MAX_RESERVATION)
     })
+}
+
+/// Whether one more conversion fits. A conversion sits well below its peak for most of its run
+/// and peaks for a second or two, so the headroom is kept on top of half of what the running
+/// ones may still allocate. If every one of them peaked at once they would still fit in what is
+/// available, using the headroom.
+fn fits(available: u64, preparation: u64, outstanding: u64, reserved: u64) -> bool {
+    available >= MEMORY_HEADROOM + preparation + outstanding / 2 + reserved
+        && available >= preparation + outstanding + reserved
 }
 
 fn record_peak(peaks: &mut VecDeque<u64>, peak: u64) {
@@ -119,9 +128,8 @@ impl MemoryGate {
         let reserved = next_reservation(&state.peaks);
         let outstanding = state.outstanding();
         let running = state.running.len();
-        let fits = available.is_some_and(|available| {
-            available >= MEMORY_HEADROOM + state.preparation + outstanding + reserved
-        });
+        let fits = available
+            .is_some_and(|available| fits(available, state.preparation, outstanding, reserved));
         let mib = |bytes: u64| bytes / MIB;
         if !fits && running > 0 {
             if logged.is_none_or(|at| at.elapsed() >= REFUSAL_LOG) {
@@ -1455,7 +1463,7 @@ mod tests {
         assert!(lowest >= 0, "{lowest}");
         assert_eq!(gate_state(&jobs), (0, 0, 0));
         let gate = Arc::clone(&*jobs.memory.lock().await);
-        assert_eq!(next_reservation(&gate.state().peaks), 300 * MIB * 115 / 100);
+        assert_eq!(next_reservation(&gate.state().peaks), 300 * MIB);
     }
 
     #[tokio::test]
@@ -1541,7 +1549,8 @@ mod tests {
         assert_eq!(running.usage.reserved, 320 * MIB);
         running.usage.sample(200 * MIB);
 
-        let threshold = MEMORY_HEADROOM + 120 * MIB + 320 * MIB;
+        // Half of the 120 MiB the running conversion may still allocate, on top of the headroom.
+        let threshold = MEMORY_HEADROOM + 60 * MIB + 320 * MIB;
         available.store(threshold - 1, Ordering::SeqCst);
         let next = jobs.admit("next", sample);
         tokio::pin!(next);
@@ -1566,13 +1575,42 @@ mod tests {
     }
 
     #[test]
+    fn admission_keeps_headroom_over_half_the_pending_growth_and_room_for_all_of_it() {
+        let (headroom, reserved) = (MEMORY_HEADROOM, 320 * MIB);
+        // Nothing running: the headroom and the new reservation.
+        assert!(fits(headroom + reserved, 0, 0, reserved));
+        assert!(!fits(headroom + reserved - 1, 0, 0, reserved));
+        // A little pending growth: the headroom stays on top of half of it.
+        let pending = 120 * MIB;
+        assert!(fits(
+            headroom + pending / 2 + reserved,
+            0,
+            pending,
+            reserved
+        ));
+        assert!(!fits(
+            headroom + pending / 2 + reserved - 1,
+            0,
+            pending,
+            reserved
+        ));
+        // A lot of pending growth: all of it must still fit, headroom included.
+        let pending = 640 * MIB;
+        assert!(headroom + pending / 2 + reserved < pending + reserved);
+        assert!(fits(pending + reserved, 0, pending, reserved));
+        assert!(!fits(pending + reserved - 1, 0, pending, reserved));
+        // Preparation buffers count in full.
+        assert!(!fits(headroom + reserved, MIB, 0, reserved));
+    }
+
+    #[test]
     fn reservations_follow_recent_successful_peaks() {
         let mut peaks = VecDeque::new();
         assert_eq!(next_reservation(&peaks), 320 * MIB);
         record_peak(&mut peaks, 200 * MIB);
         assert_eq!(next_reservation(&peaks), 256 * MIB);
         record_peak(&mut peaks, 300 * MIB);
-        assert_eq!(next_reservation(&peaks), 345 * MIB);
+        assert_eq!(next_reservation(&peaks), 300 * MIB);
         record_peak(&mut peaks, 2048 * MIB);
         assert_eq!(next_reservation(&peaks), 1024 * MIB);
         for _ in 0..PEAK_HISTORY {
