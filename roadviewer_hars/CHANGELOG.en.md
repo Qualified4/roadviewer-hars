@@ -1,3 +1,7 @@
+## 2.0.14
+
+- Conversions use memory more aggressively: more of them run at once in the same memory.
+
 ## 2.0.13
 
 - Fixed conversions all stopping after several had started. A conversion now checks memory once when it starts and runs to the end.

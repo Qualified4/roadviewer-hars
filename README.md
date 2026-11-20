@@ -2,7 +2,7 @@
 
 한국어 · [English](README.en.md)
 
-> **이 저장소는 Rust로 다시 구현한 Road Viewer 2.x입니다.** 현재 버전은 **2.0.13**입니다.
+> **이 저장소는 Rust로 다시 구현한 Road Viewer 2.x입니다.** 현재 버전은 **2.0.14**입니다.
 >
 > Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha)의 후속이며, 1.x 저장소에는 더 이상 새 기능이 추가되지 않습니다. Home Assistant 앱 스토어와 사이드바에는 **Road Viewer**로 표시됩니다. 1.x 앱과는 slug가 다른 별도 앱이라 1.x 앱이 자동으로 업데이트되지 않습니다. 1.x에서 옮겨 오는 방법은 [전환·롤백 절차](docs/hars/CUTOVER.md)를 보세요. 확인하지 못한 환경과 남은 위험은 [구현·검증 현황](docs/hars/STATUS.md)에 있습니다.
 >
