@@ -1,5 +1,5 @@
 name: Road Viewer
-version: "2.0.11"
+version: "2.0.12"
 slug: roadviewer_hars
 image: ghcr.io/qualified4/roadviewer-hars
 description: Rust로 다시 구현한 Road Viewer 2.x · Python Road Viewer 1.x의 후속

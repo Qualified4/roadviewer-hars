@@ -264,6 +264,7 @@ async fn camera(
 #[derive(Clone, Copy, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub(crate) enum MemoryPhase {
+    LogRead,
     Video,
     Replay,
     Thumbnail,
