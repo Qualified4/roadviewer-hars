@@ -1167,7 +1167,7 @@ dependencies = [
 
 [[package]]
 name = "roadviewer-hars"
-version = "2.0.10"
+version = "2.0.11"
 dependencies = [
  "anyhow",
  "axum",
