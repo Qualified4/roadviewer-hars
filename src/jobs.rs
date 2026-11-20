@@ -12,7 +12,7 @@ use std::{
     process::Stdio,
     sync::{
         Arc,
-        atomic::{AtomicU64, AtomicUsize, Ordering},
+        atomic::{AtomicU64, Ordering},
     },
     time::Duration,
 };
@@ -27,7 +27,6 @@ pub struct Jobs {
     uploads: Arc<Uploads>,
     active: Mutex<BTreeMap<String, Arc<Notify>>>,
     memory: Mutex<Arc<PhaseReservations>>,
-    waiting_phases: AtomicUsize,
     pub progress: RwLock<BTreeMap<String, Value>>,
 }
 
@@ -53,7 +52,16 @@ impl MemoryPhase {
 #[derive(Default)]
 struct PhaseReservations {
     bytes: AtomicU64,
+    waiting: std::sync::Mutex<Vec<u64>>,
     changed: Notify,
+}
+
+impl PhaseReservations {
+    fn waiting(&self) -> std::sync::MutexGuard<'_, Vec<u64>> {
+        self.waiting
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 }
 
 struct MemoryReservation {
@@ -65,6 +73,7 @@ impl MemoryReservation {
     async fn try_new(
         phases: &tokio::sync::MutexGuard<'_, Arc<PhaseReservations>>,
         bytes: u64,
+        priority: u64,
         only_conversion: bool,
         read_memory: impl std::ops::AsyncFnOnce() -> Option<u64>,
     ) -> Option<Self> {
@@ -72,8 +81,8 @@ impl MemoryReservation {
         // the sample may predate its allocations, so keep its promise for this decision.
         let promised = phases.bytes.load(Ordering::Acquire);
         match read_memory().await {
-            Some(available) if available >= MEMORY_HEADROOM + promised + bytes => {}
-            None if only_conversion && promised == 0 => {}
+            Some(available) if available >= MEMORY_HEADROOM + promised + bytes + priority => {}
+            None if only_conversion && promised == 0 && priority == 0 => {}
             _ => return None,
         }
         phases.bytes.fetch_add(bytes, Ordering::AcqRel);
@@ -91,11 +100,24 @@ impl Drop for MemoryReservation {
     }
 }
 
-struct WaitingPhase<'a>(&'a AtomicUsize);
+struct WaitingPhase<'a> {
+    phases: &'a PhaseReservations,
+    bytes: u64,
+}
+
+impl<'a> WaitingPhase<'a> {
+    fn new(phases: &'a PhaseReservations, bytes: u64) -> Self {
+        phases.waiting().push(bytes);
+        Self { phases, bytes }
+    }
+}
 
 impl Drop for WaitingPhase<'_> {
     fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::Relaxed);
+        let mut waiting = self.phases.waiting();
+        if let Some(index) = waiting.iter().position(|bytes| *bytes == self.bytes) {
+            waiting.swap_remove(index);
+        }
     }
 }
 
@@ -175,7 +197,6 @@ impl Jobs {
             uploads,
             active: Mutex::new(BTreeMap::new()),
             memory: Mutex::new(Arc::new(PhaseReservations::default())),
-            waiting_phases: AtomicUsize::new(0),
             progress: RwLock::new(BTreeMap::new()),
         });
         let ids = jobs
@@ -265,11 +286,12 @@ impl Jobs {
         }
         let idle = active.is_empty();
         drop(active);
-        if self.waiting_phases.load(Ordering::Relaxed) != 0 {
-            return None;
-        }
+        // Leave room for any one already-waiting phase. Its estimate becomes a
+        // reservation only if the phase is granted under this same decision lock.
+        let priority = phases.waiting().iter().copied().max().unwrap_or(0);
         let reservation =
-            MemoryReservation::try_new(&phases, MEMORY_PER_CONVERSION, idle, read_memory).await?;
+            MemoryReservation::try_new(&phases, MEMORY_PER_CONVERSION, priority, idle, read_memory)
+                .await?;
         let cancel = Arc::new(Notify::new());
         self.active
             .lock()
@@ -284,17 +306,15 @@ impl Jobs {
         read_memory: impl std::ops::AsyncFn() -> Option<u64>,
     ) -> Option<MemoryReservation> {
         let optional = phase.is_optional();
-        let _waiting = (!optional).then(|| {
-            self.waiting_phases.fetch_add(1, Ordering::Relaxed);
-            WaitingPhase(&self.waiting_phases)
-        });
         let mut phases = self.memory.lock().await;
         let state = Arc::clone(&phases);
+        let bytes = phase.estimate();
+        let _waiting = (!optional).then(|| WaitingPhase::new(&state, bytes));
         loop {
             let changed = state.changed.notified();
             let alone = self.active.lock().await.len() == 1;
             let reservation =
-                MemoryReservation::try_new(&phases, phase.estimate(), alone, &read_memory).await;
+                MemoryReservation::try_new(&phases, bytes, 0, alone, &read_memory).await;
             // An optional phase gets one attempt. The recording can be published immediately.
             if optional || reservation.is_some() {
                 return reservation;
@@ -1150,6 +1170,61 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn conversion_admission_starts_fifth_when_waiting_phase_also_fits() {
+        let (_fixture, jobs) = open_jobs().await;
+        let available = AtomicU64::new(1861 * MIB);
+        let samples = std::cell::Cell::new(0);
+        let sample = async || {
+            samples.set(samples.get() + 1);
+            Some(available.load(Ordering::Relaxed))
+        };
+        let mut preparing = Vec::new();
+        for record in ["first", "second", "third", "replay"] {
+            preparing.push(jobs.try_start(record, 16, sample).await.unwrap());
+        }
+        drop(preparing.pop().unwrap()); // The Replay worker finished log preparation.
+        assert_eq!(jobs.active.lock().await.len(), 4);
+
+        // Three startups plus a granted Replay leave too little (1861 < 1886).
+        let replay = jobs
+            .reserve_phase(MemoryPhase::Replay, sample)
+            .await
+            .unwrap();
+        assert!(jobs.try_start("fifth", 16, sample).await.is_none());
+        drop(replay);
+
+        // A mandatory Replay request sleeps at lower availability (1500 < 1566).
+        available.store(1500 * MIB, Ordering::Relaxed);
+        let replay = jobs.reserve_phase(MemoryPhase::Replay, sample);
+        tokio::pin!(replay);
+        tokio::select! {
+            biased;
+            _ = &mut replay => panic!("replay fits only after memory recovers"),
+            _ = std::future::ready(()) => {}
+        }
+        available.store(1861 * MIB, Ordering::Relaxed);
+        let before = samples.get();
+        assert!(jobs.try_start("fifth", 16, sample).await.is_none());
+        assert_eq!(
+            samples.get(),
+            before + 1,
+            "must measure even while a phase waits"
+        );
+
+        // With one more startup settled, both fit (1861 >= 1566) with four active.
+        drop(preparing.pop().unwrap());
+        let fifth = jobs.try_start("fifth", 16, sample).await.unwrap();
+        assert_eq!(jobs.active.lock().await.len(), 5);
+        let replay = tokio::time::timeout(Duration::from_secs(2), replay)
+            .await
+            .unwrap()
+            .unwrap();
+        let phases = Arc::clone(&*jobs.memory.lock().await);
+        assert_eq!(phases.bytes.load(Ordering::Relaxed), (3 * 320 + 350) * MIB);
+        drop((fifth, replay, preparing));
+    }
+
+    #[tokio::test]
     async fn conversion_admission_coordinates_later_phases_and_recovers() {
         let (_fixture, jobs) = open_jobs().await;
         for record in ["camera", "replay"] {
@@ -1195,7 +1270,7 @@ mod tests {
                 .is_none(),
             "reused the replay's reservation"
         );
-        assert_eq!(jobs.waiting_phases.load(Ordering::Relaxed), 0);
+        assert!(phases.waiting().is_empty());
         let cancel = jobs.active.lock().await.get("replay").unwrap().clone();
         let stopped = tokio::spawn(async move {
             cancel.notified().await;

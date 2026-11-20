@@ -1,3 +1,7 @@
+## 2.0.11
+
+- The conversion queue leaves enough memory for one waiting required phase and starts the next conversion when there is room for both.
+
 ## 2.0.10
 
 - When there is not enough memory for a thumbnail, the video and drive analysis are published immediately. Thumbnails are still generated when enough memory is available.
