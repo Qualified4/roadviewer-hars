@@ -1,3 +1,8 @@
+## 2.0.13
+
+- Fixed conversions all stopping after several had started. A conversion now checks memory once when it starts and runs to the end.
+- Conversions waiting for memory show as "Waiting for memory".
+
 ## 2.0.12
 
 - Preparing conversion files from Drive reserves 4 MiB per job. Once the files are ready, log decoding starts after it secures a separate 320 MiB reservation.

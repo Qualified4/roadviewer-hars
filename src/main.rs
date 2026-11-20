@@ -128,18 +128,14 @@ async fn run() -> anyhow::Result<()> {
             (4..=5).contains(&args.len()),
             "usage: roadviewer-hars convert-log RLOG NEW_OUTPUT [LABEL]"
         );
-        use roadviewer_hars::convert::{MEMORY_CONTROL, prepare, prepare_with_memory_control};
+        use roadviewer_hars::convert::prepare;
         let source = PathBuf::from(&args[2]);
         let dest = PathBuf::from(&args[3]);
         let label = args.get(4).cloned().unwrap_or_else(|| "recording".into());
         let progress = |stage: &str, percent: f64| {
             println!("{}", serde_json::json!({"stage":stage,"percent":percent}));
         };
-        let result = if std::env::var_os(MEMORY_CONTROL).as_deref() == Some("1".as_ref()) {
-            prepare_with_memory_control(source, dest, label, progress).await
-        } else {
-            prepare(source, dest, label, progress).await
-        };
+        let result = prepare(source, dest, label, progress).await;
         roadviewer_hars::profile::finish();
         result?;
         return Ok(());
