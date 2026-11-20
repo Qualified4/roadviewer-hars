@@ -458,6 +458,7 @@ async fn prepare_impl(
                                 videos.insert(name.to_string(), previous.entry.clone());
                                 carried.push((*name, *mp4, previous));
                                 warnings.push(format!("{warning} (이전 변환 결과 유지)"));
+                                memory.end();
                                 continue;
                             }
                             Err(error) => tracing::warn!(
