@@ -21,9 +21,11 @@ pub struct Jobs {
 }
 
 const MIB: u64 = 1024 * 1024;
-// Representative concurrent conversions peaked at about 350 MiB each, including child workers
-// (docs/hars/PERFORMANCE.md). Allow for larger inputs and leave room for other services.
-const MEMORY_PER_CONVERSION: u64 = 512 * MIB;
+// HAOS reconversions on 2026-11-20 briefly raised app memory by about 300 MiB per job.
+// Earlier process-tree peaks were about 350 MiB per job and 1,467 MiB for four jobs
+// (docs/hars/PERFORMANCE.md). Active jobs also count against the slot limit after their
+// resident memory reduces availability, leaving a buffer for larger or overlapping peaks.
+const MEMORY_PER_CONVERSION: u64 = 320 * MIB;
 const MEMORY_HEADROOM: u64 = 256 * MIB;
 
 fn memory_slots(available: Option<u64>) -> usize {
@@ -942,9 +944,9 @@ mod tests {
             (1024 * MIB).to_string(),
         )
         .unwrap();
-        assert_eq!(slots(), 1);
-        std::fs::write(root.join("memory.max"), "max\n").unwrap();
         assert_eq!(slots(), 2);
+        std::fs::write(root.join("memory.max"), "max\n").unwrap();
+        assert_eq!(slots(), 3);
         assert_eq!(memory_slots(Some(0)), 0);
         assert_eq!(memory_slots(None), 1);
     }
