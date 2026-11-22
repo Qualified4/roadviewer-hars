@@ -529,19 +529,19 @@ function targetAt(points,x){for(let i=1;i<(points?.length||0);i++){const a=point
 // Blinker arrows (>>> / <<<): three per side, each a 6-point outline (back top, top front, tip, bottom front, back bottom,
 // notch). The path chevrons on the video morph into these same outlines (video-overlay.js).
 const BLINKER_SHAPE=[[0,-1],[.65,-1],[1.5,0],[.65,1],[0,1],[.85,0]];
-function blinkerArrows(side,left,right,centerY,anchors=null){
- const size=Math.max(10,Math.min(24,(right-left)/18)),direction=side?1:-1,anchor=anchors?.[side];
+function blinkerArrows(side,left,right,centerY,anchors=null,scale=1){
+ const size=Math.max(10,Math.min(24,(right-left)/18))*scale,direction=side?1:-1,anchor=anchors?.[side];
  const origin=anchor?anchor[0]-direction*size*1.85:side?right-size*3.8:left+size*3.8,y=anchor?anchor[1]:centerY;
  return [0,1,2].map(i=>{const x=origin+direction*i*size*1.1;return BLINKER_SHAPE.map(([px,py])=>[x+direction*px*size,y+py*size])});
 }
 // The light running along the three arrows: arrow i is brightest at its moment of a 1.2 s cycle.
 function blinkerPulse(time,i){if(!motionAllowed())return 1;const phase=((time%1.2)+1.2)%1.2;return .25+.75*Math.max(0,1-Math.abs(phase-(.2+i*.25))/.35)}
-function drawBlinkers(ctx,road,time,left,right,centerY,anchors=null,glow=false){
+function drawBlinkers(ctx,road,time,left,right,centerY,anchors=null,glow=false,scale=1){
  if(!road)return;
  ctx.save();ctx.lineWidth=1.5;ctx.lineJoin='round';ctx.strokeStyle='#a0ffe1';ctx.fillStyle='#62edb9';
  for(const [side,active] of [[0,road.blinkerLeft],[1,road.blinkerRight]]){
   if(!active)continue;
-  blinkerArrows(side,left,right,centerY,anchors).forEach((points,i)=>{
+  blinkerArrows(side,left,right,centerY,anchors,scale).forEach((points,i)=>{
    const pulse=blinkerPulse(time,i);
    ctx.beginPath();points.forEach((p,j)=>j?ctx.lineTo(...p):ctx.moveTo(...p));ctx.closePath();
    ctx.shadowBlur=0;ctx.globalAlpha=.24*pulse;ctx.fill();ctx.shadowColor='#a0ffe1';ctx.shadowBlur=glow?4:0;ctx.globalAlpha=pulse;ctx.stroke();

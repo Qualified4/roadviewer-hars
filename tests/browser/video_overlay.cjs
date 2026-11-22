@@ -331,6 +331,28 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   await page.evaluate(()=>{data.frames[0].roadSignals.acceleration=null});assert.equal(await targetStats(),noBrake,'missing acceleration never invents braking');
   await page.evaluate(()=>{data.frames[0].roadSignals=null;data.frames[0].ccncRoad.target=0;render()});assert(!(await pixels()),'hidden TARGET does not draw a distance line');
   await page.evaluate(()=>{data.frames[0].ccncRoad.blinkerLeft=true;render()});assert(await pixels(),'blinker renders');
+  {
+   const blinkerHeight=()=>page.locator('#videoOverlay').evaluate(c=>{
+    const rgba=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+    let top=c.height,bottom=-1;
+    for(let y=0;y<c.height;y++)for(let i=4*y*c.width+3;i<4*(y+1)*c.width;i+=4){
+     if(rgba[i]>64){top=Math.min(top,y);bottom=y;break}
+    }
+    return Math.max(0,bottom-top+1)/devicePixelRatio;
+   });
+   const originalViewport=page.viewportSize(),phoneHeight=await blinkerHeight();
+   await page.setViewportSize({width:1920,height:1400});
+   await page.evaluate(()=>{setReplayLayout('stack');applyLayoutWidth(1920)});
+   await page.waitForFunction(()=>{
+    const v=document.getElementById('video'),c=document.getElementById('videoOverlay');
+    const videoWidth=Math.min(c.clientWidth,c.clientHeight*v.videoWidth/v.videoHeight);
+    return videoWidth>=1800&&c.width===Math.round(c.clientWidth*devicePixelRatio)&&c.height===Math.round(c.clientHeight*devicePixelRatio);
+   });
+   const desktopHeight=await blinkerHeight();
+   assert(phoneHeight>0&&desktopHeight>=phoneHeight*1.8,`blinker grows with the video (${phoneHeight}px → ${desktopHeight}px)`);
+   await page.setViewportSize(originalViewport);
+   await page.evaluate(()=>{setReplayLayout('auto');syncLayoutWidth()});
+  }
   assert.deepEqual(await page.evaluate(()=>limitRoadPoints([[0,1],[30,2],[60,3]],40)),[[0,1],[30,2],[40,2+1/3]],'plan view clips BSD at the interpolated 40m boundary');
   const labelState=await page.evaluate(()=>{
    const c=document.createElement('canvas');c.width=300;c.height=100;const x=c.getContext('2d');x.globalAlpha=.25;x.shadowBlur=9;

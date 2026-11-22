@@ -456,16 +456,19 @@ let bsdHeight=.8;
   // one (longitudinal control off, lead close), from a small chevron at the bottom of the picture as if coming out of the
   // car; with no chevron at all this runs more slowly.
   // The three arrows go one after another; each eases in and out on a straight path, outline and colour blending.
-  {const arrowLeft=left+12,arrowRight=left+vw-12,arrowY=top+vh*.66,cx=left+vw/2,anchors=[[cx-vw*.16,arrowY],[cx+vw*.16,arrowY]];
-   if(transfer)slots[transfer.to]=blinkerArrows(transfer.from,arrowLeft,arrowRight,arrowY,anchors).map(points=>({points,strength:1,fill:'#62edb9',edge:'#a0ffe1',transfer:true}));
+  {
+   // Scale from the actual picture width, lifting larger arrows to leave room for the path below.
+   const arrowScale=coarse.matches||document.fullscreenElement?1:Math.max(1,Math.min(2,vw/900));
+   const arrowLeft=left+12,arrowRight=left+vw-12,arrowY=top+vh*(.66-.05*(arrowScale-1)),cx=left+vw/2,anchors=[[cx-vw*.16,arrowY],[cx+vw*.16,arrowY]];
+   if(transfer)slots[transfer.to]=blinkerArrows(transfer.from,arrowLeft,arrowRight,arrowY,anchors,arrowScale).map(points=>({points,strength:1,fill:'#62edb9',edge:'#a0ffe1',transfer:true}));
    // A side with no chevron to come from springs out of the car, more slowly.
    {const slow=stateAt(1.3,1.6);for(const side of [0,1])if(!slots[side].some(Boolean)&&side!==transfer?.from){states[side]=slow[side];morph[side]=slow[side].progress;settling[side]=slow[side].settling}}
-   drawBlinkers(context,on('ccncRoad')?{blinkerLeft:morph[0]>=1,blinkerRight:morph[1]>=1}:null,t,arrowLeft,arrowRight,arrowY,anchors,true);
+   drawBlinkers(context,on('ccncRoad')?{blinkerLeft:morph[0]>=1,blinkerRight:morph[1]>=1}:null,t,arrowLeft,arrowRight,arrowY,anchors,true,arrowScale);
    const springFrom=()=>{const y=top+vh*.985,w=vw*.035;return [[cx-w,y+w*.3],[cx-w,y],[cx,y-w*.45],[cx+w,y],[cx+w,y+w*.3],[cx,y-w*.15]]};
    for(const side of [0,1]){
     const progress=morph[side];if(!(progress>0&&progress<1))continue;
     context.save();context.lineWidth=1.5;context.lineJoin='round';
-    blinkerArrows(side,arrowLeft,arrowRight,arrowY,anchors).forEach((target,i)=>{
+    blinkerArrows(side,arrowLeft,arrowRight,arrowY,anchors,arrowScale).forEach((target,i)=>{
      const order=2-i,e=arrowEase(progress,order,settling[side]),pulse=blinkerPulse(t,i);if(e<=0)return;  // not set off yet: still a chevron on the road (or nothing)
      const source=slots[side][chevronOf(i,side)],from=source?.points||springFrom(),start=source?source.strength:0;
      // From the car the arrow first heads straight ahead and then curves out to its place: its centre follows a quadratic

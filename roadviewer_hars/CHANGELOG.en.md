@@ -1,3 +1,7 @@
+## 2.0.17
+
+- Turn signal arrows in the desktop replay overlay grow as the video gets wider.
+
 ## 2.0.16
 
 - Updated the READMEs and user guides to describe current Road Viewer 2.x behavior.
