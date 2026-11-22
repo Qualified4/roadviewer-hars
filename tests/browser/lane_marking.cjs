@@ -74,12 +74,12 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
    });
    const hudAt=time=>page.evaluate(time=>{
     setTime(time,false);
-    const c=$('videoGap'),gear=$('videoGear'),ev=$('videoEv');
+    const c=$('videoGap'),gear=$('videoGear'),ev=$('videoEv'),evStyle=getComputedStyle(ev);
     return {
      bars:[...c.children].map(e=>{const style=getComputedStyle(e);return [style.backgroundColor,style.opacity]}),
      gear:!gear.checkVisibility()?null:[...gear.children].map(e=>{const style=getComputedStyle(e);return [e.textContent,style.color,style.textShadow.includes('rgba(255, 255, 255, 0.4)')]}),
      gearPositions:[...gear.children].map(e=>e.getBoundingClientRect().left),
-     ev:!ev.checkVisibility()?null:[ev.dataset.active,getComputedStyle(ev).color,getComputedStyle(ev).borderTopColor],
+     ev:!ev.checkVisibility()?null:[ev.dataset.active,evStyle.color,evStyle.textShadow.includes('rgba(255, 255, 255, 0.4)'),evStyle.borderTopWidth],
      visible:$('videoDriveHud').checkVisibility()
     };
    },time);
@@ -93,19 +93,26 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
     const [selected,text]=gearStates[i];
     assert.deepEqual(hud.gear,['P','R','N','D'].map(letter=>letter===selected?[text,letter==='R'?orange:white,true]:[letter,grey,false]),`gear highlights at frame ${i}`);
     assert.deepEqual(hud.gearPositions,gearPositions,`gear changes keep the slot positions at frame ${i}`);
-    assert.deepEqual(hud.ev,[String(active),evColor,evColor],`EV text and border at frame ${i}`);
+    assert.deepEqual(hud.ev,[String(active),evColor,active,'0px'],`EV text and glow without border at frame ${i}`);
    }
    const layout=await page.evaluate(()=>{
     const rect=el=>el.getBoundingClientRect();
     const bar=rect($('videoGap').firstElementChild),row=rect($('videoGearRow')),buttons=rect(document.querySelector('.video-tools'));
-    return {rowBelowBars:row.top>bar.bottom,rowAboveControls:row.bottom<buttons.top,left:[bar.left,row.left,buttons.left]};
+    const [gear,step,ev,button]=['videoGear','videoGearStep','videoEv','videoOverlayToggle'].map(id=>getComputedStyle($(id)));
+    return {rowBelowBars:row.top>bar.bottom,rowAboveControls:row.bottom<buttons.top,left:[bar.left,row.left,buttons.left],
+     sizes:[gear,step,ev,button].map(style=>parseFloat(style.fontSize)),weights:[gear.fontWeight,ev.fontWeight]};
    });
    assert(layout.rowBelowBars&&layout.rowAboveControls,'bars, gear and buttons occupy three rows');
    assert(layout.left.every(x=>Math.abs(x-layout.left[2])<2),'rows share the left edge');
+   const [gearSize,stepSize,evSize,buttonSize]=layout.sizes;
+   assert(gearSize>=16.5&&gearSize<=19.5&&gearSize>buttonSize,'the gear text is larger than the overlay button text');
+   assert(Math.abs(stepSize/gearSize-.72)<.01,'the smaller gear step scales with the gear text');
+   assert.equal(evSize,gearSize,'EV and gear text use the same size');
+   assert.deepEqual(layout.weights,['800','800'],'EV and gear text use the same weight');
    await page.evaluate(()=>$('videoOverlayToggle').click());
    assert.equal((await hudAt(.1)).visible,false,'overlay toggle hides the lower HUD');
    await page.evaluate(()=>{ $('videoOverlayToggle').click();delete data.evModeAvailable });
-   assert.equal((await hudAt(.1)).ev,null,'no valid EV signal in the log hides the badge');
+   assert.equal((await hudAt(.1)).ev,null,'no valid EV signal in the log hides EV text');
    await page.evaluate(frames=>{delete data.gearAvailable;data.frames=frames;setTime(0,false)},original);
    const legacy=await hudAt(0);
    assert.deepEqual([legacy.bars[0],legacy.gear,legacy.ev],[[white,'1'],null,null],'old replays keep the white bars');
