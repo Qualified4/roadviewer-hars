@@ -775,23 +775,26 @@ select,.rv-choice-trigger{font-weight:500}
 .replay-page.hud-idle :is(.video-title,.video-tools,.video-fullscreen){opacity:0;pointer-events:none;transition-duration:.3s}
 /* The gap bars and gear row stack above the bottom-left controls. With the controls idle, the two rows
    settle into the corner. --gap-cover lifts them when the transport bar covers the bottom of the picture. */
-.video-gap{--hud-h:36px;position:absolute;left:12px;bottom:12px;z-index:3;display:flex;flex-direction:column;align-items:flex-start;gap:4px;border-radius:999px;pointer-events:none;translate:0 calc(-1 * (var(--hud-h) + 8px + var(--gap-cover,0px)));transition:translate .3s var(--m2-standard,ease),opacity .18s var(--m2-standard,ease)}
+.video-gap{--hud-h:36px;--gear-size:clamp(16.5px,1.875cqw,19.5px);--drive-hud-shadow:0 0 3px rgba(0,0,0,.55);position:absolute;left:12px;bottom:12px;z-index:3;display:flex;flex-direction:column;align-items:flex-start;gap:4px;border-radius:999px;pointer-events:none;translate:0 calc(-1 * (var(--hud-h) + 8px + var(--gap-cover,0px)));transition:translate .3s var(--m2-standard,ease),opacity .18s var(--m2-standard,ease)}
 .video-gap[hidden],.video-gap-bars[hidden],.video-gear-row[hidden]{display:none}
 .video-gap-bars{display:flex;align-items:center;gap:3px;height:22px;padding:0 10px 0 9px}
-.video-gap:has(>.video-gear-row:not([hidden]))>.video-gap-bars{padding-left:0}
-.video-gear-row{display:flex;align-items:baseline;gap:.8em;font-size:clamp(16.5px,1.875cqw,19.5px);font-weight:550;line-height:1.1;color:rgb(255 255 255 / .48)}
+/* Align the skewed bar edge with the ink of the centred P. */
+.video-gap:has(.video-gear-row:not([hidden])>.video-gear:not([hidden]))>.video-gap-bars{padding-left:calc(1.46px + var(--gear-size) * .125)}
+.video-gear-row{display:flex;align-items:baseline;gap:.52em;font-size:var(--gear-size);font-weight:650;line-height:1.1;color:#aaa;text-shadow:var(--drive-hud-shadow)}
 /* The active cells use carrot's mode colours at alpha 200/255. */
-.video-gap-bars i{width:13px;height:8px;border-radius:1.5px;background:#fff;opacity:.35;box-shadow:0 0 3px rgba(0,0,0,.55);transform:skewX(-20deg)}
+.video-gap-bars i{width:13px;height:8px;border-radius:1.5px;background:#fff;opacity:.35;box-shadow:var(--drive-hud-shadow);transform:skewX(-20deg)}
 .video-gap-bars i.is-on{opacity:1;background:var(--gap-fill,#fff)}
 .video-gap-bars[data-driving-mode="1"]{--gap-fill:#00ff00c8}
 .video-gap-bars[data-driving-mode="2"]{--gap-fill:#ffa500c8}
 .video-gap-bars[data-driving-mode="4"]{--gap-fill:#ff0000c8}
-.video-gear{display:grid;grid-template-columns:repeat(3,1ch) 2.6ch;gap:.35em}
+.video-gear{display:grid;grid-template-columns:repeat(4,.76em);gap:.24em;padding-inline-end:.38em;text-align:center}
 .video-gear b{font-weight:inherit}
-.video-gear [data-gear-slot="D"]{white-space:nowrap}
-.video-gear[data-position="P"]>[data-gear-slot="P"],.video-gear[data-position="R"]>[data-gear-slot="R"],.video-gear[data-position="N"]>[data-gear-slot="N"],.video-gear[data-position="D"]>[data-gear-slot="D"]{color:#fff;font-weight:700}
+.video-gear [data-gear-slot="D"]{position:relative}
+.video-gear[data-position="P"]>[data-gear-slot="P"],.video-gear[data-position="R"]>[data-gear-slot="R"],.video-gear[data-position="N"]>[data-gear-slot="N"],.video-gear[data-position="D"]>[data-gear-slot="D"]{color:#fff;font-weight:800}
 .video-gear[data-position="R"]>[data-gear-slot="R"]{color:#ffb257}
-.video-gear small{font-size:.48em;margin-left:.12em;vertical-align:-.15em}
+.video-gear small{position:absolute;inset-inline-start:calc(100% + .125em);bottom:.15em;font-size:.48em;font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Long raw gear values may use the EV gap while keeping both indicators in place. */
+.video-gear:has(+.video-ev:not([hidden])) small{max-width:1.3em;overflow:hidden;text-overflow:ellipsis}
 .video-gear small:empty{display:none}
 .video-ev[data-active="true"]{color:#5be3ae}
 @media(pointer:coarse){.replay-page .video-gap{--hud-h:46px}}
