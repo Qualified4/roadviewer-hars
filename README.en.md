@@ -10,8 +10,6 @@
 >
 > [Implementation and validation status](docs/hars/STATUS.md) · [Side-by-side install, cutover and rollback](docs/hars/CUTOVER.md) · [Real HAOS validation](docs/hars/HAOS-VALIDATION.md) (Korean)
 
-Feature reference: **1.3.18**
-
 Upload openpilot driving logs and front/wide camera recordings to **replay video, road views and vehicle information graphs on the same timeline inside Home Assistant**.
 
 **Camera overlay and vehicle graphs**

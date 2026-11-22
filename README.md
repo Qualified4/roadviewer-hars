@@ -10,8 +10,6 @@
 >
 > [구현·검증 현황](docs/hars/STATUS.md) · [HAOS 병행 설치와 전환·롤백](docs/hars/CUTOVER.md) · [실제 HAOS 검증](docs/hars/HAOS-VALIDATION.md)
 
-현재 기능 안내: **1.3.18**
-
 openpilot 주행 로그와 전방·와이드 카메라 영상을 올리고, **영상·주행 상황·차량 정보 그래프를 같은 시간축으로 확인하는 Home Assistant 앱**입니다.
 
 **영상 겹쳐보기와 차량 정보 그래프**
