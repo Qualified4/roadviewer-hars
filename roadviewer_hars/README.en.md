@@ -6,7 +6,7 @@
 >
 > [Implementation and validation status](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) · [Side-by-side install, cutover and rollback](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md) · [Real HAOS validation](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/HAOS-VALIDATION.md) (Korean)
 
-Current version: **2.0.15**
+Current version: **2.0.16**
 
 Replay and analyze openpilot logs with front/wide camera video inside Home Assistant.
 
@@ -19,16 +19,16 @@ Select the segment's `rlog.zst` with whichever videos you need (`qcamera.ts`, hi
 ## Features
 
 - Synchronized video, road view and vehicle graphs, up to 4× speed
-- Front/wide camera switching and calibrated camera overlays, with a default quality per connection (small qcamera on mobile data, high-quality front on Wi-Fi/wired)
+- Front/wide camera switching and calibrated camera overlays, with a default quality per connection (small qcamera on mobile data, high-quality front on Wi-Fi/wired) and an option to keep the last chosen quality
 - Lanes, model paths, radar points, LF/FF/RF boxes, blind spots and turn signals
 - Compact app bar (start time · 구간 k (i/N), view and ⋯ menus) and a floating playback bar (segment strip, automatic-control/takeover track, bookmark markers)
 - Automatic, side-by-side and stacked layouts with adjustable width; Auto/Light/Dark display mode (the video area stays dark)
 - 24 selectable/reorderable graphs and camera installation information
-- Automatic/manual conversion with memory-aware concurrency and lossless MP4 retention
+- Whole-drive or individual segment conversion, memory-aware concurrency for automatic and manual jobs, a **메모리 대기 중** (Waiting for memory) status, and lossless MP4 retention
 - Later camera attachment, original-format export and log/video downloads
 - Segment tags and scene bookmarks on the bookmark tab
-- GPS route maps: all drives via the Logs tab's **목록 | 지도** (List | Map) switch, a map per drive, the replay **지도** (Map) tab and a small map over the video (OpenFreeMap, no API key); routes of logs kept only on Drive can be filled on request
-- Search, filter chips and route cards grouped by date (thumbnail, start time, segment status bar, automatic-control ratio and takeover count, folded by default) with per-segment storage location chips (local, Drive, NAS); thumbnails and start times of older or archived logs are backfilled in the background
+- GPS route maps: all drives via the Logs tab's **목록 | 지도** (List | Map) switch with drive numbers on list cards, a map per drive, the replay **지도** (Map) tab and a small map over the video (OpenFreeMap, no API key); routes of logs kept only on Drive can be filled on request
+- Search, filter chips and route cards grouped by date (thumbnail, start time, segment status bar, automatic-control ratio and takeover count, folded by default) with per-segment storage location chips (local, Drive, NAS)
 - Per-segment pins, in-list selection mode for bulk tags/download/conversion/removal/deletion, a remove/download/completely-delete ⋯ menu on the replay screen, storage budgets and cleanup
 - Experimental archiving that copies or moves older recordings to Google Drive or a NAS, with Drive connect/disconnect
 - Optional HTTPS device uploads with pairing

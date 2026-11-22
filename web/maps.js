@@ -376,9 +376,11 @@
    }
    if(restoreDrive)restoreDrive();
   }
-  const routeFacts=group=>{
+  const routeFacts=(group,showDriveNumber=false)=>{
    const route=groupRoute(group),date=logDate(group.firstLog),duration=group.logs.reduce((sum,log)=>sum+(Number.isFinite(log.duration)?log.duration:0),0);
-   return {title:date?`${localeDate(date)} ${clockText(date)}`:group.route.title,facts:[kmText(route?.distance_m),duration?durationText(duration):null,`${group.logs.length}개 구간`].filter(Boolean).join(' · ')};
+   const dateTitle=date?`${localeDate(date)} ${clockText(date)}`:null;
+   const title=dateTitle&&showDriveNumber&&group.route.segment!==null?`${group.route.title} · ${dateTitle}`:dateTitle||group.route.title;
+   return {title,facts:[kmText(route?.distance_m),duration?durationText(duration):null,`${group.logs.length}개 구간`].filter(Boolean).join(' · ')};
   };
   // The fold button of a list card over a map (wide screens): folds the card away and back, kept on this browser.
   // Marks the cards of a list that are in sight (.is-seen): only those fade and slide when the list is put away or
@@ -686,7 +688,7 @@
    mapList.querySelector('.log-map-list-count').textContent=`${shown.length}개`;listHandle.querySelector('.drive-map-count').textContent=`주행 목록 ${shown.length}개`;
    if(key===rowsKey)return;rowsKey=key;mapRow.clear();
    mapRows.replaceChildren(...shown.map(({group,route},i)=>{
-    const row=document.createElement('div'),pick=document.createElement('button'),title=document.createElement('b'),facts=document.createElement('span'),info=routeFacts(group);
+    const row=document.createElement('div'),pick=document.createElement('button'),title=document.createElement('b'),facts=document.createElement('span'),info=routeFacts(group,true);
     row.className='map-list-row';row.setAttribute('role','listitem');row.dataset.color=PALETTE[i%PALETTE.length];row.rvGroup=group;
     pick.type='button';pick.className='map-list-pick';pick.dataset.noRipple='';title.textContent=info.title;facts.textContent=info.facts;pick.append(title,facts);
     row.append(pick);mapRow.set(route.key,row);return row;

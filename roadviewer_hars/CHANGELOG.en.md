@@ -1,3 +1,8 @@
+## 2.0.16
+
+- Updated the READMEs and user guides to describe current Road Viewer 2.x behavior.
+- Cards in the all-drives map list now show the drive number alongside the date and time.
+
 ## 2.0.15
 
 - The app description shows the current version.
