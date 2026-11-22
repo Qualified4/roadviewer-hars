@@ -1,3 +1,7 @@
+## 2.0.15
+
+- The app description shows the current version.
+
 ## 2.0.14
 
 - Conversions use memory more aggressively: more of them run at once in the same memory.
