@@ -118,9 +118,10 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
     assert(button.height>=44&&button.x+button.width<=play.x&&play.x-(button.x+button.width)<=12&&Math.abs(button.y+button.height/2-play.y-play.height/2)<2,JSON.stringify({button,play}));
     assert.equal(await card.locator('.route-map-button').innerText(),'지도');
     // The empty left of the actions row folds the card (지도 sits beside 재생).
-    {const row=await card.locator('.log-route-actions').boundingBox(),open=await card.evaluate(e=>e.open);await page.touchscreen.tap(row.x+12,row.y+row.height/2);
+    {const actions=card.locator('.log-route-actions'),open=await card.evaluate(e=>e.open);
+     const position={x:12,y:(await actions.boundingBox()).height/2};await actions.tap({position});
      await page.waitForFunction(([id,was])=>document.querySelector(`.log-route[data-route*="${id}"]`).open!==was,['00000395',open]);
-     await page.touchscreen.tap(row.x+12,row.y+row.height/2);await page.waitForFunction(([id,was])=>document.querySelector(`.log-route[data-route*="${id}"]`).open===was,['00000395',open])}
+     await actions.tap({position});await page.waitForFunction(([id,was])=>document.querySelector(`.log-route[data-route*="${id}"]`).open===was,['00000395',open])}
     assert(await card.locator('.route-inset').isHidden()&&await card.locator('.route-strip').isHidden(),'phones: nothing in the thumbnail');
     if(shots){await card.evaluate(e=>e.scrollIntoView({block:'center'}));await settleLayout(page);await card.screenshot({path:path.join(shots,`card-phone-${scheme}.png`)})}}
    assert.equal(tiles.length,0,'the shape draws no tiles');
