@@ -269,12 +269,18 @@ function expandFlat(frame,g,grid){
   else if(frame[key]===undefined&&g[key])frame[key]=lines?g[key].map(flatLine):flatLine(g[key]);
  }
 }
+const DRIVE_HUD_FIELDS=['drivingMode','gearShifter','gearStep','evModeActive','evModeValid'];
 function expandReplayData(replay){
  overlayGeometryCache.clear();
  // Older conversions warned about skipped new event types; those never affect the replay.
  if(Array.isArray(replay.warnings))replay.warnings=replay.warnings.filter(w=>!String(w).startsWith('지원하지 않는 새 로그 이벤트'));
- const infos=replay.cameraInfos,v2=replay.replayV===2,grid=replay.laneX||[];let odometer=0,previous=null;
+ const infos=replay.cameraInfos,v2=replay.replayV===2,grid=replay.laneX||[],driveHud={};let odometer=0,previous=null;
  for(const frame of replay.frames){
+  // The replay stores these values on change. Zero, 'unknown' and false clear a held value.
+  for(const key of DRIVE_HUD_FIELDS){
+   if(Object.hasOwn(frame,key))driveHud[key]=frame[key];
+   else if(Object.hasOwn(driveHud,key))frame[key]=driveHud[key];
+  }
   // Distance travelled, for lane dashes that move with the road.
   if(previous&&Number.isFinite(previous.egoSpeedKph)&&frame.t>previous.t&&frame.t-previous.t<1)odometer+=previous.egoSpeedKph/3.6*(frame.t-previous.t);
   frame.odometer=odometer;previous=frame;
@@ -804,6 +810,37 @@ function paintBlindspotWall(ctx,bottom,top,amount,time,glow=false){
 
 let modelPathWidth=1.86;
 try{const saved=localStorage.getItem('roadviewer-path-width');if(saved!==null&&Number.isFinite(Number(saved)))modelPathWidth=Math.max(1,Math.min(3,Number(saved)))}catch{}
+const GEAR_LETTERS={park:'P',reverse:'R',neutral:'N',drive:'D',sport:'S',low:'L',brake:'B',eco:'E',manumatic:'M'};
+function renderDriveHud(frame,available){
+ const hud=$('videoDriveHud');
+ hud.hidden=!available||$('videoOverlayToggle').getAttribute('aria-pressed')!=='true';
+ if(hud.hidden)return;
+ const chip=$('videoGap'),gap=$('gapLevel').checked&&[1,2,3,4].includes(frame.gap)?frame.gap:0;
+ chip.hidden=!gap;
+ if(gap){
+  const mode=String(frame.drivingMode??0);
+  if(chip.dataset.drivingMode!==mode)chip.dataset.drivingMode=mode;
+  if(chip.dataset.level!==String(gap)){chip.dataset.level=gap;chip.title=`차간 거리 ${gap}단계 (4단계 중)`;chip.setAttribute('aria-label',chip.title);[...chip.children].forEach((cell,i)=>cell.classList.toggle('is-on',i<gap))}
+ }
+ const gear=$('videoGear'),ev=$('videoEv');
+ gear.hidden=data.gearAvailable!==true;
+ ev.hidden=data.evModeAvailable!==true;
+ $('videoGearRow').hidden=gear.hidden&&ev.hidden;
+ if(!gear.hidden){
+  const letter=Object.hasOwn(GEAR_LETTERS,frame.gearShifter)?GEAR_LETTERS[frame.gearShifter]:'';
+  const step=$('videoGearStep'),stepText=['D','S','M'].includes(letter)&&frame.gearStep>=1?String(frame.gearStep):'';
+  if(gear.dataset.gear!==letter||step.textContent!==stepText){
+   const slot=['P','R','N'].includes(letter)?letter:letter?'D':'';
+   gear.dataset.gear=letter;gear.dataset.position=slot;
+   $('videoGearLetter').textContent=slot==='D'?letter:'D';step.textContent=stepText;
+   gear.setAttribute('aria-label',letter?`기어 ${letter}${stepText}`:'기어 확인 불가');
+  }
+ }
+ const active=String(frame.evModeValid===true&&frame.evModeActive===true);
+ if(!ev.hidden&&ev.dataset.active!==active){
+  ev.dataset.active=active;ev.setAttribute('aria-label',`EV 모드 ${active==='true'?'켜짐':'꺼짐'}`);
+ }
+}
 let renderedFrame='',telemetryAt=-Infinity;
 function render(lazy){
  // Playback (lazy) updates the vehicle graphs at most 30 times a second, whatever the display rate.
@@ -958,9 +995,7 @@ function render(lazy){
  renderRadarValues(f,valid,rawTargets,rawVisible);
  renderSteering(f);
  $('egoSpeed').textContent=frameAvailable(f)&&Number.isFinite(f.egoSpeedKph)?f.egoSpeedKph.toFixed(1):'—';
- // Following-distance setting (frame.gap, 1..4): four cells over the video's bottom-left corner, as many lit as the level.
- {const chip=$('videoGap'),gap=frameAvailable(f)&&$('gapLevel').checked&&[1,2,3,4].includes(f.gap)?f.gap:0;chip.hidden=!gap;
-  if(gap&&chip.dataset.level!==String(gap)){chip.dataset.level=gap;chip.title=`차간 거리 ${gap}단계 (4단계 중)`;chip.setAttribute('aria-label',chip.title);[...chip.children].forEach((cell,i)=>cell.classList.toggle('is-on',i<gap))}}
+ renderDriveHud(f,frameAvailable(f));
  if(valid&&f.selected)length($('lead'),f.selected.x,1,false);else $('lead').textContent='앞차 미감지';$('lead').title=f.selected?(f.selected.radar?'레이더 사용':'비전 기반'):'';$('frame').textContent=frameAvailable(f)?'FRAME '+f.id:'FRAME —';
 }
 // Folded details keep their rows untouched. Open tables retain row/cell identity across model frames.

@@ -99,7 +99,7 @@ Node 22가 PATH에 있어야 한다(`--node`로 지정할 수도 있다). 종료
 
 - **스크린샷.** Node를 `--require tests/browser/failure_capture.cjs`로 띄운다. 단언 실패나 Playwright 시간 초과가 생기면, 테스트의 `finally`가 `browser.close()`를 부를 때 열린 페이지마다 `screenshots/page-N.png`과 `failure.txt`를 남긴다. 오류 객체의 생성에 접근자를 걸 뿐 테스트의 호출을 감싸지 않으므로 스택과 타이밍은 그대로다. 다른 오류만으로 실패하면 스크린샷이 없다.
 - **trace.** 판정이 끝난 뒤 게이트를 실패시킨 항목만 같은 조건으로 한 번 더 돌린다. 이때 `HARS_TRACE_DIR`로 trace를 켠다(`collect/trace/trace-N.zip`). 이 재실행은 `collection_reruns`에만 적고 판정에 쓰지 않는다.
-- **CI 아티팩트.** 묶음마다 항상 `browser-summary-N`(`summary.json` + `exit-code`)을 남긴다. 묶음이 성공하지 못하면(실패·시간 초과·취소) `browser-artifacts-N`(산출물 폴더 전체)을 남긴다. 보존 기간은 7일이다. 집계 결과는 `browser-gate`다.
+- **CI 아티팩트.** 묶음마다 `browser-summary-N-attempt-M`(`summary.json` + `exit-code`)을 남긴다. M은 GitHub Actions 실행 시도 번호다. 묶음이 성공하지 못하면(실패·시간 초과·취소) `browser-artifacts-N`(산출물 폴더 전체)을 남긴다. 보존 기간은 7일이다. 집계 결과는 `browser-gate`다.
 - **비밀값·좌표.** fixture는 합성 데이터뿐이다. 서버형 테스트의 Drive는 `fake_drive.py`이고, 토큰은 테스트가 만든 가짜 값이다. HARS 데이터 폴더는 테스트마다 새 임시 폴더다.
 
 ## 실행기 구조
@@ -125,7 +125,7 @@ Node 22가 PATH에 있어야 한다(`--node`로 지정할 수도 있다). 종료
 | 작업 | 하는 일 |
 |---|---|
 | `Browser shard N`(N = 1~9) | `browser-groups.json`의 `gN` 하나를 직렬로 돈다. matrix는 `fail-fast: false`, 작업 상한은 20분이다. Node 22.13.1과 `npm ci`(Playwright 1.64.1)를 쓰고, `chromium-headless-shell`만 설치한다. 공유 라이브러리는 `ldd`로 확인한다. sysctl로 AppArmor 제한을 푼 뒤 `unshare -rn` 안에서 `--isolation-check`를 돌린다. 실행기 종료 코드는 `exit-code`에 적는다 |
-| `Browser checks` | `test_gate_rules.py`(게이트 데이터·판정 규칙)를 돌린다. 그다음 `browser-summary-1..9`를 받아 `--aggregate`로 다시 판정한다. 이 결과는 `HARS required`(필수 검사 이름은 이것 하나다)가 요구한다 |
+| `Browser checks` | `test_gate_rules.py`(게이트 데이터·판정 규칙)를 돌린다. 그다음 9개 묶음 각각의 최신 시도 요약을 받아 `--aggregate`로 다시 판정한다. 이 결과는 `HARS required`(필수 검사 이름은 이것 하나다)가 요구한다 |
 
 묶음은 이전에 5개였다(두 그룹씩). 러너에서 84/164/168/169/174초로 고르지 않았고, 가장 긴 경로가 build 62초 + 174초였다. 그래서 한 그룹에 묶음 하나로 바꿨다. `test_gate_rules.py`는 matrix가 manifest 그룹을 각각 정확히 한 번 부르는지 확인한다.
 

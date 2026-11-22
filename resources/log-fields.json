@@ -2,6 +2,10 @@
   "carState": {
     "vEgo": null,
     "vEgoCluster": null,
+    "gearShifter": null,
+    "gearStep": null,
+    "evModeActive": null,
+    "evModeValid": null,
     "cruiseState": {
       "speed": null,
       "enabled": null,
@@ -177,6 +181,10 @@
       "radarSource": null,
       "trackState": null
     }
+  },
+  "longitudinalPlan": {
+    "desiredDistance": null,
+    "myDrivingMode": null
   },
   "qRoadEncodeIdx": {
     "frameId": null,

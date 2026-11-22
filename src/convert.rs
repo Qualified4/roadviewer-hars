@@ -495,12 +495,19 @@ pub async fn prepare(
         let mut summary=json!({"duration":duration,"warnings":warnings,"model_frames":frames.len(),"video":video,"videos":videos,"drive_summary":drive,"replay_v":2});
         summary.as_object_mut().unwrap().extend(decoded.starts.summary().as_object().unwrap().clone());
         summary.as_object_mut().unwrap().extend(track_fields.as_object().unwrap().clone());
+        let car_states=decoded.streams.get("carState").map(Vec::as_slice).unwrap_or_default();
+        let gear_available=car_states.iter().any(|row|
+            row.valid && matches!(row.value["gearShifter"].as_str(), Some(gear) if gear != "unknown")
+        );
+        let ev_mode_available=car_states.iter().any(|row| row.valid && row.value["evModeValid"] == true);
         let counts=std::mem::take(&mut decoded.counts);
         drop(decoded);
         let mut data=json!({"route":label,"key":&store::sha(cache_seed)[..20],"duration":duration,"logStart":log_start,"logEnd":log_end,"video":video,"videos":videos,"defaultVideo":default_video,"warnings":warnings,"counts":counts});
         // json!(frames) serializes a borrowed value and clones the entire replay.
         // Transfer ownership instead; compact the sole frame tree in place.
         data["frames"]=Value::Array(frames);
+        if gear_available {data["gearAvailable"]=json!(true);}
+        if ev_mode_available {data["evModeAvailable"]=json!(true);}
         replay::compact(&mut data);
         {let _p=crate::profile::Scope::new("replay_save");logs::write_gzip(&target.join("data.json.gz"),&data)?;}
         Ok(summary)
