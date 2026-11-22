@@ -780,7 +780,7 @@ select,.rv-choice-trigger{font-weight:500}
 .video-gap-bars{display:flex;align-items:center;gap:3px;height:22px;padding:0 10px 0 9px}
 /* Align the skewed bar edge with the ink of the centred P. */
 .video-gap:has(.video-gear-row:not([hidden])>.video-gear:not([hidden]))>.video-gap-bars{padding-left:calc(1.46px + var(--gear-size) * .125)}
-.video-gear-row{display:flex;align-items:baseline;gap:.52em;font-size:var(--gear-size);font-weight:650;line-height:1.1;color:#aaa;text-shadow:var(--drive-hud-shadow)}
+.video-gear-row{display:flex;align-items:baseline;gap:.52em;font-size:var(--gear-size);font-weight:650;line-height:1.1;color:rgb(255 255 255 / .35);text-shadow:var(--drive-hud-shadow)}
 /* The active cells use carrot's mode colours at alpha 200/255. */
 .video-gap-bars i{width:13px;height:8px;border-radius:1.5px;background:#fff;opacity:.35;box-shadow:var(--drive-hud-shadow);transform:skewX(-20deg)}
 .video-gap-bars i.is-on{opacity:1;background:var(--gap-fill,#fff)}
@@ -792,7 +792,7 @@ select,.rv-choice-trigger{font-weight:500}
 .video-gear [data-gear-slot="D"]{position:relative}
 .video-gear[data-position="P"]>[data-gear-slot="P"],.video-gear[data-position="R"]>[data-gear-slot="R"],.video-gear[data-position="N"]>[data-gear-slot="N"],.video-gear[data-position="D"]>[data-gear-slot="D"]{color:#fff;font-weight:800}
 .video-gear[data-position="R"]>[data-gear-slot="R"]{color:#ffb257}
-.video-gear small{position:absolute;inset-inline-start:calc(100% + .125em);bottom:.15em;font-size:.48em;font-variant-numeric:tabular-nums;white-space:nowrap}
+.video-gear small{position:absolute;inset-inline-start:calc(100% + .02em);bottom:-.025em;font-size:.48em;font-variant-numeric:tabular-nums;white-space:nowrap}
 /* Long raw gear values may use the EV gap while keeping both indicators in place. */
 .video-gear:has(+.video-ev:not([hidden])) small{max-width:1.3em;overflow:hidden;text-overflow:ellipsis}
 .video-gear small:empty{display:none}
