@@ -3,13 +3,13 @@
 ## 원본과 범위
 
 - Python Road Viewer `main`: `d3de13472ea242dab9866d485b5777ad67d5b1dd`, 버전 1.3.18. 프런트엔드 기능 기준: Python Road Viewer 1.3.18(`d3de134`). 서버 API·분석 코드는 이전 보존 기준 1.3.16(`71add1a0`)과 같다(`git diff 71add1a d3de134 -- 'roadviewer/app/*.py'` 변경 없음). 1.3.16 → 1.3.18의 변경은 웹 파일(`roadviewer/app/web/`), 그 브라우저 테스트, 버전·문서뿐이다.
-- 웹 파일은 보존 원본 그대로 제공한다. HARS가 페이지를 내보낼 때만 원본 릴리스 번호(`library.html`의 `assets/style.css?v=` 값, Python `server.page_response`가 읽는 곳)를 자산 주소의 `?v=`와 버전 표시에서 HARS 버전으로 바꾼다. 제품 이름 `Road Viewer`는 바꾸지 않는다(`src/http.rs` `page_html`, 검사 `tests/page_version.rs`).
+- 웹 파일은 `web/`에서 관리한다. HARS가 페이지를 내보낼 때는 템플릿 릴리스 번호(`library.html`의 `assets/style.css?v=` 값, Python `server.page_response`가 읽는 곳)를 자산 주소의 `?v=`와 버전 표시에서 HARS 버전으로 바꾼다. 제품 이름 `Road Viewer`는 바꾸지 않는다(`src/http.rs` `page_html`, 검사 `tests/page_version.rs`).
 - openpilot `Qualified4/openpilot`, `ccnc-hda1`: `5c2a8c7f6e14dac82678a390e408ef7a9c73eefa`.
 - 클라이언트 계약: `openpilot/selfdrive/carrot/server/road_viewer/client.py`, `uploader.py`.
 - Git 이력은 원본 커밋의 자손으로 유지한다. 원본 태그·브랜치·릴리스·Actions·이미지는 변경하거나 복제 게시하지 않는다.
-- 원본 코드와 스키마 라이선스는 `LICENSE`, `reference/python/roadviewer/schema/OPENPILOT-LICENSE`에 보존한다.
-- 코드에서 추출한 전체 모듈·라우트·테스트 목록은 `inventory.json`에 있다. 정적 추출 도구: `scripts/inventory.py`.
-- Supervisor는 하위 폴더의 앱 설정도 재귀 탐색하므로 원본 앱 설정은 내용 그대로 `reference/python/roadviewer/config.yaml.reference`에 보존한다. HARS 저장소에서 발견되는 앱 설정은 `roadviewer_hars/config.yaml` 하나뿐인지 검사한다. 근거: [공식 Supervisor 탐색 구현](https://github.com/home-assistant/supervisor/blob/main/supervisor/store/data.py).
+- 원본 코드와 스키마 라이선스는 `LICENSE`, `resources/schema/OPENPILOT-LICENSE`에 보존한다.
+- Python 1.3.18의 이식 기준 모듈·라우트·테스트 목록은 [inventory.json](inventory.json)에 기록했다.
+- Supervisor는 하위 폴더의 앱 설정도 재귀 탐색한다. 저장소에서 발견되는 앱 설정은 `roadviewer_hars/config.yaml` 하나이며, `scripts/check_release.py`가 이를 검사한다. 근거: [공식 Supervisor 탐색 구현](https://github.com/home-assistant/supervisor/blob/main/supervisor/store/data.py).
 
 ## 실행 경계
 

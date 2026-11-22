@@ -1,5 +1,7 @@
 # Thumbnail decoding without FFmpeg (2.0.0-alpha.4, step 2)
 
+The retired comparison and measurement scripts cited here are available in the [pre-cleanup Git tree](https://github.com/Qualified4/roadviewer-hars/tree/284efa5b0932c918f8f52bee616f216650b23c52/integration).
+
 <!-- toc -->
 **Contents**
 
@@ -252,12 +254,12 @@ list's `thumbnail`, `thumbnail_score`, `thumbnail_version` fields were equal to 
 
 Branch `perf/thumbnail` from `b94d8a4`. Measurements are in
 `docs/hars/measurements/thumbnail-performance-2026-11-17.json`; the tools are
-`integration/thumbnail_*.py`. All on x86-64 (WSL Ubuntu 24.04, 16 logical CPUs), warm page cache,
+`thumbnail_*.py`. All on x86-64 (WSL Ubuntu 24.04, 16 logical CPUs), warm page cache,
 inputs copied to the local ext4 disk.
 
 ### Where the time went (alpha.4, before)
 
-Stage timings from a measurement-only build (`integration/thumbnail_instrument.py` applies
+Stage timings from a measurement-only build (`thumbnail_instrument.py` applies
 `profile::Scope`s to a copy of the tree; the product tree has none), median of 5 runs:
 
 | stage | H.264 qcamera (3 inputs) | HEVC fcamera (3 inputs) |
@@ -350,7 +352,7 @@ camera files have an IDR picture every 15 samples (qcamera, 0.75 s) and every 20
 | 85 thumbnails (74 qcamera of 13 + 14 + 47 segments, 11 HEVC fcamera samples) vs the alpha.4 release binary | exit, stdout (second, score), `thumbnail.json`, JPEG size and JPEG bytes 85/85 equal; the five scaled candidates and the levelled picture before JPEG (measurement build) 85/85 equal; every picture the new worker outputs equals the alpha.4 picture of the same time (4,052 output pictures; alpha.4 output 8,622) |
 | 36 videos (13 converted qcamera, 6 + 6 qcamera and 6 + 5 fcamera samples), 140-packet window | 5,004/5,004 output pictures have the MD5 of `ffmpeg -threads 1` (139 per video: the product path withholds the 140th sample's picture, as before; the earlier count of 5,040 included it from a separate harness) |
 | the same 36, pictures a thumbnail run outputs | 1,265/1,265 equal to FFmpeg's. Pictures decoded only to be skipped or flushed away are not output and not compared |
-| 40 failure cases (`integration/thumbnail_faults.py`, fixed seeds), `prlimit --as=2147483648` | 40/40 same outcome and same result and JPEG as alpha.4, 18 thumbnails made by each, panics 0, killed / deadline 0, files left after a failure 0; largest peak RSS 121.0 MiB (alpha.4) / 121.7 MiB (new), the 4096x2160 HEVC case |
+| 40 failure cases (`thumbnail_faults.py`, fixed seeds), `prlimit --as=2147483648` | 40/40 same outcome and same result and JPEG as alpha.4, 18 thumbnails made by each, panics 0, killed / deadline 0, files left after a failure 0; largest peak RSS 121.0 MiB (alpha.4) / 121.7 MiB (new), the 4096x2160 HEVC case |
 | unit test | `skipping_to_an_idr_picture_gives_the_pictures_of_decoding_every_sample` (H.264 GOP 15, HEVC GOP 20, wanted times between IDR pictures, on one, at the window's end) |
 
 The 40 cases were rebuilt from the list above because the first scripts were removed; the
@@ -478,11 +480,11 @@ parameter-set parsers during the check:
 | check | result |
 |---|---|
 | the review's four inputs (plus its controls and the second junk-NAL variant), `prlimit --as=2147483648` | 4/4 (9/9 with the others) same second, score, JSON and JPEG bytes as `b94d8a4`; `8800338` differed on all four |
-| differential fuzzing, `integration/thumbnail_differential.py`, seed 20261117: 300 H.264 + 300 HEVC damaged inputs from 2 synthetic and 2 real camera files per codec (bit flips, NAL units deleted, duplicated, reordered, samples swapped, slices deleted, parameter sets put in band intact or damaged or with trailing zeros, junk and rewritten NAL headers, boxes renamed, files cut) | 600/600 same exit status, output line, `thumbnail.json` and JPEG bytes; 500 made a thumbnail in both, 100 failed in both. The same 600 cases against `8800338`: 3 differ (two HEVC with a NAL unit deleted, one with a rewritten NAL header and a parameter set in band), so the fuzzer does reach the kind of input the review found, if rarely |
+| differential fuzzing, `thumbnail_differential.py`, seed 20261117: 300 H.264 + 300 HEVC damaged inputs from 2 synthetic and 2 real camera files per codec (bit flips, NAL units deleted, duplicated, reordered, samples swapped, slices deleted, parameter sets put in band intact or damaged or with trailing zeros, junk and rewritten NAL headers, boxes renamed, files cut) | 600/600 same exit status, output line, `thumbnail.json` and JPEG bytes; 500 made a thumbnail in both, 100 failed in both. The same 600 cases against `8800338`: 3 differ (two HEVC with a NAL unit deleted, one with a rewritten NAL header and a parameter set in band), so the fuzzer does reach the kind of input the review found, if rarely |
 | 85 thumbnails, as before | 85/85 exit, stdout, JSON, size, JPEG bytes, candidates and levelled picture equal; 2,918 pictures output, each equal to the alpha.4 picture of its time (alpha.4: 8,622) |
 | 36 videos against `ffmpeg -threads 1` | window 5,004/5,004 MD5 equal; pictures a thumbnail run outputs 1,040/1,040 |
 | 40 failure cases | 40/40 same outcome, result and JPEG; 18 made by each; panics 0; killed 0; files left 0; peak RSS 119.1 / 119.5 MiB (`b94d8a4` / new) |
-| `integration/real_conversion_compare.py`, 13 original segments | 13/13 without differences |
+| `real_conversion_compare.py`, 13 original segments | 13/13 without differences |
 
 Speed after the fixes, worker spawn to exit, median (range) of 7 alternating rounds of the three
 binaries after one warmup, inputs copied to local ext4, load 0.53 -> 0.93:
@@ -656,7 +658,7 @@ Fixes for the review's other points:
 - The H.264 `redundant_pic_cnt_present_flag` refusal is kept, with its reason in the code:
   `rusty_h264` drops a redundant slice having changed only its POC state, which an IDR picture
   resets, so it looks unnecessary, but no stream with redundant slices was ever compared.
-- `integration/thumbnail_differential.py --synthetic DIR` adds seeds with other encoder structure
+- `thumbnail_differential.py --synthetic DIR` adds seeds with other encoder structure
   (H.264 `ref=4`, `ref=16`, `slices=4`, 1920x1080 `ref=4`; HEVC `slices=4`), and a change that
   inserts a NAL unit other than a slice with the forbidden bit set (H.264 SEI, AUD, filler; HEVC
   AUD, filler, prefix and suffix SEI). 4096x2160 is checked with the fixed inputs above, not fuzzed.
@@ -677,7 +679,7 @@ Results on `df2ed8e` (code as `bdd9d7d`), against `b94d8a4`:
 | 85 thumbnails | 85/85 exit, stdout, JSON, size, JPEG bytes, candidates and levelled picture equal; 2,918 pictures output, each equal to the alpha.4 picture of its time |
 | 36 videos against `ffmpeg -threads 1` | window 5,004/5,004; pictures a thumbnail run outputs 1,040/1,040 |
 | 40 failure cases | 40/40 same outcome, result and JPEG; panics 0; peak RSS 118.5 / 120.2 MiB |
-| `integration/real_conversion_compare.py`, 13 original segments | 13/13 without differences, 15,600 frames |
+| `real_conversion_compare.py`, 13 original segments | 13/13 without differences, 15,600 frames |
 
 Speed, worker spawn to exit, median (range) of 7 alternating rounds of `b94d8a4`, `d2637b2` and
 the new binary after one warmup, inputs on local ext4, load 0.90 -> 1.04:

@@ -1,5 +1,7 @@
 # API 예비 측정
 
+이 문서에 기록한 이식용 비교·측정 도구는 [정리 전 Git 트리](https://github.com/Qualified4/roadviewer-hars/tree/284efa5b0932c918f8f52bee616f216650b23c52/integration)에 있다.
+
 **전체 기능 동등성 기준의 성능 비교는 아직 아니다.** Rust 목록에는 일부 파생 필드·아카이브 처리가 빠져 있고 응답 크기도 더 작다. 아래 수치를 제품 전체의 개선율로 사용하면 안 된다. 로그 변환·영상 처리·실장치 업로드·HAOS 성능은 별도 검증이 필요하다.
 
 측정 원본은 Python `71add1a0`(1.3.16), Rust **`8b30ab7`** release 빌드다. 이후 요청 ID 전파·진행률 JSON 키·경로 사전 검증을 수정했으며, 아래 숫자는 그 이후 커밋의 재측정 결과가 아니다.
@@ -23,7 +25,7 @@ RSS는 Gunicorn master/worker를 포함한 프로세스 트리 합계로, 공유
 
 Rust는 각 조각을 디스크에 동기화한 뒤 응답하며 Python 원본은 조각별 fsync를 하지 않는다. 네트워크/Ingress/장치가 없는 loopback 시험의 실패 0건은 실환경 연결 안정성의 증명이 아니다. 짧은 1회 시험이므로 tail latency의 재현성도 확정하지 않는다.
 
-원시 결과: [api-2026-11-15.json](measurements/api-2026-11-15.json). 재현 도구는 `integration/benchmark_api.py`다. 추가 비교는 전체 변환·아카이빙과 실제 데이터 동등성을 맞춘 뒤 진행해야 한다.
+원시 결과: [api-2026-11-15.json](measurements/api-2026-11-15.json). 재현 도구는 `benchmark_api.py`다. 추가 비교는 전체 변환·아카이빙과 실제 데이터 동등성을 맞춘 뒤 진행해야 한다.
 
 ## 실제47구간 변환 관측 (2026-11-15)
 
@@ -52,7 +54,7 @@ Rust는 각 조각을 디스크에 동기화한 뒤 응답하며 Python 원본�
 
 Rust의 불필요 복사는 줄었으나 Python보다 빠르거나 메모리가 적다고 주장하지 않는다. 20ms 샘플의 프로세스트리 RSS 합계(공유 페이지 중복 가능), 구간별1회 관측이다. profiler 자체 CPU는 대상 CPU에서 제외한다. 총CPU는 대기 회수된 자식/후손 rusage, 단계CPU는 짧은 자식 누락이 가능한 관측 하한이며 Python/Rust 단계 분할도 다르다. 단계 수치는 JSON에 보존했지만 서로 같은 단계의 직접 비교로 사용하지 않는다. 독립자식검사·JSON동적표현/압축의 비용은 추가 최적화 대상이다.
 
-[수정 전](measurements/conversion-profile-before-2026-11-15.json), [수정 후·Python 기준 재사용](measurements/conversion-profile-after-2026-11-15.json). 재현 도구는 `integration/profile_conversion.py`다.
+[수정 전](measurements/conversion-profile-before-2026-11-15.json), [수정 후·Python 기준 재사용](measurements/conversion-profile-after-2026-11-15.json). 재현 도구는 `profile_conversion.py`다.
 
 ## 변환 병목 최적화와 반복 측정 (2026-11-15)
 
@@ -232,7 +234,7 @@ HEVC에서 기존 FFmpeg6 출력은 샘플 안의 VPS/SPS/PPS와 hvcC를 함께 
 
 기준 소스 `d849d10`. 같은 실행에서 세 구현을 교차 측정했다. **Rust(순수 엔진)은 FFmpeg 없이 리먹싱하는 실험 구현**(`--features pure-remux`, 기본 꺼짐)이며 제품 변환 경로에 연결되어 있지 않다. 따라서 이 표는 **영상 리먹싱 단계만**의 비교다. 로그 변환·썸네일·업로드를 포함한 전체 변환 시간의 비교가 아니다.
 
-조건: WSL2 Ubuntu 24.04 x86_64, 16 logical CPU, Rust 1.100 release, 시스템 FFmpeg 6.1.1, PyAV 16.1.0. 입력은 원본 형식 13구간의 영상 26개(NTFS drvfs, 읽기 전용), 출력은 ext4. 구현별 warmup 1회 뒤 순서를 회전·역순 교차해 영상마다 5회, 표본은 26영상 × 3구현 × 5회 = 390개다. 세 구현 모두 검증 포함 작업(입력 압축 그림 해시, 리먹싱, 출력 검사)이다. 모든 출력은 측정 구간 밖에서 Python 출력과 PTS/DTS(1e-6초), 키프레임 인덱스, 압축 그림·decoder header 서명을 대조했고 390개 전부 통과했다. 도구는 `integration/benchmark_remux.py`이며 순수 엔진은 `remux`를 `__pure-remux`로 바꿔 부르는 한 줄 sh wrapper를 거친다(wrapper의 exec 비용이 순수 엔진 쪽에 포함된다).
+조건: WSL2 Ubuntu 24.04 x86_64, 16 logical CPU, Rust 1.100 release, 시스템 FFmpeg 6.1.1, PyAV 16.1.0. 입력은 원본 형식 13구간의 영상 26개(NTFS drvfs, 읽기 전용), 출력은 ext4. 구현별 warmup 1회 뒤 순서를 회전·역순 교차해 영상마다 5회, 표본은 26영상 × 3구현 × 5회 = 390개다. 세 구현 모두 검증 포함 작업(입력 압축 그림 해시, 리먹싱, 출력 검사)이다. 모든 출력은 측정 구간 밖에서 Python 출력과 PTS/DTS(1e-6초), 키프레임 인덱스, 압축 그림·decoder header 서명을 대조했고 390개 전부 통과했다. 도구는 `benchmark_remux.py`이며 순수 엔진은 `remux`를 `__pure-remux`로 바꿔 부르는 한 줄 sh wrapper를 거친다(wrapper의 exec 비용이 순수 엔진 쪽에 포함된다).
 
 측정 중 같은 PC에서 다른 작업의 테스트가 돌았다(1분 load average 측정 전 20.15, 후 13.20). 교차 측정이므로 세 구현이 같은 잡음을 받았다. 아래 "회차 범위"는 5회 각각의 13영상 합계의 최소~최대다.
 
@@ -401,7 +403,7 @@ alpha.4가 2.5~4.2배 느리다. alpha.3은 2스레드와 SIMD를 썼고, 새 �
 
 ## 썸네일 최적화 전후 (2026-11-17)
 
-브랜치 `perf/thumbnail`(기준 `b94d8a4`). 근거와 단계별 표는 [THUMBNAIL-DECODER.md](THUMBNAIL-DECODER.md#speed-up-2026-11-17), 원자료는 `measurements/thumbnail-performance-2026-11-17.json`, 도구는 `integration/thumbnail_*.py`다. 조건: x86-64 WSL Ubuntu 24.04(논리 CPU 16), page cache를 데운 상태(warm), 입력은 로컬 ext4 사본, 썸네일은 warmup 1 + 3자 교차 7회(load 2.29 → 1.55), 전체 변환은 warmup 1 + 교차 5회(load 0.98 → 1.09).
+브랜치 `perf/thumbnail`(기준 `b94d8a4`). 근거와 단계별 표는 [THUMBNAIL-DECODER.md](THUMBNAIL-DECODER.md#speed-up-2026-11-17), 원자료는 `measurements/thumbnail-performance-2026-11-17.json`, 도구는 `thumbnail_*.py`다. 조건: x86-64 WSL Ubuntu 24.04(논리 CPU 16), page cache를 데운 상태(warm), 입력은 로컬 ext4 사본, 썸네일은 warmup 1 + 3자 교차 7회(load 2.29 → 1.55), 전체 변환은 warmup 1 + 교차 5회(load 0.98 → 1.09).
 
 | 항목 | alpha.3(FFmpeg) | alpha.4 | 최적화 후 |
 |---|---|---|---|

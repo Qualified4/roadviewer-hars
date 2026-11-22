@@ -21,21 +21,16 @@
 
 ## 요약
 
-HARS는 브라우저 테스트를 직접 소유한다. `tests/browser/`의 테스트(Node + Playwright)는 Python Road Viewer 1.3.18(`d3de13472ea242dab9866d485b5777ad67d5b1dd`)의 `tests/`에서 복사해 왔다. 이후에는 원본 Python 저장소와 따로 관리한다. 실행기 `integration/upstream_cjs/run_browser_tests.py`가 이 테스트를 HARS 실행 파일과 HARS가 내보내는 웹 파일에 붙여 돌린다. GitHub Actions의 `Browser checks`(필수, `HARS required`가 요구)도 같은 실행기를 쓴다.
+HARS는 브라우저 테스트를 직접 소유한다. `tests/browser/`의 테스트(Node + Playwright)는 Python Road Viewer 1.3.18(`d3de13472ea242dab9866d485b5777ad67d5b1dd`)의 `tests/`에서 복사해 왔다. 이후에는 원본 Python 저장소와 따로 관리한다. 실행기 `tests/browser/run_browser_tests.py`가 이 테스트를 HARS 실행 파일과 HARS가 내보내는 웹 파일에 붙여 돌린다. GitHub Actions의 `Browser checks`(`HARS required`가 결과 확인)도 같은 실행기를 쓴다.
 
-| 판정 | 수 | 항목 |
-|---|---|---|
-| 통과 필수 | 50 | `browser-groups.json`의 51개 항목 중 아래 하나를 뺀 전부. 각 항목은 한 번씩 돌고, 판정을 위해 다시 돌리지 않는다 |
-| 제외(가져오지 않음) | 1 | `replay_format2` |
-
-"51개"는 `tests/browser/browser-groups.json`의 항목 수다. 테스트 파일은 48개이고, `maps.cjs`는 환경변수만 다른 세 항목으로 들어 있다. `browser-helpers.cjs`는 테스트가 아니다.
+`browser-groups.json`의 50개 항목은 모두 통과해야 한다. 테스트 파일은 48개이며 `maps.cjs`는 환경변수만 다른 세 항목으로 실행한다. `browser-helpers.cjs`는 테스트 보조 모듈이다.
 
 **관리 원칙.** 원본 Python 저장소와 독립적으로 발전시킨다. 원본이 바뀌어도 자동으로 따라가지 않는다. 가져올 변경은 HARS 커밋으로 하나씩 들인다. 새 테스트와 수정은 시간 대기(`waitForTimeout`, 고정 지연)가 아니라 확인하려는 상태 변화(이벤트, DOM 상태, 그리기 기록)를 기다린다. 기존 단언은 삭제하거나 완화하지 않고, 같은 동작을 같은 수준이나 더 엄격하게 확인한다. 게이트에는 재시도와 예상 실패가 없다. 고칠 수 없는 실패는 고치거나 보고할 대상이다.
 
 ## 출처와 원본 대비 차이
 
-- 복사 커밋 `c977863`(`test: copy the browser tests into tests/browser, unchanged, ...`)은 내용을 바꾸지 않았다. 복사한 55개 파일은 `reference/python/tests`의 대응 파일과 바이트 단위로 같았다(`cmp`, `sha256sum -c`). 다만 `.gitignore`의 `*.mp4` 때문에 영상 2개가 커밋에서 빠졌다(53개만 추적). `2db16d3`이 같은 바이트로 추가하고 `.gitignore` 예외를 넣었다.
-- 가져온 것: `.cjs` 48개 테스트, `browser-helpers.cjs`, `browser-groups.json`, 테스트가 띄우는 Python 보조 파일(`fake_drive.py`, `overlay_geometry_fixture.py`, `overlay_reference.py`), fixture 영상 2개(`fixtures/black.mp4`, `fixtures/ui-review-colour.mp4`).
+- 복사 커밋 `c977863`(`test: copy the browser tests into tests/browser, unchanged, ...`)은 내용을 바꾸지 않았다. 복사한 55개 파일은 원본의 대응 파일과 바이트 단위로 같았다(`cmp`, `sha256sum -c`). 다만 `.gitignore`의 `*.mp4` 때문에 영상 2개가 커밋에서 빠졌다(53개만 추적). `2db16d3`이 같은 바이트로 추가하고 `.gitignore` 예외를 넣었다.
+- 현재 테스트는 `.cjs` 48개, 브라우저 보조 모듈, `fake_drive.py`, 합성 오버레이 JSON과 합성 영상 두 개를 사용한다.
 - 가져오지 않은 것: `replay_format2.cjs`([아래](#가져오지-않은-항목)), `run_group.cjs`(원본 CI의 묶음 실행기. HARS 실행기가 대신한다), `tests/*.py` 단위 테스트, AppArmor fixture.
 - 원본 대비 HARS 수정만 보기:
 
@@ -44,7 +39,7 @@ git log --oneline c977863..HEAD -- tests/browser
 git diff c977863 -- tests/browser
 ```
 
-`reference/python/tests`는 보존 원본으로 그대로 남는다. `scripts/verify_reference.py`가 계속 지킨다. `tests/browser/overlay_geometry_fixture.py`는 보존 Python 모듈(`reference/python/roadviewer/app`의 `overlay.py`, `compact.py`)을 읽기만 한다.
+`replay_gzip.cjs`와 `lane_marking.cjs`는 [합성 오버레이 데이터](../../tests/browser/fixtures/overlay-geometry.json)를 읽는다. 기존 9개 시나리오의 프레임과 예상 투영 좌표를 고정해 런타임 투영, 캐시와 표시를 확인한다.
 
 ## HARS가 고친 지점
 
@@ -60,7 +55,6 @@ git diff c977863 -- tests/browser
 | `navigation.cjs` 4행(fixture) | 경쟁 아님. fixture의 `meta.json`에 `id`가 없어 HARS가 시작을 거부했다. 어댑터가 채우던 값을 fixture에 썼다 | - | 없음 | 8/8 | - | `066284d` |
 | `maps.cjs` 110·113행 지도 버튼이 재생 옆 한 줄에 있는지(+116·117행 접기 탭) | 버튼이 보이자마자 쟀다. 버튼은 `/api/tracks` 응답 전에 먼저 나오고, 두 상자를 따로 두 번 읽었다. 새 clone 실행 1회에서 두 읽기 사이에 목록이 움직여 버튼이 재생보다 56 px 아래로 읽혔다. 수정 전 부하 4회 중 2회는 같은 측정 직후 116·117행(앞서 잰 줄 왼쪽 탭이 카드를 접지 못함, 30초 초과)에서 실패 | 버튼 대기 → 경로 선(`.route-map-button svg .shape-line`) 대기(maps.js가 모든 카드를 한 번에 그림), `settleLayout`, 버튼·재생의 `waitForSteadyLayout`, 그 뒤 한 번의 `evaluate`에서 두 상자를 함께 읽음 | 같음(개수 2·2, 배치 조건 그대로) | 수정 뒤 dark main 6/6(수정 전 4회 중 2회 실패) | 버튼을 재생 다음 줄로 넘긴 `library.css` 사본 → 118행(이전 113행) 그 단언으로 실패(버튼 y 803.5, 재생 y 855.5) | `9b24b6f` |
 | `maps.cjs` 686행 영상 위 지도 크기 전환 중 고정 | 앱은 탭할 때 크기를 고정하고 280 ms 타이머로 푼다. 테스트는 프레임이 움직인 첫 rAF에서 표본을 떴다. 부하로 그 rAF가 280 ms보다 늦으면 이미 풀린 상태를 봤다 | 첫 rAF 대기 → 탭과 같은 작업 안에서 지도 틀의 width/height CSS 전환을 찾아 그 길이의 절반으로 옮기고 바로 표본을 뜸(타이머는 이 작업이 끝나기 전에 돌 수 없다) | 같음 + 전환이 없으면 실패(더 엄격) | 수정 뒤 light main 6/6 | `holdCanvas`를 바로 돌아가게 한 `maps.js` 사본 → 697행(이전 686행) 그 단언으로 실패(`held:false`, 틀은 이동 중간 320×180) | `b4820e5` |
-| `overlay_geometry_fixture.py` 4행 | 경쟁 아님. 보존 Python 모듈 경로를 `tests/browser` 위치에 맞춤 | - | 없음 | - | - | `24d4f48` |
 
 위 지점 밖의 `waitForTimeout`은 건드리지 않았다.
 
@@ -70,45 +64,40 @@ git diff c977863 -- tests/browser
 
 ## 가져오지 않은 항목
 
-`replay_format2`: Python 변환기의 `compact.py`(`compact_data`, `expand_frames`)를 import해 재생 형식 2를 만들고, `app.js`의 확장(`expandFlat`) 결과와 대조한다. HARS에는 이 Python 모듈이 없고, 이 테스트는 서버도 HARS 화면도 쓰지 않는다. 그래서 `tests/browser`에 가져오지 않았다. `browser-groups.json`(g6)에는 남아 있고, `expectations.json`의 `excluded`에 사유와 함께 있다. `test_gate_rules.py`가 제외 집합이 정확히 `{replay_format2}`이고 그 파일이 `tests/browser`에 없음을 고정한다.
-
-- 대신하는 검증: 인코더 쪽은 `integration/pipeline_contract.py`(CI, 합성 입력)와 `integration/real_conversion_compare.py`(실주행 13·14·47구간, 로컬)가 HARS replayV2 출력 전체가 Python 출력과 같음을 요구한다. `scripts/verify_reference.py`는 `reference/`의 보존 원본만 검증하며 HARS `web/app.js`는 독립적으로 관리한다.
-- 남은 공백: HARS 출력에 `app.js` 디코더를 직접 돌려 보는 검사가 없다.
+`replay_format2`는 Python 변환기를 직접 불러서 형식 2 확장과 대조한 이식용 검사였다. HARS 브라우저 CI에서는 실행한 적이 없어 manifest에서도 제거했다. `replay_gzip.cjs`는 gzip과 일반 JSON 로드, 압축 프레임 확장 및 재생 화면을 검사한다.
 
 ## 실행
 
 ```sh
-npm ci --prefix integration/upstream_cjs                # playwright 1.64.1 (package-lock.json)
-npx --prefix integration/upstream_cjs playwright install --only-shell chromium
+npm ci --prefix tests/browser                # playwright 1.64.1 (package-lock.json)
+npx --prefix tests/browser playwright install --only-shell chromium
 cargo build --locked
-python3 integration/upstream_cjs/run_browser_tests.py \
-  --hars-bin "$CARGO_TARGET_DIR/debug/roadviewer-hars" --out /tmp/rv-browser [--groups g1 g2] [--only maps.cjs tags]
-python3 integration/upstream_cjs/run_browser_tests.py --aggregate /tmp/shard1 /tmp/shard2 ... --out /tmp/rv-gate
-python3 integration/upstream_cjs/test_gate_rules.py     # 게이트 데이터·판정 규칙(브라우저 없음, CI에서 돈다)
-# Python 기준 실행: Flask가 있는 인터프리터. 제외 없이 선택한 것 전부가 통과해야 한다(기대 버전은 1.3.18)
-python3 integration/upstream_cjs/run_browser_tests.py --python-baseline ~/venv/bin/python --out /tmp/rv-py --only gdrive_panel.cjs
+python3 tests/browser/run_browser_tests.py \
+  --hars-bin "${CARGO_TARGET_DIR:-target}/debug/roadviewer-hars" --out /tmp/rv-browser [--groups g1 g2] [--only maps.cjs tags]
+python3 tests/browser/run_browser_tests.py --aggregate /tmp/shard1 /tmp/shard2 ... --out /tmp/rv-gate
+python3 tests/browser/test_gate_rules.py     # 게이트 데이터·판정 규칙(브라우저 없음, CI에서 돈다)
 ```
 
-Node 22가 PATH에 있어야 한다(`--node`로 지정할 수도 있다). 종료 코드는 게이트 판정이다: 0 통과, 1 게이트 실패, 2 HARS 실행 파일 없음, 130 중단. 결과는 `--out` 아래에 남는다: `summary.json`(판정·사유, 제외 목록, `expected_version`, 항목별 결과·초·단언 수·분류·파싱한 실패·남은 프로세스·남은 임시 항목·어댑터 사건, `exit_code`)과 `<항목>/{test.log,hars.log,result.json,screenshots/,collect/}`. 테스트당 시간 상한은 기본 300초다. 가장 느린 항목인 `maps` main이 61~75초 걸리므로 여유는 4배다. 이 상한은 멈춘 테스트를 CI 작업 상한(20분) 안에서 실패시키기 위한 것이다. `--repeat`와 재시도 옵션은 없다.
+Node 22가 PATH에 있어야 한다(`--node`로 지정할 수도 있다). 종료 코드는 게이트 판정이다: 0 통과, 1 게이트 실패, 2 HARS 실행 파일 없음, 130 중단. 결과는 `--out` 아래에 남는다: `summary.json`(판정·사유, `expected_version`, 항목별 결과·초·단언 수·파싱한 실패·남은 프로세스·남은 임시 항목·어댑터 사건, `exit_code`)과 `<항목>/{test.log,hars.log,result.json,screenshots/,collect/}`. 테스트당 시간 상한은 기본 300초다. 가장 느린 항목인 `maps` main이 61~75초 걸리므로 여유는 4배다. 이 상한은 멈춘 테스트를 CI 작업 상한(20분) 안에서 실패시키기 위한 것이다. `--repeat`와 재시도 옵션은 없다.
 
 ## 게이트
 
-데이터는 `integration/upstream_cjs/expectations.json` 하나다. 키는 `entries`(51), `excluded`(`replay_format2`), `restart_allowed`(`maps[map_parts=many,leak]`)뿐이다. 다른 키(예상 실패, 재시도)가 있으면 실행기가 `expectations.json refused`로 끝난다.
+게이트는 `tests/browser/expectations.json`의 `entries`(50)와 `restart_allowed`(`maps[map_parts=many,leak]`)를 사용한다. 다른 키(예상 실패, 재시도)가 있으면 실행기가 `expectations.json refused`로 끝난다.
 
 게이트 실패 조건:
 
 - 결과가 `pass`가 아닌 항목: `fail`, `timeout`, `supervisor-failed`, `isolation-failed`, `interrupted`.
 - 통과한 항목이 프로세스를 남김(`leftover_processes`).
 - 어댑터가 `restart_allowed` 밖의 항목에서 HARS를 재기동했거나, 기록 폴더 변화를 보고 재기동을 거부함(`restart refused`).
-- 실행된 테스트 0개. 실행 + 제외 ≠ 선택한 항목 수, 같은 항목 중복, 제외 항목 실행.
+- 실행된 테스트가 0개이거나, 선택한 항목이 빠지거나, 중복되거나, 선택하지 않은 항목이 실행됨.
 - 실행기가 남긴 프로세스, 중단.
-- `--aggregate`: 묶음 합이 manifest 51개와 정확히 같지 않음(빠짐·중복), `entries`와 manifest 수가 다름, 묶음의 실제 종료 코드(`exit-code`) ≠ 요약의 `exit_code` ≠ 그 묶음 결과로 다시 계산한 판정, 요약이나 `exit-code`가 없음. 요약에 적힌 `gate`는 믿지 않고 결과에서 다시 계산한다.
+- `--aggregate`: 묶음 합이 manifest 50개와 정확히 같지 않음(빠짐·중복), `entries`와 manifest 수가 다름, 묶음의 실제 종료 코드(`exit-code`) ≠ 요약의 `exit_code` ≠ 그 묶음 결과로 다시 계산한 판정, 요약이나 `exit-code`가 없음. 요약에 적힌 `gate`는 믿지 않고 결과에서 다시 계산한다.
 
-`test_gate_rules.py`는 브라우저 없이 다음을 고정한다: 제외 집합 = `{replay_format2}`, 재기동 허용 = `[maps[map_parts=many,leak]]`, 다른 예외 종류 없음, `entries` = manifest 수, 실행기 소스에 재시도 흔적 없음, CI matrix가 manifest 그룹을 각각 정확히 한 번 돌림, `judge`·`verdict` 규칙.
+`test_gate_rules.py`는 브라우저 없이 재기동 허용 목록, manifest 항목 수, CI matrix의 그룹 배정, `judge`·`verdict` 규칙을 검사한다.
 
 ## 실패 산출물
 
-- **스크린샷.** Node를 `--require integration/upstream_cjs/failure_capture.cjs`로 띄운다. 단언 실패나 Playwright 시간 초과가 생기면, 테스트의 `finally`가 `browser.close()`를 부를 때 열린 페이지마다 `screenshots/page-N.png`과 `failure.txt`를 남긴다. 오류 객체의 생성에 접근자를 걸 뿐 테스트의 호출을 감싸지 않으므로 스택과 타이밍은 그대로다. 다른 오류만으로 실패하면 스크린샷이 없다.
+- **스크린샷.** Node를 `--require tests/browser/failure_capture.cjs`로 띄운다. 단언 실패나 Playwright 시간 초과가 생기면, 테스트의 `finally`가 `browser.close()`를 부를 때 열린 페이지마다 `screenshots/page-N.png`과 `failure.txt`를 남긴다. 오류 객체의 생성에 접근자를 걸 뿐 테스트의 호출을 감싸지 않으므로 스택과 타이밍은 그대로다. 다른 오류만으로 실패하면 스크린샷이 없다.
 - **trace.** 판정이 끝난 뒤 게이트를 실패시킨 항목만 같은 조건으로 한 번 더 돌린다. 이때 `HARS_TRACE_DIR`로 trace를 켠다(`collect/trace/trace-N.zip`). 이 재실행은 `collection_reruns`에만 적고 판정에 쓰지 않는다.
 - **CI 아티팩트.** 묶음마다 항상 `browser-summary-N`(`summary.json` + `exit-code`)을 남긴다. 묶음이 성공하지 못하면(실패·시간 초과·취소) `browser-artifacts-N`(산출물 폴더 전체)을 남긴다. 보존 기간은 7일이다. 집계 결과는 `browser-gate`다.
 - **비밀값·좌표.** fixture는 합성 데이터뿐이다. 서버형 테스트의 Drive는 `fake_drive.py`이고, 토큰은 테스트가 만든 가짜 값이다. HARS 데이터 폴더는 테스트마다 새 임시 폴더다.
@@ -159,7 +148,7 @@ Node 22가 PATH에 있어야 한다(`--node`로 지정할 수도 있다). 종료
 | 직렬 전체 1회(깨끗한 새 clone, 영상 fixture 추가 뒤) | 통과 49, 제외 1, 실패 1: `maps[map_schemes=dark][map_parts=main]` 113행(0.8초, 수집용 재실행은 통과. [미검증과 남은 위험](#미검증과-남은-위험)). clone에 `tests/browser` 55개 파일이 추적되고, `test_gate_rules.py` 통과 |
 | 전체 결과를 두 묶음 요약으로 나눠 `--aggregate` | 둘 다: 통과. 하나만: 종료 1, `entries run 30 + excluded 0 != 51`(빠진 항목 이름 표시) |
 | `test_gate_rules.py` | 14개 통과. 사본에서 `excluded`에 `tags`를 더하면 `test_excluded_is_exactly_replay_format2` 실패 |
-| Rust·저장소 | `cargo fmt --all --check` 0, `cargo clippy --locked --all-targets -D warnings` 0, `cargo nextest run --locked --all-targets` 312/312, `scripts/verify_reference.py` 286개 차이 없음, `scripts/check_release.py` 통과(2.0.0-alpha.4), `actionlint` 통과 |
+| Rust·저장소 | `cargo fmt --all --check` 0, `cargo clippy --locked --all-targets -D warnings` 0, `cargo nextest run --locked --all-targets` 312/312, 옛 원본 무결성 검사 286개 차이 없음, `scripts/check_release.py` 통과(2.0.0-alpha.4), `actionlint` 통과 |
 
 게이트 무결성 점검(각 1회, 모두 게이트가 실패해야 정상):
 

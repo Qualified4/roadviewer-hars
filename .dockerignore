@@ -5,7 +5,4 @@ artifacts
 .env*
 *.pem
 *.key
-reference/openpilot
-reference/python/tests
-reference/python/docs
-reference/python/.github
+reference/

@@ -1,5 +1,4 @@
-//! Export/import and ZIP downloads, checked against the Python implementation's own format
-//! functions (`reference/python/roadviewer/app/log_transfer.py`) and Python's `zipfile`.
+//! Export/import, backward compatibility with a Road Viewer 1.x export, and ZIP downloads.
 use axum::{
     Router,
     body::{Body, to_bytes},
@@ -15,9 +14,6 @@ use tower::ServiceExt;
 
 fn web() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web")
-}
-fn python_app() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("reference/python/roadviewer/app")
 }
 async fn app(root: &std::path::Path) -> App {
     let a = App::open(root.to_path_buf(), web(), false, 512)
@@ -112,6 +108,8 @@ async fn browser_import(a: &App, tar_bytes: &[u8]) -> Vec<Value> {
     let members = members(tar_bytes);
     assert_eq!(members[0].name, "manifest.json");
     let manifest: Value = serde_json::from_slice(&members[0].data).unwrap();
+    assert_eq!(manifest["format"], "roadviewer-export");
+    assert_eq!(manifest["version"], 1);
     let mut groups: Vec<(String, Vec<&Member>)> = vec![];
     for m in &members[1..] {
         let (id, _) = m.name.split_once('/').unwrap();
@@ -170,59 +168,6 @@ async fn browser_import(a: &App, tar_bytes: &[u8]) -> Vec<Value> {
     }
     results
 }
-fn venv_python() -> Option<PathBuf> {
-    let candidate = std::env::var_os("HARS_PYTHON")
-        .map(PathBuf::from)
-        .or_else(|| {
-            std::env::var_os("HOME")
-                .map(|h| PathBuf::from(h).join("hars-venvs/apiparity/bin/python"))
-        })?;
-    candidate.is_file().then_some(candidate)
-}
-const PY_CHECK: &str = r#"
-import sys, json, tarfile, hashlib, re
-sys.path.insert(0, sys.argv[1])
-import log_transfer as lt
-out = {"records": []}
-with tarfile.open(sys.argv[2]) as tar:
-    names = tar.getnames()
-    assert names[0] == lt.MANIFEST
-    manifest = json.loads(tar.extractfile(names[0]).read())
-    assert manifest["format"] == lt.FORMAT and manifest["version"] == lt.VERSION
-    for name in names:
-        if name.endswith("/" + lt.RECORD):
-            record = lt.parse_record(json.loads(tar.extractfile(name).read()), re.compile(r"^[a-f0-9]{32}$"), {"mint", "red", "blue"})
-            rid = name.split("/")[0]
-            for kind, info in record["originals"].items():
-                data = tar.extractfile(rid + "/" + kind).read()
-                assert hashlib.sha256(data).hexdigest() == info["sha256"] and len(data) == info["bytes"]
-            out["records"].append(record)
-print(json.dumps(out))
-"#;
-const PY_MAKE: &str = r#"
-import sys, json, hashlib, time
-sys.path.insert(0, sys.argv[1])
-import log_transfer as lt
-spec = json.load(sys.stdin)
-now = time.time()
-parts = []
-for rec in spec:
-    rec["originals"] = {k: {"bytes": len(v.encode()), "sha256": hashlib.sha256(v.encode()).hexdigest()} for k, v in rec["data"].items()}
-manifest = lt.dumps({"format": lt.FORMAT, "version": lt.VERSION, "app_version": "1.3.16", "exported_at": now,
-                     "recordings": [{"id": r["id"], "name": r["name"], "files": list(r["data"]), "bytes": sum(len(v) for v in r["data"].values())} for r in spec]})
-parts.append(lt.header(lt.MANIFEST, len(manifest), now) + manifest + b"\0" * lt.padding(len(manifest)))
-for rec in spec:
-    for kind, text in rec["data"].items():
-        data = text.encode()
-        parts.append(lt.header(f"{rec['id']}/{kind}", len(data), now) + data + b"\0" * lt.padding(len(data)))
-    record = {k: v for k, v in rec.items() if k != "data"}
-    data = lt.dumps(record)
-    data += b" " * lt.RECORD_SLACK
-    parts.append(lt.header(f"{rec['id']}/{lt.RECORD}", len(data), now) + data + b"\0" * lt.padding(len(data)))
-parts.append(b"\0" * (2 * lt.BLOCK))
-open(sys.argv[2], "wb").write(b"".join(parts))
-"#;
-
 #[tokio::test]
 async fn export_import_round_trip_preserves_files_and_record() {
     let source = tempfile::tempdir().unwrap();
@@ -278,34 +223,6 @@ async fn export_import_round_trip_preserves_files_and_record() {
             format!("{first}/record.json"),
         ]
     );
-    if let Some(python) = venv_python() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("hars-export.tar");
-        std::fs::write(&path, &tar_bytes).unwrap();
-        let out = std::process::Command::new(python)
-            .args(["-I", "-c", PY_CHECK])
-            .arg(python_app())
-            .arg(&path)
-            .output()
-            .unwrap();
-        assert!(
-            out.status.success(),
-            "{}",
-            String::from_utf8_lossy(&out.stderr)
-        );
-        let checked: Value = serde_json::from_slice(&out.stdout).unwrap();
-        assert_eq!(checked["records"].as_array().unwrap().len(), 2);
-        assert!(
-            checked["records"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .any(|r| r["pinned"] == true)
-        );
-    } else {
-        eprintln!("python cross-check skipped: no HARS_PYTHON or ~/hars-venvs/apiparity");
-    }
-
     let target = tempfile::tempdir().unwrap();
     let b = app(target.path()).await;
     let results = browser_import(&b, &tar_bytes).await;
@@ -354,46 +271,20 @@ async fn export_import_round_trip_preserves_files_and_record() {
 }
 
 #[tokio::test]
-async fn python_made_export_imports_and_duplicates_are_skipped() {
-    let Some(python) = venv_python() else {
-        eprintln!("python fixture skipped: no HARS_PYTHON or ~/hars-venvs/apiparity");
-        return;
-    };
-    let dir = tempfile::tempdir().unwrap();
-    let tar_path = dir.path().join("python-export.tar");
-    let one = id();
-    let spec = json!([
-        {"id":one,"name":"1a2b3c4d--0123456789 / 구간 0","uploaded":1700000001,"files":{"rlog.zst":"1a2b3c4d--0123456789--0--rlog.zst"},
-         "tags":[{"name":"Trip","color":"blue"}],"bookmarks":[],"pinned":false,"video_codecs":{},"video_origins":{},"storage":{},
-         "data":{"rlog.zst":"python-log","qcamera.ts":"python-ts"}},
-        {"id":id(),"name":"copy","data":{"rlog.zst":"python-log"}}
-    ]);
-    let mut child = std::process::Command::new(python)
-        .args(["-I", "-c", PY_MAKE])
-        .arg(python_app())
-        .arg(&tar_path)
-        .stdin(std::process::Stdio::piped())
-        .spawn()
-        .unwrap();
-    use std::io::Write;
-    child
-        .stdin
-        .take()
-        .unwrap()
-        .write_all(spec.to_string().as_bytes())
-        .unwrap();
-    assert!(child.wait().unwrap().success());
-    let tar_bytes = std::fs::read(&tar_path).unwrap();
+async fn legacy_export_imports_and_duplicates_are_skipped() {
+    // Synthetic Road Viewer 1.3.16 export with two records sharing identical log bytes.
+    let tar_bytes = include_bytes!("fixtures/legacy-export.tar");
+    let one = "11111111111111111111111111111111";
     let root = tempfile::tempdir().unwrap();
     let a = app(root.path()).await;
-    let results = browser_import(&a, &tar_bytes).await;
+    let results = browser_import(&a, tar_bytes).await;
     assert_eq!(results[0]["imported"], one);
     // The second record has another id but the same rlog.zst content.
     assert_eq!(results[1]["skipped"], "duplicate");
-    let meta = a.store.meta(&one).await.unwrap();
+    let meta = a.store.meta(one).await.unwrap();
     assert_eq!(meta["tags"], json!([{"name":"Trip","color":"blue"}]));
     assert_eq!(
-        std::fs::read(root.path().join(&one).join("rlog.zst")).unwrap(),
+        std::fs::read(root.path().join(one).join("rlog.zst")).unwrap(),
         b"python-log"
     );
     let (_, list) = call(&a, "GET", "/api/logs", Value::Null).await;

@@ -20,7 +20,7 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   });
   await page.goto('https://rv.test/view/one/');await page.waitForFunction(()=>!document.getElementById('play').disabled);
   assert.deepEqual(await page.evaluate(()=>data.warnings),['다른 경고'],'old skipped-event warnings are not shown');
-  const fixture=JSON.parse(require('child_process').execFileSync('python3',['tests/overlay_geometry_fixture.py'],{encoding:'utf8'}))[0].frame;
+  const fixture=require('./fixtures/overlay-geometry.json')[0].frame;
   const geometry=await page.evaluate(frame=>{
    const at=(road,odometer)=>buildReplayOverlay({...frame,ccncRoad:road,odometer},frame.overlay.geometry).laneDashBands;
    const dashed=at({laneLeft:8,laneRight:4},0),moved=at({laneLeft:10,laneRight:6},2);

@@ -1,5 +1,7 @@
 # 영상 형식 지원 범위 (2.0.0-alpha.4)
 
+이 문서에 기록한 이식용 비교·측정 도구는 [정리 전 Git 트리](https://github.com/Qualified4/roadviewer-hars/tree/284efa5b0932c918f8f52bee616f216650b23c52/integration)에 있다.
+
 <!-- toc -->
 **목차**
 
@@ -75,7 +77,7 @@ upstream 대조(`git diff` 대신 `git show commaai/master:<path>`와 줄 끝을
 
 ## HARS에서의 검증
 
-방법: `integration/format_support.py`. 사례마다 새 임시 데이터 폴더의 release 실행 파일(127.0.0.1:18700/18701, `HARS_INGRESS_ONLY=0`, 서버 PATH에 `nice`·`ionice`·셸 도구만, `ffmpeg`/`ffprobe` 없음 확인), 자동 변환, 원본 보존 끔. 브라우저 업로드 → 상태·경고·오류 → 카메라별 Range 재생(앞·끝 1 KiB = 다운로드) → 썸네일 → `/original/<kind>` → `data`·`telemetry`·`track`·목록·ZIP → 원본 SHA-256 → 서버 생존. 외부 상한 `systemd-run --user --scope -p MemoryMax=2G -p MemorySwapMax=0`. 결과: [format-support-2026-11-17.json](measurements/format-support-2026-11-17.json).
+방법: `format_support.py`. 사례마다 새 임시 데이터 폴더의 release 실행 파일(127.0.0.1:18700/18701, `HARS_INGRESS_ONLY=0`, 서버 PATH에 `nice`·`ionice`·셸 도구만, `ffmpeg`/`ffprobe` 없음 확인), 자동 변환, 원본 보존 끔. 브라우저 업로드 → 상태·경고·오류 → 카메라별 Range 재생(앞·끝 1 KiB = 다운로드) → 썸네일 → `/original/<kind>` → `data`·`telemetry`·`track`·목록·ZIP → 원본 SHA-256 → 서버 생존. 외부 상한 `systemd-run --user --scope -p MemoryMax=2G -p MemorySwapMax=0`. 결과: [format-support-2026-11-17.json](measurements/format-support-2026-11-17.json).
 
 "정규화 NAL 같음": 압축 그림 단위의 순서, parameter set 집합, 그 밖의 단위(AUD 제외) 순서가 업로드와 내보내기에서 같다(`media::Signature`와 같은 기준). TS는 호스트 `ffmpeg -c copy -f h264`로 영상 기본 스트림을 꺼내 비교했다.
 
@@ -158,7 +160,7 @@ upstream 대조(`git diff` 대신 `git show commaai/master:<path>`와 줄 끝을
 
 ## 운영자가 알아야 할 기존 동작
 
-- **녹음(`RecordAudio`)이 든 `qcamera.ts`의 오디오는 MP4에 들어가지 않는다.** 원본 보존을 끄면 원본 TS가 지워지므로 오디오가 사라지고, `/original/qcamera.ts`는 영상만 든 TS다. Python도 영상 스트림만 옮겼다(`reference/python/roadviewer/app/decoder.py` 336). alpha.4의 변경이 아니다. 오디오가 필요하면 원본 보존을 켠다.
+- **녹음(`RecordAudio`)이 든 `qcamera.ts`의 오디오는 MP4에 들어가지 않는다.** 원본 보존을 끄면 원본 TS가 지워지므로 오디오가 사라지고, `/original/qcamera.ts`는 영상만 든 TS다. Python도 영상 스트림만 옮겼다(`Python 1.x의 decoder.py` 336). alpha.4의 변경이 아니다. 오디오가 필요하면 원본 보존을 켠다.
 - `dcamera.hevc`는 받지 않는다(Python과 같음).
 
 ## 미검증
@@ -172,10 +174,7 @@ upstream 대조(`git diff` 대신 `git show commaai/master:<path>`와 줄 끝을
 ## 재현
 
 ```sh
-bash integration/format_support_inputs.sh C13 C14 INPUTS   # 합성 입력(개발용 ffmpeg), 커밋하지 않음
-systemd-run --user --scope -p MemoryMax=2G -p MemorySwapMax=0 python3 -I integration/format_support.py \
-  C13 C14 INPUTS RELEASE_BINARY OUT --ports 18700 18701 --path DIR_WITHOUT_FFMPEG
 cargo test --locked --test thumbnail_isolation
 ```
 
-입력 파일 이름은 `integration/format_support.py`의 `CASES`, 만드는 명령은 `integration/format_support_inputs.sh`에 있다.
+입력 파일 이름은 `format_support.py`의 `CASES`, 만드는 명령은 `format_support_inputs.sh`에 있다.

@@ -1,5 +1,7 @@
 # 순수 Rust 리먹싱 엔진
 
+이 문서에 기록한 이식용 비교·측정 도구는 [정리 전 Git 트리](https://github.com/Qualified4/roadviewer-hars/tree/284efa5b0932c918f8f52bee616f216650b23c52/integration)에 있다.
+
 <!-- toc -->
 **목차**
 
@@ -59,7 +61,7 @@ errno가 아닌 `resource`: 180초 시간 상한(`deadline`), worker SIGKILL(`wo
 | `resource` | ENOSPC, EFBIG(`RLIMIT_FSIZE`), EDQUOT, ENOMEM(위 표), 180초 시간 상한, worker SIGKILL(OOM killer·종료), SIGABRT(메모리 상한에서 할당 실패), worker 종료 코드 75, `low_space` | `remux_failure`(WARN) | 아래 공통 |
 
 - 공통: 디스크에 게시된 결과가 그 카메라를 재생하면 `resource`는 이번 시도를 버리고 이전 결과로 `ready` + 경고, 나머지 분류는 그 카메라만 이전 결과를 이어받고 다른 카메라는 게시한다(아래 "이전 결과 보호"). 아니면 그 카메라 MP4 없이 기록은 `ready`, `warnings`에 `<카메라> 영상 준비 실패: …`(Python `prepare_video` 실패와 같다). `resource`면 경고가 `… 영상 준비 실패: resource (<reason_code>): <이유>`로 분류를 드러낸다. 부분 출력은 지운다. 원본은 남는다(원본 보존 끔이어도 `jobs`는 MP4를 만든 카메라의 원본만 지운다). 다시 변환하려면 사용자가 변환 결과를 지우고 다시 변환한다(Python과 같음). 시험: `tests/conversion_resource.rs`, `tests/conversion_keep_previous.rs`, `tests/pure_remux_faults.rs`.
-- 저공간: 순수 엔진은 payload와 MP4를 함께 쓰므로 입력 × 2 + 100 MiB가 필요하다(`media::pure_fits`). 그보다 적으면 쓰기 전에 `resource`/`low_space`로 끝낸다. 실측(`integration/low_space_tmpfs.sh`, 약 10 MB 입력, tmpfs): 입력 × 1.5에서 `low_space`로 끝나고 tmpfs에 남은 파일 0, 입력 × 2 + 100 MiB + 1 MiB에서 MP4 게시, 검사를 우회한 debug 빌드로 입력 × 1.5에서 엔진을 돌리면 ENOSPC(`resource`/`no_space`)로 끝나고 남은 파일 0. 즉 엔진은 이 공간에서 완료할 수 없고, 실행하면 디스크를 잠시 가득 채우므로(같은 디스크의 업로드·다른 변환이 영향을 받는다) 먼저 거부한다. 이전에는 이때 FFmpeg 엔진이 MP4 하나만 썼다.
+- 저공간: 순수 엔진은 payload와 MP4를 함께 쓰므로 입력 × 2 + 100 MiB가 필요하다(`media::pure_fits`). 그보다 적으면 쓰기 전에 `resource`/`low_space`로 끝낸다. 실측(`low_space_tmpfs.sh`, 약 10 MB 입력, tmpfs): 입력 × 1.5에서 `low_space`로 끝나고 tmpfs에 남은 파일 0, 입력 × 2 + 100 MiB + 1 MiB에서 MP4 게시, 검사를 우회한 debug 빌드로 입력 × 1.5에서 엔진을 돌리면 ENOSPC(`resource`/`no_space`)로 끝나고 남은 파일 0. 즉 엔진은 이 공간에서 완료할 수 없고, 실행하면 디스크를 잠시 가득 채우므로(같은 디스크의 업로드·다른 변환이 영향을 받는다) 먼저 거부한다. 이전에는 이때 FFmpeg 엔진이 MP4 하나만 썼다.
 - 이전 결과 보호: 지금 디스크에 게시된 결과가 그 카메라를 재생하면, **어느 분류의 실패든** 그 카메라가 빠진 결과로 바꾸지 않는다. `resource`는 같은 디스크·메모리·시간이 다음 시도에서 풀릴 수 있으므로 시도 전체를 멈춘다. 나머지 분류는 이전 버전(FFmpeg 대체가 있던 때)이 게시한 입력을 지금 엔진이 받지 못하는 경우일 수 있고 같은 입력이면 매번 같으므로, 시도 전체를 멈추면 다른 카메라(나중에 올라온 카메라 포함)가 영영 게시되지 않는다. 그래서 그 카메라만 이어받는다(2.0.0-alpha.3에서는 `resource`만 보호했다). 판정은 디스크만 본다: `prepared/summary.json`의 `videos.<카메라>`가 있고, 그 MP4가 `prepared/<mp4>`, 기록 폴더의 저장된 `<mp4>`, 또는 아카이브에 있어야 한다(`convert::previous_plays`). 기록 메타의 `videos`는 보지 않는다: Python과 같이 `clear_prepared`가 이 필드를 지우지 않아 재변환(변환 결과 삭제 → 변환, 카메라 추가) 때는 낡은 값이 남기 때문이다.
   - 게시된 결과가 있고 `resource`가 아닐 때: 변환 프로세스가 `conversion_carried_previous`(WARN)를 남기고 그 카메라의 이전 summary 항목(`start`는 이전 `data.json.gz`의 `logStart`로 같은 로그 시각에 맞춤)과 MP4(`prepared/`의 것은 staging에 hard link, 안 되면 동기화한 복사본; 원본 옆·아카이브의 것은 그 자리)를 새 결과에 넣고 경고 `<카메라> 영상 준비 실패: … (이전 변환 결과 유지)`와 함께 나머지 카메라를 계속 변환한다. 이어받은 MP4 목록은 발행 일지 `.conversion.json`의 `carried`에 적히고, 발행은 원본 보존 끔이어도 그 MP4를 옮기지 않고 그 원본을 지우지 않는다. 이전 파일은 쓰지 않으며 발행 순서는 그대로라 중간에 죽어도 이전 결과나 새 결과 중 하나가 온전히 남는다. 이어받을 수 없으면(이전 `data.json.gz`를 못 읽음, 링크·복사 실패: `conversion_carry_failed`) 아래 `resource`와 같이 처리한다. 카메라 추가 업로드는 `clear_prepared`로 `prepared/`를 먼저 지우므로 이 경우가 아니다(게시된 결과 없음).
   - 게시된 결과가 있고 `resource`일 때: 변환 프로세스가 `conversion_kept_previous`(ERROR, `kind`·`failure_class`·`reason_code`·`reason`)를 남기고 staging에 `kept-previous.json`을 쓴 뒤 실패한다. `jobs`는 staging을 지우고, 그 세대가 아직 기록의 세대이고 `prepared/summary.json`이 있으면 기록을 그 결과의 `ready`로 되돌린다: 결과 필드는 `prepared/summary.json`에서 다시 쓰고, `warnings`는 그 결과의 경고 + `<카메라> 영상 준비 실패: … (이전 변환 결과 유지)` 한 줄, `error`는 null. `prepared/`, 저장된 MP4(원본 보존 끔), 원본은 바이트 단위로 그대로이고 영상 Range 요청이 계속 재생된다. 그 결과가 사라졌거나 다른 세대가 기록을 가졌으면 기존 실패 규칙(`error`)이다.
@@ -77,7 +79,7 @@ errno가 아닌 `resource`: 180초 시간 상한(`deadline`), worker SIGKILL(`wo
 
 ## 손상 입력 사례
 
-판정 기준: 입력 파일에 있는 모든 픽처 바이트가 출력에 그대로 있고 독립 검증(입력 대비 서명)을 통과하면 게시한다. 파일에 있는 바이트를 일부 버려야만 출력이 만들어지면 명확한 실패다. Python 열은 Python 원본 코드(`hevc_video.prepare_video`, `decoder.py`의 qcamera 단계, PyAV 16.1/FFmpeg 8.0.1)를 같은 합성 입력(10프레임)에 실제로 돌린 결과다(`integration/boundary_inputs.py`). "픽처 일치"는 출력 sample의 VCL 바이트를 입력 파일의 독립 분할(TS는 손상 전 원본)과 비교한 것이고, 디코딩은 시스템 FFmpeg 6.1.1이다.
+판정 기준: 입력 파일에 있는 모든 픽처 바이트가 출력에 그대로 있고 독립 검증(입력 대비 서명)을 통과하면 게시한다. 파일에 있는 바이트를 일부 버려야만 출력이 만들어지면 명확한 실패다. Python 열은 Python 원본 코드(`hevc_video.prepare_video`, `decoder.py`의 qcamera 단계, PyAV 16.1/FFmpeg 8.0.1)를 같은 합성 입력(10프레임)에 실제로 돌린 결과다(`boundary_inputs.py`). "픽처 일치"는 출력 sample의 VCL 바이트를 입력 파일의 독립 분할(TS는 손상 전 원본)과 비교한 것이고, 디코딩은 시스템 FFmpeg 6.1.1이다.
 
 | 사례 | Python | HARS 순수(기본) | HARS FFmpeg 엔진 | 결정과 근거 |
 |---|---|---|---|---|
@@ -105,7 +107,7 @@ TS 잘림 규칙(`native_video::truncated_video_payload`): 파일 길이가 188�
 - 상한: worker는 job을 읽은 뒤 주소 공간을 현재 크기 + 256 MiB로 묶는다(`RLIMIT_AS`, `pure_remux::MEMORY_BUDGET_MIB`; 시험용 `HARS_PURE_WORKER_MEMORY_MB`는 debug 빌드에서만 읽는다. 제품에서 줄일 이유가 없고, 너무 작은 값은 모든 영상을 `resource`로 실패시킨다). 넘으면 할당 실패로 SIGABRT → `resource`/`out_of_memory`, 대체 없음. 실제 실행 파일 경로에서 확인했다(아래 [제품 경로 검증](#제품-경로-검증)의 memory).
 - 동시 실행: 한 프로세스의 media worker는 2개까지(`media::WORKERS`). 서버는 변환 설정(1~4)만큼 변환 프로세스를 띄우고, 각 변환은 카메라를 차례로 처리하므로 순수 worker는 변환당 1개다. 측정: 동시 2변환에서 순수 worker 최대 2개, 동시 4변환에서 4개.
 
-측정(합성 raw HEVC 1280×720, 실제 실행 파일 `remux` CLI, 외부 상한 `systemd-run --scope -p MemoryMax=2G -p MemorySwapMax=0`, 각 1회). "최고 RSS"는 `wait4`로 읽은 가장 큰 단일 프로세스(CLI 또는 worker)의 정확한 값이다. 측정 스크립트가 입력을 메모리에 들고 있으면 exec 전 공유 페이지가 자식 값에 잡히므로(처음 측정에서 적대적 입력이 약 292 MiB로 잘못 나옴) 입력은 디스크로만 흘려 쓴다(`integration/pure_remux_memory.py`).
+측정(합성 raw HEVC 1280×720, 실제 실행 파일 `remux` CLI, 외부 상한 `systemd-run --scope -p MemoryMax=2G -p MemorySwapMax=0`, 각 1회). "최고 RSS"는 `wait4`로 읽은 가장 큰 단일 프로세스(CLI 또는 worker)의 정확한 값이다. 측정 스크립트가 입력을 메모리에 들고 있으면 exec 전 공유 페이지가 자식 값에 잡히므로(처음 측정에서 적대적 입력이 약 292 MiB로 잘못 나옴) 입력은 디스크로만 흘려 쓴다(`pure_remux_memory.py`).
 
 | 입력 | 최적화 전 `0ed74af` 최고 RSS | 최종 최고 RSS | 최종 worker(자체 기록) | 최종 경과 |
 |---|---|---|---|---|
@@ -156,14 +158,14 @@ TS 잘림 규칙(`native_video::truncated_video_payload`): 파일 길이가 188�
 - 두 엔진 교차: 같은 13구간을 `HARS_REMUX_ENGINE=ffmpeg`로도 변환했다. replay JSON 13/13 동등, 26영상 모두 Python과 sample payload·PTS/DTS·키프레임·decoder configuration이 같다(유닛 뒤 0 바이트 처리를 맞춘 뒤에도). 순수 기본 실행에서 대체는 0회였다. 순수 엔진 26개 MP4는 이 브랜치의 이전 측정 출력(메모리 최적화 전후 비교에 쓴 것)과 바이트가 같다.
 - 실제 실행 파일 e2e는 [제품 경로 검증](#제품-경로-검증)에 있다.
 
-- 13구간 26영상(`integration/pure_remux_audit.py`, PyAV 16.1/FFmpeg 8.0.1, system ffmpeg 6.1.1 디코딩): qcamera 13·front 13 모두 패킷 1,200, PTS/DTS·키프레임 flag·sample payload SHA·마지막 외 duration·decoder configuration 바이트가 Python과 같음, 정규화 전체 NAL SHA = 원본, 전체 디코딩 1,200프레임·오류 줄 0·프레임 MD5 목록 = Python, stream duration = 각 쪽 모델 값. 키프레임 합계 TS 1,040, HEVC 780.
-- 전체 replay JSON(`integration/real_conversion_compare.py`): 원본 13구간 13/13(모델링한 duration 파생 필드 외 차이 0, `drive_summary` 변화 없음), 14구간 14/14, 47구간 47/47.
-- CI 합성 oracle `integration/pipeline_contract.py`: 통과(qcamera만 Python probe 값과 다른 것이 모델대로).
+- 13구간 26영상(`pure_remux_audit.py`, PyAV 16.1/FFmpeg 8.0.1, system ffmpeg 6.1.1 디코딩): qcamera 13·front 13 모두 패킷 1,200, PTS/DTS·키프레임 flag·sample payload SHA·마지막 외 duration·decoder configuration 바이트가 Python과 같음, 정규화 전체 NAL SHA = 원본, 전체 디코딩 1,200프레임·오류 줄 0·프레임 MD5 목록 = Python, stream duration = 각 쪽 모델 값. 키프레임 합계 TS 1,040, HEVC 780.
+- 전체 replay JSON(`real_conversion_compare.py`): 원본 13구간 13/13(모델링한 duration 파생 필드 외 차이 0, `drive_summary` 변화 없음), 14구간 14/14, 47구간 47/47.
+- CI 합성 oracle `pipeline_contract.py`: 통과(qcamera만 Python probe 값과 다른 것이 모델대로).
 - 경계 시험: `tests/pure_remux.rs`, `tests/terminal_duration.rs`, `tests/pure_remux_faults.rs`, `tests/archive_pure_remux.rs`.
 
 ## 제품 경로 검증
 
-최종 release 실행 파일, 매번 새 임시 데이터 폴더, loopback 포트, 실주행 13구간 원본(읽기 전용). `integration/pure_default_product.py`(시나리오별 JSON, 경로·clock·좌표 없음), `integration/real_device_media.py`, `integration/ui_view_check.py`.
+최종 release 실행 파일, 매번 새 임시 데이터 폴더, loopback 포트, 실주행 13구간 원본(읽기 전용). `pure_default_product.py`(시나리오별 JSON, 경로·clock·좌표 없음), `real_device_media.py`, `ui_view_check.py`.
 
 | 항목 | 결과 |
 |---|---|
@@ -181,7 +183,7 @@ TS 잘림 규칙(`native_video::truncated_video_payload`): 파일 길이가 188�
 | `HARS_REMUX_ENGINE=ffmpeg` 서버 | 같은 흐름 `ready`, 두 카메라 `remux_engine` ffmpeg, Range 206 |
 | 실제 UI(`/view/<id>/`, headless Edge, 매번 새 임시 프로필) | 순수 기록 2회, B-frame 대체 기록 1회 모두 9/9: 메타데이터, 카메라 전환(front ↔ qcamera), 재생, 일시정지, 중간·말미 시킹(readyState 4), 오버레이 캔버스 그려짐, 지도(track 요청, 지도 요소), 차량 그래프(telemetry 요청, 그래프 6개) |
 
-UI 검사는 iframe 안의 실제 페이지를 사용자처럼 조작한다(버튼 클릭, seek 막대 입력). 단독 `<video>` 재생 검사([브라우저 재생](#브라우저-재생))와 별개다. 자동화하지 않은 것: 영상 화질의 눈 확인, 오버레이 그림이 영상과 맞는지의 눈 확인, 지도 타일(외부 네트워크) 로드, 터치·키보드 단축키. 실제 디스크 부족(ENOSPC)은 user namespace 안의 작은 tmpfs로 확인했다(`integration/low_space_tmpfs.sh`, root 불필요, 합성 raw HEVC 10,126,246바이트, release `remux` CLI). 서버 전체 흐름의 ENOSPC는 `RLIMIT_FSIZE`의 EFBIG와 여유 공간 주입(`HARS_AVAILABLE_SPACE_BYTES`, debug 전용)으로 확인했다.
+UI 검사는 iframe 안의 실제 페이지를 사용자처럼 조작한다(버튼 클릭, seek 막대 입력). 단독 `<video>` 재생 검사([브라우저 재생](#브라우저-재생))와 별개다. 자동화하지 않은 것: 영상 화질의 눈 확인, 오버레이 그림이 영상과 맞는지의 눈 확인, 지도 타일(외부 네트워크) 로드, 터치·키보드 단축키. 실제 디스크 부족(ENOSPC)은 user namespace 안의 작은 tmpfs로 확인했다(`low_space_tmpfs.sh`, root 불필요, 합성 raw HEVC 10,126,246바이트, release `remux` CLI). 서버 전체 흐름의 ENOSPC는 `RLIMIT_FSIZE`의 EFBIG와 여유 공간 주입(`HARS_AVAILABLE_SPACE_BYTES`, debug 전용)으로 확인했다.
 
 | tmpfs 크기 | `3834c10` | 이번 수정 |
 |---|---|---|
@@ -192,7 +194,7 @@ UI 검사는 iframe 안의 실제 페이지를 사용자처럼 조작한다(버�
 
 ## 브라우저 재생
 
-`integration/browser_video_check.py`로 Windows Microsoft Edge(`--headless=new`, 매번 새 임시 프로필, 사용자 브라우저·ego-browser 미사용)를 돌렸다. 영상은 WSL의 다중 스레드 Range 서버(127.0.0.1, 지정 포트)로 제공했다. 순수 엔진 26개와 FFmpeg 엔진(`HARS_REMUX_ENGINE=ffmpeg`) 26개를 각각 3회, 총 156회 확인했다.
+`browser_video_check.py`로 Windows Microsoft Edge(`--headless=new`, 매번 새 임시 프로필, 사용자 브라우저·ego-browser 미사용)를 돌렸다. 영상은 WSL의 다중 스레드 Range 서버(127.0.0.1, 지정 포트)로 제공했다. 순수 엔진 26개와 FFmpeg 엔진(`HARS_REMUX_ENGINE=ffmpeg`) 26개를 각각 3회, 총 156회 확인했다.
 
 - 오류(`error`, `MediaError`) 0. 중간(50 %)·말미(99.5 %) seek 후 readyState 최소 4. 재생 400 ms 후 진행, 일시정지 정상.
 - 병합 커밋 `40854ee` 출력으로 다시 돌린 결과다(병합 전 출력으로 한 첫 실행도 같은 항목 모두 통과, `loadedmetadata` 최대 120 ms).
@@ -205,7 +207,7 @@ UI 검사는 iframe 안의 실제 페이지를 사용자처럼 조작한다(버�
 
 측정 실행 파일은 커밋 `1425384`의 release 빌드 하나이고, `HARS_REMUX_ENGINE`만 바꿨다. 최적화 전(`0ed74af`, 메모리 상한·payload 디스크 staging 전) 빌드를 같은 실행에 넣어 교차 비교했다(d). WSL2 Ubuntu 24.04 x86_64, 16 logical CPU, 입력 NTFS(drvfs) 원본, 출력 ext4, warm cache. 단계마다 측정 직전 load average 0.7~1.5(다른 작업 없음, 마지막 단계 직후 2.4). 구현별 warmup 1회 + 순서를 회전·역순으로 바꾼 교차 5회. 숫자 집계: [pure-memory-2026-11-16.json](measurements/pure-memory-2026-11-16.json).
 
-(a) 리먹싱 단독(`integration/benchmark_remux.py`, `remux` CLI 또는 Python PyAV 어댑터, 검증 포함), 13영상 합(영상별 중앙값의 합, 괄호는 회차별 합의 범위). 520표본 모두 Python 대비 검증 통과. RSS는 20 ms 표본의 프로세스 트리 합이다.
+(a) 리먹싱 단독(`benchmark_remux.py`, `remux` CLI 또는 Python PyAV 어댑터, 검증 포함), 13영상 합(영상별 중앙값의 합, 괄호는 회차별 합의 범위). 520표본 모두 Python 대비 검증 통과. RSS는 20 ms 표본의 프로세스 트리 합이다.
 
 | | 경과(초) | CPU(초) | 평균 RSS 중앙값(KiB) | 최고 RSS(KiB) |
 |---|---|---|---|---|
@@ -218,7 +220,7 @@ UI 검사는 iframe 안의 실제 페이지를 사용자처럼 조작한다(버�
 | TS 순수(최종) | 2.150 (2.142–2.189) | 1.465 | 43,071 | 76,096 |
 | TS 순수(최적화 전) | 2.057 (2.078–2.149) | 1.440 | 44,568 | 79,836 |
 
-(b) 전체 변환(`integration/benchmark_conversion.py`, 로그 분석·리먹싱·검증·텔레메트리·썸네일), 3·7·9번 구간(9번은 Python과 마지막 길이 차이가 가장 큼). 모든 결과를 Python 전체 출력과 모델 포함 비교해 통과했고 경고·대체 없음. 구간별 중앙값(범위):
+(b) 전체 변환(`benchmark_conversion.py`, 로그 분석·리먹싱·검증·텔레메트리·썸네일), 3·7·9번 구간(9번은 Python과 마지막 길이 차이가 가장 큼). 모든 결과를 Python 전체 출력과 모델 포함 비교해 통과했고 경고·대체 없음. 구간별 중앙값(범위):
 
 | 구간 | Python | FFmpeg 엔진 | 순수(최종) | 순수(최적화 전) |
 |---|---|---|---|---|
@@ -230,7 +232,7 @@ UI 검사는 iframe 안의 실제 페이지를 사용자처럼 조작한다(버�
 
 순수 기본은 FFmpeg 엔진보다 경과 13 %, CPU 8 % 적고 Python보다 경과 28 %, CPU 30 % 적다. 최적화 전 빌드와는 경과 +1.9 %, CPU +1.6 %로 회차 범위 안이다.
 
-(c) 동시 변환(`integration/benchmark_concurrent.py`, 서로 다른 구간을 동시에 시작, 마지막이 끝날 때까지): 중앙값(범위), 모든 결과 Python 출력과 비교 통과.
+(c) 동시 변환(`benchmark_concurrent.py`, 서로 다른 구간을 동시에 시작, 마지막이 끝날 때까지): 중앙값(범위), 모든 결과 Python 출력과 비교 통과.
 
 | | Python | FFmpeg 엔진 | 순수 |
 |---|---|---|---|
@@ -294,13 +296,4 @@ fsync만 넣으면 HEVC 리먹싱이 약 9 % 느려졌다(영상당 약 35 ms, M
 ```sh
 cargo test --test pure_remux --test terminal_duration --test ts_duration --test pure_remux_faults \
   --test archive_pure_remux --test conversion_resource --test conversion_keep_previous
-python integration/real_conversion_compare.py CORPUS BINARY ORACLE OUT --limit 13
-python integration/pure_remux_audit.py CORPUS OUT ORACLE
-python integration/pipeline_contract.py BINARY
-python integration/boundary_inputs.py BINARY WORKDIR REPORT.json          # 손상 입력, Python과 비교
-systemd-run --user --scope -p MemoryMax=2G -p MemorySwapMax=0 -p OOMPolicy=continue \
-  python3 integration/pure_remux_memory.py BINARY NEW_WORKDIR
-python integration/pure_default_product.py CORPUS BINARY NEW_OUT --ports UI DEVICE
-python integration/ui_view_check.py --browser EXE --profile NEW_DIR --port N --server URL --record ID --output OUT.json
-python integration/benchmark_concurrent.py CORPUS NEW_OUT --segments 3 7 9 1 --jobs 2 4 --runs 5 --binary pure=BINARY@pure
 ```

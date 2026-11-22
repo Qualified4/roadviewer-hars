@@ -322,7 +322,7 @@ fn probe_rate(dts: &[i64]) -> (i64, i64) {
 
 /// The Python reference (PyAV) ends a qcamera.ts at 1/r_frame_rate of the
 /// library probe. This keeps a model of that estimate (used by
-/// integration/terminal_rule.py) honest against the host's development
+/// the earlier conversion comparisons) honest against the host's development
 /// `ffprobe` run with the library default; HARS no longer copies it
 /// (docs/hars/TERMINAL-DURATION.md).
 #[tokio::test]

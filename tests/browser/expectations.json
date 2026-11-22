@@ -1,0 +1,5 @@
+{
+ "about": "Every browser-groups.json entry runs once and must pass. test_gate_rules.py checks the manifest and the verdict rules.",
+ "entries": 50,
+ "restart_allowed": ["maps[map_parts=many,leak]"]
+}

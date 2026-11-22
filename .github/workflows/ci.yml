@@ -76,7 +76,7 @@ jobs:
       # cargo-nextest runs the same tests as `cargo test --all-targets`, each in its own process and
       # the test programs side by side.
       - run: cargo nextest run --locked --all-targets
-  # The original Python client and app against the HARS debug executable that Browser build made.
+  # The pinned openpilot RV1 client against the HARS debug executable that Browser build made.
   compatibility:
     name: Compatibility
     if: ${{ github.event_name != 'push' }}
@@ -84,13 +84,10 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      # pipeline_contract.py makes its synthetic inputs with the ffmpeg CLI (libx264, libx265).
-      - name: Native test dependencies
-        uses: ./.github/actions/test-packages
-      - name: Python compatibility environment
+      - name: RV1 client dependency
         run: |
           python3 -m venv /tmp/hars-compat-env
-          /tmp/hars-compat-env/bin/pip install -r reference/python/roadviewer/requirements.txt aiohttp
+          /tmp/hars-compat-env/bin/pip install aiohttp
       - uses: actions/download-artifact@v4
         with:
           name: hars-debug-bin
@@ -98,8 +95,6 @@ jobs:
       - run: chmod +x hars-bin/roadviewer-hars
       - name: Original ccnc client and offline authentication migration
         run: /tmp/hars-compat-env/bin/python integration/ccnc_compat.py --rust "$PWD/hars-bin/roadviewer-hars"
-      - name: Python and Rust full replay conversion oracle
-        run: /tmp/hars-compat-env/bin/python integration/pipeline_contract.py "$PWD/hars-bin/roadviewer-hars"
       - name: Original client upload fault injection
         run: /tmp/hars-compat-env/bin/python integration/uploader_faults.py --rust "$PWD/hars-bin/roadviewer-hars"
   # Python only, no build.
@@ -108,11 +103,7 @@ jobs:
     if: ${{ github.event_name != 'push' }}
     runs-on: ubuntu-24.04
     steps:
-      # verify_reference.py reads the preserved Python Road Viewer commit from the history.
       - uses: actions/checkout@v7
-        with:
-          fetch-depth: 0
-      - run: python3 scripts/verify_reference.py
       - run: python3 scripts/check_release.py
       - run: python3 scripts/check_coexistence.py
   container:
@@ -202,13 +193,13 @@ jobs:
         with:
           node-version: '22.13.1'
           cache: npm
-          cache-dependency-path: integration/upstream_cjs/package-lock.json
-      - run: npm ci --prefix integration/upstream_cjs
+          cache-dependency-path: tests/browser/package-lock.json
+      - run: npm ci --prefix tests/browser
       - uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-shell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('integration/upstream_cjs/package-lock.json') }}
-      - run: npx --prefix integration/upstream_cjs playwright install --only-shell chromium
+          key: playwright-shell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/browser/package-lock.json') }}
+      - run: npx --prefix tests/browser playwright install --only-shell chromium
       # No `playwright install-deps`: the hosted runner already has Chromium's shared libraries (it ships Google
       # Chrome). If an image update removes one, this fails here instead of in every test.
       - name: Browser shared libraries are present
@@ -226,11 +217,11 @@ jobs:
       - name: Loopback-only network namespace
         run: |
           sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-          unshare -rn sh -c 'ip link set lo up && python3 integration/upstream_cjs/run_browser_tests.py --isolation-check'
+          unshare -rn sh -c 'ip link set lo up && python3 tests/browser/run_browser_tests.py --isolation-check'
       - name: Browser tests
         run: |
           set +e
-          python3 integration/upstream_cjs/run_browser_tests.py --hars-bin hars-bin/roadviewer-hars \
+          python3 tests/browser/run_browser_tests.py --hars-bin hars-bin/roadviewer-hars \
             --out browser-out --groups ${{ matrix.groups }}
           code=$?
           echo "$code" > browser-out/exit-code
@@ -260,17 +251,16 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v7
-      # The gate data (excluded set exactly replay_format2, restart only for maps many/leak, no rerun kinds) and
-      # the verdict rules, without a browser.
+      # The manifest, allowed restart and verdict rules, without a browser.
       - name: Gate rules
-        run: python3 integration/upstream_cjs/test_gate_rules.py
+        run: python3 tests/browser/test_gate_rules.py
       - uses: actions/download-artifact@v4
         with:
           pattern: browser-summary-*
           path: shards
-      # Recomputed from the shards' results: all 51 entries once, each shard's exit status agreeing with its summary.
+      # Recomputed from the shards' results: all 50 entries once, each shard's exit status agreeing with its summary.
       - name: Gate over every shard
-        run: python3 integration/upstream_cjs/run_browser_tests.py --aggregate shards/* --out browser-gate
+        run: python3 tests/browser/run_browser_tests.py --aggregate shards/* --out browser-gate
       - name: Keep the gate summary
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
@@ -284,7 +274,7 @@ jobs:
   required:
     name: HARS required
     if: ${{ always() && github.event_name != 'push' }}
-    needs: [rust-lint, rust-tests, compatibility, repository, container, browser-build, browser]
+    needs: [rust-lint, rust-tests, compatibility, repository, container, browser-build, browser-shards, browser]
     runs-on: ubuntu-24.04
     steps:
       - name: Require every check and architecture
@@ -295,12 +285,13 @@ jobs:
           REPOSITORY_RESULT: ${{ needs.repository.result }}
           CONTAINER_RESULT: ${{ needs.container.result }}
           BROWSER_BUILD_RESULT: ${{ needs.browser-build.result }}
+          BROWSER_SHARDS_RESULT: ${{ needs.browser-shards.result }}
           BROWSER_RESULT: ${{ needs.browser.result }}
         run: |
           test "$RUST_LINT_RESULT" = success && test "$RUST_TESTS_RESULT" = success \
             && test "$COMPATIBILITY_RESULT" = success && test "$REPOSITORY_RESULT" = success \
             && test "$CONTAINER_RESULT" = success && test "$BROWSER_BUILD_RESULT" = success \
-            && test "$BROWSER_RESULT" = success
+            && test "$BROWSER_SHARDS_RESULT" = success && test "$BROWSER_RESULT" = success
   # Push to main only: save the caches the pull request jobs restore, with the same keys and paths. Each Rust
   # job first looks its key up without downloading; on a hit (Cargo.lock, Cargo.toml, rust-toolchain.toml
   # unchanged) it stops there. On a miss it compiles what the checks compile, without running a test, a browser
@@ -382,7 +373,7 @@ jobs:
             ~/.cargo/git
             target
           key: hars-rust-test-v1-${{ runner.os }}-${{ hashFiles('Cargo.lock', 'Cargo.toml', 'rust-toolchain.toml') }}
-  # The .deb files of the test packages (capnproto, ffmpeg) for Rust tests and Compatibility: the
+  # The .deb files of the test packages (capnproto, ffmpeg) for Rust tests: the
   # runners' Ubuntu mirror has been slow. Saved only when the runner image's cache does not hold them yet.
   cache-packages:
     name: Cache refresh (packages)
@@ -405,10 +396,10 @@ jobs:
         with:
           node-version: '22.13.1'
           cache: npm
-          cache-dependency-path: integration/upstream_cjs/package-lock.json
-      - run: npm ci --prefix integration/upstream_cjs
+          cache-dependency-path: tests/browser/package-lock.json
+      - run: npm ci --prefix tests/browser
       - uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
-          key: playwright-shell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('integration/upstream_cjs/package-lock.json') }}
-      - run: npx --prefix integration/upstream_cjs playwright install --only-shell chromium
+          key: playwright-shell-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('tests/browser/package-lock.json') }}
+      - run: npx --prefix tests/browser playwright install --only-shell chromium

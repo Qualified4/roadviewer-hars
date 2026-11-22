@@ -1,5 +1,4 @@
-//! The preserved Python pages are served under the HARS version, whatever Python release they
-//! came from, and the web assets are served unmodified.
+//! The running app renders its own page version and serves the web assets byte-for-byte.
 use axum::{
     body::{Body, to_bytes},
     http::{Request, StatusCode},
@@ -14,20 +13,8 @@ use tower::ServiceExt;
 
 const HARS: &str = env!("CARGO_PKG_VERSION");
 
-fn reference() -> PathBuf {
-    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("reference/python/roadviewer")
-}
 fn web() -> PathBuf {
-    reference().join("app/web")
-}
-/// The preserved Python release, from its app config (not from the pages under test).
-fn python_version() -> String {
-    let config = std::fs::read_to_string(reference().join("config.yaml.reference")).unwrap();
-    let line = config
-        .lines()
-        .find_map(|l| l.strip_prefix("version:"))
-        .expect("config.yaml.reference names a version");
-    line.trim().trim_matches('"').to_string()
+    PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web")
 }
 async fn get(app: &App, uri: &str) -> (StatusCode, String, Vec<u8>) {
     let response = ingress(app.clone())
@@ -55,21 +42,6 @@ fn asset_versions(html: &str) -> Vec<&str> {
         .collect()
 }
 
-#[test]
-fn preserved_pages_carry_the_python_release_that_is_replaced() {
-    let python = python_version();
-    assert_ne!(python, HARS);
-    let library = std::fs::read_to_string(web().join("library.html")).unwrap();
-    assert!(
-        library.contains(&format!("assets/style.css?v={python}\"")),
-        "library.html no longer names the Python release where HARS reads it"
-    );
-    for page in ["library.html", "index.html", "shell.html"] {
-        let html = std::fs::read_to_string(web().join(page)).unwrap();
-        assert!(html.contains(&format!("?v={python}")), "{page}");
-    }
-}
-
 #[tokio::test]
 async fn pages_name_the_hars_version_only() {
     let root = tempfile::tempdir().unwrap();
@@ -82,7 +54,6 @@ async fn pages_name_the_hars_version_only() {
         .save_meta(json!({"id":record,"name":"00000001--0123456789 / 구간 0","uploaded":1700000000.0,"status":"unconverted","files":{},"error":null}))
         .await
         .unwrap();
-    let python = python_version();
     for (uri, assets, fragment) in [
         ("/".to_string(), "assets/", false),
         ("/?fragment=1".to_string(), "assets/", true),
@@ -93,7 +64,6 @@ async fn pages_name_the_hars_version_only() {
         assert_eq!(status, StatusCode::OK, "{uri}");
         assert_eq!(cache, "no-store", "{uri}");
         let html = String::from_utf8(body).unwrap();
-        assert!(!html.contains(&python), "{uri} still names Python {python}");
         assert!(
             !html.contains("__VERSION__") && !html.contains("__ASSETS__"),
             "{uri}"
@@ -105,16 +75,16 @@ async fn pages_name_the_hars_version_only() {
             html.contains(&format!("\"{assets}style.css?v={HARS}\"")),
             "{uri}"
         );
-        // The pages name the product as preserved, "Road Viewer", with no HARS suffix anywhere.
+        // The pages name the product "Road Viewer", with no HARS suffix anywhere.
         assert!(!html.contains("HARS"), "{uri}: no page names HARS");
         assert!(
             html.contains("<title>Road Viewer · Home Assistant</title>"),
-            "{uri}: the title is the preserved one"
+            "{uri}: the product title"
         );
         if uri == "/?fragment=1" {
             assert!(
                 html.contains("<h1>Road Viewer</h1>"),
-                "{uri}: the wordmark keeps the preserved letters"
+                "{uri}: the product wordmark"
             );
         }
         if fragment {
@@ -122,7 +92,7 @@ async fn pages_name_the_hars_version_only() {
                 html.contains(&format!(
                     ">Road Viewer <span class=\"app-version\">v{HARS}</span>"
                 )),
-                "{uri}: the version label keeps the preserved name"
+                "{uri}: the version label uses the product name"
             );
         }
         if fragment {
@@ -152,7 +122,7 @@ async fn assets_are_served_unmodified_and_versioned_ones_are_cached() {
         let (status, cache, body) = get(&app, &format!("/assets/{name}?v={HARS}")).await;
         assert_eq!(status, StatusCode::OK, "{name}");
         assert_eq!(cache, "public, max-age=31536000", "{name}");
-        assert_eq!(body, file, "{name} is served as preserved");
+        assert_eq!(body, file, "{name} is served byte-for-byte");
         let (status, cache, _) = get(&app, &format!("/assets/{name}")).await;
         assert_eq!(
             (status, cache.as_str()),
@@ -169,6 +139,6 @@ async fn assets_are_served_unmodified_and_versioned_ones_are_cached() {
     let maps = std::fs::read_to_string(web().join("maps.js")).unwrap();
     assert!(
         script.contains(&maps),
-        "the replay module carries maps.js as preserved"
+        "the replay module carries maps.js byte-for-byte"
     );
 }

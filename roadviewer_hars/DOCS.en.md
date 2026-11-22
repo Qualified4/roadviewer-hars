@@ -709,7 +709,7 @@ For stalled uploads, inspect file access, connectivity, capacity and the library
 
 HARS CI runs the Rust checks and tests, original ccnc client compatibility and upload fault injection, a Python/Rust replay conversion comparison, and native amd64/aarch64 image builds with FFmpeg-absence, container boot and TLS checks. Browser UI checks run in the required CI check `Browser checks`. Actual Home Assistant performance and native Android file selection depend on the environment.
 
-The bundled openpilot schema may need updating for sufficiently different log formats. See [schema licensing](../reference/python/roadviewer/schema/OPENPILOT-LICENSE) and the historical [changelog](CHANGELOG.md).
+The bundled openpilot schema may need updating for sufficiently different log formats. See [schema licensing](../resources/schema/OPENPILOT-LICENSE) and the historical [changelog](CHANGELOG.md).
 
 
 ## Documentation screenshots

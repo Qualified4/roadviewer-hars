@@ -1,5 +1,5 @@
 fn main() {
-    let dir = "reference/python/roadviewer/schema/cereal";
+    let dir = "resources/schema/cereal";
     println!("cargo:rerun-if-changed={dir}");
     capnpc::CompilerCommand::new()
         .src_prefix(dir)
