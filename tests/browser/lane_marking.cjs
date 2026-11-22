@@ -68,7 +68,9 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
      {drivingMode:4,gearShifter:'sport',gearStep:3,evModeActive:true,evModeValid:false},
      {drivingMode:0,gearShifter:'unknown',gearStep:0},
      {drivingMode:99,gearShifter:'manumatic',gearStep:1},
-     {gearShifter:'drive',gearStep:32767}
+     {gearShifter:'drive',gearStep:12},
+     {gearShifter:'drive',gearStep:32767},
+     {gearShifter:'drive',gearStep:32766}
     ];
     data.gearAvailable=data.evModeAvailable=true;
     data.frames=expandReplayData({frames:changes.map((change,i)=>({...frame,t:i/10,...change}))}).frames;
@@ -88,8 +90,8 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
     };
    },time);
    const white='rgb(255, 255, 255)',orange='rgb(255, 178, 87)',green='rgb(91, 227, 174)',emptyBar=[white,'0.35'];
-   const modes=[white,'rgba(0, 255, 0, 0.784)','rgba(0, 255, 0, 0.784)','rgba(255, 165, 0, 0.784)',white,'rgba(255, 0, 0, 0.784)',white,white,white];
-   const gearStates=[[],['D','D5'],['D','D5'],['R','R'],['D','D4'],['D','S3'],[],['D','M1'],['D','D32767']];
+   const modes=[white,'rgba(0, 255, 0, 0.784)','rgba(0, 255, 0, 0.784)','rgba(255, 165, 0, 0.784)',white,'rgba(255, 0, 0, 0.784)',white,white,white,white,white];
+   const gearStates=[[],['D','D5'],['D','D5'],['R','R'],['D','D4'],['D','S3'],[],['D','M1'],['D','D12'],['D','D32'],['D','D32']];
    const sharedShadow='rgba(0, 0, 0, 0.55) 0px 0px 3px',textEffects=[sharedShadow,'0px','none','0px'];
    const gearPositions=(await hudAt(0)).gearPositions;
    for(let i=0;i<modes.length;i++){
@@ -119,7 +121,7 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
     const slots=[...$('videoGear').children],letters=slots.map(slot=>ink(slot.firstElementChild||slot));
     const stepEl=$('videoGearStep'),evEl=$('videoEv');
     const stepBox=rect(stepEl),evBox=rect(evEl),stepInk=stepBox.width?ink(stepEl):null;
-    const lastRight=stepInk?Math.min(stepInk.right,stepBox.right):letters[3].right;
+    const lastRight=stepInk?stepInk.right:letters[3].right;
     let baselineDelta,stepGap,previousStepGap,previousEvPosition;
     if(stepInk){
      const baseline=el=>{
@@ -146,7 +148,8 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
      sizes:[gear,step,ev,button].map(style=>parseFloat(style.fontSize)),slotWidths:slots.map(slot=>rect(slot).width),
      gaps:letters.slice(1).map((letter,i)=>letter.left-letters[i].right),evGap:ink(evEl).left-lastRight,
      baselineDelta,stepGap,previousStepGap,evPosition:[evBox.left,evBox.top],previousEvPosition,
-     stepBeforeEv:stepBox.right<evBox.left,gearLabel:$('videoGear').getAttribute('aria-label')};
+     stepOverflow:step.overflow,stepBeforeEv:stepBox.right<evBox.left&&lastRight+3<ink(evEl).left,
+     gearLabel:$('videoGear').getAttribute('aria-label')};
    },time);
    const layout=await layoutAt(.4);
    assert(layout.rowBelowBars&&layout.rowAboveControls,'bars, gear and buttons occupy three rows');
@@ -164,14 +167,18 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
      assert(evGap-layout.evGap<stepSize,`the empty step slot reserves about one digit: ${evGap-layout.evGap}px`);
     }else{
      assert(stepGap>0&&stepBeforeEv,'the gear step sits to the right of the letter, clear of EV');
-     assert(baselineDelta>=.08*gearSize&&baselineDelta<=.12*gearSize,`the step baseline sits below the letter at ${time}: ${baselineDelta}px`);
+     assert(Math.abs(baselineDelta/gearSize-.15)<.02,`the step baseline sits about .15em below the letter at ${time}: ${baselineDelta}px`);
      if(time!==.5)assert(Math.abs(stepGap/previousStepGap-.5)<.2,`the D-to-step gap is about half its previous size: ${stepGap}px vs ${previousStepGap}px`);
      assert.deepEqual(evPosition,previousEvPosition,'moving the gear step keeps EV in place');
      assert(Math.abs(evGap/gearGap-1.5)<.35,`EV spacing is about 1.5 times the gear spacing at ${time}: ${evGap/gearGap}`);
     }
    }
-   const longStep=await layoutAt(.8);
-   assert(longStep.stepBeforeEv&&longStep.gearLabel==='기어 D32767','a long raw step keeps its accessible label and stays clear of EV');
+   for(const [time,raw] of [[.8,12],[.9,32767],[1,32766]]){
+    const step=await layoutAt(time);
+    assert.equal(step.stepOverflow,'visible','the step shadow is free to paint outside the step box');
+    assert(step.stepBeforeEv,'the two-digit step and its shadow stay clear of EV');
+    assert.equal(step.gearLabel,`기어 D${raw}`,'the accessible label keeps the full step');
+   }
    assert.equal(evSize,gearSize,'EV and gear text use the same size');
    await page.evaluate(()=>$('videoOverlayToggle').click());
    assert.equal((await hudAt(.1)).visible,false,'overlay toggle hides the lower HUD');

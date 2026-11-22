@@ -793,9 +793,7 @@ select,.rv-choice-trigger{font-weight:500}
 .video-gear [data-gear-slot="D"]{position:relative}
 .video-gear[data-position="P"]>[data-gear-slot="P"],.video-gear[data-position="R"]>[data-gear-slot="R"],.video-gear[data-position="N"]>[data-gear-slot="N"],.video-gear[data-position="D"]>[data-gear-slot="D"]{color:#fff;font-weight:800;opacity:1}
 .video-gear[data-position="R"]>[data-gear-slot="R"]{color:#ffb257}
-.video-gear small{position:absolute;inset-inline-start:calc(100% + .02em);bottom:-.025em;font-size:.48em;font-variant-numeric:tabular-nums;white-space:nowrap}
-/* Long raw gear values may use the EV gap while keeping both indicators in place. */
-.video-gear:has(+.video-ev:not([hidden])) small{max-width:1.3em;overflow:hidden;text-overflow:ellipsis}
+.video-gear small{position:absolute;inset-inline-start:calc(100% + .02em);bottom:-.15em;font-size:.48em;font-variant-numeric:tabular-nums;white-space:nowrap}
 .video-gear small:empty{display:none}
 .video-ev[data-active="true"]{color:#5be3ae;opacity:1}
 @media(pointer:coarse){.replay-page .video-gap{--hud-h:46px}}
