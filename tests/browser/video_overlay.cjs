@@ -341,8 +341,10 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
     return Math.max(0,bottom-top+1)/devicePixelRatio;
    });
    const originalViewport=page.viewportSize(),phoneHeight=await blinkerHeight();
+   // The media-query listeners use the saved width when they switch to the desktop profile.
+   await page.evaluate(()=>localStorage.setItem('roadviewer-layout-width','1920'));
    await page.setViewportSize({width:1920,height:1400});
-   await page.evaluate(()=>{setReplayLayout('stack');applyLayoutWidth(1920)});
+   await page.evaluate(()=>{setReplayLayout('stack');syncLayoutWidth()});
    await page.waitForFunction(()=>{
     const v=document.getElementById('video'),c=document.getElementById('videoOverlay');
     const videoWidth=Math.min(c.clientWidth,c.clientHeight*v.videoWidth/v.videoHeight);
@@ -351,7 +353,7 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
    const desktopHeight=await blinkerHeight();
    assert(phoneHeight>0&&desktopHeight>=phoneHeight*1.8,`blinker grows with the video (${phoneHeight}px → ${desktopHeight}px)`);
    await page.setViewportSize(originalViewport);
-   await page.evaluate(()=>{setReplayLayout('auto');syncLayoutWidth()});
+   await page.evaluate(()=>{localStorage.removeItem('roadviewer-layout-width');setReplayLayout('auto');syncLayoutWidth()});
   }
   assert.deepEqual(await page.evaluate(()=>limitRoadPoints([[0,1],[30,2],[60,3]],40)),[[0,1],[30,2],[40,2+1/3]],'plan view clips BSD at the interpolated 40m boundary');
   const labelState=await page.evaluate(()=>{

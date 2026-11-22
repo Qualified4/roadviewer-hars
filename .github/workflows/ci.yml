@@ -230,7 +230,7 @@ jobs:
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
         with:
-          name: browser-summary-${{ matrix.shard }}
+          name: browser-summary-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
           path: |
             browser-out/summary.json
             browser-out/exit-code
@@ -258,9 +258,15 @@ jobs:
         with:
           pattern: browser-summary-*
           path: shards
-      # Recomputed from the shards' results: all 50 entries once, each shard's exit status agreeing with its summary.
+      # Reuse successful shards from earlier attempts when GitHub reruns just one shard.
       - name: Gate over every shard
-        run: python3 tests/browser/run_browser_tests.py --aggregate shards/* --out browser-gate
+        run: |
+          summaries=()
+          for shard in {1..9}; do
+            latest=$(printf '%s\n' shards/browser-summary-"$shard"-attempt-* | sort -V | tail -n 1)
+            summaries+=("$latest")
+          done
+          python3 tests/browser/run_browser_tests.py --aggregate "${summaries[@]}" --out browser-gate
       - name: Keep the gate summary
         if: ${{ always() }}
         uses: actions/upload-artifact@v4
