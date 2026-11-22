@@ -1,5 +1,5 @@
 //! Converting again a recording whose inputs the archiver moved (Python `run_job`, `convert`, `clear_prepared`,
-//! `stage_remote`, `requeue_deferred`). The converter itself is not run here; integration/archive_e2e.py converts
+//! `stage_remote`, `requeue_deferred`). The converter itself is not run here; the archive remux tests convert
 //! real logs read from the share and from Drive.
 mod common;
 use axum::http::StatusCode;

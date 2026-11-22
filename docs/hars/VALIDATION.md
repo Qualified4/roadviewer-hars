@@ -1,5 +1,7 @@
 # 검증 증거와 미검증 범위
 
+이 문서에 기록한 이식용 비교·측정 도구는 [정리 전 Git 트리](https://github.com/Qualified4/roadviewer-hars/tree/284efa5b0932c918f8f52bee616f216650b23c52/integration)에 있다.
+
 ## 로컬에서 실제 실행한 항목
 
 - Rust stable 1.100.0, `cargo fmt --all --check`, Clippy `--all-targets -- -D warnings`.
@@ -16,7 +18,7 @@
 
 ## 검증 도구
 
-`tests/`, `integration/ccnc_compat.py`, `integration/make_browser_fixture.py`, `scripts/container_smoke.py`, `scripts/verify_reference.py`, `scripts/check_release.py`에 재현 가능한 도구를 둔다. 성능의 별도 조건과 한계는 [PERFORMANCE.md](PERFORMANCE.md)에 기록한다.
+현재 검증 도구는 `tests/`, 두 RV1 검사(`integration/ccnc_compat.py`, `integration/uploader_faults.py`), `scripts/container_smoke.py`, `scripts/check_release.py`에 있다. 성능 측정 조건은 [PERFORMANCE.md](PERFORMANCE.md)에 기록한다.
 
 GitHub Actions는 최신 커밋의 `HARS CI` 실행을 확인해야 한다. 로컬 결과를 최신 커밋 CI 통과로 대신하지 않는다. amd64/aarch64 두 컨테이너와 Rust 검사 전체가 성공해야 `HARS required`가 성공한다.
 
@@ -31,10 +33,10 @@ GitHub Actions는 최신 커밋의 `HARS CI` 실행을 확인해야 한다. 로�
 ## alpha.2 실제 재생 변환 (2026-11-15)
 
 - 사용자 로컬 코퍼스 14구간(전방/qcamera), 추가47구간(qcamera47/전방44/와이드26)을 읽기 전용으로 사용했다. 각각16350/56399 모델 프레임이다.
-- `integration/real_conversion_compare.py`가 보존된 Python decoder 전체를 영문 임시 사본에서 실행한다. 비교 대상은 전체 replayV2, 영상 메타·시각, 모델·조향·레이더·CCNC·overlay, telemetry, GPS track, wall clock·주행 summary다. 경로/mtime 기반 cache key만 제외하며, 배열 순서·키의 존재·bool/null·숫자를 재귀 비교한다. 저장 최소 정밀도인 1e-6을 절대오차 한도로 사용하며 큰 값에 상대 허용오차를 부여하지 않았다. 두 코퍼스 모두 차이0이다.
+- `real_conversion_compare.py`가 보존된 Python decoder 전체를 영문 임시 사본에서 실행한다. 비교 대상은 전체 replayV2, 영상 메타·시각, 모델·조향·레이더·CCNC·overlay, telemetry, GPS track, wall clock·주행 summary다. 경로/mtime 기반 cache key만 제외하며, 배열 순서·키의 존재·bool/null·숫자를 재귀 비교한다. 저장 최소 정밀도인 1e-6을 절대오차 한도로 사용하며 큰 값에 상대 허용오차를 부여하지 않았다. 두 코퍼스 모두 차이0이다.
 - 대표 실제 구간을 독립 Rust 서버에 브라우저 업로드 API로 전송했다. 3파일/4파일 → 자동 queued/processing/ready, 활성 업로드 중 자동변환 대기, 원본 SHA256 불변을 확인했다. 751/1201 모델 프레임과 2/3카메라가 실제 생성됐다.
 - ego Chromium 실제 UI: 전방/qcamera/와이드 전환, 재생·일시정지,15/25/30/45초 탐색, 차량 그래프와 속도·조향·모델/레이더 overlay 표시, 지도와 GPS 경로를 확인했다. 브라우저 전체61구간을 재생한 것은 아니며 대표0번/6번 구간 검사다. 와이드45초 탐색은44.999989초,readyState4,오류없음이었다.
-- CI용 `integration/pipeline_contract.py`는 별도 합성120모델/3카메라 TS/HEVC 입력을 만들어 Python/Rust 전체 출력 동등성과 실제 무손실 native remux를 검사한다. 합성을 실데이터로 표현하지 않는다.
+- 당시 CI의 `pipeline_contract.py`는 별도 합성120모델/3카메라 TS/HEVC 입력을 만들어 Python/Rust 전체 출력 동등성과 실제 무손실 native remux를 검사했다. 합성을 실데이터로 표현하지 않는다.
 - 신규 Rust 검사는 null overlay의 compact 멱등성, 최신 past/leading 시각 경계, GPS 우선 wall clock, 변환 publication 전/후 재시작 및 완료 직전 취소 복구를 포함한다. 최신 로컬 Clippy 통과, 기존30테스트 및 추가 복구2테스트가 통과했다. 최신 커밋의 CI 결과는 별도로 확인한다.
 
 썸네일은 후보/점수/Y레벨·감마/JPEG/메타/실패 표식 정책을 이식했다. 실제14구간에서 score 일부±0.01, 동일FFmpeg로 JPEG를 RGB 디코딩해 비교한 평균 절대 채널차는0.7854~1.0617/255,최대9~14/255였다. Python PyAV wheel과 native FFmpeg 버전이 달라 픽셀·JPEG 바이트 동일성은 주장하지 않는다. 원인과 후보 동일성 검증은 추가로 필요하다.
@@ -56,7 +58,7 @@ GitHub Actions는 최신 커밋의 `HARS CI` 실행을 확인해야 한다. 로�
 - `cargo fmt --all --check`, Clippy `--all-targets -D warnings`, 전체35테스트 통과. 기존34개에 origin의 camera→model→event fallback/0시각/모델 없음 검사를 추가했다. gzip은64KiB 경계를 넘는 UTF-8·escape roundtrip과 mtime0을 검사한다. 기존 보안/손상/단절/복구/미디어 검사를 약화하지 않았다.
 - 실제14+47구간/72749모델 프레임 전체 replayV2/telemetry/GPS/summary를 새 Python oracle과 다시 비교했다. cache key만 제외하고 `1e-6` 절대오차·필드 존재·null/bool·순서 기준을 유지해 차이0이다. [14구간](measurements/conversion-optimized-real14-2026-11-15.json), [47구간](measurements/conversion-optimized-real47-2026-11-15.json). 이 전체 실행은 기능 검증용 각1회이며 대표 교차 반복 성능 측정과 구분한다.
 - 대표 MP4 2종과 실제 MP4에서 무손실 추출한 TS/HEVC 1종은 구현별 warmup1/교차5회로 매 결과를 비교했다. 모든 카메라가 경고·실패 fallback 없이 생성됐으며 Rust 전후 thumbnail JSON/JPEG 바이트 동일, 입력 SHA 불변이다. 파생 raw는 센서 원본 raw가 아니다. Python/Rust 사이의 기존 thumbnail score±0.01/FFmpeg 픽셀 차이는 그대로 별도 범위로 남겨 두며 출력 허용오차를 넓히지 않았다.
-- `integration/pipeline_contract.py`의 합성120모델·H.264 TS/2개 HEVC 전체 oracle 통과. 제품 경로가 frame 수·PTS/DTS·정규화 압축 그림 SHA·decoder header·hvc1·faststart 검사를 유지한다. 합성 시험을 실제 센서 raw 검증으로 표현하지 않는다.
+- `pipeline_contract.py`의 합성120모델·H.264 TS/2개 HEVC 전체 oracle 통과. 제품 경로가 frame 수·PTS/DTS·정규화 압축 그림 SHA·decoder header·hvc1·faststart 검사를 유지한다. 합성 시험을 실제 센서 raw 검증으로 표현하지 않는다.
 - 원본 ccnc 클라이언트 HTTP lifecycle·재페어링 없는 오프라인 인증/완료 영수증 이전을 최종 release로 재검증했다. 실제 와이드 구간4파일 업로드→활성 업로드 중 자동 변환 대기→queued/processing/ready·1201프레임/3카메라·원본 SHA 불변도 통과했다.
 - 전용 서버의 명시적 재변환+16MiB 합성 조각 업로드가 겹친 동안 목록 API165개/조각64개가 실패 없이 완료됐다. 결과와 표본 한계는 [성능 문서](PERFORMANCE.md) 및 [측정 JSON](measurements/conversion-upload-load-2026-11-15.json)에 기록했다.
 - ego Chromium 실제 UI에서 전방 재생/일시정지·15초 탐색, 와이드 전환/44.999989초 탐색, qcamera 전환/45초 동기화·readyState4/오류없음, 지도 경로·영상 overlay·실제 차량 그래프를 확인했다. [수치 기록](measurements/conversion-optimized-browser-2026-11-15.json). 대표1구간의 검증으로, 전체61구간 브라우저/HAOS 검증은 아니다. 사진·지도·좌표는 공개하지 않았다. 테스트 서버는 모든 작업 완료를 확인하고 종료했다.
@@ -69,7 +71,7 @@ CI는 기존 `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS re
 기준 main `0dd87af`, 최적화 소스 `314ed18`이다. 사용자 코퍼스39파일을 읽기 전용으로 조사하고 모두 SHA-256 불변을 확인했다. 13 rlog, 13 H.264 TS(526×330), 13 HEVC(1344×760)이며 와이드/별도 메타데이터는 없다. 카메라별1200패킷/디코딩1200프레임, 원본26영상 디코딩 오류0·중복 파일 내용 없음이다. 로그의 모델은 총15600프레임이다. 이 파일들은 Road Viewer 원본 형식 내보내기이므로 센서 최초 파일·컨테이너·시각 동일성을 가정하지 않는다. [파일별 크기/코덱/시각/누락 조사](measurements/original13-inventory-2026-11-15.json).
 
 - 최종 검증 포함 영상 전용 측정은26개 영상 각각 Python/기존Rust/최적화Rust warmup1+교차3회다. 모든 산출물에 원본의 압축 그림 SHA·decoder header set·패킷 수·PTS/DTS `1e-6`·키프레임 인덱스·avcC/hvcC/hvc1·faststart 검사를 수행했다. 입력·출력 파일 전체 SHA가 다르다는 이유로 손실로 판정하지 않았다.
-- 별도 전체 NAL 종류별 감사와 최종26 MP4 전체 디코딩도 수행했다. 정규화(start code 길이/Annex B trailing zeros 제외) 전체 NAL SHA가 입력과 모두 같고, 디코딩1200프레임/오류0이다. HEVC는2 slices/frame으로 VCL2400개와 frame1200개를 구분한다. `integration/nal_inventory.py`로 사진·payload를 출력하지 않고 재현할 수 있다.
+- 별도 전체 NAL 종류별 감사와 최종26 MP4 전체 디코딩도 수행했다. 정규화(start code 길이/Annex B trailing zeros 제외) 전체 NAL SHA가 입력과 모두 같고, 디코딩1200프레임/오류0이다. HEVC는2 slices/frame으로 VCL2400개와 frame1200개를 구분한다. `nal_inventory.py`로 사진·payload를 출력하지 않고 재현할 수 있다.
 - 기존 HEVC의 in-band VPS/SPS/PPS 중복을 확인해 신규 hvc1 mux에서는 입력 해시 후 parameter set32/33/34만 sample에서 제거한다. hvcC의 동일 decoder config를 보존하며 입력/출력 VCL/헤더를 독립 재검증한다. Native FFmpeg BSF는 RAII로 소유권을 관리하고 worker timeout/출력 상한·형식/프로토콜 whitelist·corrupt packet/단일 video/크기/clock/B-frame/32MiB NAL 한도를 유지한다.
 - 로컬 rustfmt/Clippy/전체36테스트 통과. 추가 검사는 native 검사·통합 mux 입력 해시를 FFmpeg CLI 독립 추출과 대조하고, timestamp/stream metadata 일치·hvc1 sample 내 PS 부재·잘못된 codec/playlist 거부를 확인한다. 합성120모델/3cam raw 전체 oracle도 통과했다. 합성을 실제 와이드 원본 검증으로 표현하지 않는다.
 - 최종13구간 Rust 전체 출력은 기존Rust와 cache key 제외 `1e-6` 기준13/13 동일하다. **Python과 전체 JSON은11/13 동일**하다. 3/9번의 qcamera 마지막 sample duration 차이(각+0.211/-0.200ms)가 duration 필드에 전달된다. baseline에도 같은 차이가 있었으며 허용오차를 확대하거나 결과를 성공으로 숨기지 않았다. 입력 탐색의 FPS 추정 차이로 인한 미해결 메타데이터 호환 차이이고, VCL·프레임·PTS/DTS 손실은 아니다. 원인과 영향은 PERFORMANCE.md를 따른다.
@@ -104,24 +106,24 @@ CI는 기존 `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS re
 - 각 사례 뒤에 세션·예약·임시 파일·저널, 등록 파일 SHA-256, 목록 중복 여부를 재시작 전후로 검사한다.
 - 드러난 결함: 실패한 쓰기를 성공으로 응답(fsync 전 flush 누락), 장치 삭제 뒤 재시작 불가, 세션 폴더 삭제 중 크래시 뒤 재시작 불가, 정체된 본문의 슬롯 영구 점유. 모두 수정했다.
 - finish 검증 실패 뒤 세션을 유지하면 업로더의 재시도가 유휴 만료까지 같은 422를 받는 것을 3회 재현했고, Python처럼 세션을 해제하도록 바꿨다.
-- 실제 tmpfs ENOSPC는 root가 필요해 `integration/upload_enospc.py`로 로컬에서 1회만 실행했다. 전원 차단과 OS 크래시는 검증하지 않았다.
+- 실제 tmpfs ENOSPC는 root가 필요해 `upload_enospc.py`로 로컬에서 1회만 실행했다. 전원 차단과 OS 크래시는 검증하지 않았다.
 
 ### API 동등성
 
-- `integration/api_contract_compare.py`가 실제 Python 서버와 HARS를 loopback에 나란히 띄워 비교한다. 53개 요청에서 상태 코드 53개, JSON 키 집합 46개가 같다. 차이 7개는 오류 형식(HARS는 `error`에 코드, `message`에 Python 문장)과 `video_downloads` 키 하나다.
+- `api_contract_compare.py`가 실제 Python 서버와 HARS를 loopback에 나란히 띄워 비교한다. 53개 요청에서 상태 코드 53개, JSON 키 집합 46개가 같다. 차이 7개는 오류 형식(HARS는 `error`에 코드, `message`에 Python 문장)과 `video_downloads` 키 하나다.
 - Python이 만든 tar를 HARS가 가져오고 HARS가 만든 tar를 Python이 가져온다. rlog SHA와 태그가 보존된다.
 - 네트워크 설정·재시작은 모의 Supervisor로만 확인했다.
 
 ### 아카이빙
 
-- `tests/archive_backends.rs`, `tests/archiver*.rs`, `tests/archive_*.rs`, `integration/archive_e2e.py`: OAuth 장치 흐름과 토큰 갱신, resumable 업로드의 끊김 후 재개와 세션 만료 후 재시작, size·md5·sha256 검증, copy·move, 단계별 크래시 뒤 복구, 원격 장애 중 로컬 보존, NAS 미마운트·끊김, 수동 실행과 `archive_running`, 기록 삭제에서 원격 삭제 저널까지, 원격 Range 재생과 다운로드, 아카이브 입력 재변환, 지도 보충.
+- `tests/archive_backends.rs`, `tests/archiver*.rs`, `tests/archive_*.rs`, `archive_e2e.py`: OAuth 장치 흐름과 토큰 갱신, resumable 업로드의 끊김 후 재개와 세션 만료 후 재시작, size·md5·sha256 검증, copy·move, 단계별 크래시 뒤 복구, 원격 장애 중 로컬 보존, NAS 미마운트·끊김, 수동 실행과 `archive_running`, 기록 삭제에서 원격 삭제 저널까지, 원격 Range 재생과 다운로드, 아카이브 입력 재변환, 지도 보충.
 - Python 구조의 폴더와 파일을 모의 Drive에 두고 아카이브·정리·삭제·연결 해제를 모두 실행한 뒤 바이트와 메타가 그대로임을 단언한다.
 - 독립 검토 지적: 언마운트 직후 로컬 디스크에 보관, 포기한 확인 작업의 뒤늦은 삭제, 다른 소유자 폴더에서의 삭제, 끊긴 요청의 임시 사본, 공유 폴더의 심볼릭 링크. 모두 재현 테스트와 함께 수정했다.
 - 중단된 NAS 복사가 다음 주기의 임시 파일을 rename하던 경합은 병렬 부하에서 100회 중 8회 실패했고, 대상별 배타 락과 취소 확인을 넣은 뒤 100회 중 0회다.
 
 ### Python 원격 데이터 읽기 전용 가져오기
 
-- `tests/legacy_archive.rs`, `integration/legacy_import_e2e.py`: 스캔, 가져오기 성공, 해시 불일치, 중복, 카메라 추가, 용량 부족, 5xx, 다운로드 중간 끊김, 취소, SIGKILL 3개 지점에서 Python 폴더·파일을 대상으로 한 요청이 GET뿐임을 요청 로그로 단언한다.
+- `tests/legacy_archive.rs`, `legacy_import_e2e.py`: 스캔, 가져오기 성공, 해시 불일치, 중복, 카메라 추가, 용량 부족, 5xx, 다운로드 중간 끊김, 취소, SIGKILL 3개 지점에서 Python 폴더·파일을 대상으로 한 요청이 GET뿐임을 요청 로그로 단언한다.
 - NAS 원본은 읽기 전용 권한(0555, 0444)으로 두고 전후 상태가 같음을 단언한다.
 
 ### 실제 코퍼스 회귀
@@ -152,7 +154,7 @@ CI는 기존 `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS re
 - 합성 경계 입력: 무작위 변형 320건(패닉 0, 시간 상한 안에 종료), B-frame TS(FFmpeg 대체 후 게시), 파라미터 세트만 100 MB(34.7 MiB에서 거부), 33 MiB NAL, 0프레임, EOS/EOB 경계. 실주행 B-frame·interlaced TS는 코퍼스에 없어 합성 입력으로만 확인했다. 실제 PAFF 파일은 만들지 못해 규칙 단위 테스트만 있다.
 - 실제 서버 실행 파일: 브라우저 업로드와 RV1 장치 업로드에서 자동 변환, Range 재생, 원본 보존 모드의 SHA 일치, 비보존 모드의 역변환 NAL·TS PTS 일치, `/api/logs/<id>/cancel` 취소, worker·변환 프로세스·서버 SIGKILL 뒤 재시작, 쓰기 한도와 메모리 상한, 동시 업로드 4개의 변환 대기, B-frame TS 대체 뒤 재생, `HARS_REMUX_ENGINE=ffmpeg` 서버.
 - 실제 재생 페이지(`/view/<id>/`)를 격리된 headless Edge로 구동했다. 카메라 전환, 재생·일시정지, 중간·말미 시킹, 오버레이 캔버스, 지도 요소, 차량 그래프의 9개 항목이 3회 모두 통과했다. 화질과 오버레이 정합의 눈 확인, 지도 타일 로드, 키보드·터치는 자동화하지 못했다.
-- 사용자 권한 tmpfs에서 실제 ENOSPC를 확인했다(`integration/low_space_tmpfs.sh`). 여유가 입력의 1.5배이면 FFmpeg 엔진이 선택되어 성공하고, 0.5배이면 `resource`로 끝난다.
+- 사용자 권한 tmpfs에서 실제 ENOSPC를 확인했다(`low_space_tmpfs.sh`). 여유가 입력의 1.5배이면 FFmpeg 엔진이 선택되어 성공하고, 0.5배이면 `resource`로 끝난다.
 - 컨테이너 기동 검사(bookworm, FFmpeg 5.1)가 amd64와 aarch64에서 HEVC와 H.264 TS를 순수 엔진으로 대체 없이 변환하는지 확인한다.
 
 ### 최종 독립 검토 반영 (PR #15)
@@ -177,7 +179,7 @@ PR #15까지 병합한 `main`(`2a8474f`)을 포함한 통합 브랜치의 releas
 | 기존 14구간 | 14 | 14 | 16,350 |
 | 기존 47구간 | 47 | 47 | 56,399 |
 
-기존 61구간·72,749프레임이 유지된다. PR #15 최종 커밋에서 전체 테스트 283개가 3회 연속 통과했고 `integration/pipeline_contract.py`가 통과했다. 컨테이너 검사는 CI의 amd64·aarch64에서 통과했다.
+기존 61구간·72,749프레임이 유지된다. PR #15 최종 커밋에서 전체 테스트 283개가 3회 연속 통과했고 `pipeline_contract.py`가 통과했다. 컨테이너 검사는 CI의 amd64·aarch64에서 통과했다.
 
 ### 미검증 요약
 
@@ -265,9 +267,9 @@ aarch64에서의 실제 디코딩·속도·메모리(CI는 컨테이너 기동·
 | 썸네일 85개(qcamera 74 + HEVC 대체 경로 11) | 종료 코드·stdout(고른 초, 점수)·`thumbnail.json`·해상도·JPEG 바이트 85/85 동일. 측정 빌드로 본 후보 5장과 밝기 보정 후 픽셀 85/85 동일. 새 worker가 내보낸 그림 2,918장(`8800338`: 4,052장) 모두 같은 시각의 alpha.4 그림과 같다 |
 | 디코딩 대조 36개 영상, 140패킷 창 | 내보낸 그림 5,004/5,004가 호스트 FFmpeg 6.1.1 `-threads 1` framemd5와 같다(영상당 139장: 제품 경로는 140번째 샘플의 그림을 원래 내보내지 않는다. 이전 기록의 5,040은 별도 harness로 그것까지 셌다) |
 | 줄인 범위에서 실제로 내보낸 그림 | 1,040/1,040 FFmpeg와 같다(`8800338`: 1,265/1,265). 건너뛰거나 flush로 버린 디코더에서 디코딩만 된 그림은 출력되지 않아 대조 대상이 아니다 |
-| 손상·잘림·비정상 해상도 40건(`integration/thumbnail_faults.py`, 시드 고정, `prlimit --as=2147483648`) | 성공/실패 40/40, 결과·JPEG까지 40/40 alpha.4와 같다. 만든 것 18/18, panic 0, 시한·메모리 초과 0, 실패 뒤 남은 파일 0 |
+| 손상·잘림·비정상 해상도 40건(`thumbnail_faults.py`, 시드 고정, `prlimit --as=2147483648`) | 성공/실패 40/40, 결과·JPEG까지 40/40 alpha.4와 같다. 만든 것 18/18, panic 0, 시한·메모리 초과 0, 실패 뒤 남은 파일 0 |
 | 독립 검토가 찾은 입력 4건(`8800338`에서 결과가 달랐다: 샘플 0의 다른 in-band PPS, IDR 직전 슬라이스 손실, HEVC 해석 불가 NAL 헤더, `ctts`를 숨긴 HEVC B-frame) | 4/4 `b94d8a4`와 고른 초·점수·JSON·JPEG 바이트 동일(검토자의 대조 입력 포함 9/9) |
-| 차등 퍼징(`integration/thumbnail_differential.py`, 시드 20261117, `prlimit --as=2147483648`): 합성 2 + 실주행 2개씩에서 만든 손상 입력 H.264 300 + HEVC 300 | 600/600 종료 코드·출력·`thumbnail.json`·JPEG 바이트가 `b94d8a4`와 같다(500건은 둘 다 썸네일 생성, 100건은 둘 다 실패) |
+| 차등 퍼징(`thumbnail_differential.py`, 시드 20261117, `prlimit --as=2147483648`): 합성 2 + 실주행 2개씩에서 만든 손상 입력 H.264 300 + HEVC 300 | 600/600 종료 코드·출력·`thumbnail.json`·JPEG 바이트가 `b94d8a4`와 같다(500건은 둘 다 썸네일 생성, 100건은 둘 다 실패) |
 | 두 번째 독립 검토(`d2637b2`): 4096x2160 H.264 `ref=16` 2건에서 확인용 디코더가 메모리를 두 배 가까이 쓰거나(251 → 477 MiB) 메모리 부족으로 abort(`b94d8a4`는 성공) | 수정(`bdd9d7d`) 뒤 검토 입력 5건 + 첫 검토 입력 12건 + 4096x2160 HEVC `ref=4` 1건 18/18 `b94d8a4`와 결과·JSON·JPEG 바이트 동일. Peak RSS 250.5 → 253.3 MiB, 306.3 → 339.6 MiB(1.11배, 차이는 glibc mmap 임계값: 고정하면 299.6 / 301.1 MiB), HEVC 4K 171.6 → 69.2 MiB |
 | 차등 퍼징 보강 뒤(`df2ed8e`): 합성 시드 추가(H.264 `ref=4`·`ref=16`·`slices=4`·1920x1080, HEVC `slices=4`)와 금지 비트가 켜진 비슬라이스 NAL 삽입 변형 | 시드 20261117 600/600(486건 둘 다 생성), 시드 20261118 300/300(249건) `b94d8a4`와 같다 |
 | 두 번째 검토 뒤 기존 검증 재실행(`df2ed8e`) | 썸네일 85/85(JPEG 바이트 포함), FFmpeg 대조 5,004/5,004·1,040/1,040, 손상 입력 40/40(panic 0), 원본 13구간 13/13 차이 없음 |
@@ -280,7 +282,7 @@ aarch64에서의 실제 디코딩·속도·메모리(CI는 컨테이너 기동·
 | `cargo fmt --all --check`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo test --locked --all-targets` | 통과. 전체 테스트 2회 연속 308 통과, 0 실패(검토 수정 뒤, `8800338`에서는 304) |
 | amd64 이미지(`hars-tp-thumb:new`, push 없음) | `image_report.py --require-no-ffmpeg` 통과, 120.74 MB / gzip 46.11 MB, 패키지 107 |
 
-스레드를 도입하지 않아 썸네일 테스트 50회 반복은 하지 않았다. `integration/no_ffmpeg_product.py`는 alpha.4와 새 실행 파일 모두에서 `/api/logs/{id}/download?source=...&format=mp4`가 404라 첫 구간에서 멈춘다(이 변경과 무관, 고치지 않음). 제품 경로 확인은 같은 서버 도우미(`pure_default_product.py`)로 따로 했다.
+스레드를 도입하지 않아 썸네일 테스트 50회 반복은 하지 않았다. `no_ffmpeg_product.py`는 alpha.4와 새 실행 파일 모두에서 `/api/logs/{id}/download?source=...&format=mp4`가 404라 첫 구간에서 멈춘다(이 변경과 무관, 고치지 않음). 제품 경로 확인은 같은 서버 도우미(`pure_default_product.py`)로 따로 했다.
 
 미검증: aarch64 실행, 썸네일 worker 자체를 SIGKILL하는 시험, IDR 간격이 1초보다 길거나 CRA만 있는 HEVC 실주행 입력, 14·47구간 전체 회귀(조정자). 건너뛴 샘플에서 디코더가 panic하는 입력(전부 디코딩하면 실패할 썸네일이 건너뛰면 만들어진다)은 구조 검사로 막지 못하며 차등 퍼징 1,500건(600 + 보강 뒤 600 + 300)에서는 나오지 않았다. 따라서 계약은 "디코더가 panic하지 않는 입력에서 `b94d8a4`와 같다"이다(THUMBNAIL-DECODER.md "What the equality covers"). 4096x2160 H.264의 메모리는 `cargo test`로 직접 시험하지 않고 고정 입력으로만 확인했다.
 
@@ -307,7 +309,7 @@ aarch64에서의 실제 디코딩·속도·메모리(CI는 컨테이너 기동·
 |---|---|
 | 미뤄진 변환 재대기열(PR #27) | 새 테스트가 수정 전 소스에서 실패, 수정 후 통과. `cargo nextest` 313/313, CI 통과 |
 | 운영 HAOS(alpha.5) 읽기 확인 | Drive 보관 기록 78개 변환 완료, Drive에서 영상 Range 206·원본 파일 206, 썸네일 200. 장치 1대 페어링, 최근 6시간 업로드 29건. 고정 16개·태그 521개 유지 |
-| 화면 파일 이전 | `web/` 43개 파일이 복사 시점에 원본과 바이트 동일. `verify_reference.py` 286개 일치 |
+| 화면 파일 이전 | `web/` 43개 파일이 복사 시점에 원본과 바이트 동일. 옛 원본 무결성 검사 286개 일치 |
 | 동시 처리 상한 | 16 허용·재시작 후 유지, 0과 17 거부(Rust 테스트) |
 | 전체 화면 차간거리 표시 | `tests/browser/fullscreen_landscape.cjs`의 새 케이스가 수정 전 실패, 수정 후 통과(컨트롤 숨김 시 바깥 여백만 남고, 다시 보이면 원위치) |
 | 브라우저 테스트 전체 | 로컬 1회 49 통과·1 실패(새 케이스의 측정 대상 오류, 수정 뒤 해당 파일 통과). 최종 판정은 CI |

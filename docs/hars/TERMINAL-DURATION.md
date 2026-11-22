@@ -1,5 +1,7 @@
 # 원본 영상 마지막 프레임 길이 규칙
 
+이 문서에 기록한 이식용 비교·측정 도구는 [정리 전 Git 트리](https://github.com/Qualified4/roadviewer-hars/tree/284efa5b0932c918f8f52bee616f216650b23c52/integration)에 있다.
+
 <!-- toc -->
 **목차**
 
@@ -86,8 +88,8 @@ UI(`app/web/app.js`): `data.duration`은 시크 막대 최대값·끝 시각·�
 ## Python 데이터와의 호환
 
 - Python이 만든 MP4(마지막 duration이 Python 규칙)는 재사용 경로에서 다시 쓰지 않는다. 검사는 프레임 수·시각·서명이고 마지막 duration을 보지 않는다(`tests/terminal_duration.rs`).
-- 전체 JSON 비교(`integration/real_conversion_compare.py`, `integration/pipeline_contract.py`)는 `integration/terminal_rule.py`로 차이를 모델링한다. 입력(rlog, 원본 영상)만으로 Python 값(probe 추정식의 Python 이식, 0.05초)과 HARS 값(규칙의 독립 재구현)을 각각 계산하고, 두 출력이 **각자의 값과 1e-9 안에서 같아야** 한다. 그 뒤 위 표의 파생 필드만 맞추고, 나머지 모든 필드는 기존 1e-6 비교를 그대로 한다. `drive_summary`는 각 쪽의 telemetry로 Python 원본 함수를 다시 돌려 각 쪽 출력과 같은지 확인한 뒤 맞춘다.
-- probe 추정식 이식은 `tests/ts_duration.rs`(Rust)와 `integration/terminal_rule.py`(Python) 두 곳에 있다. Rust 쪽은 libavformat의 실제 probe 값과 같음을, Python 쪽은 비교 때마다 Python 출력과 같음을 확인한다.
+- 이식 당시 전체 JSON 비교(`real_conversion_compare.py`, `pipeline_contract.py`)는 `terminal_rule.py`로 차이를 모델링한다. 입력(rlog, 원본 영상)만으로 Python 값(probe 추정식의 Python 이식, 0.05초)과 HARS 값(규칙의 독립 재구현)을 각각 계산하고, 두 출력이 **각자의 값과 1e-9 안에서 같아야** 한다. 그 뒤 위 표의 파생 필드만 맞추고, 나머지 모든 필드는 기존 1e-6 비교를 그대로 한다. `drive_summary`는 각 쪽의 telemetry로 Python 원본 함수를 다시 돌려 각 쪽 출력과 같은지 확인한 뒤 맞춘다.
+- 이식 당시 probe 추정식은 `tests/ts_duration.rs`(Rust)와 `terminal_rule.py`(Python) 두 곳에 있다. Rust 쪽은 libavformat의 실제 probe 값과 같음을, Python 쪽은 비교 때마다 Python 출력과 같음을 확인한다.
 
 ## 시험
 

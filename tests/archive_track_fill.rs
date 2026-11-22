@@ -1,7 +1,7 @@
 //! Drive maps backfill (Python `gps_track.TrackBackfill`, `run_track_fill`, `stop_track_fill`) against the loopback
 //! Drive fake. The fixture is a recording imported from the Python Road Viewer before it made routes: converted
 //! (prepared/data.json.gz, a summary without `track_v`) with its rlog only on Drive. The rlog is read by a stand-in
-//! for the child process; integration/archive_e2e.py reads a real one with the real executable.
+//! for the child process; the original drive data is tested separately.
 mod common;
 use axum::http::StatusCode;
 use common::archive_env::*;

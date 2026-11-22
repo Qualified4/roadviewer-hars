@@ -6,7 +6,7 @@
 
 ## 충돌 점검 (저장소 기준, 2026-11-17)
 
-`scripts/check_coexistence.py`가 CI에서 매 커밋 확인한다. Python 쪽 값은 보존된 `reference/python/roadviewer/config.yaml.reference`(1.3.18, `d3de134`) 기준이며, 운영 중인 Python 앱의 실제 설정과 같은지는 HAOS에서 확인해야 한다.
+현재 CI의 `scripts/check_coexistence.py`는 HARS 설정과 전용 데이터 경로를 확인한다. 아래 표는 당시 [Python 1.3.18 설정](https://github.com/Qualified4/roadviewer-hars/blob/d3de13472ea242dab9866d485b5777ad67d5b1dd/roadviewer/config.yaml)과 alpha.4의 비교 기록이다.
 
 | 항목 | Python 1.x | HARS 2.x | 충돌 |
 |---|---|---|---|
@@ -60,7 +60,7 @@
 
 이 단계에서 하지 않는 것:
 
-- **장치(openpilot) 업로드.** 장치 업로드는 HARS에 호스트 HTTPS 포트와 인증서를 주고 장치의 업로드 주소를 바꿔야 한다. 주소 변경은 이번 범위 밖이다. 필요하면 사용하지 않는 LAN 포트(예: 18443, 실제로 비어 있는지 HAOS에서 확인)를 HARS에만 배정하고 PC의 테스트 클라이언트(`integration/real_device_media.py`)로 확인한다. 라우터 포워딩과 도메인은 건드리지 않는다.
+- **장치(openpilot) 업로드.** 장치 업로드는 HARS에 호스트 HTTPS 포트와 인증서를 주고 장치의 업로드 주소를 바꿔야 한다. 주소 변경은 이번 범위 밖이다. 필요하면 사용하지 않는 LAN 포트(예: 18443, 실제로 비어 있는지 HAOS에서 확인)를 HARS에만 배정하고 [장치 API 검사 절차](../device-api.md)로 확인한다. 라우터 포워딩과 도메인은 건드리지 않는다.
 - **Google Drive·NAS 보관.** Python과 같은 OAuth client를 쓰면 HARS의 연결 해제가 Python 연결까지 끊을 수 있다. 보관 검증은 별도 단계로 두고, 그 전에는 HARS에 보관 설정을 넣지 않는다.
 
 ## 문제가 생겼을 때 HARS만 중단·제거

@@ -1,4 +1,4 @@
-"""Verify HARS and the preserved Python app can be installed side by side on one HAOS host."""
+"""Verify the add-on settings that keep HARS isolated on HAOS."""
 from pathlib import Path
 import re
 
@@ -15,26 +15,20 @@ def block(text, key):
 
 
 hars_text = (ROOT / "roadviewer_hars/config.yaml").read_text(encoding="utf-8")
-python_text = (ROOT / "reference/python/roadviewer/config.yaml.reference").read_text(encoding="utf-8")
-hars, python = top_level(hars_text), top_level(python_text)
+hars = top_level(hars_text)
 
-# The display name may match: this app is named Road Viewer and replaces the Python one. Identity stays separate.
-for key in ("slug", "image", "url"):
-    assert hars[key] != python[key], f"{key} must differ from the Python app"
-assert hars["ingress"] == "true" and hars["ingress_port"] == python["ingress_port"], "each app keeps its own container-private Ingress listener"
+# Keep the released add-on identity and the container-private Ingress listener.
+assert hars["slug"] == "roadviewer_hars"
+assert hars["image"] == "ghcr.io/qualified4/roadviewer-hars"
+assert hars["url"] == "https://github.com/Qualified4/roadviewer-hars"
+assert hars["ingress"] == "true" and hars["ingress_port"] == "8099"
 
-# Supervisor rejects two apps publishing one host port; both stay unpublished until an operator assigns distinct ports.
-for text in (hars_text, python_text):
-    assert set(re.findall(r"^\s+\d+/tcp:\s*(\S+)", block(text, "ports"), re.M)) == {"null"}
+# Supervisor publishes a host port only after an operator configures it.
+assert re.findall(r"^\s+(\d+/tcp):\s*(\S+)", block(hars_text, "ports"), re.M) == [("8443/tcp", "null")]
 
-# /data is private per slug, and the data roots inside it differ as well, so a restored backup cannot cross over.
-hars_roots = set(re.findall(r'"([^/"]+)/', block(hars_text, "backup_exclude")))
-python_roots = set(re.findall(r'"([^/"]+)/', block(python_text, "backup_exclude")))
-assert hars_roots == {"roadviewer-hars"} and python_roots == {"roadviewer"}
-
-# The device network panel reads and writes this app's own port mapping through Supervisor.
-assert hars.get("hassio_api") == "true" and python.get("hassio_api") == "true"
-assert hars["boot"] == "auto", "Road Viewer starts with the host, like the Python app it replaces"
+# /data is private per slug and the app uses its own root inside it.
+assert set(re.findall(r'"([^/"]+)/', block(hars_text, "backup_exclude"))) == {"roadviewer-hars"}
+assert hars["hassio_api"] == "true" and hars["boot"] == "auto"
 source = (ROOT / "src/main.rs").read_text(encoding="utf-8")
-assert '"/data/roadviewer-hars"' in source and '"/data/roadviewer"' not in source, "HARS default data root must be its own"
-print("HAOS coexistence invariants verified:", hars["slug"], "next to", python["slug"])
+assert '"/data/roadviewer-hars"' in source and '"/data/roadviewer"' not in source
+print("HAOS add-on isolation verified:", hars["slug"])

@@ -55,15 +55,20 @@ pub fn rlog() -> Vec<u8> {
                 c.set_frame_id(frame);
                 c.set_timestamp_eof(eof);
             });
+            emit(eof, &|e| {
+                let mut c = e.init_wide_road_camera_state();
+                c.set_frame_id(frame);
+                c.set_timestamp_eof(eof);
+            });
             if i == FRAMES {
                 break;
             }
-            for topic in 0..2 {
+            for topic in 0..3 {
                 emit(eof + 1, &|e| {
-                    let mut x = if topic == 0 {
-                        e.init_q_road_encode_idx()
-                    } else {
-                        e.init_road_encode_idx()
+                    let mut x = match topic {
+                        0 => e.init_q_road_encode_idx(),
+                        1 => e.init_road_encode_idx(),
+                        _ => e.init_wide_road_encode_idx(),
                     };
                     x.set_frame_id(frame);
                     x.set_segment_id(i);

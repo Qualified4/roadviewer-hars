@@ -455,7 +455,7 @@ Home Assistant 앱 백업에서는 다음을 제외합니다.
 
 GitHub Actions(**HARS CI**)는 Rust 검사와 테스트, 원본 ccnc 클라이언트 호환·업로드 장애 주입 검사, Python과 Rust의 재생 변환 대조, amd64/aarch64 이미지 빌드와 FFmpeg 잔존·컨테이너 기동·TLS 검사를 실행합니다. 브라우저 화면 검사는 필수 CI `Browser checks`로 실행합니다. 실제 Home Assistant 장비의 처리 성능과 모바일 네이티브 파일 선택창은 환경에 따라 다릅니다.
 
-포함된 cereal/car 스키마는 사용 중인 openpilot 체크아웃을 기반으로 합니다. 다른 브랜치의 로그 형식과 차이가 크면 스키마 갱신이 필요할 수 있습니다. 스키마와 UI 리소스의 라이선스는 [OPENPILOT-LICENSE](../reference/python/roadviewer/schema/OPENPILOT-LICENSE)를 참고하세요.
+포함된 cereal/car 스키마는 사용 중인 openpilot 체크아웃을 기반으로 합니다. 다른 브랜치의 로그 형식과 차이가 크면 스키마 갱신이 필요할 수 있습니다. 스키마 라이선스는 [OPENPILOT-LICENSE](../resources/schema/OPENPILOT-LICENSE)를 참고하세요.
 
 ## 외부 comma 장치 연결
 

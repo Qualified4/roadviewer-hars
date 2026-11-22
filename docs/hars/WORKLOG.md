@@ -1,5 +1,7 @@
 # 작업 재개 기록
 
+이식용 Python 원본 사본과 비교 도구는 정리했다. 당시 파일은 [정리 전 Git 트리](https://github.com/Qualified4/roadviewer-hars/tree/284efa5b0932c918f8f52bee616f216650b23c52)에 있다.
+
 ## 현재 목표와 경계
 
 사용자가 요청한 목표는 전체 Rust 이식·기능 동등성·독립 HA 앱·CI/CD·안전한 최종 포트 승계다. **목표는 아직 완료되지 않았다.** 현재 산출물을 완성된 Road Viewer 2.0 제품으로 취급하거나 남은 기능을 목표에서 제외하지 않는다.
@@ -41,10 +43,10 @@ Windows 작업 폴더 안의 소스를 WSL Ubuntu 24.04에서 빌드했다. Rust
 목표는 전체 재생 변환, 업로드 후 자동 큐, Python 동등성, 기존 UI 재생이며 아직 alpha.2 완료/릴리스 아님. Drive/NAS 이식과 운영 전환은 이번 범위 제외. 작업 트리의 신규 src/replay.rs, track.rs, thumbnail.rs, convert.rs, jobs.rs 및 HTTP 연결은 현재 미커밋 개발 중이다.
 
 - 사용자 지정 실제 코퍼스: `F:/davin/다운로드/WhaleDownload/roadviewer-14-segments-mp4` (14 rlog + 전방/qcamera 각14, 736950554 bytes). 원본은 읽기 전용.
-- `integration/real_replay_compare.py`: 14구간 모델총수 등 `/tmp/hars-alpha2-real14/frame-comparison.json`, 전 프레임/CCNC/조향/오버레이/replayV2 차이 없음 (첫 모델 프레임 상대 시간축).
-- `integration/real_conversion_compare.py`: `/tmp/hars-alpha2-real14-full/conversion-comparison.json`. 캐시 key만 제외한 전체 재생JSON/텔레메트리/summary/GPS, 14구간 모두 1e-6 초과 차이 없음. 썸네일 score 일부 ±0.01, 픽셀 동등성은 아직 미확인. Python wheel과 네이티브 FFmpeg 버전 차이 가능성이며 아직 원인 확정 아님.
+- `real_replay_compare.py`: 14구간 모델총수 등 `/tmp/hars-alpha2-real14/frame-comparison.json`, 전 프레임/CCNC/조향/오버레이/replayV2 차이 없음 (첫 모델 프레임 상대 시간축).
+- `real_conversion_compare.py`: `/tmp/hars-alpha2-real14-full/conversion-comparison.json`. 캐시 key만 제외한 전체 재생JSON/텔레메트리/summary/GPS, 14구간 모두 1e-6 초과 차이 없음. 썸네일 score 일부 ±0.01, 픽셀 동등성은 아직 미확인. Python wheel과 네이티브 FFmpeg 버전 차이 가능성이며 아직 원인 확정 아님.
 - 실제 데이터로 방향지시등 선택필드 누락, ffprobe pts_time 6자리 반올림 사용, telemetry_origin 반올림 순서, Python decimal rounding 차이를 찾아 수정했다. Python 원본은 수정하지 않았다.
-- `integration/real_upload_smoke.py`: `/tmp/hars-alpha2-upload1/result.json`. 첫 실제구간3파일 업로드 → queued/processing/ready, 업로드 수신 중 자동변환 대기 통과,751모델/전방/qcamera,원본해시 불변. 목록API22회max5.1275ms(단일 소규모 측정).
+- `real_upload_smoke.py`: `/tmp/hars-alpha2-upload1/result.json`. 첫 실제구간3파일 업로드 → queued/processing/ready, 업로드 수신 중 자동변환 대기 통과,751모델/전방/qcamera,원본해시 불변. 목록API22회max5.1275ms(단일 소규모 측정).
 - 실브라우저 ego TaskSpace23: 0번구간 전방 HEVC→브라우저 blob 및 qcamera 모두 readyState4, 재생/일시정지/30→45초 탐색/카메라 전환/실제 그래프·오버레이 확인. GPS API는1segment58points이나 지도 스크린샷이 빈 영역이어서 지도 렌더링 성공으로 보고하지 말 것. 스페이스는 종료했다. private screenshot `C:/Users/dabin/ego/hars-alpha2-real14/map.png`.
 - 독립 브라우저용 서버 실행 중(exec session84350): root `/tmp/hars-alpha2-upload1/data`, UI127.0.0.1:18199, device127.0.0.1:18198. 원래 운영 HAOS 아님. 재시작/종료 전 진행 중 변환 없는지 확인할 것.
 - 최신 로컬 Clippy 통과 `/tmp/hars-alpha2-clippy8.log`. 직전 cargo test 전체통과 `/tmp/hars-alpha2-tests2.log` (HTTP map 변경 이전; 최종 재검증 필요). 현재 releasebinary `/tmp/hars-target/release/roadviewer-hars`는최신 map API까지 포함(빌드로그 release6).
@@ -66,9 +68,9 @@ Windows 작업 폴더 안의 소스를 WSL Ubuntu 24.04에서 빌드했다. Rust
 - egoTaskSpace24에서와이드실재생15→16초,일시정지,45초시킹44.999989ready4오류없음. 지도타일/GPS경로/차량표식/오버레이스크린샷직접확인성공.초기0번구간빈지도는비동기로딩중찍은것으로추정(원인확정아님). 24종료. private screenshot wide-map.png.
 - 독립서버84350은진행작업없음을확인후종료. 현재browser용서버exec19369 root `/tmp/hars-alpha2-upload-wide/data`,18199/18198실행중,production아님.
 - 2.0.0-alpha.2로Cargo/config/Docker/README버전맞춤. 새설치자동변환기본true,저장된partialprocessing설정은default와merge/validation. keep_original_video=false일때검증완료후MP4를recordroot로이동하고raw만제거하는publication분기추가(실제데이터는MP4입력으로raw삭제분기미검증). cancel요청generation지속하여publish직전/재시작race보호. ENOSPC로활성meta저장실패시active entry정리.
-- syntheticCI fullpipelineoracle `integration/pipeline_contract.py`: 원본Python+Rust,120모델/TS+rawHEVC전방+와이드,전체JSON차이0,무손실remuxPASS(로컬~3.4초). CI Rustjob의기존venv재사용step으로추가.
-- 로컬alpha.2fmt/clippy/전체Rust32테스트/Python synthetic oracle/실제ccnc client+auth migration PASS. 원본보존검사는WSLgit core.autocrlf unset과Windows checkout CRLF때문에false mismatch발생. WindowsnativeGit으로기존verify_reference.py재실행286파일PASS,check_release.pyalpha.2PASS. source파일gitdiff없음. 검사약화/원본수정없음.
-- 성능47중앙Python3.733s/Rust4.782s;Rust더느림(보고서doc반영). 대표실제6번구간프로파일추가 `integration/profile_conversion.py`: `/tmp/hars-alpha2-profile-wide/profile.json` Python3.78084s/CPU3.30738s/meanRSS233443KiB/peak326808KiB;Rust4.96637s/CPU4.45827s/meanRSS319542KiB/peak434112KiB. RSS프로세스트리합계,20ms관측. per-stageCPU는짧은자식누락가능한하한이며단계분할이다름.
+- syntheticCI fullpipelineoracle `pipeline_contract.py`: 원본Python+Rust,120모델/TS+rawHEVC전방+와이드,전체JSON차이0,무손실remuxPASS(로컬~3.4초). CI Rustjob의기존venv재사용step으로추가.
+- 로컬alpha.2fmt/clippy/전체Rust32테스트/Python synthetic oracle/실제ccnc client+auth migration PASS. 원본보존검사는WSLgit core.autocrlf unset과Windows checkout CRLF때문에false mismatch발생. Windows native Git에서 원본 무결성 검사 286파일 통과,check_release.pyalpha.2PASS. source파일gitdiff없음. 검사약화/원본수정없음.
+- 성능47중앙Python3.733s/Rust4.782s;Rust더느림(보고서doc반영). 대표실제6번구간프로파일추가 `profile_conversion.py`: `/tmp/hars-alpha2-profile-wide/profile.json` Python3.78084s/CPU3.30738s/meanRSS233443KiB/peak326808KiB;Rust4.96637s/CPU4.45827s/meanRSS319542KiB/peak434112KiB. RSS프로세스트리합계,20ms관측. per-stageCPU는짧은자식누락가능한하한이며단계분할이다름.
 - 원인발견: json!(frames)가전체Value배열복제+원시model/radarstream과telemetry트리를scope끝까지보관. `convert.rs` 수정해frames를Value::Array로이동,frames생성후남은단계에필요없는streams제거,telemetry쓰기후drop,track/starts/counts추출후decoded drop. 수치개선은아직미보고. exec22005현재fmt/clippy/releasebuild중;완료후같은구간Rust만profile재측정(--baseline /tmp/hars-alpha2-profile-wide/profile.json)하고대표전체JSON동등성을확인. Python기준반복하지않음.
 - git아직미커밋/main8c12894. GitHub최신기존CI43702875850green,진행CI없음,rulesets조회빈배열. 사용자원래커밋/푸시요청되어phasecommit가능. 아직푸시/태그/Release없음. STATUS/VALIDATION/PERFORMANCE/DEVELOPMENT갱신했으나최종CI/프로파일결과추가필요.
 
@@ -106,7 +108,7 @@ Windows 작업 폴더 안의 소스를 WSL Ubuntu 24.04에서 빌드했다. Rust
 - 최신 main/origin main `0dd87af` 동기화·clean 확인 후 분기. 원본 폴더 읽기 전용, 결과 `/home/dabin/hars-original13`, 기존 venv/target/perf/strace 재사용. 원본검증 요구라 별도 기준 PR/CI 없이 기존0dd코드 release `/home/dabin/hars-performance/final`을 실행권한 보존해 baseline 복사. CORE는 같은 컨텍스트에서 이미 읽어 적용 중, Ponytail 사용. 위임 없음. 예상2–4h 알림.
 - 파일39개:13rlog+13qcamera.ts+13fcamera.hevc. ecamera/메타 없음. 모두 SHA256 private inventory로 보존.26영상 디코딩 오류0, 각각1200프레임. fcam HEVC1344×760/1200packet/60keys/B0/원시PTS없음. q H264526×330/1200packet/80keys/90kHz, 원래 TS offset/jitter 존재. sensor 최초원본/컨테이너 동일성은 가정하지 않는다.
 - baseline-full13 Python비교 완료:3·9번 qcamera terminal sample duration에서 약0.2ms 차이로 duration파생필드가1e-6초과. 나머지11구간 차이0. 처음 진행로그7·8만 보고8구간차이0으로 말한 오류를 사용자에게 정정했다. PyAV FFmpeg8의 소스 q3 inferred rate241/12→last4481 ticks, q9 239/12→last4518ticks; Rust FFmpeg6 CLI 마지막4500 ticks. 실제 PTS/DTS와 NAL 무손실은 별도검증 중. 허용오차 확대/기존Python수정 금지, 차이는 조용히 숨기지 않는다.
-- 새 integration/python_video_job.py: 원본HEVC prepare_video 사용, inline qTS블록만 로그와 분리한adapter. core mux-only는 복사루프(encoder 없음), 출력은 시간밖에서공통감사. benchmark_remux.py는warmup1/교차3회persegment/camera/variant, samplerCPU/RSS와정규화SHA/headers/PTS-DTS/keyframe/config/faststart 검증. initial audit에서PyAV BSF가packet을consume하므로해시전에timestamp보관하도록수정. 원본14/47 및3cam 도구를 raw파일명도 인식하도록 확장했다.
+- 새 python_video_job.py: 원본HEVC prepare_video 사용, inline qTS블록만 로그와 분리한adapter. core mux-only는 복사루프(encoder 없음), 출력은 시간밖에서공통감사. benchmark_remux.py는warmup1/교차3회persegment/camera/variant, samplerCPU/RSS와정규화SHA/headers/PTS-DTS/keyframe/config/faststart 검증. initial audit에서PyAV BSF가packet을consume하므로해시전에timestamp보관하도록수정. 원본14/47 및3cam 도구를 raw파일명도 인식하도록 확장했다.
 - pilot segment1 validated-video:PythonHEVC0.593s/CPU0.316,기존Rust1.154s/CPU0.939; q0.211/0.127 vs0.405/0.450. purevideo이고로그/JSON/thumbnail제외. baselineperf442samples/499Hz/lost0: NALfeed7.47%,SHA3.39%,ffmpeg/ffprobe dynamiclookup각2.04%,pipe/kernel wakeups다수. private -s0 strace IO payload미출력으로 read/write 추적보존. source read 재검사는필요.
 - 후보 native inspector 구현(src/native_video.rs): 기존FFmpeg BSF를작은RAII wrapper로사용해한demuxpass에서packet시각과기존NAL SHA/header정책동시검사. 별도worker/180초/64MiB IPC/프로토콜·포맷화이트리스트/코덱·단일video·크기·패킷corrupt·boundedNAL유지. 입력/출력 각각동일검증. ffprobe+ffmpeg stream-pipe중복을줄이며 qcamera사전검사도같은job 내Inspection재사용. uploadheader검사/역변환/thumbnail기존경로는아직유지. 새내부CLI __inspect. publicrestschema변경없음.
 - fmt/Clippy통과,releaseartifact inspected 생성. 현재 pilot-inspected3구간1/3/9 Python+baseline+후보 교차3회실행중. 아직성능효과/전체회귀/새CI/커밋/PR미확인. 효과없으면후보원복(다른작업자변경건드리지않음).
@@ -169,13 +171,13 @@ Windows 작업 폴더 안의 소스를 WSL Ubuntu 24.04에서 빌드했다. Rust
 - 기능: 1.3.17 지도 차량 아이콘 색상(자동·흰색·민트·파랑·하늘·보라·분홍·주황·빨강, 지도 탭·영상 위 작은 지도·방향 화살표, `localStorage` `roadviewer-map-car-color`), 1.3.18 불투명 차체·창문, 구간 카드 밀어 올리기의 제목 위치와 끝에서 1.3배 확대.
 - 결정: 페이지 버전 치환을 문자열 `"1.3.16"` 고정에서 원본 릴리스 번호를 Python과 같은 곳(`library.html`의 `assets/style.css?v=`)에서 읽어 자산 `?v=`와 `>v…<` 표시만 바꾸는 방식으로 고쳤다. 고정 문자열이면 1.3.18 페이지의 자산 주소가 Python 버전에 묶였다. `tests/page_version.rs`가 지킨다.
 - 결정: `localStorage` 키는 원본 그대로 둔다. 같은 HA 출처(Ingress)에서 Python과 HARS가 키를 공유하는 것은 기존 키(차량 아이콘 모양·지도 테마 등)와 같은 방식이다.
-- 검증: `integration/ui_sync_check.py`(실주행 연속 3구간, 새 빌드 8/8 통과, `4f263bb` 빌드는 실패), `ui_view_check.py` 9/9, 원본 `segment_peek.cjs`를 HARS가 내보낸 파일로 통과, 원본 `maps.cjs`는 처음에 110행에서 실패했으나 원인은 HARS가 아니라 붙이는 어댑터의 조건 두 가지였고(연결 유지 방식, 테스트가 실행 중에 폴더에 직접 써 넣는 기록), 어댑터를 고친 뒤 전체가 3/3 통과(DEVELOPMENT.md "웹 화면 검사"), 실코퍼스 13구간 13/13 차이 없음.
+- 검증: `ui_sync_check.py`(실주행 연속 3구간, 새 빌드 8/8 통과, `4f263bb` 빌드는 실패), `ui_view_check.py` 9/9, 원본 `segment_peek.cjs`를 HARS가 내보낸 파일로 통과, 원본 `maps.cjs`는 처음에 110행에서 실패했으나 원인은 HARS가 아니라 붙이는 어댑터의 조건 두 가지였고(연결 유지 방식, 테스트가 실행 중에 폴더에 직접 써 넣는 기록), 어댑터를 고친 뒤 전체가 3/3 통과(DEVELOPMENT.md "웹 화면 검사"), 실코퍼스 13구간 13/13 차이 없음.
 - 위험: 이미 배포된 `2.0.0-alpha.4`와 같은 버전으로 웹 파일이 바뀌므로, 그 버전 자산을 1년 캐시(`public, max-age=31536000`)한 브라우저는 다음 HARS 버전까지 이전 자산을 쓸 수 있다. 다음 배포 전에 버전을 올려야 한다.
 
 ## 2026-11-18 브라우저 테스트 CI 통합과 alpha.5 (조정 기록)
 
 - 목표: Python 서버 없이 HARS가 내보내는 화면과 Rust 서버 조합을 브라우저 테스트로 검증하고 필수 CI로 만든다.
-- 결정: 처음에는 보존 원본 테스트(`reference/python/tests`)를 고치지 않고 실행했다. 원본의 시간 가정 때문에 예상 실패·서명 한정 재실행 같은 우회 장치가 늘었고, 사용자 결정으로 테스트를 HARS 소유(`tests/browser`)로 옮겼다. 복사 커밋 `c977863` 이후의 변경이 원본 대비 차이다. `reference/python`은 그대로다.
+- 결정: 처음에는 보존 원본 테스트(Python 1.x 테스트 폴더)를 고치지 않고 실행했다. 원본의 시간 가정 때문에 예상 실패·서명 한정 재실행 같은 우회 장치가 늘었고, 사용자 결정으로 테스트를 HARS 소유(`tests/browser`)로 옮겼다. 복사 커밋 `c977863` 이후의 변경이 원본 대비 차이다. 원본 사본도 당시에는 보존했다.
 - 결정: 기능 테스트는 시간이 아니라 상태 변화로 판정한다. 실패가 확인된 지점만 고치고, 단언은 유지하거나 더 엄격하게 한다. 재시도와 예상 실패는 두지 않는다.
 - 제품 결함 1건: 페이지의 "Road Viewer"를 전부 "Road Viewer HARS"로 바꾸던 치환이 워드마크까지 바꿔 폭 320px에서 찌그러졌다. 워드마크는 원본 글자로 두고 제목과 버전 표시에만 HARS를 적는다.
 - 폐기한 접근: 로컬 반복으로 실패율을 재는 방식. 다른 세션의 부하가 섞여 판단 근거로 쓰기 어려웠다. 원인을 찾아 상태 대기로 고치고, 판단은 GitHub 러너 결과로 했다.
@@ -185,7 +187,7 @@ Windows 작업 폴더 안의 소스를 WSL Ubuntu 24.04에서 빌드했다. Rust
 
 ## 2026-11-18 실제 HAOS 전환과 앱 이름 (조정 기록)
 
-- 실제 HAOS(amd64 VM)의 HARS를 alpha.4에서 alpha.5로 업데이트했다. 테스트 기록 5개의 재생 데이터·썸네일·영상 응답이 업데이트 전후로 같았고, 격리 브라우저 검사(`integration/ui_sync_check.py`) 8/8을 통과했다.
+- 실제 HAOS(amd64 VM)의 HARS를 alpha.4에서 alpha.5로 업데이트했다. 테스트 기록 5개의 재생 데이터·썸네일·영상 응답이 업데이트 전후로 같았고, 격리 브라우저 검사(`ui_sync_check.py`) 8/8을 통과했다.
 - 사용자가 운영을 HARS로 옮겼다: Python Road Viewer의 Drive 연결 해제, HARS에 Drive 클라이언트 설정 이전, 장치 수신 포트 8099 승계, Python 앱 중지 후 삭제(삭제 전 설정 백업). 장치는 NPM 프록시 `harv.prandiel.dev`(→ HAOS 8099)로 페어링과 업로드에 성공했다.
 - 결정(사용자): 앱 이름에서 HARS 접미사를 뺀다. `name`·`panel_title`·페이지 제목·버전 표시를 `Road Viewer`로 한다. 이 변경은 정식 2.0.0에 담는다. slug, 이미지, 데이터 경로, Drive 폴더 이름은 기존 설치와 보관분을 유지하기 위해 그대로 둔다.
 - `scripts/check_coexistence.py`는 표시 이름이 Python 앱과 달라야 한다는 조건만 뺐다. slug·이미지·URL·데이터 경로 분리 조건은 유지한다.
@@ -195,6 +197,6 @@ Windows 작업 폴더 안의 소스를 WSL Ubuntu 24.04에서 빌드했다. Rust
 
 - 결정(사용자): HARS를 유일한 정식 Road Viewer로 한다. 버전 2.0.0, 제품 이름 Road Viewer, 기본 자동 시작. 게시 워크플로는 정식 태그도 받는다(`release.yml`).
 - 운영에서 드러난 결함 1건(PR #27): Drive는 연결됐는데 가져온 보관 기록에 "저장소에 연결할 수 없어 변환을 미뤘습니다" 경고가 남았다. Drive 접근은 정상이었고(같은 OAuth 클라이언트의 `drive.file` 권한으로 Python이 만든 파일이 읽힘), 원인은 미뤄진 변환을 자동 대기열이 경고를 단 채 다시 집는 것과, 경고를 지우는 재대기열이 아카이브 주기(시작 후 한 간격 뒤)에서만 도는 것이었다. 미뤄진 기록은 저장소가 응답할 때까지 두고, Drive 연결 직후와 시작 후 저장소가 응답할 때 주기 없이 다시 넣는다.
-- 결정(사용자): 화면 파일도 HARS가 소유한다. `reference/python/roadviewer/app/web`를 `web/`로 무변경 복사(`a3687c9`)한 뒤의 커밋이 원본 대비 차이다. `reference/`는 그대로다.
+- 결정(사용자): 화면 파일도 HARS가 소유한다. `Python 1.x의 웹 폴더`를 `web/`로 무변경 복사(`a3687c9`)한 뒤의 커밋이 원본 대비 차이다. 원본 사본도 당시에는 보존했다.
 - 화면 변경 2건(사용자 요청): 동시 처리 개수 상한 4 → 16(기본 1 유지), 전체 화면에서 컨트롤이 숨겨지면 차간거리 표시와 화면 메시지를 컨트롤이 있던 자리까지 내린다.
 - 미검증: 동시 처리 16의 실부하(메모리·디스크), 실제 Drive에서의 이동 모드 아카이빙 전 과정, HAOS 재부팅 뒤 자동 시작.

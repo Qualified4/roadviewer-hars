@@ -442,5 +442,5 @@
       ]
     }
   ],
-  "note": "Route list comes from inventory.json, which scripts/inventory.py regenerates from the Python source. This file records the HARS side and is edited by hand."
+  "note": "The route list comes from inventory.json, the archived Python 1.3.18 porting inventory. This file records the HARS side and is edited by hand."
 }

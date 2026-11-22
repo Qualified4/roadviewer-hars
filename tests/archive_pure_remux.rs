@@ -15,7 +15,7 @@ async fn convert_moved(e: &Env, id: &str) -> (String, Value) {
     let folder = e.root.join(id);
     let inputs = media_read::conversion_inputs(e.a(), &folder, id, &e.meta(id).await).await;
     assert_eq!(inputs.deferred, None);
-    for kind in ["rlog.zst", "qcamera.ts", "fcamera.hevc"] {
+    for kind in ["rlog.zst", "qcamera.ts", "fcamera.hevc", "ecamera.hevc"] {
         assert!(
             !inputs.paths[kind].starts_with(&folder)
                 || inputs.paths[kind].starts_with(folder.join(".staging")),
@@ -58,6 +58,16 @@ async fn convert_moved(e: &Env, id: &str) -> (String, Value) {
         "{stdout}\n{}",
         String::from_utf8_lossy(&run.stderr)
     );
+    let summary: Value =
+        serde_json::from_slice(&std::fs::read(out.join("summary.json")).unwrap()).unwrap();
+    assert_eq!(summary["replay_v"], 2);
+    assert_eq!(summary["model_frames"], FRAMES);
+    assert!(logs::read_gzip(&out.join("telemetry.json.gz")).is_ok());
+    assert!(
+        std::fs::read(out.join("thumbnail.jpg"))
+            .unwrap()
+            .starts_with(&[0xff, 0xd8])
+    );
     (stdout, logs::read_gzip(&out.join("data.json.gz")).unwrap())
 }
 
@@ -86,17 +96,20 @@ fn assert_pure(stdout: &str, data: &Value) {
         engines,
         [
             ("remux_engine", "pure", "qcamera.ts"),
-            ("remux_engine", "pure", "fcamera.hevc")
+            ("remux_engine", "pure", "fcamera.hevc"),
+            ("remux_engine", "pure", "ecamera.hevc"),
         ],
         "{stdout}"
     );
     assert!(events.iter().all(|f| f["terminal_basis"] == "NextFrame"));
-    let last = f64::from(FRAMES - 1) * 0.05;
-    assert!((data["videos"]["front"]["duration"].as_f64().unwrap() - (last + 0.047)).abs() < 1e-9);
-    assert!(
-        (data["videos"]["qcamera"]["duration"].as_f64().unwrap() - (last + 0.047)).abs() < 1e-9
-    );
-    assert_eq!(data["videos"]["qcamera"]["frames"], FRAMES);
+    let duration = f64::from(FRAMES - 1) * 0.05 + 0.047;
+    assert_eq!(data["warnings"], json!([]));
+    assert_eq!(data["frames"].as_array().unwrap().len(), FRAMES as usize);
+    for camera in ["qcamera", "front", "wide"] {
+        let video = &data["videos"][camera];
+        assert!((video["duration"].as_f64().unwrap() - duration).abs() < 1e-9);
+        assert_eq!(video["frames"], FRAMES);
+    }
 }
 
 async fn recording(e: &Env) -> String {
@@ -126,14 +139,15 @@ async fn recording(e: &Env) -> String {
             'a',
             &[
                 ("qcamera.ts", ts),
-                ("fcamera.hevc", hevc),
+                ("fcamera.hevc", hevc.clone()),
+                ("ecamera.hevc", hevc),
                 ("rlog.zst", rlog()),
             ],
             OLD,
         )
         .await;
     e.cycle().await;
-    for kind in ["qcamera.ts", "fcamera.hevc", "rlog.zst"] {
+    for kind in ["qcamera.ts", "fcamera.hevc", "ecamera.hevc", "rlog.zst"] {
         assert!(!e.local(&id, kind), "{kind} was archived");
     }
     id

@@ -283,13 +283,13 @@ Screenshots were captured on 2026-11-07 from version 1.0.11 using example data, 
 - [Historical Android picker analysis](docs/android-multiple-file-fix/README.en.md) · [한국어](docs/android-multiple-file-fix/README.md)
 - [Current release notes](roadviewer_hars/CHANGELOG.en.md) · [Full Korean history](roadviewer_hars/CHANGELOG.md): 2.0.0 and the full Python 1.x history
 
-The repository root is the Docker build context (`Dockerfile`). It builds the Rust executable `roadviewer-hars` onto `debian:bookworm-slim` and serves the HARS-owned web files (`web/`), initially copied from Python 1.3.18. The only runtime packages are `nginx` and `ca-certificates`; the image contains neither FFmpeg nor Python. GitHub Actions (**HARS CI**) runs the Rust checks (fmt, clippy, all tests), original ccnc client compatibility and upload fault injection, a Python/Rust replay conversion comparison, and the preserved-source (`scripts/verify_reference.py`), release-identity (`scripts/check_release.py`) and coexistence (`scripts/check_coexistence.py`) checks, and it builds the image on native amd64 and aarch64 runners with FFmpeg-absence, container boot and TLS checks. Browser UI checks (`tests/browser`) run in the required CI check `Browser checks` ([browser tests](docs/hars/BROWSER-TESTS.md), [development and testing](docs/hars/DEVELOPMENT.md), Korean).
+The repository root is the Docker build context (`Dockerfile`). It builds the Rust executable `roadviewer-hars` onto `debian:bookworm-slim` and serves the HARS-owned web files (`web/`), initially copied from Python 1.3.18. The only runtime packages are `nginx` and `ca-certificates`; the image contains neither FFmpeg nor Python. GitHub Actions (**HARS CI**) runs the Rust checks (fmt, clippy, all tests), original ccnc client compatibility and upload fault injection, release-identity (`scripts/check_release.py`) and coexistence (`scripts/check_coexistence.py`) checks, and it builds the image on native amd64 and aarch64 runners with FFmpeg-absence, container boot and TLS checks. The required `HARS required` check also verifies the `Browser checks` result for `tests/browser` ([browser tests](docs/hars/BROWSER-TESTS.md), [development and testing](docs/hars/DEVELOPMENT.md), Korean).
 
-The original Python history and MIT license are kept, and the reference code, tests, schema and UI are preserved under `reference/python`. This repository does not modify the original Python repository.
+The [Git history](https://github.com/Qualified4/roadviewer-hars/tree/d3de13472ea242dab9866d485b5777ad67d5b1dd) holds the Python 1.3.18 porting baseline. The build uses the openpilot schemas in `resources/schema/`, and CI tests the HARS executable with a pinned openpilot RV1 client.
 
 ### HARS technical documents (Korean)
 
-- [Feature and API inventory](docs/hars/inventory.json)
+- [Porting baseline feature and API inventory (Python 1.3.18)](docs/hars/inventory.json)
 - [Implementation and validation status](docs/hars/STATUS.md)
 - [Design and porting baseline](docs/hars/ARCHITECTURE.md)
 - [HAOS side-by-side install, cutover and rollback](docs/hars/CUTOVER.md) · [Real HAOS validation preparation](docs/hars/HAOS-VALIDATION.md)
@@ -321,4 +321,4 @@ Publishing automation accepts stable version tags (`N.N.N`, for example `2.0.0`)
 
 A published tag is never rewritten; fix problems in the next version. See [image build and publication](docs/hars/HAOS-VALIDATION.md#이미지-빌드게시-설정) (Korean) for details.
 
-Road Viewer is distributed under the [MIT license](LICENSE). Raw driving logs/videos are not included in the repository; the introduction uses selected public screenshots. See [OPENPILOT-LICENSE](reference/python/roadviewer/schema/OPENPILOT-LICENSE) for bundled schema and UI-resource licensing.
+Road Viewer is distributed under the [MIT license](LICENSE). Raw driving logs/videos are not included in the repository; the introduction uses selected public screenshots. See [OPENPILOT-LICENSE](resources/schema/OPENPILOT-LICENSE) for the bundled openpilot schema license.
