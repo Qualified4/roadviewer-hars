@@ -12,6 +12,7 @@ use std::path::PathBuf;
 use tower::ServiceExt;
 
 const HARS: &str = env!("CARGO_PKG_VERSION");
+const FONT: &str = "fonts/PretendardVariable-1.3.9.woff2";
 
 fn web() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("web")
@@ -32,9 +33,10 @@ async fn get(app: &App, uri: &str) -> (StatusCode, String, Vec<u8>) {
         .unwrap();
     (status, cache, body.to_vec())
 }
-/// Every `?v=` value in an HTML page.
+/// App asset versions. The Pretendard preload uses its own release number.
 fn asset_versions(html: &str) -> Vec<&str> {
     html.match_indices("?v=")
+        .filter(|(at, _)| !html[..*at].ends_with(FONT))
         .map(|(at, _)| {
             let rest = &html[at + 3..];
             &rest[..rest.find(['"', '&', '\'']).unwrap()]
@@ -94,18 +96,10 @@ async fn pages_name_the_hars_version_only() {
                 )),
                 "{uri}: the version label uses the product name"
             );
-        }
-        if fragment {
-            assert!(
-                html.contains(&format!("<span class=\"app-version\">v{HARS}</span>")),
-                "{uri}"
-            );
         } else {
             assert!(
-                html.contains(&format!(
-                    "{assets}fonts/PretendardVariable-1.3.9.woff2?v={HARS}\""
-                )),
-                "{uri}: the font file name is kept"
+                html.contains(&format!("{assets}{FONT}?v=1.3.9\"")),
+                "{uri}: the font preload keeps the font release"
             );
         }
     }
