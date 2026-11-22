@@ -833,7 +833,6 @@ function renderDriveHud(frame,available){
    const slot=['P','R','N'].includes(letter)?letter:letter?'D':'';
    gear.dataset.gear=letter;gear.dataset.position=slot;
    $('videoGearLetter').textContent=slot==='D'?letter:'D';step.textContent=stepText;
-   step.classList.toggle('is-long',stepText.length>2);
    gear.setAttribute('aria-label',letter?`기어 ${letter}${stepText}`:'기어 확인 불가');
   }
  }
