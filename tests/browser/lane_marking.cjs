@@ -77,7 +77,7 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
    const hudAt=time=>page.evaluate(time=>{
     setTime(time,false);
     const c=$('videoGap'),gear=$('videoGear'),ev=$('videoEv');
-    const textStyle=e=>{const style=getComputedStyle(e);return [style.color,style.fontWeight,style.textShadow,style.webkitTextStrokeWidth,style.filter,style.borderTopWidth]};
+    const textStyle=e=>{const style=getComputedStyle(e);return [style.color,style.opacity,style.fontWeight,style.textShadow,style.webkitTextStrokeWidth,style.filter,style.borderTopWidth]};
     return {
      bars:[...c.children].map(e=>{const style=getComputedStyle(e);return [style.backgroundColor,style.opacity]}),
      gear:!gear.checkVisibility()?null:[...gear.children].map(e=>[e.textContent,...textStyle(e)]),
@@ -87,19 +87,19 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
      visible:$('videoDriveHud').checkVisibility()
     };
    },time);
-   const white='rgb(255, 255, 255)',orange='rgb(255, 178, 87)',green='rgb(91, 227, 174)',dimWhite='rgba(255, 255, 255, 0.35)';
+   const white='rgb(255, 255, 255)',orange='rgb(255, 178, 87)',green='rgb(91, 227, 174)',emptyBar=[white,'0.35'];
    const modes=[white,'rgba(0, 255, 0, 0.784)','rgba(0, 255, 0, 0.784)','rgba(255, 165, 0, 0.784)',white,'rgba(255, 0, 0, 0.784)',white,white,white];
    const gearStates=[[],['D','D5'],['D','D5'],['R','R'],['D','D4'],['D','S3'],[],['D','M1'],['D','D32767']];
    const sharedShadow='rgba(0, 0, 0, 0.55) 0px 0px 3px',textEffects=[sharedShadow,'0px','none','0px'];
    const gearPositions=(await hudAt(0)).gearPositions;
    for(let i=0;i<modes.length;i++){
-    const hud=await hudAt(i/10),active=i>=1&&i<=3,evColor=active?green:dimWhite;
-    assert.deepEqual(hud.bars,[[modes[i],'1'],[modes[i],'1'],[white,'0.35'],[white,'0.35']],`gap colour at frame ${i}`);
+    const hud=await hudAt(i/10),active=i>=1&&i<=3,evPaint=active?[green,'1']:emptyBar;
+    assert.deepEqual(hud.bars,[[modes[i],'1'],[modes[i],'1'],emptyBar,emptyBar],`gap colour at frame ${i}`);
     const [selected,text]=gearStates[i];
-    assert.deepEqual(hud.gear,['P','R','N','D'].map(letter=>letter===selected?[text,letter==='R'?orange:white,'800',...textEffects]:[letter,dimWhite,'650',...textEffects]),`gear text at frame ${i}`);
+    assert.deepEqual(hud.gear,['P','R','N','D'].map(letter=>letter===selected?[text,letter==='R'?orange:white,'1','800',...textEffects]:[letter,...emptyBar,'650',...textEffects]),`gear text at frame ${i}`);
     assert.deepEqual(hud.gearPositions,gearPositions,`gear steps keep the slots and EV in place at frame ${i}`);
-    assert.deepEqual(hud.step,selected==='D'?[white,'800',...textEffects]:null,`step text at frame ${i}`);
-    assert.deepEqual(hud.ev,[String(active),evColor,'650',...textEffects],`EV text at frame ${i}`);
+    assert.deepEqual(hud.step,selected==='D'?[white,'1','800',...textEffects]:null,`step text at frame ${i}`);
+    assert.deepEqual(hud.ev,[String(active),...evPaint,'650',...textEffects],`EV text at frame ${i}`);
    }
    const layoutAt=time=>page.evaluate(time=>{
     setTime(time,false);
@@ -179,7 +179,7 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
    assert.equal((await hudAt(.1)).ev,null,'no valid EV signal in the log hides EV text');
    await page.evaluate(()=>{delete data.gearAvailable;data.evModeAvailable=true});
    const evOnly=await hudAt(.1);
-   assert.deepEqual([evOnly.gear,evOnly.ev],[null,['true',green,'650',...textEffects]],'EV still shows in logs without gear data');
+   assert.deepEqual([evOnly.gear,evOnly.ev],[null,['true',green,'1','650',...textEffects]],'EV still shows in logs without gear data');
    await page.evaluate(frames=>{delete data.evModeAvailable;data.frames=frames;setTime(0,false)},original);
    const legacy=await hudAt(0);
    assert.deepEqual([legacy.bars[0],legacy.gear,legacy.ev],[[white,'1'],null,null],'old replays keep the white bars');
