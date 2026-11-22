@@ -16,7 +16,9 @@ assert f'version: "{version}"' in config
 assert f"ARG BUILD_VERSION={version}\n" in (ROOT/"Dockerfile").read_text()
 for readme, line in [("README.md", f"현재 버전은 **{version}**입니다."), ("README.en.md", f"The current version is **{version}**."),
                      ("roadviewer_hars/README.md", f"현재 버전: **{version}**"), ("roadviewer_hars/README.en.md", f"Current version: **{version}**")]:
-    assert line in (ROOT / readme).read_text(encoding="utf-8"), f"{readme} must show version {version}"
+    text = (ROOT / readme).read_text(encoding="utf-8")
+    assert line in text, f"{readme} must show version {version}"
+    assert "현재 기능 안내:" not in text and "Feature reference:" not in text, f"{readme} still shows the Python 1.x version line"
 assert "slug: roadviewer_hars\n" in config
 assert "image: ghcr.io/qualified4/roadviewer-hars\n" in config
 assert "8443/tcp: null" in config
