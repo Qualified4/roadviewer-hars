@@ -301,7 +301,7 @@ Every slider has an individual reset button. Settings are remembered. The path w
 | 차량 박스 (vehicle boxes) | Off; a 3D box of light on the ground ring; the box height and fill sliders apply only when on |
 | 차간 거리 단계 (following-distance setting) | On; `carControl.hudControl.leadDistanceBars` (1–4) as four cells at the bottom left |
 
-In logs converted with 2.0.18 or later, the filled cells use carrot drive-mode colours (eco green, safe orange, normal white and high red), and the gear and EV state appear beside the bars when the log has those signals.
+In logs converted with 2.0.18 or later, the filled cells use carrot drive-mode colours (eco green, safe orange, normal white and high red), and a PRND row below the bars highlights the current gear and step. The row and EV indicator appear when their respective signals are recorded.
 
 The deceleration glow follows the chosen lead mark's shape. Past the lead, the model path continues to its end as dashed edges (3 m dashes every 6 m) that fade with distance; where they cross the lead car, the road is hidden behind it and they are drawn faint. Logs converted with 1.3.0 or later carry the following-distance setting and target distance. For logs converted earlier, the app fills them in the background after the update, one log at a time, reading only the original log (`rlog.zst`); no reconversion is needed. A log stored only on Google Drive is downloaded to a temporary copy that is deleted after reading; a log whose storage is unreachable or that cannot be read is tried again at the next app start. The fill waits while conversions, uploads, playback or archive moves are running.
 

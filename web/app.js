@@ -822,14 +822,16 @@ function renderDriveHud(frame,available){
   if(chip.dataset.drivingMode!==mode)chip.dataset.drivingMode=mode;
   if(chip.dataset.level!==String(gap)){chip.dataset.level=gap;chip.title=`차간 거리 ${gap}단계 (4단계 중)`;chip.setAttribute('aria-label',chip.title);[...chip.children].forEach((cell,i)=>cell.classList.toggle('is-on',i<gap))}
  }
+ const gearRow=$('videoGearRow');
+ gearRow.hidden=data.gearAvailable!==true;
+ if(gearRow.hidden)return;
  const gear=$('videoGear'),letter=Object.hasOwn(GEAR_LETTERS,frame.gearShifter)?GEAR_LETTERS[frame.gearShifter]:'';
- gear.hidden=!letter;
- if(letter){
-  const step=['D','S','M'].includes(letter)&&frame.gearStep>=1?String(frame.gearStep):'';
-  if(gear.dataset.gear!==letter||$('videoGearStep').textContent!==step){
-   gear.dataset.gear=letter;$('videoGearLetter').textContent=letter;$('videoGearStep').textContent=step;
-   gear.setAttribute('aria-label',`기어 ${letter}${step}`);
-  }
+ const step=$('videoGearStep'),stepText=['D','S','M'].includes(letter)&&frame.gearStep>=1?String(frame.gearStep):'';
+ if(gear.dataset.gear!==letter||step.textContent!==stepText){
+  const slot=['P','R','N'].includes(letter)?letter:letter?'D':'';
+  gear.dataset.gear=letter;gear.dataset.position=slot;
+  $('videoGearLetter').textContent=slot==='D'?letter:'D';step.textContent=stepText;
+  gear.setAttribute('aria-label',letter?`기어 ${letter}${stepText}`:'기어 확인 불가');
  }
  const ev=$('videoEv'),active=String(frame.evModeValid===true&&frame.evModeActive===true);
  ev.hidden=data.evModeAvailable!==true;

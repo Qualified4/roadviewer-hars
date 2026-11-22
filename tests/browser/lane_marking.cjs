@@ -69,7 +69,7 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
      {drivingMode:0,gearShifter:'unknown',gearStep:0},
      {drivingMode:99,gearShifter:'manumatic',gearStep:1}
     ];
-    data.evModeAvailable=true;
+    data.gearAvailable=data.evModeAvailable=true;
     data.frames=expandReplayData({frames:changes.map((change,i)=>({...frame,t:i/10,...change}))}).frames;
    });
    const hudAt=time=>page.evaluate(time=>{
@@ -77,27 +77,39 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
     const c=$('videoGap'),gear=$('videoGear'),ev=$('videoEv');
     return {
      bars:[...c.children].map(e=>{const style=getComputedStyle(e);return [style.backgroundColor,style.opacity]}),
-     gear:gear.hidden?null:[$('videoGearLetter').textContent,$('videoGearStep').textContent,getComputedStyle(gear).color],
-     ev:ev.hidden?null:[ev.dataset.active,getComputedStyle(ev).color,getComputedStyle(ev).borderTopColor],
+     gear:!gear.checkVisibility()?null:[...gear.children].map(e=>{const style=getComputedStyle(e);return [e.textContent,style.color,style.textShadow.includes('rgba(255, 255, 255, 0.4)')]}),
+     gearPositions:[...gear.children].map(e=>e.getBoundingClientRect().left),
+     ev:!ev.checkVisibility()?null:[ev.dataset.active,getComputedStyle(ev).color,getComputedStyle(ev).borderTopColor],
      visible:$('videoDriveHud').checkVisibility()
     };
    },time);
    const white='rgb(255, 255, 255)',orange='rgb(255, 178, 87)',green='rgb(91, 227, 174)',grey='rgba(255, 255, 255, 0.55)';
    const modes=['rgb(255, 255, 255)','rgba(0, 255, 0, 0.784)','rgba(0, 255, 0, 0.784)','rgba(255, 165, 0, 0.784)',white,'rgba(255, 0, 0, 0.784)',white,white];
-   const gears=[null,['D','5',white],['D','5',white],['R','',orange],['D','4',white],['S','3',white],null,['M','1',white]];
+   const gearStates=[[],['D','D5'],['D','D5'],['R','R'],['D','D4'],['D','S3'],[],['D','M1']];
+   const gearPositions=(await hudAt(0)).gearPositions;
    for(let i=0;i<modes.length;i++){
     const hud=await hudAt(i/10),active=i>=1&&i<=3,evColor=active?green:grey;
     assert.deepEqual(hud.bars,[[modes[i],'1'],[modes[i],'1'],[white,'0.35'],[white,'0.35']],`gap colour at frame ${i}`);
-    assert.deepEqual(hud.gear,gears[i],`gear and step at frame ${i}`);
+    const [selected,text]=gearStates[i];
+    assert.deepEqual(hud.gear,['P','R','N','D'].map(letter=>letter===selected?[text,letter==='R'?orange:white,true]:[letter,grey,false]),`gear highlights at frame ${i}`);
+    assert.deepEqual(hud.gearPositions,gearPositions,`gear changes keep the slot positions at frame ${i}`);
     assert.deepEqual(hud.ev,[String(active),evColor,evColor],`EV text and border at frame ${i}`);
    }
+   const layout=await page.evaluate(()=>{
+    const rect=el=>el.getBoundingClientRect();
+    const bar=rect($('videoGap').firstElementChild),row=rect($('videoGearRow')),buttons=rect(document.querySelector('.video-tools'));
+    return {rowBelowBars:row.top>bar.bottom,rowAboveControls:row.bottom<buttons.top,left:[bar.left,row.left,buttons.left]};
+   });
+   assert(layout.rowBelowBars&&layout.rowAboveControls,'bars, gear and buttons occupy three rows');
+   assert(layout.left.every(x=>Math.abs(x-layout.left[2])<2),'rows share the left edge');
    await page.evaluate(()=>$('videoOverlayToggle').click());
    assert.equal((await hudAt(.1)).visible,false,'overlay toggle hides the lower HUD');
    await page.evaluate(()=>{ $('videoOverlayToggle').click();delete data.evModeAvailable });
    assert.equal((await hudAt(.1)).ev,null,'no valid EV signal in the log hides the badge');
-   await page.evaluate(frames=>{data.frames=frames;setTime(0,false)},original);
+   await page.evaluate(frames=>{delete data.gearAvailable;data.frames=frames;setTime(0,false)},original);
    const legacy=await hudAt(0);
    assert.deepEqual([legacy.bars[0],legacy.gear,legacy.ev],[[white,'1'],null,null],'old replays keep the white bars');
+   assert.equal(await page.evaluate(()=>document.querySelector('.video-tools').getBoundingClientRect().top-$('videoGap').getBoundingClientRect().bottom),8,'without a gear row the bars stay at their original height');
    await original.dispose();
   }
   // Path chevrons carry the drive state. Radial gradients on the video overlay come only from the chevrons: their count says
