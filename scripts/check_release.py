@@ -14,6 +14,9 @@ assert re.fullmatch(r"(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(-(alpha|
 config = (ROOT / "roadviewer_hars/config.yaml").read_text(encoding="utf-8")
 assert f'version: "{version}"' in config
 assert f"ARG BUILD_VERSION={version}\n" in (ROOT/"Dockerfile").read_text()
+for readme, line in [("README.md", f"현재 버전은 **{version}**입니다."), ("README.en.md", f"The current version is **{version}**."),
+                     ("roadviewer_hars/README.md", f"현재 버전: **{version}**"), ("roadviewer_hars/README.en.md", f"Current version: **{version}**")]:
+    assert line in (ROOT / readme).read_text(encoding="utf-8"), f"{readme} must show version {version}"
 assert "slug: roadviewer_hars\n" in config
 assert "image: ghcr.io/qualified4/roadviewer-hars\n" in config
 assert "8443/tcp: null" in config
