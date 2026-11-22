@@ -1,3 +1,7 @@
+## 2.0.19
+
+- In replay, unselected gears and the inactive EV indicator use the same translucent white as the empty following-distance bars. The gear step sits a little closer to the gear letter and slightly below its baseline.
+
 ## 2.0.18
 
 - The following-distance bars in the bottom-left corner of the replay show carrot drive-mode colours. A PRND row below the bars highlights the current gear and step, with the EV indicator next to it.

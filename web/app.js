@@ -828,12 +828,13 @@ function renderDriveHud(frame,available){
  $('videoGearRow').hidden=gear.hidden&&ev.hidden;
  if(!gear.hidden){
   const letter=Object.hasOwn(GEAR_LETTERS,frame.gearShifter)?GEAR_LETTERS[frame.gearShifter]:'';
-  const step=$('videoGearStep'),stepText=['D','S','M'].includes(letter)&&frame.gearStep>=1?String(frame.gearStep):'';
-  if(gear.dataset.gear!==letter||step.textContent!==stepText){
+  const stepText=['D','S','M'].includes(letter)&&frame.gearStep>=1?String(frame.gearStep):'';
+  const label=letter?`기어 ${letter}${stepText}`:'기어 확인 불가';
+  if(gear.getAttribute('aria-label')!==label){
    const slot=['P','R','N'].includes(letter)?letter:letter?'D':'';
-   gear.dataset.gear=letter;gear.dataset.position=slot;
-   $('videoGearLetter').textContent=slot==='D'?letter:'D';step.textContent=stepText;
-   gear.setAttribute('aria-label',letter?`기어 ${letter}${stepText}`:'기어 확인 불가');
+   gear.dataset.position=slot;
+   $('videoGearLetter').textContent=slot==='D'?letter:'D';$('videoGearStep').textContent=stepText.slice(0,2);
+   gear.setAttribute('aria-label',label);
   }
  }
  const active=String(frame.evModeValid===true&&frame.evModeActive===true);
