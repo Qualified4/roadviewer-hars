@@ -67,48 +67,53 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
      {drivingMode:3,gearShifter:'drive',gearStep:4,evModeActive:false},
      {drivingMode:4,gearShifter:'sport',gearStep:3,evModeActive:true,evModeValid:false},
      {drivingMode:0,gearShifter:'unknown',gearStep:0},
-     {drivingMode:99,gearShifter:'manumatic',gearStep:1}
+     {drivingMode:99,gearShifter:'manumatic',gearStep:1},
+     {gearShifter:'drive',gearStep:32767}
     ];
     data.gearAvailable=data.evModeAvailable=true;
     data.frames=expandReplayData({frames:changes.map((change,i)=>({...frame,t:i/10,...change}))}).frames;
    });
    const hudAt=time=>page.evaluate(time=>{
     setTime(time,false);
-    const c=$('videoGap'),gear=$('videoGear'),ev=$('videoEv'),evStyle=getComputedStyle(ev);
+    const c=$('videoGap'),gear=$('videoGear'),ev=$('videoEv');
+    const textStyle=e=>{const style=getComputedStyle(e);return [style.color,style.fontWeight,style.textShadow,style.webkitTextStrokeWidth,style.filter,style.borderTopWidth]};
     return {
      bars:[...c.children].map(e=>{const style=getComputedStyle(e);return [style.backgroundColor,style.opacity]}),
-     gear:!gear.checkVisibility()?null:[...gear.children].map(e=>{const style=getComputedStyle(e);return [e.textContent,style.color,style.textShadow.includes('rgba(255, 255, 255, 0.4)')]}),
-     gearPositions:[...gear.children].map(e=>e.getBoundingClientRect().left),
-     ev:!ev.checkVisibility()?null:[ev.dataset.active,evStyle.color,evStyle.textShadow.includes('rgba(255, 255, 255, 0.4)'),evStyle.borderTopWidth],
+     gear:!gear.checkVisibility()?null:[...gear.children].map(e=>[e.textContent,...textStyle(e)]),
+     gearPositions:[...gear.children,ev].map(e=>e.getBoundingClientRect().left),
+     ev:!ev.checkVisibility()?null:[ev.dataset.active,...textStyle(ev)],
      visible:$('videoDriveHud').checkVisibility()
     };
    },time);
-   const white='rgb(255, 255, 255)',orange='rgb(255, 178, 87)',green='rgb(91, 227, 174)',grey='rgba(255, 255, 255, 0.55)';
-   const modes=['rgb(255, 255, 255)','rgba(0, 255, 0, 0.784)','rgba(0, 255, 0, 0.784)','rgba(255, 165, 0, 0.784)',white,'rgba(255, 0, 0, 0.784)',white,white];
-   const gearStates=[[],['D','D5'],['D','D5'],['R','R'],['D','D4'],['D','S3'],[],['D','M1']];
+   const white='rgb(255, 255, 255)',orange='rgb(255, 178, 87)',green='rgb(91, 227, 174)',grey='rgba(255, 255, 255, 0.48)';
+   const modes=[white,'rgba(0, 255, 0, 0.784)','rgba(0, 255, 0, 0.784)','rgba(255, 165, 0, 0.784)',white,'rgba(255, 0, 0, 0.784)',white,white,white];
+   const gearStates=[[],['D','D5'],['D','D5'],['R','R'],['D','D4'],['D','S3'],[],['D','M1'],['D','D32767']];
+   const noEffects=['none','0px','none','0px'];
    const gearPositions=(await hudAt(0)).gearPositions;
    for(let i=0;i<modes.length;i++){
     const hud=await hudAt(i/10),active=i>=1&&i<=3,evColor=active?green:grey;
     assert.deepEqual(hud.bars,[[modes[i],'1'],[modes[i],'1'],[white,'0.35'],[white,'0.35']],`gap colour at frame ${i}`);
     const [selected,text]=gearStates[i];
-    assert.deepEqual(hud.gear,['P','R','N','D'].map(letter=>letter===selected?[text,letter==='R'?orange:white,true]:[letter,grey,false]),`gear highlights at frame ${i}`);
-    assert.deepEqual(hud.gearPositions,gearPositions,`gear changes keep the slot positions at frame ${i}`);
-    assert.deepEqual(hud.ev,[String(active),evColor,active,'0px'],`EV text and glow without border at frame ${i}`);
+    assert.deepEqual(hud.gear,['P','R','N','D'].map(letter=>letter===selected?[text,letter==='R'?orange:white,'700',...noEffects]:[letter,grey,'550',...noEffects]),`gear text at frame ${i}`);
+    assert.deepEqual(hud.gearPositions,gearPositions,`gear steps keep the slots and EV in place at frame ${i}`);
+    assert.deepEqual(hud.ev,[String(active),evColor,'550',...noEffects],`EV text at frame ${i}`);
    }
    const layout=await page.evaluate(()=>{
     const rect=el=>el.getBoundingClientRect();
     const bar=rect($('videoGap').firstElementChild),row=rect($('videoGearRow')),buttons=rect(document.querySelector('.video-tools'));
     const [gear,step,ev,button]=['videoGear','videoGearStep','videoEv','videoOverlayToggle'].map(id=>getComputedStyle($(id)));
     return {rowBelowBars:row.top>bar.bottom,rowAboveControls:row.bottom<buttons.top,left:[bar.left,row.left,buttons.left],
-     sizes:[gear,step,ev,button].map(style=>parseFloat(style.fontSize)),weights:[gear.fontWeight,ev.fontWeight]};
+     sizes:[gear,step,ev,button].map(style=>parseFloat(style.fontSize)),gearGap:parseFloat(gear.columnGap),
+     stepOffset:parseFloat(step.verticalAlign),stepBeforeEv:rect($('videoGearStep')).right<rect($('videoEv')).left};
    });
    assert(layout.rowBelowBars&&layout.rowAboveControls,'bars, gear and buttons occupy three rows');
    assert(layout.left.every(x=>Math.abs(x-layout.left[2])<2),'rows share the left edge');
    const [gearSize,stepSize,evSize,buttonSize]=layout.sizes;
    assert(gearSize>=16.5&&gearSize<=19.5&&gearSize>buttonSize,'the gear text is larger than the overlay button text');
-   assert(Math.abs(stepSize/gearSize-.72)<.01,'the smaller gear step scales with the gear text');
+   assert(Math.abs(stepSize/gearSize-.48)<.01&&layout.stepOffset<0,'the gear step is small and lowered');
+   assert(layout.stepBeforeEv,'the gear step stays clear of the EV text');
+   assert(Math.abs(layout.gearGap/gearSize-.35)<.01,'gear slots are evenly spaced');
    assert.equal(evSize,gearSize,'EV and gear text use the same size');
-   assert.deepEqual(layout.weights,['800','800'],'EV and gear text use the same weight');
    await page.evaluate(()=>$('videoOverlayToggle').click());
    assert.equal((await hudAt(.1)).visible,false,'overlay toggle hides the lower HUD');
    await page.evaluate(()=>{ $('videoOverlayToggle').click();delete data.evModeAvailable });
@@ -134,7 +139,7 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
    await withControl({on:false,at:null});r=await chevrons();assert.equal(r.count,0,'no chevrons while longitudinal control is off');
    // Switching on: they appear from the nearest outwards. Switching off: they go from the farthest in.
    await withControl({on:true,at:null});const all=(await chevrons()).count;
-   const at=await page.evaluate(()=>document.getElementById('video').currentTime);
+   const at=await page.evaluate(()=>t);
    await withControl({on:true,at:at-.1});const early=(await chevrons()).count;
    await withControl({on:true,at:at-.4});const later=(await chevrons()).count;
    assert(early>0&&early<later&&later<=all,`switching on: the nearest first (${early} < ${later} <= ${all})`);

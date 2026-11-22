@@ -779,18 +779,19 @@ select,.rv-choice-trigger{font-weight:500}
 .video-gap[hidden],.video-gap-bars[hidden],.video-gear-row[hidden]{display:none}
 .video-gap-bars{display:flex;align-items:center;gap:3px;height:22px;padding:0 10px 0 9px}
 .video-gap:has(>.video-gear-row:not([hidden]))>.video-gap-bars{padding-left:0}
-.video-gear-row{--drive-text-shadow:0 0 2px #000,0 1px 3px #000;display:flex;align-items:baseline;gap:.55em;font-size:clamp(16.5px,1.875cqw,19.5px);font-weight:800;line-height:1.1;color:rgb(255 255 255 / .55);text-shadow:var(--drive-text-shadow)}
+.video-gear-row{display:flex;align-items:baseline;gap:.8em;font-size:clamp(16.5px,1.875cqw,19.5px);font-weight:550;line-height:1.1;color:rgb(255 255 255 / .48)}
 /* The active cells use carrot's mode colours at alpha 200/255. */
 .video-gap-bars i{width:13px;height:8px;border-radius:1.5px;background:#fff;opacity:.35;box-shadow:0 0 3px rgba(0,0,0,.55);transform:skewX(-20deg)}
 .video-gap-bars i.is-on{opacity:1;background:var(--gap-fill,#fff)}
 .video-gap-bars[data-driving-mode="1"]{--gap-fill:#00ff00c8}
 .video-gap-bars[data-driving-mode="2"]{--gap-fill:#ffa500c8}
 .video-gap-bars[data-driving-mode="4"]{--gap-fill:#ff0000c8}
-.video-gear{display:grid;grid-template-columns:repeat(3,1ch) minmax(2.6ch,max-content);gap:.25em}
+.video-gear{display:grid;grid-template-columns:repeat(3,1ch) 2.6ch;gap:.35em}
 .video-gear b{font-weight:inherit}
-.video-gear[data-position="P"]>[data-gear-slot="P"],.video-gear[data-position="R"]>[data-gear-slot="R"],.video-gear[data-position="N"]>[data-gear-slot="N"],.video-gear[data-position="D"]>[data-gear-slot="D"],.video-ev[data-active="true"]{color:#fff;text-shadow:var(--drive-text-shadow),0 0 5px rgb(255 255 255 / .4)}
+.video-gear [data-gear-slot="D"]{white-space:nowrap}
+.video-gear[data-position="P"]>[data-gear-slot="P"],.video-gear[data-position="R"]>[data-gear-slot="R"],.video-gear[data-position="N"]>[data-gear-slot="N"],.video-gear[data-position="D"]>[data-gear-slot="D"]{color:#fff;font-weight:700}
 .video-gear[data-position="R"]>[data-gear-slot="R"]{color:#ffb257}
-.video-gear small{font-size:.72em;margin-left:.1em}
+.video-gear small{font-size:.48em;margin-left:.12em;vertical-align:-.15em}
 .video-gear small:empty{display:none}
 .video-ev[data-active="true"]{color:#5be3ae}
 @media(pointer:coarse){.replay-page .video-gap{--hud-h:46px}}
