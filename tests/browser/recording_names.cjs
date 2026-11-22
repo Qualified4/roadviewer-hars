@@ -90,6 +90,13 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   assert(reversal<1,'rapid reversal continues from the current height');
   await page.waitForFunction(()=>!document.querySelector('.log-route').open&&!document.querySelector('.log-route')._foldAnimation);
 
+  const routeCopy=summary.getByRole('button',{name:'주행 ID 복사'});
+  await routeCopy.tap();
+  await page.waitForFunction(()=>window.copied.length===1);
+  assert.deepEqual(await group.evaluate(card=>({
+   value:window.copied.at(-1), open:card.open, feedback:card.querySelector('.route-meta .copy-announcement').textContent
+  })),{value:'00000395--0d0eda17c5',open:false,feedback:'복사했습니다.'});
+  await page.evaluate(()=>{window.copied=[]});
   const headerActions=group.locator(':scope>summary .log-route-actions');
   assert.equal(await headerActions.locator('.replay').getAttribute('href'),'view/one/');
   assert.equal(await page.locator('.replay').count(),5,'both route headers retain their own action alongside segment rows');
@@ -193,10 +200,11 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   ]);
   assert.equal(examples[0].display,'AAA / 구간 0');assert.equal(examples[1].display,'0 / 구간 0');
   assert.equal(examples[2].display,'직접 올린 로그');assert.equal(examples[3].original,'00000395--0d0eda17c5--007');
-  await page.evaluate(()=>window.denyCopy=true);await page.locator('.copy-recording').first().click();
+  const segmentCopy=page.locator('.log-name .copy-recording').first();
+  await page.evaluate(()=>window.denyCopy=true);await segmentCopy.click();
   assert.equal(await page.evaluate(()=>copied.length),2);
-  await page.evaluate(()=>window.failFallback=true);await page.locator('.copy-recording').first().click();
-  assert.equal(await page.locator('.copy-recording').first().getAttribute('title'),'복사하지 못했습니다. 다시 시도해 주세요.');
+  await page.evaluate(()=>window.failFallback=true);await segmentCopy.click();
+  assert.equal(await segmentCopy.getAttribute('title'),'복사하지 못했습니다. 다시 시도해 주세요.');
   await page.evaluate(()=>{copied=[];window.denyCopy=false;window.failFallback=false});
   await summary.locator('.log-route-name').tap();await page.waitForFunction(()=>!document.querySelector('.log-route').open);
   await headerActions.locator('.replay').tap();await page.waitForURL('https://rv.test/view/one/');await page.waitForFunction(()=>document.getElementById('route').textContent==='395 / 구간 7');

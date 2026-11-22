@@ -2,11 +2,11 @@
 
 [한국어](README.md) · English
 
-> **This repository is Road Viewer 2.x, rebuilt in Rust.** The current version is **2.0.15**.
+> **This repository is Road Viewer 2.x, rebuilt in Rust.** The current version is **2.0.16**.
 >
 > It succeeds the Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha), whose repository no longer receives new features. The Home Assistant app store and sidebar show it as **Road Viewer**. It is a separate app with a different slug, so the 1.x app is not updated to it automatically. To move from 1.x, see [cutover and rollback](docs/hars/CUTOVER.md) (Korean). Unverified environments and remaining risks are listed in the [implementation and validation status](docs/hars/STATUS.md) (Korean).
 >
-> The feature descriptions below follow Python Road Viewer 1.3.18. HARS 2.x serves the same web UI and implements the same API; intentional differences from Python are listed in the [implementation and validation status](docs/hars/STATUS.md#python과-의도적으로-다른-점) (Korean).
+> The features below describe the current Road Viewer 2.x. Its web UI is based on Python Road Viewer 1.x, and intentional differences from 1.x are listed in the [implementation and validation status](docs/hars/STATUS.md#python과-의도적으로-다른-점) (Korean).
 >
 > [Implementation and validation status](docs/hars/STATUS.md) · [Side-by-side install, cutover and rollback](docs/hars/CUTOVER.md) · [Real HAOS validation](docs/hars/HAOS-VALIDATION.md) (Korean)
 
@@ -76,7 +76,7 @@ For one segment, bare filenames work. For multiple segments, retain their identi
 
 - Logs alone support road views and vehicle graphs. Video-only registration is unsupported.
 - Downloaded camera MP4s can be re-uploaded with the same segment’s log. Segment/camera names and codecs must match. Select one format per camera rather than its original and MP4 together; existing retained videos are not overwritten.
-- Add a camera later by uploading it with the identical log; it attaches to the existing recording.
+- Add a camera later by uploading it with the identical log; it attaches to the existing recording. When adding a camera to a segment moved to Google Drive, the app checks the Drive connection before registering the upload.
 - Re-uploading the same source video checks its saved hash and preserves the retained MP4 and replay data without storing another original copy. Use the download modal for original-format files.
 - Compressed-log SHA-256 identifies duplicates at registration, after transfer.
 - Browser uploads default to **512 MiB per batch**, configurable through `max_upload_mb` from 16–2048. This is separate from the storage budget. Device uploads support 8 GiB per batch, 50 segments, 200 files and 2 GiB per video; each log must fit `max_upload_mb`.
@@ -126,7 +126,9 @@ Upload `ecamera.hevc` with the log to select **와이드** (Wide) in the camera 
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/roadviewer-wide-camera-dark.png"><img src="docs/images/roadviewer-wide-camera.png" alt="Road Viewer wide-camera video with lanes, model path, FF vehicle box, radar detections and a left turn signal overlay"></picture>
 
-A video opens on the **기본 화질** (default quality) chosen per connection: the small front video (qcamera) on mobile data and the high-quality front on Wi-Fi/wired by default. Change it with **기본 화질** beside 닫기 (close) in the camera list over the video; the choice is kept per browser. Where the browser does not report the connection type (iPhone, iPad, desktop browsers and others), phones and tablets follow the mobile-data choice and other devices the Wi-Fi/wired one. With **마지막으로 고른 화질 유지** (keep the last chosen quality, off by default) turned on in the same window, moving to another segment or log opens the camera last chosen (wide included). If that video is missing, the other front video is used, then wide. Switching preserves log time and playing/paused state. A failing video triggers an attempt to use another available source. Wide overlays use the wide sensor/calibration; missing information produces an explanation. Older prepared logs may need reanalysis to obtain wide calibration.
+Choose a **기본 화질** (default quality) for each connection. The defaults are the small front video (qcamera) on mobile data and the high-quality front on Wi-Fi/wired. Change it with **기본 화질** beside 닫기 (close) in the camera list over the video; the choice is kept per browser. Where the browser does not report the connection type (iPhone, iPad, desktop browsers and others), phones and tablets follow the mobile-data choice and other devices the Wi-Fi/wired one. Turn on **마지막으로 고른 화질 유지** (keep the last chosen quality, off by default) in the same window to remember the current camera and any camera you pick afterward (including wide) in this browser. The remembered camera opens first when the next segment plays automatically or you open another segment or log. If that camera is missing, the app tries the connection's default quality, then the other front video, then wide. A camera selected automatically after a playback failure does not replace the remembered camera. Switching preserves log time and playing/paused state. A failing video triggers an attempt to use another available source. Wide overlays use the wide sensor/calibration; missing information produces an explanation. Older prepared logs may need reanalysis to obtain wide calibration.
+
+In fullscreen, the buttons, minimap, speed, steering wheel and messages stay inside the picture, and the playback bar spans the screen.
 
 Overlay settings control box height/opacity, path width, BSD wall height and individual labels. LF/FF/RF boxes reconstruct supported CCNC display commands recorded in the log. BSD, turn signals and target distance appear when the corresponding data is available. Camera overlays are independent of the road panel's 25/50/80m range; BSD walls retain a 40m limit.
 
@@ -148,11 +150,11 @@ Lane probability and lateral y[0] distance share the same layout alongside road-
 
 Converting a log also stores its position once per second (about 1 KB per minute), so routes can be drawn on a map. The device GPS is used when it has a fix, else the car's own GPS sent over CAN (`carState.vehicleGps`), else carrot's estimated position. Logs converted by earlier versions are filled in the background; logs that exist only on Google Drive are filled when you turn on **Drive 로그 지도 채우기** (fill maps from Drive logs) on the storage tab or press **한 번 실행** (run once).
 
-**All drives**: the **목록 | 지도** (List | Map) switch at the top right of the Logs tab draws every drive the current search and filters show, one pastel line each. Picking a drive in the glass card list on the right fits the map to it and opens **재생 · 주행 지도 · 목록에서 보기** (Play, Drive map, Show in list) inside the card. The button at the top right folds and unfolds the list without moving the map.
+**All drives**: the **목록 | 지도** (List | Map) switch at the top right of the Logs tab draws every drive the current search and filters show, one pastel line each. Picking a drive in the glass card list on the right fits the map to it and opens **재생 · 주행 지도 · 목록에서 보기** (Play, Drive map, Show in list) inside the card. The button at the top right folds and unfolds the list without moving the map. List cards show the drive number (for example, **주행 395**) alongside the date and time. When you select another drive, the buttons on the two cards fold and unfold smoothly, or switch immediately if reduced motion is enabled.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/roadviewer-library-map-dark.png"><img src="docs/images/roadviewer-library-map.png" alt="Map view of the Logs tab: three example drives as pastel lines with a glass card list of drives on the right"></picture>
 
-**Drive map**: open it from the route shape on a drive card (on a PC it unfolds into a square map on hover; on phones use the **지도** button next to Play), the segment ⋯ menu's **지도에서 보기** (Show on map), or **주행 지도** on the all-drives card. Segment cards and their part of the route highlight each other. With the list folded (on phones, with the sheet pulled down) the chosen segment appears as a pill at the bottom, ready to play.
+**Drive map**: open it from the route shape on a drive card (on a PC it unfolds into a square map on hover; on phones use the **지도** button next to Play), the segment ⋯ menu's **지도에서 보기** (Show on map), or **주행 지도** on the all-drives card. Segment cards and their part of the route highlight each other. With the list folded (on phones, with the sheet pulled down) the chosen segment appears as a pill at the bottom, ready to play. In the light theme, gold edges highlight the selected card on both the drive map and the all-drives map.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/roadviewer-drive-map-dark.png"><img src="docs/images/roadviewer-drive-map.png" alt="Drive map: one drive drawn per segment, glass cards for segments 0–3 on the right, segment 1 highlighted"></picture>
 
@@ -206,7 +208,7 @@ Bookmarks use log time rather than a camera file’s timestamp, so changing came
 
 **Conversion behavior and storage policy**
 
-Set automatic conversion, concurrent jobs and display mode on the **설정** (Settings) tab. The **저장공간** (Storage) tab controls the budget and full-storage policy.
+Set automatic conversion, concurrent jobs and display mode on the **설정** (Settings) tab. The **저장공간** (Storage) tab controls the budget and full-storage policy. Actual concurrency depends on the configured maximum and available memory. Once an item is prepared, it shows **메모리 대기 중** (Waiting for memory) while waiting for memory.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/roadviewer-storage-overview-dark.png"><img src="docs/images/roadviewer-storage-overview.png" alt="Local usage and Google Drive connection status"></picture>
 
@@ -222,9 +224,9 @@ The bar stays visible from preparation until the large compressed files have bee
 
 **Segment status and file management**
 
-The **로그** tab has a **목록 | 지도** (List | Map) switch at the top right ([Drive route maps](#drive-route-maps)) and narrows segments with search and filter chips (All, Pinned, Unconverted, Processing, Drive, NAS and one per tag) and groups each route's segments into a **route card** under date headings. A card shows a thumbnail and total length, the route shape when it has GPS, the start time (`HH:MM 출발`, or `업로드 HH:MM` when unknown), a segment status bar and **자동 제어 N% · 개입 N회** (automatic control ratio and takeover count). Cards start folded; only routes opened by hand are remembered as open. Each segment row shows processing status, video availability and retained/prepared file sizes, and chips under each segment show where the log and each camera video (high-quality, low-resolution, wide) are kept: **로컬** (local), **Drive** or **NAS**. Ready entries offer **Play**, while entries needing preparation offer **Convert**. Each segment's ⋯ menu offers remove, download, edit tags, copy log name, pin and complete deletion.
+The **로그** tab has a **목록 | 지도** (List | Map) switch at the top right ([Drive route maps](#drive-route-maps)) and narrows segments with search and filter chips (All, Pinned, Unconverted, Processing, Drive, NAS and one per tag) and groups each route's segments into a **route card** under date headings. A card shows a thumbnail and total length, the route shape when it has GPS, the start time (`HH:MM 출발`, or `업로드 HH:MM` when unknown), a segment status bar and **자동 제어 N% · 개입 N회** (automatic control ratio and takeover count). Cards start folded each time you open the list. Each segment row shows processing status, video availability and retained/prepared file sizes, and chips under each segment show where the log and each camera video (high-quality, low-resolution, wide) are kept: **로컬** (local), **Drive** or **NAS**. The route card's **Convert** button queues all eligible segments, including ones hidden by search or filters and those in a collapsed card. An expanded segment row's **Convert** button queues that segment alone. Ready segments offer **Play**. Each segment's ⋯ menu offers remove, download, edit tags, copy log name, pin and complete deletion.
 
-Thumbnails and start times are generated during conversion and backfilled in the background for older and archived logs: local/NAS files are read in place, Drive files only through ranged requests for the first ~2 MB, and backfill pauses during uploads, conversions, archive runs and Drive playback. The control ratio and takeover count are computed from telemetry.
+Thumbnails and start times are generated during conversion. If a thumbnail cannot be made, successfully converted video and drive analysis are still available. The control ratio and takeover count are computed from telemetry.
 
 <picture><source media="(prefers-color-scheme: dark)" srcset="docs/images/roadviewer-library-logs-dark.png"><img src="docs/images/roadviewer-library-logs.png" alt="Saved recordings with per-segment playback, pinning and management controls"></picture>
 
@@ -272,7 +274,7 @@ Even with the same Drive account or NAS as Python 1.x, HARS 2.x writes only to i
 
 ## Documentation and validation
 
-Screenshots were captured on 2026-11-07 from version 1.0.11 using example data, in light and dark mode; the one matching your theme is shown. The three driving/wide introduction photos composite the earlier footage's video area into the new UI. Device, capacity, and pairing values are synthetic; the displayed code cannot connect a device. See the [screenshot guide](docs/images/README.en.md). The screenshots were taken with Python 1.x. HARS serves the Python 1.3.18 web files unchanged and changes only the displayed version to this app's version.
+Screenshots were captured on 2026-11-07 from version 1.0.11 using example data, in light and dark mode; the one matching your theme is shown. The three driving/wide introduction photos composite the earlier footage's video area into the new UI. Device, capacity, and pairing values are synthetic; the displayed code cannot connect a device. See the [screenshot guide](docs/images/README.en.md). The screenshots were taken with Python 1.x.
 
 - [User guide](roadviewer_hars/DOCS.en.md) · [한국어](roadviewer_hars/DOCS.md): installation, playback, route maps, conversion, storage, backups and troubleshooting
 - [roadviewer-mcp](https://github.com/Qualified4/roadviewer-mcp): MCP server for AI agents, using only the existing Ingress login and API

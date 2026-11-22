@@ -118,9 +118,10 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
     assert(button.height>=44&&button.x+button.width<=play.x&&play.x-(button.x+button.width)<=12&&Math.abs(button.y+button.height/2-play.y-play.height/2)<2,JSON.stringify({button,play}));
     assert.equal(await card.locator('.route-map-button').innerText(),'지도');
     // The empty left of the actions row folds the card (지도 sits beside 재생).
-    {const row=await card.locator('.log-route-actions').boundingBox(),open=await card.evaluate(e=>e.open);await page.touchscreen.tap(row.x+12,row.y+row.height/2);
+    {const actions=card.locator('.log-route-actions'),open=await card.evaluate(e=>e.open);
+     const position={x:12,y:(await actions.boundingBox()).height/2};await actions.tap({position});
      await page.waitForFunction(([id,was])=>document.querySelector(`.log-route[data-route*="${id}"]`).open!==was,['00000395',open]);
-     await page.touchscreen.tap(row.x+12,row.y+row.height/2);await page.waitForFunction(([id,was])=>document.querySelector(`.log-route[data-route*="${id}"]`).open===was,['00000395',open])}
+     await actions.tap({position});await page.waitForFunction(([id,was])=>document.querySelector(`.log-route[data-route*="${id}"]`).open===was,['00000395',open])}
     assert(await card.locator('.route-inset').isHidden()&&await card.locator('.route-strip').isHidden(),'phones: nothing in the thumbnail');
     if(shots){await card.evaluate(e=>e.scrollIntoView({block:'center'}));await settleLayout(page);await card.screenshot({path:path.join(shots,`card-phone-${scheme}.png`)})}}
    assert.equal(tiles.length,0,'the shape draws no tiles');
@@ -261,6 +262,7 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
     const lineBox=(width=null)=>page.evaluate(width=>{const p=[...document.querySelectorAll('#logMap .leaflet-overlay-pane path.leaflet-interactive')].find(p=>width===null||Number(p.getAttribute('stroke-width'))===width),b=p.getBoundingClientRect();return [b.left,b.top,b.width,b.height].map(Math.round)},width);
     const drag=async dy=>{const box=await handle.boundingBox(),x=box.x+box.width/2,y=box.y+box.height/2;await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x,y+dy/2,{steps:4});await page.mouse.move(x,y+dy,{steps:4});await page.mouse.up();await page.waitForTimeout(120)};
     const creditFree=()=>page.locator('#logMap .rv-credit-toggle').evaluate(t=>{const b=t.getBoundingClientRect();return t.contains(document.elementFromPoint(b.left+b.width/2,b.top+b.height/2))});
+    assert.deepEqual((await rows.locator('.map-list-pick b').allTextContents()).map(title=>title.match(/^주행 \d+ · (?=\d)/)?.[0]).sort(),['주행 395 · ','주행 396 · ']);
     assert.equal((await handle.innerText()).trim(),'주행 목록 2개');assert(await handle.isVisible()&&await page.locator('#logMapList .log-map-list-head').isHidden());
     // The phone map reaches down to just above the bottom tab bar (whatever sits above it), with the page at the top.
     {const g=await page.evaluate(()=>{const m=document.getElementById('logMap').getBoundingClientRect(),t=document.querySelector('.lib-tabs').getBoundingClientRect();return {gap:Math.round(t.top-(m.top+window.scrollY+m.height)),h:Math.round(m.height)}});
