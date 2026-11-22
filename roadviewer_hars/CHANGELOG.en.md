@@ -1,3 +1,8 @@
+## 2.0.18
+
+- The following-distance bars in the bottom-left corner of the replay show carrot drive-mode colours. The recorded gear, gear step and EV state appear beside the bars.
+- Drive mode, gear and EV data appear in logs converted or reconverted with 2.0.18. Earlier conversions keep the white bars.
+
 ## 2.0.17
 
 - Turn signal arrows in the desktop replay overlay grow as the video gets wider.

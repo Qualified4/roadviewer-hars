@@ -6,8 +6,9 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
  try{
   const page=await browser.newPage({viewport:{width:1280,height:900},reducedMotion:'reduce'}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));
-  await page.route('https://rv.test/**',route=>{
-   const p=new URL(route.request().url()).pathname;
+  await page.route('**/*',route=>{
+   const {hostname,pathname:p}=new URL(route.request().url());
+   if(hostname!=='rv.test')return route.abort();
    if(p.endsWith('/bookmarks'))return route.fulfill({json:{bookmarks:[]}});
    if(p==='/api/logs')return route.fulfill({json:{logs:[]}});
    if(p.endsWith('/video'))return route.fulfill({body:fs.readFileSync(process.env.RV_TEST_VIDEO||'/tmp/roadviewer-test.mp4'),contentType:'video/mp4'});
@@ -54,6 +55,51 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
    await page.evaluate(()=>{document.getElementById('gapLevel').click()});assert.equal((await gap()).hidden,true,'the setting turns it off');
    await page.evaluate(()=>{document.getElementById('gapLevel').click();data.frames[0].gap=null;render()});assert.equal((await gap()).hidden,true,'no value in the log: nothing shown');
    await page.evaluate(()=>{data.frames[0].gap=2;render()})}
+  // The lower HUD reads the selected frame, including sparse fields and explicit resets.
+  {const original=await page.evaluateHandle(()=>data.frames);
+   await page.evaluate(()=>{
+    const frame=data.frames[0];
+    const changes=[
+     {},
+     {drivingMode:1,gearShifter:'drive',gearStep:5,evModeActive:true,evModeValid:true},
+     {},
+     {drivingMode:2,gearShifter:'reverse',gearStep:2},
+     {drivingMode:3,gearShifter:'drive',gearStep:4,evModeActive:false},
+     {drivingMode:4,gearShifter:'sport',gearStep:3,evModeActive:true,evModeValid:false},
+     {drivingMode:0,gearShifter:'unknown',gearStep:0},
+     {drivingMode:99,gearShifter:'manumatic',gearStep:1}
+    ];
+    data.evModeAvailable=true;
+    data.frames=expandReplayData({frames:changes.map((change,i)=>({...frame,t:i/10,...change}))}).frames;
+   });
+   const hudAt=time=>page.evaluate(time=>{
+    setTime(time,false);
+    const c=$('videoGap'),gear=$('videoGear'),ev=$('videoEv');
+    return {
+     bars:[...c.children].map(e=>{const style=getComputedStyle(e);return [style.backgroundColor,style.opacity]}),
+     gear:gear.hidden?null:[$('videoGearLetter').textContent,$('videoGearStep').textContent,getComputedStyle(gear).color],
+     ev:ev.hidden?null:[ev.dataset.active,getComputedStyle(ev).color,getComputedStyle(ev).borderTopColor],
+     visible:$('videoDriveHud').checkVisibility()
+    };
+   },time);
+   const white='rgb(255, 255, 255)',orange='rgb(255, 178, 87)',green='rgb(91, 227, 174)',grey='rgba(255, 255, 255, 0.55)';
+   const modes=['rgb(255, 255, 255)','rgba(0, 255, 0, 0.784)','rgba(0, 255, 0, 0.784)','rgba(255, 165, 0, 0.784)',white,'rgba(255, 0, 0, 0.784)',white,white];
+   const gears=[null,['D','5',white],['D','5',white],['R','',orange],['D','4',white],['S','3',white],null,['M','1',white]];
+   for(let i=0;i<modes.length;i++){
+    const hud=await hudAt(i/10),active=i>=1&&i<=3,evColor=active?green:grey;
+    assert.deepEqual(hud.bars,[[modes[i],'1'],[modes[i],'1'],[white,'0.35'],[white,'0.35']],`gap colour at frame ${i}`);
+    assert.deepEqual(hud.gear,gears[i],`gear and step at frame ${i}`);
+    assert.deepEqual(hud.ev,[String(active),evColor,evColor],`EV text and border at frame ${i}`);
+   }
+   await page.evaluate(()=>$('videoOverlayToggle').click());
+   assert.equal((await hudAt(.1)).visible,false,'overlay toggle hides the lower HUD');
+   await page.evaluate(()=>{ $('videoOverlayToggle').click();delete data.evModeAvailable });
+   assert.equal((await hudAt(.1)).ev,null,'no valid EV signal in the log hides the badge');
+   await page.evaluate(frames=>{data.frames=frames;setTime(0,false)},original);
+   const legacy=await hudAt(0);
+   assert.deepEqual([legacy.bars[0],legacy.gear,legacy.ev],[[white,'1'],null,null],'old replays keep the white bars');
+   await original.dispose();
+  }
   // Path chevrons carry the drive state. Radial gradients on the video overlay come only from the chevrons: their count says
   // whether chevrons were drawn, their colour stops which tint they had.
   {const chevrons=()=>page.evaluate(()=>{const stops=[],original=CanvasRenderingContext2D.prototype.createRadialGradient;let count=0;

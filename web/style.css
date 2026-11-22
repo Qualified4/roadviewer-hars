@@ -776,10 +776,22 @@ select,.rv-choice-trigger{font-weight:500}
 /* Following-distance setting (app.js, frame.gap): four slanted cells, as many lit as the level, in the video's
    bottom-left corner. While the bottom controls show it rides just above them; when they fade it settles into the
    corner. --gap-cover lifts it with the controls where the transport bar covers the picture's bottom. */
-.video-gap{--hud-h:36px;position:absolute;left:12px;bottom:12px;z-index:3;display:flex;align-items:center;gap:3px;height:22px;padding:0 10px 0 9px;border-radius:999px;pointer-events:none;translate:0 calc(-1 * (var(--hud-h) + 8px + var(--gap-cover,0px)));transition:translate .3s var(--m2-standard,ease),opacity .18s var(--m2-standard,ease)}
-.video-gap[hidden]{display:none}
-/* No chip behind it: white bars in every theme (as dark mode), a soft dark edge keeps them readable on a bright road. */
-.video-gap i{width:13px;height:8px;border-radius:1.5px;background:#fff;opacity:.35;box-shadow:0 0 3px rgba(0,0,0,.55);transform:skewX(-20deg)}.video-gap i.is-on{opacity:1}
+.video-gap{--hud-h:36px;position:absolute;left:12px;bottom:12px;z-index:3;display:flex;align-items:center;height:22px;border-radius:999px;pointer-events:none;translate:0 calc(-1 * (var(--hud-h) + 8px + var(--gap-cover,0px)));transition:translate .3s var(--m2-standard,ease),opacity .18s var(--m2-standard,ease)}
+.video-gap[hidden],.video-gap-bars[hidden]{display:none}
+.video-gap-bars{display:flex;align-items:center;gap:3px;height:100%;padding:0 10px 0 9px}
+/* The active cells use carrot's mode colours at alpha 200/255. */
+.video-gap-bars i{width:13px;height:8px;border-radius:1.5px;background:#fff;opacity:.35;box-shadow:0 0 3px rgba(0,0,0,.55);transform:skewX(-20deg)}
+.video-gap-bars i.is-on{opacity:1;background:var(--gap-fill,#fff)}
+.video-gap-bars[data-driving-mode="1"]{--gap-fill:#00ff00c8}
+.video-gap-bars[data-driving-mode="2"]{--gap-fill:#ffa500c8}
+.video-gap-bars[data-driving-mode="4"]{--gap-fill:#ff0000c8}
+.video-gear,.video-ev{font-size:clamp(11px,1.25cqw,13px);font-weight:800;line-height:1;text-shadow:0 0 2px #000,0 1px 3px #000}
+.video-gear{color:#fff;margin-right:6px}
+.video-gear[data-gear="R"]{color:#ffb257}
+.video-gear small{font-size:.72em;margin-left:1px}
+.video-gear small:empty{display:none}
+.video-ev{font-size:clamp(8px,.95cqw,10px);color:rgb(255 255 255 / .55);border:1px solid currentColor;border-radius:999px;padding:2px 4px;box-shadow:0 0 3px rgb(0 0 0 / .6)}
+.video-ev[data-active="true"]{color:#5be3ae}
 @media(pointer:coarse){.replay-page .video-gap{--hud-h:46px}}
 .replay-page.media-shrunk .video-gap{--hud-h:40px}
 .replay-page.hud-idle .video-gap{translate:0 calc(-1 * var(--gap-cover,0px))}

@@ -475,7 +475,6 @@ pub fn frames(
     let mut rears = vec![];
     let mut roads = vec![];
     let mut bars = vec![];
-    let mut distances = vec![];
     let mut signals = vec![];
     for row in view.rows("sendcan") {
         for msg in arr(&row.value) {
@@ -498,16 +497,6 @@ pub fn frames(
                 .unwrap_or(json!(0)),
         ));
     }
-    for row in view.rows("longitudinalPlan") {
-        distances.push((
-            row.stamp,
-            row.valid,
-            num(&row.value["desiredDistance"])
-                .filter(|v| *v > 0.)
-                .map(|v| json!(r(v, 1)))
-                .unwrap_or(Value::Null),
-        ));
-    }
     for row in view.rows("carState") {
         let mut value = json!({"acceleration":num(&row.value["aEgo"])});
         for (to, from) in [
@@ -525,6 +514,8 @@ pub fn frames(
         previous: None,
     };
     let mut frames = Vec::with_capacity(models.len());
+    let (zero, unknown, off) = (json!(0), json!("unknown"), json!(false));
+    let mut previous_hud = [&zero, &unknown, &zero, &off, &off];
     for row in &models {
         let m = &row.value;
         let time = clock(row);
@@ -621,7 +612,40 @@ pub fn frames(
         let empty = json!({"x":[],"y":[]});
         let info = camera_info(&view, stamp);
         let gap = held(&bars, stamp);
-        let frame = json!({"t":r(time-origin,6),"id":m["frameId"],"egoSpeedKph":speed,"steering":steering.at(&view,stamp),"valid":row.valid,"position":points2(m.get("position").unwrap_or(&empty))?,"lanes":lines("laneLines")?,"laneY0":firsts("laneLines"),"lp":m["laneLineProbs"],"edges":lines("roadEdges")?,"edgeY0":firsts("roadEdges"),"es":m["roadEdgeStds"],"leads":leads,"selected":selected,"radarTargets":targets,"liveTracks":tracks,"liveTracksValid":live_valid,"liveTracksDeltaMs":live_delta,"ccncTargets":restore(&held(&commands,stamp),m,row.valid),"ccncRearTargets":if commands.is_empty(){Value::Null}else{held(&rears,stamp)},"ccncRoad":held(&roads,stamp),"roadSignals":held(&signals,stamp),"gap":if gap.as_u64().is_some_and(|v|(1..=4).contains(&v)){gap}else{Value::Null},"gapTarget":held(&distances,stamp),"cameraInfo":info,"overlay":overlay(&info,m)?});
+        let plan = view.past("longitudinalPlan", stamp, 150e6, false);
+        let car = view.past("carState", stamp, 150e6, false);
+        let gap_target = plan
+            .and_then(|v| num(&v["desiredDistance"]))
+            .filter(|v| *v > 0.)
+            .map(|v| r(v, 1));
+        let mut frame = json!({"t":r(time-origin,6),"id":m["frameId"],"egoSpeedKph":speed,"steering":steering.at(&view,stamp),"valid":row.valid,"position":points2(m.get("position").unwrap_or(&empty))?,"lanes":lines("laneLines")?,"laneY0":firsts("laneLines"),"lp":m["laneLineProbs"],"edges":lines("roadEdges")?,"edgeY0":firsts("roadEdges"),"es":m["roadEdgeStds"],"leads":leads,"selected":selected,"radarTargets":targets,"liveTracks":tracks,"liveTracksValid":live_valid,"liveTracksDeltaMs":live_delta,"ccncTargets":restore(&held(&commands,stamp),m,row.valid),"ccncRearTargets":if commands.is_empty(){Value::Null}else{held(&rears,stamp)},"ccncRoad":held(&roads,stamp),"roadSignals":held(&signals,stamp),"gap":if gap.as_u64().is_some_and(|v|(1..=4).contains(&v)){gap}else{Value::Null},"gapTarget":gap_target,"cameraInfo":info,"overlay":overlay(&info,m)?});
+        // Store HUD changes only. An explicit default clears the previous value after a gap.
+        let hud = [
+            (
+                "drivingMode",
+                plan.and_then(|v| v.get("myDrivingMode")),
+                &zero,
+            ),
+            (
+                "gearShifter",
+                car.and_then(|v| v.get("gearShifter")),
+                &unknown,
+            ),
+            ("gearStep", car.and_then(|v| v.get("gearStep")), &zero),
+            (
+                "evModeActive",
+                car.and_then(|v| v.get("evModeActive")),
+                &off,
+            ),
+            ("evModeValid", car.and_then(|v| v.get("evModeValid")), &off),
+        ];
+        for ((key, value, default), previous) in hud.into_iter().zip(&mut previous_hud) {
+            let value = value.unwrap_or(default);
+            if value != *previous {
+                frame[key] = value.clone();
+                *previous = value;
+            }
+        }
         frames.push(frame);
         progress(frames.len(), models.len());
     }
