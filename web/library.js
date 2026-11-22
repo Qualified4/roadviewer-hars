@@ -513,7 +513,10 @@ function createLogGroup(route){
  const element=document.createElement('details'),summary=document.createElement('summary'),main=document.createElement('div'),heading=document.createElement('div'),time=document.createElement('h3'),meta=document.createElement('span'),name=document.createElement('span'),count=document.createElement('span'),bar=document.createElement('div'),facts=document.createElement('div'),chevron=document.createElement('button'),body=document.createElement('div'),actions=document.createElement('div');
  const thumb=thumbnailBox('route-thumb'),duration=document.createElement('span');duration.className='route-duration';thumb.append(duration);
  element.className='log-route';element.dataset.route=route.key;element.open=false;
- time.className='route-time';meta.className='route-meta';name.className='log-route-name';name.title=route.key;count.className='log-route-count';meta.append(name,' · ',count);
+ time.className='route-time';meta.className='route-meta';name.className='log-route-name';name.title=route.key;count.className='log-route-count';
+ meta.append(name);
+ if(route.segment!==null)meta.append(recordingCopyButton(route.key,'주행 ID 복사'));
+ meta.append(' · ',count);
  const tags=document.createElement('span');heading.className='route-heading';heading.append(time,meta,tags);
  bar.className='route-bar';bar.setAttribute('role','img');facts.className='route-facts';main.className='route-main';main.append(heading,bar,facts);
  chevron.className='log-route-chevron';chevron.type='button';chevron.setAttribute('aria-label','구간 펼치기');chevron.setAttribute('aria-expanded',String(element.open));chevron.innerHTML='<svg aria-hidden="true" viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="m6 9 6 6 6-6"/></svg>';

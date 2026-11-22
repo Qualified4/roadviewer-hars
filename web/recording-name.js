@@ -12,6 +12,23 @@ async function copyTextToClipboard(value,button){
   finally{input.remove();button.focus({preventScroll:true})}
  }
 }
+function recordingCopyButton(value,label='로그 이름 복사'){
+ const button=document.createElement('button');button.type='button';button.className='copy-recording';button.setAttribute('aria-label',label);button.title=value+' 복사';button.disabled=!value;
+ const icon=document.createElement('span');icon.setAttribute('aria-hidden','true');
+ icon.innerHTML=COPY_ICON;
+ const status=document.createElement('span');status.className='copy-announcement';status.setAttribute('role','status');
+ button.append(icon,status);
+ let timer;
+ button.onclick=async e=>{
+  e.preventDefault();e.stopPropagation();clearTimeout(timer);
+  try{
+   await copyTextToClipboard(value,button);
+   icon.textContent='✓';popIcon(icon);status.textContent='복사했습니다.';button.title='복사했습니다.';
+  }catch{icon.textContent='!';popIcon(icon);status.textContent='복사하지 못했습니다.';button.title='복사하지 못했습니다. 다시 시도해 주세요.'}
+  timer=setTimeout(()=>{icon.innerHTML=COPY_ICON;status.textContent='';button.title=value+' 복사'},1800);
+ };
+ return button;
+}
 function recordingIdentity(name,files={}){
  const source=(files['rlog.zst']||'').replaceAll('\\','/').split('/').pop().replace(/--rlog\.zst$/,'');
  const parse=value=>/^([^-\s]+)--([^-\s]+)--(\d+)$/.exec(value||'');
@@ -27,20 +44,8 @@ function renderRecordingName(container,name,files={},label=null){
  const text=container.querySelector('.recording-name-text')||document.createElement('span');
  for(const child of [...container.childNodes])if(child!==text)child.remove();
  text.className='recording-name-text';if(text.textContent!==info.display)text.textContent=info.display;text.title=info.original;
- const button=document.createElement('button');button.type='button';button.className='copy-recording';button.setAttribute('aria-label','로그 이름 복사');button.title=info.original+' 복사';button.disabled=!info.original;
- const icon=document.createElement('span');icon.setAttribute('aria-hidden','true');
- icon.innerHTML=COPY_ICON;
- const status=document.createElement('span');status.className='copy-announcement';status.setAttribute('role','status');
- button.append(icon,status);if(text.parentNode!==container)container.append(text);container.append(button);
- let timer;
- button.onclick=async e=>{
-  e.stopPropagation();clearTimeout(timer);
-  try{
-   await copyTextToClipboard(info.original,button);
-   icon.textContent='✓';popIcon(icon);status.textContent='복사했습니다.';button.title='복사했습니다.';
-  }catch{icon.textContent='!';popIcon(icon);status.textContent='복사하지 못했습니다.';button.title='복사하지 못했습니다. 다시 시도해 주세요.'}
-  timer=setTimeout(()=>{icon.innerHTML=COPY_ICON;status.textContent='';button.title=info.original+' 복사'},1800);
- };
+ if(text.parentNode!==container)container.append(text);
+ container.append(recordingCopyButton(info.original));
  return text;
 }
 // Download choices for one log, shared by the list menu and the replay screen.

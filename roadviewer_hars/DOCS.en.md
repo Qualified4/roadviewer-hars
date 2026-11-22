@@ -95,6 +95,8 @@ Cards are collapsed by default; the chevron expands or collapses the segment lis
 
 An expanded segment row shows its thumbnail, name, state, storage chips, a **재생** or **변환** button and a per-segment ⋯ menu: **제거** (Remove, when ready or queued), **다운로드** (Download), **태그 편집** (Edit tags), **로그 이름 복사** (Copy log name), **구간 고정 / 해제** (Pin/unpin) and **완전 삭제** (Delete permanently). The row's **변환** (Convert) queues that segment alone.
 
+The copy button beside **주행 395** in the route card header copies the drive ID `00000395--0d0eda17c5` without the segment number.
+
 `00000395--0d0eda17c5--7` is displayed as **395 / 구간 7**. The copy icon, or **로그 이름 복사**, copies the full original identifier, including leading zeros and the hash.
 
 **새로고침** refreshes the list, state, sizes and conversion settings; it does not reload the page or restart conversion. The list refreshes about every three seconds, and active conversion progress about every second. When an automatic check finds no changes, the list is left as displayed.

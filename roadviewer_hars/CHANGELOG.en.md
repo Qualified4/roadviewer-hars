@@ -2,6 +2,7 @@
 
 - Updated the READMEs and user guides to describe current Road Viewer 2.x behavior.
 - Cards in the all-drives map list now show the drive number alongside the date and time.
+- The route card header in the Logs tab now lets you copy the drive ID without its segment number.
 
 ## 2.0.15
 
