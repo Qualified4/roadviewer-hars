@@ -879,6 +879,7 @@ pub async fn hide(store: &Store, id: &str) -> std::io::Result<()> {
             Err(e) => return Err(e),
         }
         records.remove(id);
+        crate::track::invalidate_recording(&store.root.join(id));
     }
     sync_dir(&store.root).await
 }

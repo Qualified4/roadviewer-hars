@@ -994,6 +994,7 @@ async fn register_in(
             })??;
     }
     app.store.records.write().await.insert(id.to_owned(), meta);
+    crate::track::invalidate_recording(&app.store.root.join(id));
     if record["pinned"] == true {
         let mut settings = storage::load_settings(&app.store.root).await?;
         let mut pins = storage::pins(&settings);

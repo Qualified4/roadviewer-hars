@@ -1,7 +1,15 @@
-//! GPS and wall-clock calculations from the preserved Python conversion contract.
+//! GPS and wall-clock calculations from the preserved Python conversion contract,
+//! plus in-memory track caching and lightweight ETag generation for `/api/tracks` and `/api/logs/{id}/track`.
 use crate::{logs::Decoded, replay::r};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
+use sha2::{Digest, Sha256};
+use std::{
+    collections::{BTreeMap, BTreeSet, HashMap},
+    path::{Path, PathBuf},
+    sync::{LazyLock, Mutex},
+    time::UNIX_EPOCH,
+};
 
 fn number(v: &Value) -> Option<f64> {
     v.as_f64().filter(|v| v.is_finite())
@@ -310,6 +318,449 @@ pub fn simplify(coords: &[[f64; 2]], limit: usize) -> Vec<[f64; 2]> {
         }
         tolerance *= 2.;
     }
+}
+
+type FileStamp = (u128, u64, u64);
+type SegmentSig = (Option<FileStamp>, Option<FileStamp>);
+type RouteGroupEntry = (Vec<String>, Vec<(Option<u64>, String)>);
+
+#[derive(Clone, Debug)]
+struct CachedSegment {
+    has_track: bool,
+    duration: Value,
+    track_distance_m: Value,
+    simplified_150: Vec<[f64; 2]>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct RouteInputSig {
+    all_ids: Vec<String>,
+    ready_segments: Vec<(String, Option<u64>, SegmentSig)>,
+}
+
+#[derive(Clone, Debug)]
+struct CachedRoute {
+    sig: RouteInputSig,
+    route: Option<Value>,
+}
+
+#[derive(Clone, Debug)]
+struct CachedTracksResponse {
+    etag: String,
+    bytes: Vec<u8>,
+}
+
+#[derive(Default)]
+struct TrackCache {
+    segments: HashMap<PathBuf, (SegmentSig, CachedSegment)>,
+    routes: HashMap<(PathBuf, String), CachedRoute>,
+    responses: HashMap<PathBuf, CachedTracksResponse>,
+}
+
+static TRACK_CACHE: LazyLock<Mutex<TrackCache>> = LazyLock::new(Default::default);
+
+pub enum TracksAnswer {
+    NotModified { etag: String },
+    Ok { etag: String, bytes: Vec<u8> },
+}
+
+pub fn route_order(meta: &Value) -> (String, Option<u64>) {
+    let order = crate::parity::RecordingOrder::of(meta);
+    match order.route_key() {
+        Some(key) => (key, order.segment()),
+        None => (meta["id"].as_str().unwrap_or("").into(), None),
+    }
+}
+
+fn file_stamp(path: &Path) -> Option<FileStamp> {
+    let m = std::fs::metadata(path).ok()?;
+    let mtime = m
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    #[cfg(unix)]
+    let ino = std::os::unix::fs::MetadataExt::ino(&m);
+    #[cfg(not(unix))]
+    let ino = 0;
+    Some((mtime, m.len(), ino))
+}
+
+fn segment_sig(folder: &Path) -> SegmentSig {
+    let prepared = folder.join("prepared");
+    (
+        file_stamp(&prepared.join("summary.json")),
+        file_stamp(&prepared.join("track.json.gz")),
+    )
+}
+
+fn hash_stamp(hasher: &mut Sha256, stamp: Option<FileStamp>) {
+    match stamp {
+        None => hasher.update([0u8]),
+        Some((mtime, len, ino)) => {
+            hasher.update([1u8]);
+            hasher.update(mtime.to_le_bytes());
+            hasher.update(len.to_le_bytes());
+            hasher.update(ino.to_le_bytes());
+        }
+    }
+}
+
+fn hash_segment_sig(hasher: &mut Sha256, sig: SegmentSig) {
+    hash_stamp(hasher, sig.0);
+    hash_stamp(hasher, sig.1);
+}
+
+fn empty_segment() -> CachedSegment {
+    CachedSegment {
+        has_track: false,
+        duration: Value::Null,
+        track_distance_m: Value::Null,
+        simplified_150: vec![],
+    }
+}
+
+fn load_segment(folder: &Path, sig: SegmentSig) -> CachedSegment {
+    {
+        let cache = TRACK_CACHE.lock().unwrap();
+        if let Some((cached_sig, seg)) = cache.segments.get(folder)
+            && *cached_sig == sig
+        {
+            return seg.clone();
+        }
+    }
+    let seg = if sig.0.is_none() || sig.1.is_none() {
+        empty_segment()
+    } else {
+        let prepared = folder.join("prepared");
+        let parsed = std::fs::read(prepared.join("summary.json"))
+            .ok()
+            .and_then(|v| serde_json::from_slice::<Value>(&v).ok());
+        match parsed {
+            Some(summary) if summary["has_track"] == true => {
+                match crate::logs::read_gzip(&prepared.join("track.json.gz")) {
+                    Ok(track) if track["points"].as_array().is_some_and(|p| !p.is_empty()) => {
+                        let coords = track["points"]
+                            .as_array()
+                            .unwrap()
+                            .iter()
+                            .filter_map(|p| Some([p[1].as_f64()?, p[2].as_f64()?]))
+                            .collect::<Vec<_>>();
+                        CachedSegment {
+                            has_track: true,
+                            duration: summary["duration"].clone(),
+                            track_distance_m: summary["track_distance_m"].clone(),
+                            simplified_150: simplify(&coords, 150),
+                        }
+                    }
+                    _ => empty_segment(),
+                }
+            }
+            _ => empty_segment(),
+        }
+    };
+    TRACK_CACHE
+        .lock()
+        .unwrap()
+        .segments
+        .insert(folder.to_path_buf(), (sig, seg.clone()));
+    seg
+}
+
+/// Invalidates cached track data for one recording folder and its store's aggregated caches.
+pub fn invalidate_recording(folder: &Path) {
+    let mut cache = TRACK_CACHE.lock().unwrap();
+    cache.segments.remove(folder);
+    if let Some(root) = folder.parent() {
+        cache.responses.remove(root);
+        cache.routes.retain(|(r, _), _| r != root);
+    }
+}
+
+/// Invalidates all cached track data belonging to a store root.
+pub fn invalidate_root(root: &Path) {
+    let mut cache = TRACK_CACHE.lock().unwrap();
+    cache.responses.remove(root);
+    cache.routes.retain(|(r, _), _| r != root);
+    cache.segments.retain(|p, _| !p.starts_with(root));
+}
+
+/// Returns `(cached_segments, cached_routes, has_cached_tracks_response)` for a store root.
+pub fn cache_counts(root: &Path) -> (usize, usize, bool) {
+    let cache = TRACK_CACHE.lock().unwrap();
+    let segments = cache
+        .segments
+        .keys()
+        .filter(|p| p.starts_with(root))
+        .count();
+    let routes = cache.routes.keys().filter(|(r, _)| r == root).count();
+    let response = cache.responses.contains_key(root);
+    (segments, routes, response)
+}
+
+/// Builds the `/api/logs/{id}/track` response for a single route (`key`) only,
+/// skipping disk reads completely on a lightweight ETag match (`304 Not Modified`).
+pub fn build_single_track(
+    root: &Path,
+    id: &str,
+    key: &str,
+    ready_segments: &[(Option<u64>, String)],
+    if_none_match: &str,
+) -> TracksAnswer {
+    let stamped = ready_segments
+        .iter()
+        .map(|(segment, seg_id)| (*segment, seg_id.clone(), segment_sig(&root.join(seg_id))))
+        .collect::<Vec<_>>();
+
+    let mut hasher = Sha256::new();
+    hasher.update(b"rv-track-v1\0");
+    hasher.update(id.as_bytes());
+    hasher.update([0u8]);
+    hasher.update(key.as_bytes());
+    hasher.update([0u8]);
+    for (segment, seg_id, sig) in &stamped {
+        hasher.update(seg_id.as_bytes());
+        hasher.update([0u8]);
+        match segment {
+            None => hasher.update([0u8]),
+            Some(n) => {
+                hasher.update([1u8]);
+                hasher.update(n.to_le_bytes());
+            }
+        }
+        hash_segment_sig(&mut hasher, *sig);
+    }
+    let etag = format!("\"{}\"", &hex::encode(hasher.finalize())[..32]);
+    if if_none_match == etag {
+        return TracksAnswer::NotModified { etag };
+    }
+
+    let mut segments = vec![];
+    for (segment, seg_id, sig) in stamped {
+        if sig.0.is_none() || sig.1.is_none() {
+            continue;
+        }
+        let folder = root.join(&seg_id);
+        let cached_meta = {
+            let cache = TRACK_CACHE.lock().unwrap();
+            cache
+                .segments
+                .get(&folder)
+                .filter(|(s, _)| *s == sig)
+                .map(|(_, c)| (c.has_track, c.duration.clone(), c.track_distance_m.clone()))
+        };
+        let (duration, distance_m) = match cached_meta {
+            Some((false, _, _)) => continue,
+            Some((true, dur, dist)) => (dur, dist),
+            None => {
+                let prepared = folder.join("prepared");
+                let Ok(summary) = std::fs::read(prepared.join("summary.json")).and_then(|v| {
+                    serde_json::from_slice::<Value>(&v).map_err(std::io::Error::other)
+                }) else {
+                    continue;
+                };
+                if summary["has_track"] != true {
+                    TRACK_CACHE
+                        .lock()
+                        .unwrap()
+                        .segments
+                        .insert(folder.clone(), (sig, empty_segment()));
+                    continue;
+                }
+                (
+                    summary["duration"].clone(),
+                    summary["track_distance_m"].clone(),
+                )
+            }
+        };
+        let Ok(track) = crate::logs::read_gzip(&folder.join("prepared").join("track.json.gz"))
+        else {
+            continue;
+        };
+        if track["points"].as_array().is_none_or(|p| p.is_empty()) {
+            continue;
+        }
+        segments.push(json!({
+            "id": seg_id,
+            "segment": segment,
+            "duration": duration,
+            "distance_m": distance_m,
+            "points": track["points"],
+        }));
+    }
+    let bytes = serde_json::to_vec(&json!({"id": id, "segments": segments})).unwrap();
+    TracksAnswer::Ok { etag, bytes }
+}
+
+/// Builds the `/api/tracks` response using the three-tier in-memory cache
+/// (per-segment `simplified_150`, per-route `simplified_300`, and serialized response + lightweight ETag).
+pub fn build_tracks(
+    root: &Path,
+    metas: &[Value],
+    wanted: Option<&BTreeSet<String>>,
+    if_none_match: &str,
+) -> TracksAnswer {
+    // Group all recordings by route key, preserving `metas` ordering (sorted by recording id).
+    let mut groups: BTreeMap<String, RouteGroupEntry> = BTreeMap::new();
+    for m in metas {
+        let Some(rec_id) = m["id"].as_str() else {
+            continue;
+        };
+        let (key, segment) = route_order(m);
+        let entry = groups.entry(key).or_default();
+        entry.0.push(rec_id.to_owned());
+        if m["status"] == "ready" {
+            entry.1.push((segment, rec_id.to_owned()));
+        }
+    }
+
+    let mut hasher = Sha256::new();
+    hasher.update(b"rv-tracks-v1\0");
+    if let Some(wanted) = wanted {
+        hasher.update(b"filter\0");
+        for id in wanted {
+            hasher.update(id.as_bytes());
+            hasher.update([0u8]);
+        }
+    }
+
+    let mut stamped_groups: Vec<(String, RouteInputSig)> = Vec::with_capacity(groups.len());
+    for (key, (all_ids, mut ready)) in groups {
+        if wanted.is_some_and(|w| !all_ids.iter().any(|id| w.contains(id))) {
+            continue;
+        }
+        ready.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+        let ready_segments = ready
+            .into_iter()
+            .map(|(segment, seg_id)| {
+                let sig = segment_sig(&root.join(&seg_id));
+                (seg_id, segment, sig)
+            })
+            .collect::<Vec<_>>();
+
+        hasher.update(key.as_bytes());
+        hasher.update([0u8]);
+        for id in &all_ids {
+            hasher.update(id.as_bytes());
+            hasher.update([0u8]);
+        }
+        hasher.update([1u8]);
+        for (seg_id, segment, sig) in &ready_segments {
+            hasher.update(seg_id.as_bytes());
+            hasher.update([0u8]);
+            match segment {
+                None => hasher.update([0u8]),
+                Some(n) => {
+                    hasher.update([1u8]);
+                    hasher.update(n.to_le_bytes());
+                }
+            }
+            hash_segment_sig(&mut hasher, *sig);
+        }
+        stamped_groups.push((
+            key,
+            RouteInputSig {
+                all_ids,
+                ready_segments,
+            },
+        ));
+    }
+
+    let etag = format!("\"{}\"", &hex::encode(hasher.finalize())[..32]);
+    if if_none_match == etag {
+        return TracksAnswer::NotModified { etag };
+    }
+
+    if wanted.is_none() {
+        let cache = TRACK_CACHE.lock().unwrap();
+        if let Some(cached) = cache.responses.get(root)
+            && cached.etag == etag
+        {
+            return TracksAnswer::Ok {
+                etag,
+                bytes: cached.bytes.clone(),
+            };
+        }
+    }
+
+    if wanted.is_none() {
+        let keep_folders: BTreeSet<PathBuf> = metas
+            .iter()
+            .filter_map(|m| m["id"].as_str().map(|id| root.join(id)))
+            .collect();
+        let keep_keys: BTreeSet<&str> = stamped_groups.iter().map(|(k, _)| k.as_str()).collect();
+        let mut cache = TRACK_CACHE.lock().unwrap();
+        cache
+            .segments
+            .retain(|p, _| !p.starts_with(root) || keep_folders.contains(p));
+        cache
+            .routes
+            .retain(|(r, k), _| r != root || keep_keys.contains(k.as_str()));
+    }
+
+    let mut routes = vec![];
+    for (key, sig) in stamped_groups {
+        let cached = {
+            let cache = TRACK_CACHE.lock().unwrap();
+            cache
+                .routes
+                .get(&(root.to_path_buf(), key.clone()))
+                .filter(|c| c.sig == sig)
+                .map(|c| c.route.clone())
+        };
+        let route = match cached {
+            Some(route) => route,
+            None => {
+                let mut segments = vec![];
+                let mut points = vec![];
+                let mut distance_m = 0.0f64;
+                for (seg_id, _, seg_sig) in &sig.ready_segments {
+                    let seg = load_segment(&root.join(seg_id), *seg_sig);
+                    if !seg.has_track {
+                        continue;
+                    }
+                    segments.push(json!(seg_id));
+                    points.extend_from_slice(&seg.simplified_150);
+                    distance_m += seg.track_distance_m.as_f64().unwrap_or(0.);
+                }
+                let built = if segments.is_empty() {
+                    None
+                } else {
+                    Some(json!({
+                        "key": key,
+                        "ids": sig.all_ids,
+                        "segments": segments,
+                        "points": simplify(&points, 300),
+                        "distance_m": distance_m,
+                    }))
+                };
+                TRACK_CACHE.lock().unwrap().routes.insert(
+                    (root.to_path_buf(), key),
+                    CachedRoute {
+                        sig,
+                        route: built.clone(),
+                    },
+                );
+                built
+            }
+        };
+        if let Some(route) = route {
+            routes.push(route);
+        }
+    }
+
+    let bytes = serde_json::to_vec(&json!({"routes": routes})).unwrap();
+    if wanted.is_none() {
+        TRACK_CACHE.lock().unwrap().responses.insert(
+            root.to_path_buf(),
+            CachedTracksResponse {
+                etag: etag.clone(),
+                bytes: bytes.clone(),
+            },
+        );
+    }
+    TracksAnswer::Ok { etag, bytes }
 }
 
 #[cfg(test)]
