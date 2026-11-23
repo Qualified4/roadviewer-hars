@@ -60,6 +60,25 @@
  const casingColor=()=>theme()==='light'?'rgba(31,41,55,.42)':'rgba(0,0,0,.55)';
  // The stylesheet this page was served with names the asset folder and its version.
  const styleLink=document.head.querySelector('link[href*="style.css"]'),assetBase=styleLink?new URL('./',styleLink.href):new URL(replay?'../../assets/':'assets/',location.href),version=styleLink?new URL(styleLink.href).search:'';
+ // Session-scoped memory cache kept across SPA page transitions (pageScope shadows `window`, not `globalThis`).
+ const sessionCache=globalThis.__rvTrackSessionCache??={tracksTag:null,tracksText:null,tracks:null,tracksSignature:null,logTracks:new Map(),maxLogTracks:30};
+ function getCachedLogTrack(logId){
+  const entry=sessionCache.logTracks.get(logId);if(!entry)return null;
+  sessionCache.logTracks.delete(logId);sessionCache.logTracks.set(logId,entry);return entry;
+ }
+ function setCachedLogTrack(logId,entry){
+  const keys=new Set([logId]);
+  for(const seg of entry.value?.segments||[])if(seg?.id)keys.add(seg.id);
+  for(const k of keys){sessionCache.logTracks.delete(k);sessionCache.logTracks.set(k,entry)}
+  while(sessionCache.logTracks.size>sessionCache.maxLogTracks){
+   const oldest=sessionCache.logTracks.keys().next().value;if(oldest===undefined)break;
+   sessionCache.logTracks.delete(oldest);
+  }
+ }
+ function evictLogTrack(logId){
+  const entry=sessionCache.logTracks.get(logId);if(!entry)return;
+  for(const [k,v] of [...sessionCache.logTracks])if(v===entry)sessionCache.logTracks.delete(k);
+ }
  let leaflet=null;
  function loadLeaflet(){
   if(window.L?.maplibreGL)return Promise.resolve(window.L);
@@ -267,9 +286,10 @@
 
  if(library){
   // ---- ① 전체 주행 경로, ② the card's route shape and 주행 지도.
-  let tracks=null,trackTag=null,trackText=null,trackSignature=null,trackRequest=null,mode='list',overview=null,overviewLines=new Map(),selected=null;
+  let tracks=sessionCache.tracks,trackTag=sessionCache.tracksTag,trackText=sessionCache.tracksText,trackSignature=sessionCache.tracksSignature,trackRequest=null,mode='list',overview=null,overviewLines=new Map(),selected=null;
   const switcher=document.getElementById('logView'),panel=document.getElementById('logMap'),canvas=panel.querySelector('.log-map-canvas'),card=document.getElementById('logMapCard'),empty=panel.querySelector('.log-map-empty');
   const routeOf=new Map();  // log id -> route of /api/tracks
+  if(tracks)for(const route of tracks)for(const id of route.ids)routeOf.set(id,route);
   // The glass pills at the bottom of the maps (the selected drive, the marked segment) rise in (library.css
   // rv-map-card-in) and sink out (.is-leaving, rv-map-card-out) before they are hidden; shown again meanwhile, they
   // come straight back. done runs once the pill is hidden (at once without motion).
@@ -331,7 +351,8 @@
    try{
     const response=await fetch('api/tracks',{cache:'no-store',signal:request.signal,headers:trackTag?{'If-None-Match':trackTag}:{}});
     let text;if(response.status===304&&trackText)text=trackText;else{if(!response.ok)return;text=await response.text();trackTag=response.headers.get('ETag');trackText=text}
-    tracks=JSON.parse(text).routes||[];routeOf.clear();for(const route of tracks)for(const id of route.ids)routeOf.set(id,route);
+    tracks=JSON.parse(text).routes||[];sessionCache.tracksTag=trackTag;sessionCache.tracksText=trackText;sessionCache.tracks=tracks;
+    routeOf.clear();for(const route of tracks)for(const id of route.ids)routeOf.set(id,route);
     tracksPending=false;syncCards();if(mode==='map')drawOverview(false);
     if(wantDrive){const {group,button}=wantDrive;wantDrive=null;if(button.isConnected&&logGroups.get(group.route.key)===group&&groupRoute(group))openDrive(group,{opener:button})}
    }catch{}
@@ -341,8 +362,10 @@
   function listed(logs){
    const withTrack=logs.filter(log=>log.has_track);switcher.hidden=!withTrack.length&&mode==='list';
    const signature=JSON.stringify(withTrack.map(log=>[log.id,log.conversion_revision??0,log.name]));
-   if(signature!==trackSignature){trackSignature=signature;if(withTrack.length)fetchTracks();else{tracks=[];routeOf.clear();syncCards()}}
-   else syncCards();
+   if(signature!==trackSignature||(!tracks&&withTrack.length)){
+    trackSignature=sessionCache.tracksSignature=signature;sessionCache.logTracks.clear();
+    if(withTrack.length)fetchTracks();else{tracks=sessionCache.tracks=[];trackTag=sessionCache.tracksTag=null;trackText=sessionCache.tracksText=null;routeOf.clear();syncCards()}
+   }else syncCards();
    // The open drive map follows the list; it closes when its drive is gone.
    if(drive.open){if(driveGroup&&logGroups.get(driveGroup.route.key)===driveGroup&&groupRoute(driveGroup))syncDrive();else closeDrive()}
   }
@@ -471,9 +494,16 @@
    driveRows=next;reconcileLogs(sheetList,rows);
   }
   async function drawDrive(segment){
-   const ticket=++driveTicket,group=driveGroup;
+   const ticket=++driveTicket,group=driveGroup,firstId=group.firstLog.id;
+   const driveSig=JSON.stringify(group.logs.map(l=>[l.id,l.status,l.has_track?1:0,l.conversion_revision??0]));
+   const cached=getCachedLogTrack(firstId);
+   const loadTrack=cached&&cached.driveSig===driveSig?Promise.resolve(cached.value):fetch(`api/logs/${firstId}/track`,{cache:'no-cache',headers:cached?.etag?{'If-None-Match':cached.etag}:{}}).then(async r=>{
+    if(r.status===304&&cached){cached.driveSig=driveSig;return cached.value}
+    if(!r.ok)return {segments:[]};
+    const value=await r.json();setCachedLogTrack(firstId,{etag:r.headers.get('ETag'),value,driveSig});return value;
+   });
    let L,track;
-   try{[L,track]=await Promise.all([loadLeaflet(),fetch(`api/logs/${group.firstLog.id}/track`,{cache:'no-cache'}).then(r=>r.ok?r.json():{segments:[]})])}
+   try{[L,track]=await Promise.all([loadLeaflet(),loadTrack])}
    catch(e){if(ticket===driveTicket)error(e.message);return}
    if(ticket!==driveTicket||!drive.open)return;
    if(!driveMap){driveMap=createMap(L,driveCanvas);driveLayer=L.layerGroup().addTo(driveMap);driveMap.on('click',event=>{const line=nearestLine(driveLines.values(),event);if(line)markDrive(line.rvId,{scroll:true});else markDrive(null,{fit:true})})}
@@ -701,6 +731,7 @@
   wide.addEventListener('change',()=>syncSegmentCard());
   async function drawOverview(fit){
    if(fit)overviewFit=true;
+   if(mode==='map')loadLeaflet().catch(()=>{});
    if(!tracks){empty.hidden=true;return}
    let L;try{L=await loadLeaflet()}catch(e){error(e.message);return}
    if(mode!=='map')return;
@@ -841,21 +872,48 @@
     const wait=setInterval(()=>{if(typeof data!=='undefined'&&data&&!loading){clearInterval(wait);setTime(seek.t)}else if(performance.now()-started>30000)clearInterval(wait)},100);
    }
   }catch{}
-  // Asked only for a log the list marks has_track (app.js loadLogNavigation hands it over): no request otherwise.
-  let asked=false;
-  window.rvMaps={replayLog(log){if(asked||!log?.has_track||log.id!==id)return;asked=true;
-  fetch(`../../api/logs/${id}/track`,{cache:'no-cache'}).then(r=>r.ok?r.json():null).then(value=>{
+  // Eagerly preload Leaflet+MapLibre when the user already has the map tab or mini-map enabled.
+  {let savedTab=null;try{savedTab=localStorage.getItem('roadviewer-analysis-tab')}catch{}
+   if(savedTab==='map'||miniToggle?.checked)loadLeaflet().catch(()=>{})}
+  function applyTrack(value){
    if(!value?.segments?.length)return;
-   route=value.segments.filter(segment=>segment.points.length);current=route.findIndex(segment=>segment.id===id);
-   if(current<0)return;  // This segment has no GPS: no map (its drive's other segments are not this replay).
+   const nextRoute=value.segments.filter(segment=>segment.points.length),nextCurrent=nextRoute.findIndex(segment=>segment.id===id);
+   if(nextCurrent<0)return;  // This segment has no GPS: no map (its drive's other segments are not this replay).
+   route=nextRoute;current=nextCurrent;
    // The 지도 tab appears once this segment has a track; a saved 지도 tab (telemetry.js fell back to 주행 상황) returns.
    mapTab.hidden=false;let saved=null;try{saved=localStorage.getItem('roadviewer-analysis-tab')}catch{}
    if(saved==='map')window.selectAnalysisTab?.('map',false);syncMini();
-  }).catch(()=>{});
+  }
+  let asked=false,trackLoading=false;
+  function fetchReplayTrack(force=false,driveSig=null){
+   if(!force&&asked)return;
+   const cached=getCachedLogTrack(id);
+   if(!force&&cached&&(!driveSig||!cached.driveSig||cached.driveSig===driveSig)){
+    asked=true;applyTrack(cached.value);return;
+   }
+   asked=true;trackLoading=true;
+   const headers=cached?.etag?{'If-None-Match':cached.etag}:{};
+   fetch(`../../api/logs/${id}/track`,{cache:'no-cache',headers}).then(async r=>{
+    if(r.status===304&&cached){if(driveSig)cached.driveSig=driveSig;return cached.value}
+    if(!r.ok)return null;
+    const value=await r.json();setCachedLogTrack(id,{etag:r.headers.get('ETag'),value,driveSig});return value;
+   }).then(value=>{trackLoading=false;if(value)applyTrack(value)}).catch(()=>{trackLoading=false;asked=false});
+  }
+  // Start fetching the track immediately on replay entry (deferred to end of init so all const/let bindings exist).
+  window.rvMaps={replayLog(log,logs){
+   if(!log||log.id!==id)return;
+   if(!log.has_track){evictLogTrack(id);return}
+   const routeKey=typeof logSegmentInfo==='function'?logSegmentInfo(log.name)?.route:null;
+   const sameRoute=Array.isArray(logs)&&routeKey?logs.filter(l=>logSegmentInfo(l.name)?.route===routeKey):[log];
+   const driveSig=JSON.stringify(sameRoute.map(l=>[l.id,l.status,l.has_track?1:0,l.conversion_revision??0]));
+   const cached=getCachedLogTrack(id);
+   if(cached&&cached.driveSig&&cached.driveSig!==driveSig){evictLogTrack(id);fetchReplayTrack(true,driveSig);return}
+   if(cached&&!cached.driveSig)cached.driveSig=driveSig;
+   if(!asked&&!trackLoading)fetchReplayTrack(false,driveSig);
   }};
   function setMode(next){
    mode=next;
-   if(mode==='map')ensureBig();else render?.();
+   if(mode==='map'){if(route)ensureBig();else loadLeaflet().catch(()=>{})}else render?.();
    syncMini();
   }
   window.addEventListener('rv:analysistab',e=>{const next=e.detail==='map'?'map':'road';if(next!==mode)setMode(next)});
@@ -1136,5 +1194,6 @@
   mini.addEventListener('click',e=>{if(e.target.closest('a,.rv-credit-toggle'))return;resize()});
   mini.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();resize()}});
   redrawColours=()=>{for(const target of [big,small]){if(!target)continue;const done=css('--accent'),rest=css('--muted');target.lines.others.forEach(l=>l.setStyle({color:rest}));target.lines.current.setStyle({color:done})}};
+  if(/^[0-9a-f]{32}$/.test(id))fetchReplayTrack();
  }
 })();

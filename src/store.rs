@@ -228,7 +228,9 @@ impl Store {
             .ok_or_else(|| bad("invalid_recording"))?
             .to_owned();
         atomic_json(&self.root.join(&name).join("meta.json"), &meta).await?;
+        let folder = self.root.join(&name);
         self.records.write().await.insert(name, meta);
+        crate::track::invalidate_recording(&folder);
         Ok(())
     }
     pub fn archive(&self) -> Option<Arc<crate::archive::Archive>> {

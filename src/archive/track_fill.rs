@@ -639,7 +639,9 @@ impl Archive {
                 Ok(())
             })
             .await;
-        if !ok {
+        if ok {
+            crate::track::invalidate_recording(&self.host.folder(id));
+        } else {
             let _ = std::fs::remove_file(&staged);
         }
         ok

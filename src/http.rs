@@ -26,7 +26,55 @@ use std::{
     },
 };
 use tower::ServiceExt;
-use tower_http::services::ServeFile;
+use tower_http::{
+    compression::{CompressionLayer, Predicate},
+    services::ServeFile,
+};
+
+#[derive(Clone, Copy)]
+struct Compressible;
+
+impl Predicate for Compressible {
+    fn should_compress<B>(&self, response: &axum::http::Response<B>) -> bool
+    where
+        B: axum::body::HttpBody,
+    {
+        if response.headers().contains_key(h::CONTENT_RANGE) {
+            return false;
+        }
+        if response
+            .body()
+            .size_hint()
+            .upper()
+            .is_some_and(|upper| upper < 256)
+        {
+            return false;
+        }
+        let Some(ct) = response
+            .headers()
+            .get(h::CONTENT_TYPE)
+            .and_then(|v| v.to_str().ok())
+        else {
+            return false;
+        };
+        let mime = ct
+            .split(';')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_ascii_lowercase();
+        matches!(
+            mime.as_str(),
+            "application/json"
+                | "application/javascript"
+                | "text/javascript"
+                | "text/html"
+                | "text/css"
+                | "text/plain"
+                | "image/svg+xml"
+        )
+    }
+}
 
 const BODY_LIMIT: usize = 8 * 1024 * 1024 + 1;
 
@@ -254,6 +302,7 @@ pub fn ingress(app: App) -> Router {
         .route("/health", get(health))
         .fallback(crate::parity::fallback)
         .method_not_allowed_fallback(crate::parity::method_not_allowed)
+        .layer(CompressionLayer::new().compress_when(Compressible))
         .layer(DefaultBodyLimit::max(BODY_LIMIT))
         .layer(middleware::map_response(|r: Response| async move {
             crate::parity::json_too_large(false, r)
@@ -1036,84 +1085,52 @@ async fn track(
     headers: HeaderMap,
 ) -> Result<Response> {
     let target = app.store.meta(&id).await?;
-    let key = route_order(&target).0;
-    let rows = map_rows(&app).await?;
-    let segments=rows.into_iter().filter(|r|r.0==key).map(|(_,segment,m,summary,track)|json!({"id":m["id"],"segment":segment,"duration":summary["duration"],"distance_m":summary["track_distance_m"],"points":track["points"]})).collect::<Vec<_>>();
-    Ok(tagged(&headers, json!({"id":id,"segments":segments})))
-}
-fn route_order(meta: &Value) -> (String, Option<u64>) {
-    let order = crate::parity::RecordingOrder::of(meta);
-    match order.route_key() {
-        Some(key) => (key, order.segment()),
-        None => (meta["id"].as_str().unwrap_or("").into(), None),
-    }
-}
-fn tagged(request: &HeaderMap, value: Value) -> Response {
-    let bytes = serde_json::to_vec(&value).unwrap();
-    let etag = format!("\"{}\"", &sha(&bytes)[..32]);
-    if header(request, "if-none-match") == etag {
-        return ([(h::ETAG, etag)], StatusCode::NOT_MODIFIED).into_response();
-    }
-    (
-        [
-            (h::ETAG, etag),
-            (h::CONTENT_TYPE, "application/json".to_owned()),
-        ],
-        bytes,
-    )
-        .into_response()
-}
-type MapRow = (String, Option<u64>, Value, Value, Value);
-async fn map_rows(app: &App) -> Result<Vec<MapRow>> {
-    let metas = app
+    let key = crate::track::route_order(&target).0;
+    let mut ready_segments = app
         .store
         .records
         .read()
         .await
         .values()
-        .cloned()
+        .filter(|m| m["status"] == "ready")
+        .filter_map(|m| {
+            let (k, segment) = crate::track::route_order(m);
+            if k != key {
+                return None;
+            }
+            Some((segment, m["id"].as_str()?.to_owned()))
+        })
         .collect::<Vec<_>>();
+    ready_segments.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
     let root = app.store.root.clone();
-    tokio::task::spawn_blocking(move || {
-        let mut rows = vec![];
-        for m in metas {
-            if m["status"] != "ready" {
-                continue;
-            }
-            let folder = root.join(m["id"].as_str().unwrap()).join("prepared");
-            let Ok(summary) = std::fs::read(folder.join("summary.json"))
-                .and_then(|v| serde_json::from_slice::<Value>(&v).map_err(std::io::Error::other))
-            else {
-                continue;
-            };
-            if summary["has_track"] != true {
-                continue;
-            }
-            let Ok(track) = crate::logs::read_gzip(&folder.join("track.json.gz")) else {
-                continue;
-            };
-            if track["points"].as_array().is_none_or(|p| p.is_empty()) {
-                continue;
-            }
-            let (key, segment) = route_order(&m);
-            rows.push((key, segment, m, summary, track));
-        }
-        rows.sort_by(|a, b| {
-            a.0.cmp(&b.0)
-                .then(a.1.cmp(&b.1))
-                .then(a.2["id"].as_str().cmp(&b.2["id"].as_str()))
-        });
-        rows
+    let if_none_match = header(&headers, "if-none-match").to_owned();
+    let answer = tokio::task::spawn_blocking(move || {
+        crate::track::build_single_track(&root, &id, &key, &ready_segments, &if_none_match)
     })
     .await
-    .map_err(|_| bad("invalid_track_data"))
+    .map_err(|_| bad("invalid_track_data"))?;
+    Ok(tracks_answer_response(answer))
+}
+fn tracks_answer_response(answer: crate::track::TracksAnswer) -> Response {
+    match answer {
+        crate::track::TracksAnswer::NotModified { etag } => {
+            ([(h::ETAG, etag)], StatusCode::NOT_MODIFIED).into_response()
+        }
+        crate::track::TracksAnswer::Ok { etag, bytes } => (
+            [
+                (h::ETAG, etag),
+                (h::CONTENT_TYPE, "application/json".to_owned()),
+            ],
+            bytes,
+        )
+            .into_response(),
+    }
 }
 async fn tracks(
     State(app): State<App>,
     Query(q): Query<BTreeMap<String, String>>,
     headers: HeaderMap,
 ) -> Result<Response> {
-    let rows = map_rows(&app).await?;
     let metas = app
         .store
         .records
@@ -1122,66 +1139,20 @@ async fn tracks(
         .values()
         .cloned()
         .collect::<Vec<_>>();
-    let mut groups: BTreeMap<String, Value> = BTreeMap::new();
-    for m in metas {
-        let key = route_order(&m).0;
-        groups.entry(key.clone()).or_insert_with(
-            || json!({"key":key,"ids":[],"segments":[],"points":[],"distance_m":0.}),
-        )["ids"]
-            .as_array_mut()
-            .unwrap()
-            .push(m["id"].clone());
-    }
-    for (key, _, m, s, t) in rows {
-        let group = groups.get_mut(&key).unwrap();
-        group["segments"]
-            .as_array_mut()
-            .unwrap()
-            .push(m["id"].clone());
-        let coords = t["points"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .filter_map(|p| Some([p[1].as_f64()?, p[2].as_f64()?]))
-            .collect::<Vec<_>>();
-        group["points"].as_array_mut().unwrap().extend(
-            crate::track::simplify(&coords, 150)
-                .into_iter()
-                .map(|p| json!(p)),
-        );
-        group["distance_m"] = json!(
-            group["distance_m"].as_f64().unwrap_or(0.)
-                + s["track_distance_m"].as_f64().unwrap_or(0.)
-        );
-    }
     let wanted = q.get("ids").filter(|v| !v.is_empty()).map(|v| {
         v.split(',')
             .filter(|i| crate::store::valid_id(i))
+            .map(str::to_owned)
             .collect::<std::collections::BTreeSet<_>>()
     });
-    let mut routes = vec![];
-    for mut route in groups.into_values() {
-        if route["segments"].as_array().unwrap().is_empty()
-            || wanted.as_ref().is_some_and(|wanted| {
-                !route["ids"]
-                    .as_array()
-                    .unwrap()
-                    .iter()
-                    .any(|id| wanted.contains(id.as_str().unwrap_or("")))
-            })
-        {
-            continue;
-        }
-        let coords = route["points"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|p| [p[0].as_f64().unwrap(), p[1].as_f64().unwrap()])
-            .collect::<Vec<_>>();
-        route["points"] = json!(crate::track::simplify(&coords, 300));
-        routes.push(route);
-    }
-    Ok(tagged(&headers, json!({"routes":routes})))
+    let root = app.store.root.clone();
+    let if_none_match = header(&headers, "if-none-match").to_owned();
+    let answer = tokio::task::spawn_blocking(move || {
+        crate::track::build_tracks(&root, &metas, wanted.as_ref(), &if_none_match)
+    })
+    .await
+    .map_err(|_| bad("invalid_track_data"))?;
+    Ok(tracks_answer_response(answer))
 }
 async fn video(
     State(app): State<App>,
