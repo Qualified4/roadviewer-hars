@@ -107,24 +107,50 @@
  // A tap beside a route line counts as a tap on it: the line nearest the tap within a finger's reach (24px; 8px with a
  // mouse). The lines are 4-5px wide, and on a phone a tap had to land exactly on one, or it cleared the selection.
  const nearestLine=(lines,event)=>{
-  const reach=event.originalEvent?.pointerType==='mouse'?8:24;let best=null;
-  for(const line of lines){if(!line._map)continue;const at=line.closestLayerPoint(event.layerPoint);if(at&&at.distance<=reach&&(!best||at.distance<best.distance))best={distance:at.distance,line}}
+  const reach=event.originalEvent?.pointerType==='mouse'?8:24,lp=event.layerPoint;let best=null;
+  for(const line of lines){
+   if(!line._map)continue;
+   const b=line._pxBounds;
+   if(b&&b.isValid()){
+    const pad=best?Math.min(reach,best.distance):reach;
+    if(lp.x<b.min.x-pad||lp.x>b.max.x+pad||lp.y<b.min.y-pad||lp.y>b.max.y+pad)continue;
+   }
+   const at=line.closestLayerPoint(lp);
+   if(at&&at.distance<=reach&&(!best||at.distance<best.distance))best={distance:at.distance,line};
+  }
   return best?.line||null;
  };
- function createMap(L,container,{zoom=true,interactive=true,attribution=ATTRIBUTION,tone=null,labels=null,grey=null,margin=null}={}){
-  const map=L.map(container,{zoomControl:false,attributionControl:true,dragging:interactive,touchZoom:interactive,scrollWheelZoom:interactive,doubleClickZoom:interactive,boxZoom:interactive,keyboard:interactive,tap:interactive,zoomSnap:.25,maxZoom:19,fadeAnimation:!reduced(),zoomAnimation:!reduced(),markerZoomAnimation:!reduced(),...(margin?{renderer:L.svg({padding:margin})}:{})});
-  map.rvMargin=margin||0;map.rvMarginMax=margin||0;
+ function attachMapToPage(L,map,container,{zoom=true,tone=null,labels=null,grey=null}={}){
+  const tiles=()=>tone?tone()||theme():mapTone==='auto'?theme():mapTone,plain=()=>labels?!labels():bare,isGrey=()=>grey?grey():simple,tileKey=()=>tiles()+(isGrey()?'-grey':'')+(plain()?'-nolabels':'');
+  map.rvTiles=tiles;map.rvTileKey=tileKey;map.rvPlain=plain;map.rvGrey=isGrey;map.rvOwn=!!(labels||grey);
+  map.rvShowLabels=()=>showLabels(map,false);
+  maps.add(map);
+  if(zoom){map.rvSimpleControl=simpleControl(L).addTo(map)}
+  map.rvCreditCleanup=compactCredit(L,map,container);
+  new ResizeObserver(()=>{if(container.isConnected)map.invalidateSize({animate:false})}).observe(container);
+  applyTiles(map);
+ }
+ function detachMapFromPage(map){
+  maps.delete(map);
+  if(map.rvSimpleControl){try{map.removeControl(map.rvSimpleControl)}catch{}map.rvSimpleControl=null}
+  if(map.rvCreditCleanup){try{map.rvCreditCleanup()}catch{}map.rvCreditCleanup=null}
+  map.rvShowLabels=null;map.rvTiles=null;map.rvTileKey=null;map.rvPlain=null;map.rvGrey=null;map.rvHold=null;map.rvOnGlReady=null;
+ }
+ function createMap(L,container,{zoom=true,interactive=true,attribution=ATTRIBUTION,tone=null,labels=null,grey=null,margin=null,warmup=false,autoDispose=true}={}){
+  const startWarmup=!!(margin&&warmup&&webgl()),initialPad=startWarmup?.1:margin;
+  const map=L.map(container,{zoomControl:false,attributionControl:true,dragging:interactive,touchZoom:interactive,scrollWheelZoom:interactive,doubleClickZoom:interactive,boxZoom:interactive,keyboard:interactive,tap:interactive,zoomSnap:.25,maxZoom:19,fadeAnimation:!reduced(),zoomAnimation:!reduced(),markerZoomAnimation:!reduced(),...(margin?{renderer:L.svg({padding:initialPad})}:{})});
+  map.rvMargin=initialPad||0;map.rvMarginMax=margin||0;map.rvWarmup=startWarmup;
   // Leaflet listens on the window and MapLibre keeps a WebGL context and workers: a map left standing when its page
   // goes kept the whole page alive.
-  if(typeof onPageDispose==='function')onPageDispose(()=>map.remove());  // not there on a page loaded by itself
+  if(autoDispose&&typeof onPageDispose==='function')onPageDispose(()=>map.remove());  // not there on a page loaded by itself
   // margin is the most asked for: each side gets as much of it as keeps the drawn canvas within GL_SIDE device pixels on
   // its longer side (MapLibre and phone GPUs stop at 4096; beyond, the map blurs or is cut), never under the default 0.1.
   // A phone's 지도 tab gets the full 0.5; a tablet's or a desktop's large map, or the small map enlarged on a big
   // screen, a share that fits. Set again on every resize (Leaflet's resize runs this before the plugin redraws).
-  // map.rvNarrow (the 지도 tab during a hand zoom): the default 0.1, as MapLibre redraws the whole canvas each frame.
+  // map.rvNarrow (the 지도 tab during a hand zoom) and map.rvWarmup (first paint before idle): the default 0.1.
   if(margin){
    const fit=()=>{const size=map.getSize(),side=Math.max(size.x,size.y)*Math.min(window.devicePixelRatio||1,2);
-    const share=map.rvNarrow?.1:side>0?Math.max(.1,Math.min(margin,(GL_SIDE/side-1)/2)):margin;map.rvMargin=share;
+    const share=(map.rvNarrow||map.rvWarmup)?.1:side>0?Math.max(.1,Math.min(margin,(GL_SIDE/side-1)/2)):margin;map.rvMargin=share;
     if(map.options.renderer)map.options.renderer.options.padding=share;if(map.rvGlLayer)map.rvGlLayer.options.padding=share;};
    map.rvFitMargin=fit;map.on('resize',()=>{fit();map.options.renderer?._update?.()});
   }
@@ -137,23 +163,23 @@
    .on('moveend',()=>{if(zoomOpen&&!map._animatingZoom&&!map.touchZoom?._zooming)map.fire('zoomend')});
   map.attributionControl.setPrefix(false);
   const tiles=()=>tone?tone()||theme():mapTone==='auto'?theme():mapTone,plain=()=>labels?!labels():bare,isGrey=()=>grey?grey():simple,tileKey=()=>tiles()+(isGrey()?'-grey':'')+(plain()?'-nolabels':'');
-  container.classList.add('rv-map');container.dataset.tiles=tiles();container.dataset.tileKey=tileKey();map.rvTiles=tiles;map.rvTileKey=tileKey;map.rvPlain=plain;map.rvGrey=isGrey;map.rvOwn=!!(labels||grey);maps.add(map);
+  container.classList.add('rv-map');container.dataset.tiles=tiles();container.dataset.tileKey=tileKey();map.rvTiles=tiles;map.rvTileKey=tileKey;map.rvPlain=plain;map.rvGrey=isGrey;map.rvOwn=!!(labels||grey);map.rvShowLabels=()=>showLabels(map,false);maps.add(map);
   // The style is set after the map exists (not as an option) so that every load, the first and each theme change,
   // goes through transformStyle: it hides the symbol layers right in the style while 글자 숨기기 is on. Leaflet adds
   // the layer (and MapLibre's map) once the map has a view, so this waits for it. No WebGL (rare): the routes are
   // still drawn, on the plain background.
   map.rvGl=null;map.rvSymbols=[];
   if(webgl()){
-   const layer=L.maplibreGL({attributionControl:{customAttribution:attribution},pixelRatio:Math.min(window.devicePixelRatio||1,2),fadeDuration:reduced()?0:300,renderWorldCopies:false,...(margin?{padding:margin}:{})});
+   const layer=L.maplibreGL({attributionControl:{customAttribution:attribution},pixelRatio:Math.min(window.devicePixelRatio||1,2),fadeDuration:reduced()?0:300,renderWorldCopies:false,...(margin?{padding:initialPad}:{})});
    // The plugin redraws on every Leaflet move (throttled); map.rvHold (a hand drag of the 지도 tab while its margin
    // still covers) skips that: what is drawn moves with the map pane, re-centred by the caller.
    layer._throttledUpdate=L.Util.throttle(function(e){if(!map.rvHold?.())this._update(e)},layer.options.updateInterval,layer);
-   map.rvGlLayer=layer;layer.once('add',()=>{map.rvGl=layer.getMaplibreMap();map.rvGl.on('styledata',()=>showLabels(map,false));setStyle(map)});
+   map.rvGlLayer=layer;layer.once('add',()=>{map.rvGl=layer.getMaplibreMap();map.rvGl.on('styledata',()=>map.rvShowLabels?.());setStyle(map);map.rvOnGlReady?.(map.rvGl)});
    layer.addTo(map);
   }
   map.rvFitMargin?.();  // the basemap layer exists now: its padding too
-  if(zoom){L.control.zoom({position:'topright',zoomInTitle:'확대',zoomOutTitle:'축소'}).addTo(map);simpleControl(L).addTo(map)}
-  compactCredit(L,map,container);
+  if(zoom){L.control.zoom({position:'topright',zoomInTitle:'확대',zoomOutTitle:'축소'}).addTo(map);map.rvSimpleControl=simpleControl(L).addTo(map)}
+  map.rvCreditCleanup=compactCredit(L,map,container);
   new ResizeObserver(()=>{if(container.isConnected)map.invalidateSize({animate:false})}).observe(container);
   return map;
  }
@@ -170,6 +196,7 @@
   toggle.addEventListener('click',e=>{e.preventDefault();open=!open;sync()});
   toggle.addEventListener('keydown',e=>e.stopPropagation());
   sync();
+  return ()=>{toggle.remove()};
  }
  function simpleControl(L){
   const control=L.control({position:'topright'});
@@ -372,13 +399,58 @@
   // ② The route on each card with GPS (library.css shows one per layout): a glass inset in the video thumbnail's corner
   // and the map strip that grows out beside it on hover or focus (mouse screens), or a 지도 button left of 재생 (phones
   // and touch screens). The strip and the button open the drive's map (주행 지도); the inset is only a picture.
+  // SVGs are rendered lazily: initial viewport cards synchronously (no flash), cards scrolled near the viewport via
+  // IntersectionObserver, and remaining off-screen cards in short idle slices so large lists never block the main thread.
+  const SYNC_SHAPE_IMMEDIATE=6,pendingShapes=new Map();
+  let shapeIdle=0,shapeIdleKind=0;
+  function renderCardShape(group,route,key){
+   if(!group.shape)return;
+   const [inset,strip,map]=group.shape;
+   if(inset.dataset.key===key)return;
+   inset.dataset.key=key;const points=route.points;
+   inset.innerHTML=shapeSvg(points,46,46,{pad:.2,stroke:2.6});
+   strip.innerHTML=shapeSvg(points,99,99,{grid:true,pad:.16,stroke:3});
+   map.firstChild.innerHTML=shapeSvg(points,34,32,{pad:.2,stroke:2.2});
+  }
+  function flushCardShape(element){
+   const item=pendingShapes.get(element);if(!item)return;
+   pendingShapes.delete(element);shapeObserver?.unobserve(element);
+   renderCardShape(item.group,item.route,item.key);
+  }
+  const shapeObserver=typeof IntersectionObserver==='function'?new IntersectionObserver(entries=>{
+   for(const entry of entries)if(entry.isIntersecting)flushCardShape(entry.target);
+  },{rootMargin:'240px 0px'}):null;
+  function cancelShapeIdle(){
+   if(!shapeIdle)return;
+   if(shapeIdleKind===1)window.cancelIdleCallback?.(shapeIdle);else clearTimeout(shapeIdle);
+   shapeIdle=0;shapeIdleKind=0;
+  }
+  if(typeof onPageDispose==='function')onPageDispose(()=>{cancelShapeIdle();pendingShapes.clear()});
+  function scheduleShapes(){
+   if(shapeIdle||!pendingShapes.size)return;
+   const run=deadline=>{
+    shapeIdle=0;shapeIdleKind=0;let count=0;
+    for(const [el,item] of pendingShapes){
+     pendingShapes.delete(el);shapeObserver?.unobserve(el);
+     if(el.isConnected)renderCardShape(item.group,item.route,item.key);
+     if(++count>=4&&(count>=12||(deadline&&deadline.timeRemaining()<=2)))break;
+    }
+    if(pendingShapes.size)scheduleShapes();
+   };
+   if(typeof window.requestIdleCallback==='function'){shapeIdleKind=1;shapeIdle=window.requestIdleCallback(run,{timeout:200})}
+   else{shapeIdleKind=2;shapeIdle=setTimeout(()=>run(null),16)}
+  }
   function syncCards(){
+   let immediate=0;
    for(const group of logGroups.values()){
     const route=groupRoute(group),summary=group.element.querySelector(':scope>summary');
     // While the routes are still on their way, a card whose logs have GPS already shows its 지도 button (without the
     // route's shape yet): it used to pop in beside 재생 seconds after the card.
     const pending=!route&&tracksPending&&group.logs.some(log=>log.has_track);
-    if(!pending&&(!route||route.points.length<2)){for(const part of group.shape||[])part.remove();group.shape=null;continue}
+    if(!pending&&(!route||route.points.length<2)){
+     if(pendingShapes.delete(group.element))shapeObserver?.unobserve(group.element);
+     for(const part of group.shape||[])part.remove();group.shape=null;continue;
+    }
     if(!group.shape){
      const open=(button)=>event=>{event.preventDefault();event.stopPropagation();if(groupRoute(group))openDrive(group,{opener:button});else wantDrive={group,button}};
      const inset=document.createElement('span');inset.className='route-inset';inset.setAttribute('aria-hidden','true');
@@ -386,6 +458,8 @@
      strip.setAttribute('aria-label','주행 지도 열기');strip.setAttribute('aria-haspopup','dialog');strip.title='주행 지도';strip.onclick=open(strip);
      const map=document.createElement('button');map.type='button';map.className='route-map-button';map.dataset.noRipple='';
      map.setAttribute('aria-label','주행 지도 열기');map.setAttribute('aria-haspopup','dialog');map.innerHTML='<span class="route-glyph"></span><span>지도</span>';map.onclick=open(map);
+     const hydrate=()=>flushCardShape(group.element);
+     summary?.addEventListener('pointerenter',hydrate,{passive:true});summary?.addEventListener('focusin',hydrate,{passive:true});
      group.shape=[inset,strip,map];
     }
     const [inset,strip,map]=group.shape;
@@ -394,9 +468,19 @@
     if(strip.parentNode!==summary)group.thumb.after(strip);
     if(map.parentNode!==group.actions)group.actions.prepend(map);
     const key=route.points.length+':'+route.points[0]+':'+route.points.at(-1);
-    if(inset.dataset.key!==key){inset.dataset.key=key;const points=route.points;
-     inset.innerHTML=shapeSvg(points,46,46,{pad:.2,stroke:2.6});strip.innerHTML=shapeSvg(points,99,99,{grid:true,pad:.16,stroke:3});map.firstChild.innerHTML=shapeSvg(points,34,32,{pad:.2,stroke:2.2})}
+    if(inset.dataset.key!==key){
+     if(immediate<SYNC_SHAPE_IMMEDIATE||!shapeObserver){
+      immediate++;
+      if(pendingShapes.delete(group.element))shapeObserver?.unobserve(group.element);
+      renderCardShape(group,route,key);
+     }else{
+      const had=pendingShapes.has(group.element);
+      pendingShapes.set(group.element,{group,route,key});
+      if(!had)shapeObserver.observe(group.element);
+     }
+    }
    }
+   if(pendingShapes.size)scheduleShapes();
    if(restoreDrive)restoreDrive();
   }
   const routeFacts=(group,showDriveNumber=false)=>{
@@ -442,27 +526,57 @@
    card.style.webkitMaskImage=mask;card.style.maskImage=mask;
   }
   function fadeEdges(column){
-   let frame=0,watched=new Set();
+   let frame=0,watched=new Set(),masked=new Set(),childrenDirty=true;
+   const syncSizes=()=>{
+    childrenDirty=false;
+    const now=new Set(column.children);
+    for(const card of watched)if(!now.has(card))sizes.unobserve(card);
+    for(const card of now)if(!watched.has(card))sizes.observe(card);
+    watched=now;
+   };
    const paint=()=>{
-    frame=0;const top=Math.max(0,column.scrollTop),h=column.clientHeight,end=Math.max(0,column.scrollHeight-h-top),origin=column.getBoundingClientRect().top+column.clientTop;
+    frame=0;
+    if(childrenDirty)syncSizes();
+    const top=Math.max(0,column.scrollTop),h=column.clientHeight,end=Math.max(0,column.scrollHeight-h-top),origin=column.getBoundingClientRect().top+column.clientTop;
     const topFade=Math.min(FADE,top*2),endFade=Math.min(FADE,end*2);
     column.classList.toggle('fade-top',top>1);column.classList.toggle('fade-bottom',end>1);
     column.style.setProperty('--fade-top',topFade.toFixed(1)+'px');column.style.setProperty('--fade-bottom',endFade.toFixed(1)+'px');
-    const cards=[...column.children],boxes=cards.map(card=>card.getBoundingClientRect()),px=v=>(v+SHADOW).toFixed(1)+'px';
-    // Every card's size is watched: a card that grows or shrinks moves the ones below it, and their masks are in their
-    // own coordinates. Without this a mask painted for an earlier place stayed (a card in the middle of the list faded
-    // out and the ones under it stayed invisible, as if the list had been cut short).
-    {const now=new Set(cards);for(const card of watched)if(!now.has(card))sizes.unobserve(card);for(const card of cards)if(!watched.has(card))sizes.observe(card);watched=now}
-    cards.forEach((card,i)=>{
-     // A card with its ⋯ menu open is not masked: the mask would cut off the menu where it leaves the card.
-     const y=boxes[i].top-origin,still=!card.querySelector('.recording-more[open]'),fadeTop=still&&topFade>.5&&y<topFade,fadeBottom=still&&endFade>.5&&y+boxes[i].height>h-endFade;
-     setMask(card,fadeTop||fadeBottom?`linear-gradient(to bottom,${fadeTop?`transparent ${px(-y)},#000 ${px(topFade-y)}`:'#000 0'},${fadeBottom?`#000 ${px(h-endFade-y)},transparent ${px(h-y)}`:'#000 100%'})`:'');
-    });
+    const cards=column.children,n=cards.length,nextMasked=new Set(),px=v=>(v+SHADOW).toFixed(1)+'px';
+    // Only measure cards near the visible top/bottom fade edges (binary search on the vertical stack) instead of
+    // calling getBoundingClientRect() on every child. Individual cards stay masked (never the column) to preserve
+    // backdrop-filter blur of the map behind them.
+    if(h>0&&n>0&&(topFade>.5||endFade>.5)){
+     const findFirst=threshold=>{
+      let lo=0,hi=n;
+      while(lo<hi){const mid=(lo+hi)>>1;if(cards[mid].getBoundingClientRect().bottom<=threshold)lo=mid+1;else hi=mid}
+      return lo;
+     };
+     const candidates=new Map();
+     const collect=(start,limit)=>{
+      for(let i=start;i<n;i++){
+       const card=cards[i],box=card.getBoundingClientRect();
+       if(box.top>=limit)break;
+       candidates.set(card,box);
+      }
+     };
+     if(topFade>.5)collect(findFirst(origin),origin+topFade);
+     if(endFade>.5)collect(findFirst(origin+h-endFade),origin+h);
+     for(const [card,box] of candidates){
+      // A card with its ⋯ menu open is not masked: the mask would cut off the menu where it leaves the card.
+      const y=box.top-origin,still=!card.querySelector('.recording-more[open]'),fadeTop=still&&topFade>.5&&y<topFade,fadeBottom=still&&endFade>.5&&y+box.height>h-endFade;
+      if(fadeTop||fadeBottom){
+       nextMasked.add(card);
+       setMask(card,`linear-gradient(to bottom,${fadeTop?`transparent ${px(-y)},#000 ${px(topFade-y)}`:'#000 0'},${fadeBottom?`#000 ${px(h-endFade-y)},transparent ${px(h-y)}`:'#000 100%'})`);
+      }
+     }
+    }
+    for(const card of masked)if(!nextMasked.has(card))setMask(card,'');
+    masked=nextMasked;
    };
    const later=()=>{if(!frame)frame=requestAnimationFrame(paint)},sizes=new ResizeObserver(later);
    column.addEventListener('scroll',later,{passive:true});
    new ResizeObserver(later).observe(column);
-   new MutationObserver(later).observe(column,{childList:true,subtree:true,attributes:true,attributeFilter:['class','hidden','open']});
+   new MutationObserver(records=>{if(records.some(r=>r.type==='childList'))childrenDirty=true;later()}).observe(column,{childList:true,subtree:true,attributes:true,attributeFilter:['class','hidden','open']});
    return later;
   }
   const DRIVE_HASH='#drive-map',SNAPS=[.36,.54,.7],wide=matchMedia('(min-width:1024px),(min-width:600px) and (orientation:landscape)');
@@ -729,35 +843,75 @@
   mapRows.addEventListener('pointerleave',()=>{if(hovered){hovered=null;paintOverview()}});
   wide.addEventListener('change',()=>{if(mode==='map')select(selected)});
   wide.addEventListener('change',()=>syncSegmentCard());
+  let overviewCasingRenderer=null,overviewFocusCasing=null,overviewGroupLine=new Map(),overviewPainted=false,overviewLastFocus=null,overviewLastTheme=null;
   async function drawOverview(fit){
    if(fit)overviewFit=true;
    if(mode==='map')loadLeaflet().catch(()=>{});
    if(!tracks){empty.hidden=true;return}
    let L;try{L=await loadLeaflet()}catch(e){error(e.message);return}
    if(mode!=='map')return;
-   if(!overview){overview=createMap(L,canvas);overview.on('click',event=>{const line=nearestLine(overviewLines.values(),event);if(line)select(line.rvGroup,{scroll:true});else select(null)})}
+   if(!overview){
+    overview=createMap(L,canvas);
+    overviewCasingRenderer=L.canvas({padding:.1});
+    overview.on('click',event=>{const line=nearestLine(overviewLines.values(),event);if(line)select(line.rvGroup,{scroll:true});else select(null)});
+   }
    const shown=visibleGroups().map(group=>({group,route:groupRoute(group)})).filter(item=>item.route&&item.route.points.length>1);
    const keys=new Set(shown.map(item=>item.route.key));
-   for(const [key,line] of overviewLines)if(!keys.has(key)){line.rvCasing?.remove();line.remove();overviewLines.delete(key)}
-   const bounds=L.latLngBounds([]);
+   let changed=false;
+   for(const [key,line] of overviewLines)if(!keys.has(key)){line.rvCasing?.remove();line.remove();overviewLines.delete(key);changed=true}
+   const bounds=overviewFit?L.latLngBounds([]):null;
+   overviewGroupLine.clear();
    shown.forEach(({group,route},i)=>{
     let line=overviewLines.get(route.key);
-    if(!line){const casing=L.polyline(route.points,{weight:7,opacity:.5,lineCap:'round',lineJoin:'round',interactive:false}).addTo(overview);line=L.polyline(route.points,{weight:4,opacity:.9,lineCap:'round',lineJoin:'round'}).addTo(overview);line.rvCasing=casing;line.on('click',e=>{L.DomEvent.stopPropagation(e);select(line.rvGroup,{scroll:true})});overviewLines.set(route.key,line)}
-    else if(line.rvPoints!==route.points){line.setLatLngs(route.points);line.rvCasing?.setLatLngs(route.points)}
-    line.rvPoints=route.points;line.rvGroup=group;line.rvRoute=route;line.rvIndex=i;bounds.extend(route.points);
+    if(!line){
+     const casing=L.polyline(route.points,{renderer:overviewCasingRenderer,weight:7,opacity:.5,lineCap:'round',lineJoin:'round',interactive:false}).addTo(overview);
+     line=L.polyline(route.points,{weight:4,opacity:.9,lineCap:'round',lineJoin:'round'}).addTo(overview);
+     line.rvCasing=casing;line.on('click',e=>{L.DomEvent.stopPropagation(e);select(line.rvGroup,{scroll:true})});overviewLines.set(route.key,line);changed=true;
+    }else if(line.rvPoints!==route.points){line.setLatLngs(route.points);line.rvCasing?.setLatLngs(route.points);changed=true}
+    if(line.rvIndex!==i)changed=true;
+    line.rvPoints=route.points;line.rvGroup=group;line.rvRoute=route;line.rvIndex=i;overviewGroupLine.set(group,line);
+    if(bounds)bounds.extend(route.points);
    });
+   if(changed)overviewPainted=false;
    drawRows(shown);
    if(selected&&!shown.some(item=>item.group===selected))select(null);else select(selected);
    empty.hidden=!!shown.length;
-   if(overviewFit&&bounds.isValid()){overviewFit=false;overview.invalidateSize({animate:false});overview.fitBounds(bounds,{...overviewPadding(),animate:false,maxZoom:15})}
+   if(overviewFit&&bounds?.isValid()){overviewFit=false;overview.invalidateSize({animate:false});overview.fitBounds(bounds,{...overviewPadding(),animate:false,maxZoom:15})}
   }
   // A hovered row's drive (wide screens) shows over the selected one.
+  // Diffing per-line style keys avoids O(N) DOM attribute writes on unchanged polls, and switching focus between two
+  // drives updates only those two lines (O(1)). Unfocused casings live on a single Canvas layer; only the focused
+  // drive uses a single reusable SVG casing so it stays above dimmed lines.
   function paintOverview(){
-   const focus=hovered||selected;
-   for(const line of overviewLines.values()){
-    const on=!focus||line.rvGroup===focus,w=line.rvGroup===focus?6:4;line.setStyle({color:tagColor(line.rvIndex),opacity:on?.95:.22,weight:w});
-    line.rvCasing?.setStyle({color:casingColor(),opacity:on?.55:.12,weight:w+3});
-    if(line.rvGroup===focus){line.rvCasing?.bringToFront();line.bringToFront()}
+   const focus=hovered||selected,cc=casingColor(),themeNow=theme();
+   let focusLine=null;
+   const applyLine=line=>{
+    const isFocus=line.rvGroup===focus,on=!focus||isFocus,w=isFocus?6:4,col=tagColor(line.rvIndex),op=on?.95:.22,cop=on?.55:.12;
+    const key=`${col}|${op}|${w}|${cc}|${cop}`;
+    if(line.rvStyle!==key){
+     line.rvStyle=key;
+     line.setStyle({color:col,opacity:op,weight:w});
+     line.rvCasing?.setStyle({color:cc,opacity:cop,weight:w+3});
+    }
+    if(isFocus)focusLine=line;
+   };
+   if(overviewPainted&&overviewLastTheme===themeNow&&overviewLastFocus&&focus&&overviewLastFocus!==focus){
+    const prevLine=overviewGroupLine.get(overviewLastFocus),nextLine=overviewGroupLine.get(focus);
+    if(prevLine)applyLine(prevLine);
+    if(nextLine)applyLine(nextLine);
+   }else{
+    for(const line of overviewLines.values())applyLine(line);
+   }
+   overviewPainted=true;overviewLastFocus=focus;overviewLastTheme=themeNow;
+   if(focusLine&&overview&&window.L){
+    if(!overviewFocusCasing)overviewFocusCasing=window.L.polyline(focusLine.rvPoints,{weight:9,opacity:.55,color:cc,lineCap:'round',lineJoin:'round',interactive:false});
+    else if(overviewFocusCasing.rvPoints!==focusLine.rvPoints)overviewFocusCasing.setLatLngs(focusLine.rvPoints);
+    overviewFocusCasing.rvPoints=focusLine.rvPoints;
+    if(!overview.hasLayer(overviewFocusCasing))overviewFocusCasing.addTo(overview);
+    overviewFocusCasing.setStyle({color:cc,opacity:.55,weight:9});
+    overviewFocusCasing.bringToFront();focusLine.bringToFront();
+   }else if(overviewFocusCasing&&overview?.hasLayer(overviewFocusCasing)){
+    overviewFocusCasing.remove();
    }
   }
   redrawColours=()=>{if(overview)paintOverview();const colour=css('--accent');for(const line of driveLines.values())line.setStyle({color:colour})};
@@ -863,7 +1017,44 @@
   // other display preferences (app.js, .overlay-settings-body inputs).
   const miniPlain=document.getElementById('videoMiniMapPlain'),miniGrey=document.getElementById('videoMiniMapGrey');
   for(const box of [miniPlain,miniGrey])box.addEventListener('change',()=>{for(const map of maps)if(map.getContainer().closest('#videoMap'))applyTiles(map)});
-  let route=null,current=-1,big=null,small=null,lastKey='',following=true,mode='road';
+  // Session-scoped replay map pool: reuses live Leaflet+MapLibre WebGL instances when navigating between segments of
+  // the same drive (preventing WebGL context teardown/recreation), and destroys them immediately on library/other-drive
+  // transitions or after a short idle GC timeout so detached maps can never leak.
+  const replayPool=globalThis.__rvReplayMapPool??={active:new Map(),parked:new Map()};
+  function destroyParked(slot){
+   const entry=replayPool.parked.get(slot);if(!entry)return;
+   replayPool.parked.delete(slot);globalThis.clearTimeout(entry.timer);
+   try{entry.map.remove()}catch{}
+  }
+  function destroyAllParked(){for(const slot of [...replayPool.parked.keys()])destroyParked(slot)}
+  let route=null,driveKey='',current=-1,big=null,small=null,bigPending=false,smallPending=false,lastKey='',following=true,mode='road';
+  function parkTarget(slot,target){
+   clearTimeout(target.widen);clearTimeout(target.warmupTimer);target.abort?.abort();
+   for(const [ev,fn] of target.handlers||[])target.map.off(ev,fn);
+   target.layerGroup?.clearLayers();target.layerGroup?.remove();
+   const map=target.map,pane=map.getPane('mapPane'),glBox=map.rvGlLayer?.getContainer?.();
+   if(pane)pane.style.translate='';if(glBox)glBox.style.translate='';
+   map.rvNarrow=false;detachMapFromPage(map);
+   destroyParked(slot);
+   const timer=globalThis.setTimeout(()=>destroyParked(slot),2500);
+   replayPool.parked.set(slot,{driveKey,map,container:map.getContainer(),timer});
+  }
+  function claimParked(slot){
+   const entry=replayPool.parked.get(slot);if(!entry)return null;
+   if(entry.driveKey!==driveKey){destroyParked(slot);return null}
+   replayPool.parked.delete(slot);globalThis.clearTimeout(entry.timer);return entry;
+  }
+  const waitSwap=slot=>document.body.hidden&&replayPool.active.get(slot)===driveKey?new Promise(resolve=>addEventListener('pageshow',resolve,{once:true})):Promise.resolve();
+  if(typeof onPageDispose==='function')onPageDispose(()=>{
+   for(const [slot,target] of [['big',big],['small',small]]){
+    if(replayPool.active.get(slot)===driveKey)replayPool.active.delete(slot);
+    if(!target)continue;
+    if(globalThis.__rvNavNext==='replay'&&driveKey)parkTarget(slot,target);
+    else{clearTimeout(target.widen);clearTimeout(target.warmupTimer);target.abort?.abort();try{target.map.remove()}catch{}}
+   }
+   if(globalThis.__rvNavNext!=='replay')destroyAllParked();
+   big=null;small=null;
+  });
   // A seek asked from another segment's map: applied once this segment's replay is ready.
   try{
    const seek=JSON.parse(sessionStorage.getItem('rv-map-seek')||'null');
@@ -878,8 +1069,9 @@
   function applyTrack(value){
    if(!value?.segments?.length)return;
    const nextRoute=value.segments.filter(segment=>segment.points.length),nextCurrent=nextRoute.findIndex(segment=>segment.id===id);
-   if(nextCurrent<0)return;  // This segment has no GPS: no map (its drive's other segments are not this replay).
-   route=nextRoute;current=nextCurrent;
+   if(nextCurrent<0){destroyAllParked();return}  // This segment has no GPS: no map (its drive's other segments are not this replay).
+   route=nextRoute;current=nextCurrent;driveKey=route.map(s=>s.id).join(',');
+   for(const [slot,entry] of [...replayPool.parked])if(entry.driveKey!==driveKey)destroyParked(slot);
    // The 지도 tab appears once this segment has a track; a saved 지도 tab (telemetry.js fell back to 주행 상황) returns.
    mapTab.hidden=false;let saved=null;try{saved=localStorage.getItem('roadviewer-analysis-tab')}catch{}
    if(saved==='map')window.selectAnalysisTab?.('map',false);syncMini();
@@ -902,7 +1094,7 @@
   // Start fetching the track immediately on replay entry (deferred to end of init so all const/let bindings exist).
   window.rvMaps={replayLog(log,logs){
    if(!log||log.id!==id)return;
-   if(!log.has_track){evictLogTrack(id);return}
+   if(!log.has_track){evictLogTrack(id);destroyAllParked();return}
    const routeKey=typeof logSegmentInfo==='function'?logSegmentInfo(log.name)?.route:null;
    const sameRoute=Array.isArray(logs)&&routeKey?logs.filter(l=>logSegmentInfo(l.name)?.route===routeKey):[log];
    const driveSig=JSON.stringify(sameRoute.map(l=>[l.id,l.status,l.has_track?1:0,l.conversion_revision??0]));
@@ -945,49 +1137,112 @@
   const carIcon=(L,bearing)=>L.divIcon({className:'map-car',html:`<span class="map-car-body" data-car-icon="${mapCar}" data-car-color="${mapCarColor}" style="${carColorStyle()}transform:rotate(${bearing.toFixed(2)}deg)">${carArt(mapCar)}</span>`,iconSize:[44,44],iconAnchor:[22,22]});
   // The drive's lines: this log's segment solid, the drive's other segments faded. Only the large map seeks on a tap
   // (interactive).
-  function layers(L,map,interactive=true){
+  function layers(L,group,interactive=true){
    const shown=css('--accent')||'#3DCB92',rest=css('--muted')||'#9AA0A9',lines={others:[]};
    route.forEach((segment,i)=>{
     if(i===current)return;
-    const line=L.polyline(latlngs(segment.points),{color:rest,weight:5,opacity:.45,lineCap:'round',lineJoin:'round',interactive}).addTo(map);
+    const line=L.polyline(latlngs(segment.points),{color:rest,weight:5,opacity:.45,lineCap:'round',lineJoin:'round',interactive}).addTo(group);
     if(interactive)line.on('click',e=>seekTo(e.latlng));lines.others.push(line);
    });
    // The current segment, drawn whole once (draw), on top of the others. Kept unclipped and unsimplified, so the drawn
    // points are the samples and never change under the car.
-   lines.current=L.polyline([],{noClip:true,smoothFactor:0,lineCap:'round',lineJoin:'round',interactive,color:shown,weight:6,opacity:.95,className:'map-current'}).addTo(map);
+   lines.current=L.polyline([],{noClip:true,smoothFactor:0,lineCap:'round',lineJoin:'round',interactive,color:shown,weight:6,opacity:.95,className:'map-current'}).addTo(group);
    if(interactive)lines.current.on('click',e=>seekTo(e.latlng));
    const initial=position(typeof t==='number'?t:0);
-   lines.car=L.marker(initial.latlng,{icon:carIcon(L,initial.bearing),interactive:false,keyboard:false}).addTo(map);
+   lines.car=L.marker(initial.latlng,{icon:carIcon(L,initial.bearing),interactive:false,keyboard:false}).addTo(group);
    return lines;
   }
+  const bindMap=(target,ev,fn)=>{target.map.on(ev,fn);target.handlers.push([ev,fn])};
+  // Two-stage canvas warmup: starts at 0.1 margin for a fast first paint, then expands to full margin after MapLibre's
+  // first idle (or once visible and not mid-gesture).
+  function scheduleWarmupExpand(target){
+   const {map}=target;if(!map.rvWarmup)return;
+   let done=false;
+   const expand=()=>{
+    if(done||!map.rvWarmup)return;
+    if(!map.getContainer().isConnected||map.getSize().x<=0){target.warmupTimer=setTimeout(expand,120);return}
+    if(target.zooming||map._animatingZoom||target.held||target.touches>=2||map.rvNarrow){target.warmupTimer=setTimeout(expand,200);return}
+    done=true;clearTimeout(target.warmupTimer);target.warmupTimer=0;
+    map.rvWarmup=false;setMargin(target);
+   };
+   const hook=gl=>{if(gl.loaded?.())expand();else gl.once('idle',expand)};
+   if(map.rvGl)hook(map.rvGl);else map.rvOnGlReady=hook;
+   target.warmupTimer=setTimeout(expand,1200);
+  }
   async function ensureBig(){
-   if(big||!route)return;
-   const L=await loadLeaflet().catch(e=>{showError(e.message);return null});if(!L||big)return;
-   const map=createMap(L,view.querySelector('.route-map-canvas'),{margin:BIG_MARGIN});big={map,lines:layers(L,map)};
-   const bounds=L.latLngBounds(route.flatMap(segment=>latlngs(segment.points)));
-   map.fitBounds(bounds,{padding:[24,24],animate:false,maxZoom:17});
-   map.on('dragstart',()=>setFollow(false));watchView(big);lastKey='';update(true);
-   map.rvHold=()=>!!big?.held;map.on('dragstart',()=>{big.held=true;big.anchor=dragAnchor(map)}).on('move',()=>dragMove(big)).on('moveend',()=>{if(big.held){big.held=false;recentre(big)}});
-   map.on('zoomstart',()=>{if(performance.now()<(big.eager||0))narrow(big)}).on('zoomstart zoom zoomend',()=>{if(map.rvNarrow)narrow(big)});
-   // A touch, click, wheel or key on the map first folds the scroll into Leaflet's own view (one pan, the translate
-   // back under a pixel), and for a moment after it the map pans by every whole pixel again: a drag, a zoom (buttons,
-   // pinch, wheel, keys) and a tap's place (seeking on a line) then work on what is shown.
-   const box=map.getContainer();
-   // A zoom by hand (two fingers, the wheel, the buttons, +/-, a box zoom; a double tap or click through zoomstart)
-   // narrows the margin first, before Leaflet's own handlers.
-   for(const type of ['pointerdown','touchstart','mousedown','wheel','keydown','dblclick'])box.addEventListener(type,e=>{if(e.touches)big.touches=e.touches.length;if(zoomInput(e))narrow(big);big.eager=performance.now()+800;settle(big)},{capture:true,passive:true});
-   for(const type of ['touchmove','touchend','touchcancel'])box.addEventListener(type,e=>{big.touches=e.touches.length;if(type==='touchmove'&&e.touches.length>=2&&map.rvNarrow)narrow(big)},{capture:true,passive:true});
+   if(big||bigPending||!route)return;
+   bigPending=true;
+   try{
+    const L=await loadLeaflet().catch(e=>{showError(e.message);return null});
+    await waitSwap('big');
+    if(!L||big||!route)return;
+    const slot=view.querySelector('.route-map-canvas');if(!slot)return;
+    const reused=claimParked('big');
+    let map;
+    if(reused){
+     slot.replaceWith(reused.container);map=reused.map;
+     attachMapToPage(L,map,reused.container,{zoom:true});
+    }else{
+     map=createMap(L,slot,{margin:BIG_MARGIN,warmup:true,autoDispose:false});
+    }
+    const layerGroup=L.layerGroup().addTo(map),abort=new AbortController();
+    big={map,layerGroup,lines:layers(L,layerGroup),handlers:[],abort};
+    replayPool.active.set('big',driveKey);
+    if(reused)map.invalidateSize({animate:false});
+    const bounds=L.latLngBounds(route.flatMap(segment=>latlngs(segment.points)));
+    map.fitBounds(bounds,{padding:[24,24],animate:false,maxZoom:17});
+    bindMap(big,'dragstart',()=>{setFollow(false);big.held=true;big.anchor=dragAnchor(map)});
+    bindMap(big,'move',()=>dragMove(big));
+    bindMap(big,'moveend',()=>{if(big.held){big.held=false;recentre(big)}});
+    bindMap(big,'zoomstart',()=>{if(performance.now()<(big.eager||0))narrow(big)});
+    bindMap(big,'zoomstart zoom zoomend',()=>{if(map.rvNarrow)narrow(big)});
+    watchView(big);lastKey='';update(true);
+    map.rvHold=()=>!!big?.held;
+    scheduleWarmupExpand(big);
+    // A touch, click, wheel or key on the map first folds the scroll into Leaflet's own view (one pan, the translate
+    // back under a pixel), and for a moment after it the map pans by every whole pixel again: a drag, a zoom (buttons,
+    // pinch, wheel, keys) and a tap's place (seeking on a line) then work on what is shown.
+    const box=map.getContainer();
+    // A zoom by hand (two fingers, the wheel, the buttons, +/-, a box zoom; a double tap or click through zoomstart)
+    // narrows the margin first, before Leaflet's own handlers.
+    const opts={capture:true,passive:true,signal:abort.signal};
+    for(const type of ['pointerdown','touchstart','mousedown','wheel','keydown','dblclick'])box.addEventListener(type,e=>{if(e.touches)big.touches=e.touches.length;if(zoomInput(e))narrow(big);big.eager=performance.now()+800;settle(big)},opts);
+    for(const type of ['touchmove','touchend','touchcancel'])box.addEventListener(type,e=>{big.touches=e.touches.length;if(type==='touchmove'&&e.touches.length>=2&&map.rvNarrow)narrow(big)},opts);
+   }finally{bigPending=false}
   }
   // A zoom (buttons, wheel, pinch) is left to Leaflet; following picks up again when it ends, and after a resize.
   // The basemap's sub-pixel alignment also follows Leaflet's own moves (a drag with 따라가기 off, a zoom, a resize).
-  function watchView(target){target.map.on('zoomstart',()=>{target.zooming=true}).on('zoomend',()=>{target.zooming=false;lastKey=''}).on('resize',()=>{target.eager=performance.now()+300;lastKey=''}).on('move zoomend resize',()=>alignBasemap(target))}
+  function watchView(target){
+   bindMap(target,'zoomstart',()=>{target.zooming=true});
+   bindMap(target,'zoomend',()=>{target.zooming=false;lastKey=''});
+   bindMap(target,'resize',()=>{target.eager=performance.now()+300;lastKey=''});
+   bindMap(target,'move zoomend resize',()=>alignBasemap(target));
+  }
   async function ensureSmall(){
-   if(small||!route)return;
-   const L=await loadLeaflet().catch(()=>null);if(!L||small)return;
-   const map=createMap(L,mini.querySelector('.video-map-canvas'),{margin:SMALL_MARGIN,zoom:false,interactive:false,tone:()=>miniTone==='auto'?null:miniTone,labels:()=>!miniPlain.checked,grey:()=>miniGrey.checked,attribution:SHORT_ATTRIBUTION});
-   small={map,lines:layers(L,map,false)};watchView(small);fitSmall();
-   // Refit when the map or the speed and wheel over it change size (the speed appears once the replay has data).
-   {const watch=new ResizeObserver(()=>{if(small&&!mini.hidden&&!resizing)fitSmall()});watch.observe(mini);watch.observe(hud)}
+   if(small||smallPending||!route)return;
+   smallPending=true;
+   try{
+    const L=await loadLeaflet().catch(()=>null);
+    await waitSwap('small');
+    if(!L||small||!route||mini.hidden)return;
+    const slot=mini.querySelector('.video-map-canvas');if(!slot)return;
+    const miniOpts={zoom:false,tone:()=>miniTone==='auto'?null:miniTone,labels:()=>!miniPlain.checked,grey:()=>miniGrey.checked};
+    const reused=claimParked('small');
+    let map;
+    if(reused){
+     for(const key of HELD)reused.container.style.removeProperty(key);
+     slot.replaceWith(reused.container);map=reused.map;
+     attachMapToPage(L,map,reused.container,miniOpts);
+    }else{
+     map=createMap(L,slot,{margin:SMALL_MARGIN,interactive:false,attribution:SHORT_ATTRIBUTION,warmup:true,autoDispose:false,...miniOpts});
+    }
+    const layerGroup=L.layerGroup().addTo(map);
+    small={map,layerGroup,lines:layers(L,layerGroup,false),handlers:[]};
+    replayPool.active.set('small',driveKey);
+    watchView(small);fitSmall();scheduleWarmupExpand(small);
+    // Refit when the map or the speed and wheel over it change size (the speed appears once the replay has data).
+    {const watch=new ResizeObserver(()=>{if(small&&!mini.hidden&&!resizing)fitSmall()});watch.observe(mini);watch.observe(hud)}
+   }finally{smallPending=false}
   }
   // The small map always follows the car at a fixed street zoom, the car centred across and a little below the middle
   // (60% down: clear of the speed over the top, more road ahead).
