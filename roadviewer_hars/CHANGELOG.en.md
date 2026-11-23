@@ -1,3 +1,9 @@
+## 2.0.20
+
+- Improved map loading performance with single-drive track filtering, an in-memory server track cache with lightweight 304 responses, and HTTP gzip/brotli compression.
+- Replay now loads map data in parallel with session caching, and the replay map uses two-phase expansion with instance reuse for faster transitions.
+- Optimized the all-drives overview map with Canvas rendering, hover handling improvements, and lazy card SVG generation.
+
 ## 2.0.19
 
 - In replay, unselected gears and the inactive EV indicator use the same translucent white as the empty following-distance bars. The gear step sits a little closer to the gear letter and slightly below its baseline.
