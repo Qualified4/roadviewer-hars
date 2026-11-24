@@ -1,3 +1,7 @@
+## 2.0.21
+
+- Clicking a bookmark in the replay bookmark tab now copies its timestamp and title to the clipboard with a copied feedback indicator while seeking to that moment.
+
 ## 2.0.20
 
 - Improved map loading performance with single-drive track filtering, an in-memory server track cache with lightweight 304 responses, and HTTP gzip/brotli compression.
