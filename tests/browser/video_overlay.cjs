@@ -5,6 +5,7 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   // Road-map colours are asserted with the dark screen mode's palette (the original colours).
   const page=await browser.newPage({viewport:{width:390,height:844},reducedMotion:'reduce',colorScheme:'dark'}),errors=[];
   page.on('pageerror',e=>errors.push(e.message));
+  await page.route('**/*',route=>route.abort());
   await page.route('https://rv.test/**',route=>{
    const p=new URL(route.request().url()).pathname;
    if(p.endsWith('/bookmarks'))return route.fulfill({json:{bookmarks:[]}});
@@ -221,6 +222,89 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   assert.equal(savedMotion,false,'smooth motion setting is saved with the display preferences');
   await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>setTime(.1));assert.equal(await overlayImage(),grown,'reduced motion shows full box immediately');
   await page.evaluate(()=>setTime(.9));assert(!(await pixels()),'reduced motion hides removed box immediately');
+  // Synthetic level road and an unchanged radar position: only the recorded CCNC class changes.
+  await setBoxHeight(130);
+  await page.emulateMedia({reducedMotion:'no-preference'});
+  await page.evaluate(()=>{
+   data.frames=Array.from({length:40},(_,i)=>{
+    const f=structuredClone(boxFixture);f.t=i*.05;f.ccncTargets=[{slot:'FF',detect:i<10?4:i<13?5:6,x:3.5,y:0}];
+    f.overlay=buildReplayOverlay(f,{basis:[[.5,.46,1],[.68,0,0],[0,.8,0]],height:1.3,lanes:[],edges:[],position:[]});
+    return f;
+   });
+  });
+  const truckStyle=()=>page.evaluate(()=>{const {truck,length,width,color}=ccncBoxTransitions(data.frames,idx,t)[0];return {truck,length,width,color}});
+  const saveTruckImage=async name=>{
+   if(process.env.RV_TEST_TRUCK_PNG_DIR)await page.locator('#videoOverlay').screenshot({path:process.env.RV_TEST_TRUCK_PNG_DIR+'/'+name+'.png'});
+  };
+  await page.evaluate(()=>setTime(.2));
+  const car=await truckStyle();assert.deepEqual(car,{truck:0,length:4.5,width:1.8,color:'#8deeff'});
+  await saveTruckImage('01-car');
+  await page.evaluate(()=>setTime(.65));
+  const halfway=await truckStyle();assert(Math.abs(halfway.truck-.5)<1e-8&&Math.abs(halfway.length-6.25)<1e-8&&Math.abs(halfway.width-2.05)<1e-8);
+  assert.notEqual(halfway.color,car.color);const middleImage=await overlayImage();
+  await saveTruckImage('02-morph');
+  await page.evaluate(()=>setTime(.85));
+  const truck=await truckStyle();assert.deepEqual(truck,{truck:1,length:8,width:2.3,color:'#ffaa24'});
+  const fullTruck=await overlayImage();assert.notEqual(middleImage,fullTruck);
+  await saveTruckImage('03-truck');
+  const [handoff,replacement]=await page.evaluate(()=>{
+   const frames=structuredClone(data.frames);
+   for(let i=13;i<frames.length;i++){
+    const target=frames[i].ccncTargets[0];
+    target.slot='LF';target.y=-2;target.detect=4;
+   }
+   const handoff=ccncBoxTransitions(frames,13,.65)[0].truck;
+   for(let i=13;i<frames.length;i++)Object.assign(frames[i].ccncTargets[0],{slot:'FF',x:20,y:0});
+   return [handoff,ccncBoxTransitions(frames,13,.65)[0].truck];
+  });
+  assert(Math.abs(handoff-.5)<1e-8,'a handoff keeps the morph already in progress');
+  assert.equal(replacement,0,'the replacement car does not inherit the previous truck shape');
+  await page.evaluate(()=>setTime(.65));assert.equal(await overlayImage(),middleImage,'seeking replays the same class morph');
+  await settingAction('#ccncMotion','uncheck');assert.equal(await overlayImage(),fullTruck,'motion setting settles the truck immediately');
+  await settingAction('#ccncMotion','check');
+  await page.emulateMedia({reducedMotion:'reduce'});await page.evaluate(()=>setTime(.65));
+  assert.equal(await overlayImage(),fullTruck,'reduced motion settles the truck immediately');
+  const verticalLights=()=>page.evaluate(()=>{
+   const c=document.getElementById('videoOverlay'),ctx=c.getContext('2d'),video=document.getElementById('video');
+   const paths=[],beams=[],original=ctx.createLinearGradient,drawImage=ctx.drawImage;
+   let texels=null;
+   ctx.createLinearGradient=function(x,y,toX,toY){
+    if(x>0&&Math.abs(x-toX)<1e-6&&y>toY)paths.push({x,y,toY});
+    return original.call(this,x,y,toX,toY);
+   };
+   ctx.drawImage=function(texture,x,y,width,height){
+    beams.push({x:this.getTransform().e,width,height,alpha:this.globalAlpha});
+    if(!texels){
+     const w=texture.width,h=texture.height,mid=Math.floor(w/2),pixels=texture.getContext('2d').getImageData(0,0,w,h).data;
+     const sample=(x,y)=>[...pixels.slice((y*w+x)*4,(y*w+x)*4+4)];
+     texels={foot:sample(mid,h-1),middle:sample(mid,Math.floor(h/2)),top:sample(mid,0),side:sample(0,h-1)};
+    }
+    return drawImage.call(this,texture,x,y,width,height);
+   };
+   try{render()}finally{ctx.createLinearGradient=original;ctx.drawImage=drawImage}
+   const w=c.clientWidth,h=c.clientHeight,ratio=Math.min(w/video.videoWidth,h/video.videoHeight),vw=ratio*video.videoWidth,vh=ratio*video.videoHeight;
+   const at=(x,y)=>ctx.getImageData(Math.round(x*c.width/w),Math.round(y*c.height/h),1,1).data[3];
+   const rear=paths.filter(p=>p.y===Math.max(...paths.map(p=>p.y))).sort((a,b)=>a.x-b.x);
+   return {paths,beams,texels,vw,vh,roof:rear.length===2?at((rear[0].x+rear[1].x)/2,rear[0].toY):null};
+  });
+  const shape=await verticalLights(),{beams,texels}=shape;
+  assert.equal(shape.paths.length,4,'truck has four box uprights');
+  assert(['width','height','alpha'].every(key=>new Set(beams.map(beam=>beam[key])).size>3),'beams vary in width, height and brightness');
+  const centres=beams.slice(2).map(p=>p.x).sort((a,b)=>a-b),gaps=centres.slice(1).map((x,i)=>x-centres[i]);
+  assert(Math.max(...gaps)>5*Math.min(...gaps),'beams cluster with wider gaps between them');
+  assert(texels.foot[1]>170&&texels.foot[3]>texels.middle[3]&&texels.middle[3]>0,'warm beam bases fade upward');
+  assert.equal(texels.top[3]+texels.side[3],0,'beam tips and sides fade to zero');
+  const spans=shape.paths.map(p=>p.y-p.toY).sort((a,b)=>b-a),rearDepth=3.5+1.52;
+  assert(Math.abs(spans[0]*rearDepth/(.8*shape.vh)-2.6)<1e-6,'truck height is twice the 1.3 m setting');
+  assert(Math.abs(rearDepth*(spans[0]/spans[3]-1)-8)<1e-6,'front edge is exactly 8 m forward in the projection');
+  const rear=shape.paths.filter(p=>Math.abs(p.y-p.toY-spans[0])<1e-6).sort((a,b)=>a.x-b.x);
+  assert(Math.abs((rear[1].x-rear[0].x)*rearDepth/(.68*shape.vw)-2.3)<1e-6&&Math.abs((rear[0].x+rear[1].x)/2-195)<1e-6,'2.3 m width is centred on the same rear anchor');
+  assert.equal(shape.roof,0,'truck has a transparent roof line');
+  await settingAction('#vehicleBoxes','uncheck');assert(await pixels(),'truck glow stays with boxes hidden');
+  const withoutBox=await verticalLights();
+  assert.deepEqual(withoutBox.paths,[],'no box uprights remain');assert.deepEqual(withoutBox.beams,beams,'ground beams remain unchanged');
+  await settingAction('#ccncTargets','uncheck');assert(!(await pixels()),'hiding CCNC removes the truck glow');
+  await settingAction('#ccncTargets','check');await settingAction('#vehicleBoxes','check');
   await page.evaluate(()=>{data.frames=[boxFixture];setTime(0)});
   await setBoxHeight(200);
   await settingAction('#ccncTargets','uncheck');assert(!(await pixels()));

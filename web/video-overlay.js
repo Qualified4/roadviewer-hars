@@ -1,6 +1,42 @@
 'use strict';
 (()=>{
  const layer=document.getElementById('videoOverlay'),context=layer.getContext('2d'),video=document.getElementById('video'),button=document.getElementById('videoOverlayToggle'),status=document.getElementById('overlayStatus');
+ const rgba=(hex,a)=>{const v=parseInt(hex.slice(1,7),16);return `rgba(${v>>16},${v>>8&255},${v&255},${Math.max(0,Math.min(1,a)).toFixed(3)})`};
+ // Position on the rear arc, height in metres, fraction of the arc's width, brightness.
+ // Two broad glows sit behind the uneven groups of narrow beams.
+ const truckBeams=[
+  [.31,.96,.52,.29],[.68,.65,.43,.13],
+  [.136,.37,.087,.12],[.239,.83,.096,.30],[.26,1.28,.054,.66],
+  [.286,1.06,.037,.39],[.354,1.42,.068,.72],[.392,.72,.090,.28],
+  [.549,1.12,.041,.39],[.557,.88,.027,.17],[.725,.89,.063,.35],[.813,.38,.068,.12]
+ ];
+ let truckLight=null;
+ function truckLightTexture(color,core){
+  // Keep one small canvas. The morph tints it in place as its colours change.
+  if(!truckLight){
+   const texture=document.createElement('canvas');texture.width=44;texture.height=120;
+   const brush=texture.getContext('2d'),profile=brush.createLinearGradient(0,0,texture.width,0);
+   for(let i=0;i<=24;i++){
+    const x=i/24,u=Math.abs(2*x-1),soft=Math.exp(-7*u*u)*(1-u*u)**1.6,center=Math.exp(-49*u*u);
+    profile.addColorStop(x,rgba('#ffffff',.59*soft+.41*center));
+   }
+   truckLight={texture,brush,profile};
+  }
+  const {texture,brush,profile}=truckLight;
+  if(truckLight.color!==color||truckLight.core!==core){
+   brush.globalCompositeOperation='copy';brush.fillStyle=profile;
+   brush.fillRect(0,0,texture.width,texture.height);
+   const rise=brush.createLinearGradient(0,texture.height,0,0);
+   for(let i=0;i<=8;i++){
+    const pos=i/8,remaining=1-pos;
+    rise.addColorStop(pos,rgba(mixColor(color,core,.6*remaining**2),remaining**1.7));
+   }
+   brush.globalCompositeOperation='source-in';brush.fillStyle=rise;
+   brush.fillRect(0,0,texture.width,texture.height);
+   truckLight.color=color;truckLight.core=core;
+  }
+  return texture;
+ }
  let boxOpacity=.3;
  const opacitySlider=document.getElementById('ccncOpacity'),opacityValue=document.getElementById('ccncOpacityValue');
  try{const saved=localStorage.getItem('roadviewer-ccnc-opacity');if(saved!==null&&Number.isFinite(Number(saved)))boxOpacity=Math.max(0,Math.min(1,Number(saved)))}catch{}
@@ -100,7 +136,6 @@ let bsdHeight=.8;
   // themselves, CSS mix-blend-mode:screen against the video), each line is a thin bright core over wider, much fainter
   // passes of the same shape, and everything dims with distance and fades out at its ends. Ground glows are wider ground
   // ribbons, so they narrow with perspective by themselves. No shadowBlur or canvas filter: this redraws at 20 fps on phones.
-  const rgba=(hex,a)=>{const v=parseInt(hex.slice(1,7),16);return `rgba(${v>>16},${v>>8&255},${v&255},${Math.max(0,Math.min(1,a)).toFixed(3)})`};
   const proj=q=>q&&q.length===3&&q.every(Number.isFinite)&&q[2]>.1?xy([q[0]/q[2],q[1]/q[2]]):null;
   const extent=points=>{const ys=(points||[]).filter(Boolean).map(p=>p[1]);if(!ys.length)return null;const near=Math.min(Math.max(...ys),top+vh),far=Math.max(Math.min(...ys),top);return [near,far,far]};
   // Brightness by height on screen: full at the near end (bottom of the picture), none at the line's own far end; a cut
@@ -137,7 +172,7 @@ let bsdHeight=.8;
   // Without ground ribbons (older data): the same passes as strokes.
   function lightLine(points,color,alpha=1,range=extent(points),dash=[],halo=true){if(!range)return;const style=fadeStyle(range,color);if(halo){strokeLine(points,style,9,.1*alpha,dash);strokeLine(points,style,3.6,.3*alpha,dash)}strokeLine(points,style,1.6,alpha,dash)}
   // A short mark at one distance (lead line or arc, vehicle mark, target bars): glow, halo and core, scaled by its size on screen.
-  function lightMark(points,style,scale,alpha=1,dash=[]){strokeLine(points,style,16*scale,.06*alpha,dash);strokeLine(points,style,9*scale,.12*alpha,dash);strokeLine(points,style,4.5*scale,.3*alpha,dash);strokeLine(points,style,1.4+.8*scale,alpha,dash)}
+  function lightMark(points,style,scale,alpha=1,core=style){strokeLine(points,style,16*scale,.06*alpha);strokeLine(points,style,9*scale,.12*alpha);strokeLine(points,style,4.5*scale,.3*alpha);strokeLine(points,core,1.4+.8*scale,alpha)}
   // The same mark with its glow in four even steps: lightMark's wide outer strokes showed as separate rings. The glow
   // reaches 12 (between lightMark's 9 and 16) and is as bright next to the core (about .42).
   function softMark(points,color,scale,alpha=1){
@@ -396,7 +431,7 @@ let bsdHeight=.8;
     leadMarkAt=road.distance;
     const arriving=ccncEntries.find(e=>e.shift&&sameCar(e.target));
     leadShape={points:mark.length===MARK?mark:Array.from({length:MARK},(_,i)=>[a[0]+(b[0]-a[0])*i/(MARK-1),a[1]+(b[1]-a[1])*i/(MARK-1)]),color,scale,merge:!!arriving&&!wasLead(arriving.shift.index,arriving.shift.x)};
-    if(!leadShape.merge)lightMark(mark,sideFade(mark,color),scale);
+    if(!leadShape.merge||arriving.truck>0)lightMark(mark,sideFade(mark,color),scale,leadShape.merge?arriving.truck:1);
     // TARGET 라벨 on: this label names the lead and the same car's FF box label steps aside (off: the FF label shows).
     targetLabelShown=on('targetLabels');if(targetLabelShown)groundLabel(`TARGET · ${road.distance.toFixed(1)} m`,(a[0]+b[0])/2,Math.max(...mark.map(p=>p[1]))+10+9*scale,color,1,labelSize(road.distance+RADAR_TO_CAMERA),sections?.[0]?.every(Boolean)&&sections[1]?.every(Boolean)?flatAt(road.distance+RADAR_TO_CAMERA,groundBasis(sections[0][0],sections[0][1],sections[0][0].map((v,k)=>(v-sections[1][0][k])/.5))):flatAt(road.distance+RADAR_TO_CAMERA));
    }
@@ -489,41 +524,74 @@ let bsdHeight=.8;
   // A vehicle (LF · FF · RF): a short arc of light on the ground around its rear and its label on the ground; with
   // 차량 박스 on, the 3D box stands on that mark as light: 1 px edges, brightest at the ground and fading upward (the top
   // nearly invisible), far face and depth edges dimmer, faces almost clear. LF/RF are dimmer than FF.
-  function drawBox(marker,color,target,growth=1,opacity=1,shift=null){
-   const animatedHeight=boxHeight*growth,boxes=on('vehicleBoxes'),dim=target.slot==='FF'?1:.65;
-   if(marker.box?.length!==8)return;
-   const projected=marker.box.map((p,i)=>i<4?p:p.map((v,j)=>marker.box[i-4][j]+(v-marker.box[i-4][j])*animatedHeight/1.5));
-   if(!projected.every(p=>p?.length===3&&p.every(Number.isFinite)&&p[2]>.1))return;
-   const corners=projected.map(p=>xy([p[0]/p[2],p[1]/p[2]]));
+  function drawBox({marker,color,target,height:growth,alpha:opacity,shift,truck,length,width}){
+   const animatedHeight=boxHeight*growth*(1+truck),boxes=on('vehicleBoxes'),dim=target.slot==='FF'?1:.65;
+   if(!marker.box.every(p=>p?.length===3&&p.every(Number.isFinite)))return;
+   const [b0,b1,b2]=marker.box,C=b0.map((v,k)=>(v+b1[k])/2),S=b0.map((v,k)=>(b1[k]-v)/CCNC_CAR_WIDTH),F=b0.map((v,k)=>(b2[k]-v)/CCNC_CAR_LENGTH);
+   const up=b0.map((v,k)=>(marker.box[4][k]-v)/CCNC_REFERENCE_HEIGHT);
+   // The projective basis is linear in metres. Scale about the rear centre before perspective division.
+   const base=truck===0?marker.box.slice(0,4):[0,length].flatMap(d=>[-width/2,width/2].map(s=>C.map((v,k)=>v+F[k]*d+S[k]*s)));
+   const lift=(p,h,direction=up)=>p.map((v,k)=>v+direction[k]*h);
+   const corners=[...base,...base.map((p,i)=>lift(p,animatedHeight,marker.box[i+4].map((v,k)=>(v-marker.box[i][k])/CCNC_REFERENCE_HEIGHT)))].map(proj);
+   if(!corners.every(Boolean))return;
    context.save();context.globalCompositeOperation='lighter';
-   const [b0,b1,b2]=marker.box,F=b0.map((v,k)=>(b2[k]-v)/4.5),scale=Math.max(.4,Math.min(1.3,Math.hypot(corners[1][0]-corners[0][0],corners[1][1]-corners[0][1])/110));
-   const ring=(w,depth,back)=>Array.from({length:MARK},(_,i)=>{const a=Math.PI*i/(MARK-1);return [0,1,2].map(k=>(b0[k]+b1[k])/2-(b1[k]-b0[k])/1.8*w*Math.cos(a)+F[k]*(depth*(1-Math.sin(a))-back))}).map(q=>q[2]>.1?xy([q[0]/q[2],q[1]/q[2]]):null),mark=ring(1.08,1,.3);
+   const scale=Math.max(.4,Math.min(1.3,Math.hypot(corners[1][0]-corners[0][0],corners[1][1]-corners[0][1])/110));
+   const ring=(w,depth,back)=>Array.from({length:MARK},(_,i)=>{const a=Math.PI*i/(MARK-1);return C.map((v,k)=>v-S[k]*w*Math.cos(a)+F[k]*(depth*(1-Math.sin(a))-back))});
+   const arc=ring(.6*width,1,.3),mark=arc.map(proj);
    const markAlpha=opacity*dim*(boxes?1:.4+.6*growth);
-   let points=mark,tone=color,size=scale,strength=markAlpha,skip=sameCar(target);
+   let points=mark,tone=color,size=scale,strength=markAlpha,skip=sameCar(target),sharesLeadMark=skip;
    if(shift&&mark.every(Boolean)){
     if(skip&&leadShape){  // arriving at the lead: the ring grows into the lead mark (or dissolves into one already shown)
      points=blend(mark,leadShape.points,shift.k);tone=mixColor(color,leadShape.color,shift.k);size=scale+(leadShape.scale-scale)*shift.k;
      strength=leadShape.merge?markAlpha+(1-markAlpha)*shift.k:markAlpha*(1-shift.k);skip=false;
     }else if(shift.slot==='FF'&&wasLead(shift.index,shift.x)&&!skip){  // it was the lead and left: the lead mark's shape shrinks to the ring
-     const wide=ring(1.3,1.1,0),k=1-shift.k;if(wide.every(Boolean)){points=blend(mark,wide,k);tone=mixColor(color,'#7be5ff',k);strength=markAlpha+(opacity-markAlpha)*k}
+     const wide=ring(1.3,1.1,0).map(proj),k=1-shift.k;if(wide.every(Boolean)){points=blend(mark,wide,k);tone=mixColor(color,'#7be5ff',k);strength=markAlpha+(opacity-markAlpha)*k;sharesLeadMark=true}
     }
    }
-   if(points.every(Boolean)&&!skip)lightMark(points,sideFade(points,tone),size,strength);
+   const groundCore=truck>0?mixColor(color,'#ffd45c',.4*truck):color;
+   if(points.every(Boolean)&&!skip&&(!sharesLeadMark||truck<1)){
+    const style=sideFade(points,tone),core=truck>0&&!sharesLeadMark?sideFade(points,groundCore):style;
+    lightMark(points,style,size,strength*(sharesLeadMark?1-truck:1),core);
+   }
+   if(truck>0&&mark.every(Boolean)){
+    const alpha=markAlpha*truck;
+    if(sharesLeadMark)lightMark(mark,sideFade(mark,color),scale,alpha,sideFade(mark,groundCore));
+    if(growth>0){
+     const texture=truckLightTexture(color,groundCore),arcWidth=Math.abs(mark.at(-1)[0]-mark[0][0]);
+     for(const [position,height,spread,strength] of truckBeams){
+      const index=position*(MARK-1),i=Math.floor(index),fraction=index-i;
+      const source=arc[i].map((v,k)=>v+(arc[i+1][k]-v)*fraction);
+      const bottom=proj(source),top=proj(lift(source,height*growth));
+      if(!bottom||!top)continue;
+      const dx=top[0]-bottom[0],dy=top[1]-bottom[1],rise=Math.hypot(dx,dy),width=arcWidth*spread;
+      if(rise<.5||width<1)continue;
+      context.save();context.translate(...bottom);context.rotate(Math.atan2(dx,-dy));
+      context.globalAlpha=alpha*strength;context.drawImage(texture,-width/2,-rise,width,rise);
+      context.restore();
+     }
+    }
+   }
    if(boxes){
     const faces=(animatedHeight===0?[[0,1,3,2]]:[[0,1,5,4],[4,5,7,6],[1,3,7,5],[2,0,4,6],[3,2,6,7],[0,2,3,1]]).map(face=>{
      const points=face.map(i=>corners[i]),area=points.reduce((sum,p,i)=>{const q=points[(i+1)%points.length];return sum+p[0]*q[1]-q[0]*p[1]},0);
      return {face,points,front:animatedHeight===0||area<0};
     });
     // Faces: a faint wash rising from the ground (the opacity slider), front faces only so nothing stacks up.
-    for(const {points,front} of faces){
-     if(!front||boxOpacity<=0||animatedHeight===0)continue;const ys=points.map(p=>p[1]),gradient=context.createLinearGradient(0,Math.max(...ys),0,Math.min(...ys)-1);
-     gradient.addColorStop(0,rgba(color,.35*boxOpacity));gradient.addColorStop(1,rgba(color,0));context.fillStyle=gradient;context.globalAlpha=opacity*dim;
+    for(const {face,points,front} of faces){
+     if(!front||boxOpacity<=0||animatedHeight===0)continue;
+     const upper=face.filter(i=>i>=4),roof=upper.length===4;if(roof&&truck===1)continue;
+     const ys=points.map(p=>p[1]),bottom=Math.max(...ys),oldTop=Math.min(...ys)-1;
+     const top=truck>0&&upper.length>0?oldTop+(Math.max(...upper.map(i=>corners[i][1]))-oldTop)*truck:oldTop;
+     if(top>=bottom)continue;
+     const gradient=context.createLinearGradient(0,bottom,0,top);
+     gradient.addColorStop(0,rgba(color,(.35+.22*truck)*boxOpacity));gradient.addColorStop(1,rgba(color,0));context.fillStyle=gradient;context.globalAlpha=opacity*dim*(roof?1-truck:1);
      context.beginPath();points.forEach(([x,y],i)=>i?context.lineTo(x,y):context.moveTo(x,y));context.closePath();context.fill();
     }
     const edges=new Map();
     for(const {face,front} of faces)face.forEach((a,i)=>{const b=face[(i+1)%face.length],key=[a,b].sort((a,b)=>a-b).join(':');edges.set(key,{a:Math.min(a,b),b:Math.max(a,b),front:front||edges.get(key)?.front})});
     for(const {a,b,front} of edges.values()){
-     const base=opacity*dim*(front?1:.4*(1-.5*boxOpacity)),level=i=>i<4?.95:.1;
+     if(a>=4&&truck===1)continue;
+     const base=opacity*dim*(front?1:.4*(1-.5*boxOpacity)),level=i=>i<4?.95:.1*(1-truck);
      const style=a<4&&b>=4?(()=>{const g=context.createLinearGradient(...corners[a],...corners[b]);g.addColorStop(0,rgba(color,level(a)));g.addColorStop(1,rgba(color,level(b)));return g})():rgba(color,level(a));
      if(b<4)strokeLine([corners[a],corners[b]],style,3,.2*base);
      strokeLine([corners[a],corners[b]],style,1,base,[],1);  // already a hairline: 1 px on every picture size
@@ -532,7 +600,7 @@ let bsdHeight=.8;
    context.restore();
    const text=label(target),below=!boxes||on('boxLabelsBelow');
    if(on('boxLabels')&&text&&!(targetLabelShown&&sameCar(target))){
-    if(below)groundLabel(`${target.slot} · ${text}`,(corners[0][0]+corners[1][0])/2,Math.max(...(mark.every(Boolean)?mark:corners.slice(0,4)).map(p=>p[1]))+10+9*scale,color,opacity,labelSize(target.x+RADAR_TO_CAMERA),flatAt(target.x+RADAR_TO_CAMERA,groundBasis(b0.map((v,k)=>(v+b1[k])/2),b0.map((v,k)=>(b1[k]-v)/1.8),F)));
+    if(below)groundLabel(`${target.slot} · ${text}`,(corners[0][0]+corners[1][0])/2,Math.max(...(mark.every(Boolean)?mark:corners.slice(0,4)).map(p=>p[1]))+10+9*scale,color,opacity,labelSize(target.x+RADAR_TO_CAMERA),flatAt(target.x+RADAR_TO_CAMERA,groundBasis(C,S,F)));
     else{context.save();context.globalAlpha=opacity;hudLabel(context,`${target.slot} · ${text}`,(corners[4][0]+corners[5][0])/2,Math.min(...corners.slice(4).map(p=>p[1]))-14,color,left+4,left+vw-4,true);context.restore()}
    }
   }
@@ -540,12 +608,12 @@ let bsdHeight=.8;
   if(on('ccncTargets')){
    const boxes=ccncEntries.slice().sort((a,b)=>b.target.x-a.target.x);
    boxAnimating=boxes.some(entry=>entry.animated);
-   for(const entry of boxes)drawBox(entry.marker,entry.color,entry.target,entry.height,entry.alpha,entry.shift);
+   for(const entry of boxes)drawBox(entry);
   }
   // A detection on a drawn LF/FF/RF car (from its rear to its front, within its width and a little more: the radar often
   // sees the near corner) is that car: only a short tick on the ground where it is, no marker of its own.
-  const cars=on('ccncTargets')?ccncEntries.map(entry=>entry.target).filter(t=>Number.isFinite(t?.x)&&Number.isFinite(t?.y)):[];
-  const onCar=(target,kind)=>{const x=target.x-(kind==='model'?RADAR_TO_CAMERA:0),y=target.y??-target.yRel;return cars.some(car=>x>car.x-1&&x<car.x+4.5&&Math.abs(y-car.y)<1.3)};
+  const onCar=(target,kind)=>{const x=target.x-(kind==='model'?RADAR_TO_CAMERA:0),y=target.y??-target.yRel;
+   return ccncEntries.some(({target:car,length,width})=>Number.isFinite(car.x)&&Number.isFinite(car.y)&&x>car.x-1&&x<car.x+length&&Math.abs(y-car.y)<width/2+.4)};
   context.font='10px "Pretendard Variable", system-ui';
   for(const marker of frame.overlay.markers){
    if(marker.kind==='ccnc')continue;

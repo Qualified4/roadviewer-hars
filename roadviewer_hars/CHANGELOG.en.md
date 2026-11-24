@@ -1,3 +1,7 @@
+## 2.0.22
+
+- The replay overlay smoothly changes CCNC truck boxes to 8 m long, 2.3 m wide, and twice the configured height. Amber light beams fade upward from the rear ground marker.
+
 ## 2.0.21
 
 - Clicking a bookmark in the replay bookmark tab now copies its timestamp and title to the clipboard with a copied feedback indicator while seeking to that moment.
