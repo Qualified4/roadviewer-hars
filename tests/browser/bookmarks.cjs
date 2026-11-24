@@ -20,7 +20,13 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
  let stderr='',browser;python.stderr.on('data',x=>stderr+=x);
  try{
   const port=await new Promise((resolve,reject)=>{const timer=setTimeout(()=>reject(Error('Server timeout '+stderr)),15000);python.once('exit',code=>{clearTimeout(timer);reject(Error('Server exit '+code+stderr))});python.stdout.on('data',x=>{const m=/READY (\d+)/.exec(String(x));if(m){clearTimeout(timer);resolve(Number(m[1]))}})});
-  browser=await chromium.launch({headless:true});require('./browser-helpers.cjs').openRouteGroups(browser);const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,reducedMotion:'reduce'}),page=await context.newPage(),errors=[];
+  browser=await chromium.launch({headless:true});require('./browser-helpers.cjs').openRouteGroups(browser);const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,reducedMotion:'reduce'});
+  await context.addInitScript(()=>{
+   window.copied=[];
+   Object.defineProperty(navigator,'clipboard',{configurable:true,value:{writeText:async text=>{if(window.denyCopy)throw Error('Denied');window.copied.push(text)}}});
+   document.execCommand=cmd=>{if(cmd!=='copy'||window.failFallback)return false;window.copied.push(document.activeElement.value);return true};
+  });
+  const page=await context.newPage(),errors=[];
   page.on('pageerror',error=>errors.push(error.message));
   const base=`http://127.0.0.1:${port}/api/hassio_ingress/test/`,read=id=>JSON.parse(fs.readFileSync(path.join(dir,id,'meta.json')));
   await page.goto(base);await page.locator('.log-row').first().waitFor();
@@ -42,7 +48,15 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
   await seek(1);await open();await seek(3);assert.equal(await modal.locator('.bookmark-time').textContent(),'0:01.00');
   await modal.locator('.bookmark-now').click();assert.equal(await modal.locator('.bookmark-time').textContent(),'0:03.00');
   await save();assert.deepEqual(read(ids[0]).bookmarks.map(b=>[b.time,b.title]),[[3,'장면 0:03.00']]);
-  await showList();page.once('dialog',d=>d.accept());await panel.getByRole('button',{name:'장면 0:03.00 삭제',exact:true}).click();await panel.getByText('북마크를 삭제했습니다.',{exact:true}).waitFor();
+  await showList();
+  // Untitled bookmark copies only the timestamp (without duplicating it) and shows brief visual + live feedback.
+  const untitledGo=panel.getByRole('button',{name:/0:03.00 장면 0:03.00/});
+  await untitledGo.click();
+  await page.waitForFunction(()=>window.copied.length===1);
+  assert.equal(await page.evaluate(()=>window.copied.at(-1)),'0:03.00');
+  assert.equal(await untitledGo.locator('.bookmark-copied').textContent(),'복사됨');
+  assert.equal(await panel.locator('.bookmark-copy-status').textContent(),'0:03.00 복사됨');
+  page.once('dialog',d=>d.accept());await panel.getByRole('button',{name:'장면 0:03.00 삭제',exact:true}).click();await panel.getByText('북마크를 삭제했습니다.',{exact:true}).waitFor();
   await page.locator('#roadTab').click();await seek(2.5);await open();
   await modal.locator('.bookmark-title').fill('앞차 확인');await modal.locator('.bookmark-note').fill('<img src=x>\n상세 메모');await seek(3);assert.equal(await modal.locator('.bookmark-time').textContent(),'0:02.50');await save();
   assert.equal(read(ids[0]).bookmarks[0].time,2.5);await showList();assert.equal(await panel.locator('.bookmark-list img').count(),0);
@@ -61,8 +75,24 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
   await save();assert.equal(read(ids[0]).bookmarks.length,2);await page.locator('.playback').waitFor({state:'visible'});
   await page.evaluate(()=>{delete visualViewport.height;delete visualViewport.offsetTop;visualViewport.dispatchEvent(new Event('resize'))});
   await panel.getByRole('button',{name:'앞차 확인 수정',exact:true}).click();await modal.locator('.bookmark-title').fill('수정된 장면');await save();assert.equal(read(ids[0]).bookmarks[0].title,'수정된 장면');
-  await panel.getByRole('button',{name:/0:02.50 수정된 장면/}).click();assert.equal(await page.locator('#seek').inputValue(),'2.5');assert.equal(await page.locator('#play').textContent(),'재생');
-  await page.locator('#play').click();await panel.getByRole('button',{name:/0:06.00 두 번째/}).click();assert.equal(await page.locator('#play').textContent(),'일시정지');assert(Number(await page.locator('#seek').inputValue())>=6);await page.locator('#play').click();
+  const firstGo=panel.getByRole('button',{name:/0:02.50 수정된 장면/}),secondGo=panel.getByRole('button',{name:/0:06.00 두 번째/});
+  await firstGo.click();assert.equal(await page.locator('#seek').inputValue(),'2.5');assert.equal(await page.locator('#play').textContent(),'재생');
+  await page.waitForFunction(()=>window.copied.at(-1)==='0:02.50 수정된 장면');
+  assert.equal(await firstGo.locator('.bookmark-copied').textContent(),'복사됨');
+  assert.equal(await panel.locator('.bookmark-copy-status').textContent(),'0:02.50 수정된 장면 복사됨');
+  // Fallback copy path (e.g. non-HTTPS / HA Ingress) also seeks and copies, clearing the previous row's badge.
+  await page.evaluate(()=>{window.denyCopy=true});
+  await page.locator('#play').click();await secondGo.click();assert.equal(await page.locator('#play').textContent(),'일시정지');assert(Number(await page.locator('#seek').inputValue())>=6);await page.locator('#play').click();
+  await page.waitForFunction(()=>window.copied.at(-1)==='0:06.00 두 번째');
+  assert.equal(await firstGo.locator('.bookmark-copied').textContent(),'');
+  assert.equal(await secondGo.locator('.bookmark-copied').textContent(),'복사됨');
+  assert.equal(await panel.locator('.bookmark-copy-status').textContent(),'0:06.00 두 번째 복사됨');
+  await page.evaluate(()=>{window.denyCopy=false});
+  // Title equal to the timestamp itself also copies only the timestamp.
+  await panel.getByRole('button',{name:'두 번째 수정',exact:true}).click();await modal.locator('.bookmark-title').fill('0:06.00');await save();
+  await panel.getByRole('button',{name:/0:06.00 0:06.00/}).click();
+  await page.waitForFunction(()=>window.copied.at(-1)==='0:06.00');
+  assert.equal(await panel.locator('.bookmark-copy-status').textContent(),'0:06.00 복사됨');
   assert((await page.locator('.playback').boundingBox()).height<150,'bookmarks keep playback compact');assert.equal(await page.locator('#bookmarkCount').textContent(),'2');await page.locator('.bookmark-marker').first().click();assert.equal(await page.locator('#seek').inputValue(),'2.5');
   await page.reload();await page.locator('#play:enabled').waitFor();await page.locator('.bookmark-marker').first().waitFor();assert.equal(await page.locator('.bookmark-marker').count(),2);
   await open();await modal.locator('.bookmark-note').focus();await page.keyboard.press('Space');await page.keyboard.press('ArrowRight');assert.equal(await page.locator('#play').textContent(),'재생');assert.equal(await page.locator('#seek').inputValue(),'0');

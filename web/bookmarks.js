@@ -3,13 +3,38 @@
  // Record a scene without leaving the video; the analysis tab remains the list of saved scenes.
  const opener=$('bookmarkOpen'),markers=$('bookmarkMarkers'),view=$('bookmarkView'),count=$('bookmarkCount'),id=location.pathname.split('/').filter(Boolean).at(-1),url='../../api/logs/'+encodeURIComponent(id)+'/bookmarks';
  opener.innerHTML='<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" aria-hidden="true"><path d="M6 3h12v18l-6-4-6 4z"/></svg><span>북마크</span>';
- view.innerHTML=`<p class="bookmark-help">시간을 누르면 영상과 그래프가 함께 이동합니다. 기록 버튼을 누른 순간의 로그 시간을 저장합니다.</p><button class="bookmark-new" type="button">현재 장면 기록</button><p class="bookmark-result" role="status"></p><button class="bookmark-retry" type="button" hidden>목록 다시 불러오기</button><div class="bookmark-list" aria-label="저장된 장면"></div>`;
+ view.innerHTML=`<p class="bookmark-help">항목을 누르면 해당 시점으로 이동하고 시간과 제목을 복사합니다. 기록 버튼을 누른 순간의 로그 시간을 저장합니다.</p><button class="bookmark-new" type="button">현재 장면 기록</button><p class="bookmark-result" role="status"></p><span class="copy-announcement bookmark-copy-status" role="status" aria-live="polite"></span><button class="bookmark-retry" type="button" hidden>목록 다시 불러오기</button><div class="bookmark-list" aria-label="저장된 장면"></div>`;
  const dialog=document.createElement('dialog');dialog.className='editor-dialog bookmark-dialog';dialog.setAttribute('aria-labelledby','bookmarkEditorTitle');
  dialog.innerHTML=`<div class="tag-dialog-head"><h2 id="bookmarkEditorTitle" class="bookmark-editor-title">현재 장면 기록</h2><button class="bookmark-close" type="button">닫기</button></div><form class="bookmark-editor"><fieldset disabled><div class="bookmark-editor-time"><output class="bookmark-time">0:00.00</output><button class="bookmark-now" type="button">현재 시각으로</button></div><label>제목 (선택)<input class="bookmark-title" maxlength="80" autocomplete="off" enterkeyhint="done" placeholder="예: 앞차 인식 오류"></label><label>메모 (선택)<textarea class="bookmark-note" maxlength="1000" rows="2" placeholder="나중에 확인할 내용"></textarea></label><p class="bookmark-help">제목 없이 저장하면 시간으로 이름을 붙입니다. 입력 중에도 선택한 장면 시간은 유지됩니다.</p></fieldset><div class="tag-dialog-footer"><p class="bookmark-result" role="status"></p><div class="bookmark-editor-actions"><button class="bookmark-cancel" type="button" hidden>새 북마크</button><button class="primary bookmark-save" type="submit" disabled>저장</button></div></div></form>`;
  document.body.append(dialog);
- let listLoading=null,items=[],duration=null,busy=false,loadError='',ready=false,editing=null,captured=0,follow=true,overflow='',returnFocus=null;
+ let listLoading=null,items=[],duration=null,busy=false,loadError='',ready=false,editing=null,captured=0,follow=true,overflow='',returnFocus=null,copiedId=null,copiedState='',copyTimer=0;
  const find=selector=>dialog.querySelector(selector)||view.querySelector(selector);
  const message=text=>{for(const root of [view,dialog])root.querySelector('.bookmark-result').textContent=text};
+ function copyText(item){
+  const at=clock(item.time),title=(item.title||'').trim();
+  return !title||title===at||title==='장면 '+at?at:at+' '+title;
+ }
+ function clearCopyFeedback(){
+  clearTimeout(copyTimer);copyTimer=0;copiedId=null;copiedState='';
+  const status=view.querySelector('.bookmark-copy-status');if(status)status.textContent='';
+  for(const el of view.querySelectorAll('.bookmark-go[data-copy]')){
+   delete el.dataset.copy;const badge=el.querySelector('.bookmark-copied');if(badge)badge.textContent='';
+  }
+ }
+ async function copyBookmark(item,button){
+  const text=copyText(item);clearCopyFeedback();
+  try{
+   await copyTextToClipboard(text,button);
+   copiedId=item.id;copiedState='ok';
+   const status=view.querySelector('.bookmark-copy-status');if(status)status.textContent=text+' 복사됨';
+   if(button.isConnected){button.dataset.copy='ok';const badge=button.querySelector('.bookmark-copied');if(badge)badge.textContent='복사됨'}
+  }catch{
+   copiedId=item.id;copiedState='error';
+   const status=view.querySelector('.bookmark-copy-status');if(status)status.textContent='복사하지 못했습니다.';
+   if(button.isConnected){button.dataset.copy='error';const badge=button.querySelector('.bookmark-copied');if(badge)badge.textContent='복사 실패'}
+  }
+  copyTimer=setTimeout(clearCopyFeedback,1800);
+ }
  async function request(method='GET',suffix='',body){
   const response=await fetch(url+suffix,{method,headers:{'Content-Type':'application/json','X-RoadViewer-Request':'1'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
   const result=await response.json();if(!response.ok)throw Error(result.error||'북마크를 저장하지 못했습니다.');return result.bookmarks;
@@ -44,9 +69,12 @@
   const list=view.querySelector('.bookmark-list');list.replaceChildren();count.textContent=items.length?String(items.length):'';
   for(const item of items){
    const row=document.createElement('div');row.className='bookmark-row';
-   const go=document.createElement('button');go.type='button';go.className='bookmark-go';
+   const go=document.createElement('button');go.type='button';go.className='bookmark-go';go.title=copyText(item)+' · 이동 및 복사';
    const time=document.createElement('span');time.className='bookmark-at';time.textContent=clock(item.time);
-   const title=document.createElement('span');title.textContent=item.title;go.append(time,title);go.disabled=busy||!data||loading||item.time>data.duration;go.onclick=()=>jump(item);
+   const title=document.createElement('span');title.className='bookmark-label';title.textContent=item.title;
+   const copied=document.createElement('span');copied.className='bookmark-copied';copied.setAttribute('aria-hidden','true');
+   if(copiedId===item.id&&copiedState){go.dataset.copy=copiedState;copied.textContent=copiedState==='ok'?'복사됨':'복사 실패'}
+   go.append(time,title,copied);go.disabled=busy||!data||loading||item.time>data.duration;go.onclick=()=>{jump(item);void copyBookmark(item,go)};
    const edit=document.createElement('button');edit.type='button';edit.textContent='수정';edit.disabled=busy;edit.setAttribute('aria-label',item.title+' 수정');edit.onclick=()=>{editing=item.id;follow=false;capture(item.time);find('.bookmark-title').value=item.title;find('.bookmark-note').value=item.note;find('.bookmark-editor-title').textContent='북마크 수정';find('.bookmark-save').textContent='수정 저장';find('.bookmark-cancel').hidden=false;openEditor()};
    const remove=document.createElement('button');remove.type='button';remove.className='bookmark-delete';remove.textContent='삭제';remove.disabled=busy;remove.setAttribute('aria-label',item.title+' 삭제');remove.onclick=()=>{if(confirm('이 북마크를 삭제할까요?'))mutate('DELETE','/'+item.id)};
    row.append(go,edit,remove);if(item.note){const note=document.createElement('p');note.textContent=item.note;row.append(note)}list.append(row);
