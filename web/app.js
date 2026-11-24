@@ -176,6 +176,7 @@ const overlayGeometryCache=new Map(),wideBasisCache=new WeakMap();
 // road coordinates from the camera, this far behind it (openpilot's RADAR_TO_CAMERA). Without it a near lead's mark sat
 // well short of the car.
 const RADAR_TO_CAMERA=1.52;
+const CCNC_CAR_LENGTH=4.5,CCNC_CAR_WIDTH=1.8,CCNC_TRUCK_LENGTH=8,CCNC_TRUCK_WIDTH=2.3,CCNC_REFERENCE_HEIGHT=1.5;
 function wideProjectionBasis(info){
  if(!info||!['calibrated','recalibrating'].includes(info.calibrationStatus)||![info.rpy,info.wideRpy].every(a=>Array.isArray(a)&&a.length===3&&a.every(Number.isFinite)))return null;
  if(wideBasisCache.has(info))return wideBasisCache.get(info);
@@ -216,7 +217,7 @@ function buildReplayOverlay(frame,g){
   if(kind==='ccnc'){
    let fx=1,fy=0;
    if(inner.length===2){const samples=inner.map(line=>[sample(line,x),sample(line,x+5)]);if(samples.every(pair=>pair.every(Boolean))){const lateral=samples.reduce((sum,[a,b])=>sum+b[1]-a[1],0)/2,length=Math.hypot(5,lateral);fx=5/length;fy=lateral/length}}
-   marker.box=[];for(const up of [0,1.5])for(const dx of [0,4.5])for(const dy of [-.9,.9])marker.box.push(project([x+dx*fx-dy*fy,y+dx*fy+dy*fx,ground(x+dx*fx)-up]));
+   marker.box=[];for(const up of [0,CCNC_REFERENCE_HEIGHT])for(const dx of [0,CCNC_CAR_LENGTH])for(const dy of [-CCNC_CAR_WIDTH/2,CCNC_CAR_WIDTH/2])marker.box.push(project([x+dx*fx-dy*fy,y+dx*fy+dy*fx,ground(x+dx*fx)-up]));
   }
   markers.push(marker);
  });
@@ -610,6 +611,8 @@ function blindspotLevels(frames,index,time){
 // there instead of fading out and rising again; positions glide between 20 Hz samples. A missing sample dims the
 // box at once so brief dropouts stay visible. The "부드러운 움직임" setting turns the motion off.
 const CCNC_SLOTS=['LF','FF','RF'];
+// ADRV_0x162 DETECT: 5 and 6 are the cluster's grey and white truck shapes.
+const ccncTruck=target=>Number(target.detect===5||target.detect===6);
 function ccncSmoothMotion(){return motionAllowed()&&document.getElementById('ccncMotion')?.checked!==false}
 function mixColor(a,b,k){
  const parse=c=>[1,3,5].map(i=>parseInt(c.slice(i,i+2),16)),[x,y]=[parse(a),parse(b)];
@@ -619,7 +622,7 @@ function lerpBox(a,b,k){return a.map((p,i)=>p.map((v,j)=>v+(b[i][j]-v)*k))}
 function ccncBoxTransitions(frames,index,time){
  const current=frames[index];if(!current?.valid)return [];
  // overlap: the old slot may still be sent for a moment after the new one starts.
- const rise=.45,slide=.3,fade=.6,overlap=.3,motion=ccncSmoothMotion();
+ const rise=.45,slide=.3,fade=.6,overlap=.3,morph=.3,motion=ccncSmoothMotion();
  const find=(i,slot)=>{
   const frame=frames[i];if(!frame?.valid||!Array.isArray(frame.ccncTargets))return null;
   const targetIndex=frame.ccncTargets.findIndex(target=>target.slot===slot),target=frame.ccncTargets[targetIndex];
@@ -660,6 +663,19 @@ function ccncBoxTransitions(frames,index,time){
   while(from.kind==='same'&&frames[i].t-frames[from.index].t<=limit){start=from.index;from=origin(start,slot)}
   return {start,from:from.kind==='same'?{kind:'boundary'}:from};
  };
+ // Ease each recent class change along the same car's history, including across a slot handoff.
+ // Overlapping changes add their remaining offsets, so a reversal starts at the current shape.
+ const truckAt=(i,slot,entry,at)=>{
+  let type=ccncTruck(entry.target),amount=type;
+  while(at-frames[i].t<morph){
+   const from=origin(i,slot);
+   if(from.kind!=='same'&&from.kind!=='other')break;
+   const previous=ccncTruck(from.target??find(from.index,slot).target);
+   amount+=(previous-type)*(1-ease((at-frames[i].t)/morph));
+   type=previous;i=from.index;slot=from.slot??slot;
+  }
+  return Math.max(0,Math.min(1,amount));
+ };
  // A car that moved to another slot is drawn there only: its old slot neither lingers nor fades out.
  const movedAway=(slot,source)=>{
   for(const other of CCNC_SLOTS){
@@ -683,9 +699,12 @@ function ccncBoxTransitions(frames,index,time){
   // A missing sample is shown at once as a clear dip (40%), then the box fades out.
   const alpha=fading?.4*(1-ease((time-frames[source+1].t)/fade)):1;
   if(alpha<=0)continue;
-  let height=1,marker=entry.marker,color=ccncTargetColor(entry.target),animated=fading,shift=null;
+  const type=ccncTruck(entry.target);
+  let height=1,marker=entry.marker,color=ccncTargetColor(entry.target),truck=type,animated=fading,shift=null;
   if(motion){
    const appearTime=fading?frames[source+1].t:time,run=runOf(source,slot,Math.max(rise,slide));
+   truck=truckAt(source,slot,entry,appearTime);
+   animated||=truck!==type;
    // Glide between this sample and the next one while playing.
    if(!fading){
     const before=time<frames[index].t?index-1:index,after=before+1;
@@ -704,7 +723,9 @@ function ccncBoxTransitions(frames,index,time){
     }else{height=ease(since/rise);if(height<1)animated=true}
    }
   }
-  entries.push({...entry,marker,color,height,alpha,animated,shift});  // shift: sliding in from another slot (k 0..1)
+  const length=CCNC_CAR_LENGTH+(CCNC_TRUCK_LENGTH-CCNC_CAR_LENGTH)*truck,width=CCNC_CAR_WIDTH+(CCNC_TRUCK_WIDTH-CCNC_CAR_WIDTH)*truck;
+  if(truck>0)color=mixColor(color,'#ffaa24',truck);
+  entries.push({...entry,marker,color,height,alpha,animated,shift,truck,length,width});  // shift: sliding in from another slot (k 0..1)
  }
  return entries;
 }
