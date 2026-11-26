@@ -53,6 +53,22 @@
 <div class="storage-transfer" role="group" aria-label="기록 내보내기·불러오기"><div class="storage-transfer-row"><p>원본 로그·영상과 기록 정보를 .tar 파일 하나로 옮깁니다. Drive·NAS 파일은 위치만 담습니다.</p><div class="storage-transfer-actions"><button id="exportLogs" type="button">내보내기</button><button id="importLogs" type="button">불러오기</button><button id="importCancel" type="button" hidden>중단</button></div></div><input id="importFile" type="file" accept=".tar,application/x-tar" hidden><progress id="importProgress" max="100" value="0" aria-label="불러오기 진행률" hidden></progress><p id="transferStatus" role="status"></p><div id="transferFailures" role="alert" hidden></div></div></section>
 <section id="archiveSummary" class="storage-archive" aria-labelledby="archiveSummaryTitle" hidden><div class="storage-section-heading"><h4 id="archiveSummaryTitle">아카이브 저장소</h4></div><dl id="archiveUsage" class="archive-metrics" role="status" aria-label="원격 저장공간 현황"></dl><details id="archiveHealth" class="archive-health"><summary>실행 · 사본 정보</summary><dl id="archiveSecondaryUsage" class="archive-secondary" aria-label="아카이빙 보조 정보"></dl></details></section></div>
 <p id="storageStatus" role="status" class="storage-operation-status"></p>
+<section class="storage-editor-section" aria-labelledby="preparedTitle">
+<div class="storage-editor-heading"><div><h4 id="preparedTitle">재생 데이터 저장소</h4><p>새 변환의 영상, 분석 데이터와 썸네일을 저장할 위치입니다.</p></div></div>
+<form id="preparedForm">
+<fieldset id="preparedFields" disabled>
+<div class="storage-basic-fields">
+<div class="storage-field"><label for="preparedLocation">저장 위치</label><select id="preparedLocation"><option value="local">로컬</option><option value="nas">NAS 공유</option></select></div>
+<div class="storage-field" id="preparedPathField" hidden><label for="preparedPath">NAS 공유 폴더</label><input id="preparedPath" type="text" placeholder="/share/nas/roadviewer-prepared" aria-describedby="preparedPathHelp" autocomplete="off" spellcheck="false"><p id="preparedPathHelp">Home Assistant의 Share 저장소 아래에 이 폴더를 먼저 만드세요.</p></div>
+</div>
+<div class="storage-transfer-actions"><button type="submit">재생 저장소 저장</button></div>
+</fieldset>
+</form>
+<p id="preparedStatus" role="status">설정을 불러오는 중입니다.</p>
+<p>NAS 재생 데이터 <strong id="preparedNasUsage">—</strong></p>
+<div id="preparedMoveActions" class="storage-transfer-actions"><button id="preparedMoveNas" type="button" disabled>기존 재생 데이터 NAS로 이동</button><button id="preparedMoveLocal" type="button" disabled>재생 데이터 로컬로 되돌리기</button></div>
+<p id="preparedMoveStatus" role="status"></p>
+</section>
 <form id="archiveForm" class="storage-editor" aria-describedby="storageEditorNote">
 <fieldset id="storageEditorFields" disabled>
 <section class="storage-editor-section" aria-labelledby="storageBasicTitle">

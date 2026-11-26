@@ -3,12 +3,13 @@ use crate::{
     error::{ApiError, Result, bad, missing},
     http_archive, http_storage,
     media_read::Source,
+    prepared::{self as prepared_storage, NasLocation},
     store::{Store, atomic_json, id, read_json, sha},
     upload::Uploads,
 };
 use axum::{
     Json, Router,
-    body::{Body, Bytes},
+    body::{Body, Bytes, HttpBody},
     extract::{ConnectInfo, DefaultBodyLimit, Path, Query, Request, State},
     http::{HeaderMap, Method, StatusCode, Uri, header as h},
     middleware::{self, Next},
@@ -226,6 +227,14 @@ pub fn ingress(app: App) -> Router {
         )
         .route("/api/storage/cleanup", post(http_storage::cleanup))
         .route(
+            "/api/settings/prepared",
+            get(http_storage::prepared_settings).post(http_storage::prepared_settings),
+        )
+        .route(
+            "/api/settings/prepared/move",
+            get(http_storage::prepared_move).post(http_storage::prepared_move),
+        )
+        .route(
             "/api/settings/archive",
             get(http_archive::preferences_api).post(http_archive::preferences_api),
         )
@@ -295,6 +304,7 @@ pub fn ingress(app: App) -> Router {
         .route("/api/logs/{id}/telemetry", get(telemetry))
         .route("/api/logs/{id}/track", get(track))
         .route("/api/logs/{id}/video", get(video))
+        .route("/api/logs/{id}/playback", post(playback))
         .route("/api/logs/{id}/thumbnail", get(thumbnail))
         .route("/api/logs/{id}/original/{kind}", get(original))
         .route("/api/logs/{id}/download/video", get(download_video))
@@ -978,6 +988,20 @@ async fn remove_prepared(
             "처리 중에는 변환 데이터를 제거할 수 없습니다.",
         ));
     }
+    app.store
+        .prepared
+        .finish_pending(&app.store, &folder, &mut meta)
+        .await
+        .map_err(prepared_storage::api_error)?;
+    let remote = prepared_storage::location(&meta)?;
+    if let Some(target) = &remote {
+        app.store
+            .prepared
+            .remove_nas(&id, target)
+            .await
+            .map_err(prepared_storage::api_error)?;
+        prepared_storage::set_location(&mut meta, None, Default::default());
+    }
     let prepared = folder.join("prepared");
     if prepared.exists() {
         let real = tokio::fs::canonicalize(&prepared).await?;
@@ -990,6 +1014,7 @@ async fn remove_prepared(
     meta["status"] = json!("unconverted");
     meta["manual_conversion"] = json!(false);
     meta["auto_excluded"] = json!(true);
+    meta.as_object_mut().unwrap().remove("deferred");
     app.store.save_meta(meta).await?;
     app.jobs.progress.write().await.remove(&id);
     Ok(Json(json!({"status":"unconverted"})))
@@ -1012,6 +1037,115 @@ async fn cancel_conversion(State(app): State<App>, Path(id): Path<String>) -> Re
     }
     Ok(Json(json!({"status":app.store.meta(&id).await?["status"]})))
 }
+// The record lock closes the race between a new replay request and the migration's skip check.
+async fn playback_meta(app: &App, id: &str) -> Result<(Value, Arc<()>)> {
+    let lock = app.store.record_lock(id).await;
+    let _guard = tokio::time::timeout(prepared_storage::PROBE, lock.lock())
+        .await
+        .map_err(|_| {
+            ApiError(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "prepared_migration_running",
+            )
+        })?;
+    let meta = app.store.meta(id).await?;
+    Ok((meta, app.store.prepared.touch_playback(id).await))
+}
+async fn playback(State(app): State<App>, Path(id): Path<String>) -> Result<StatusCode> {
+    playback_meta(&app, &id).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+fn hold_playback(response: Response, lease: Arc<()>) -> Response {
+    use futures_util::StreamExt;
+    if response.body().size_hint().exact() == Some(0) {
+        return response;
+    }
+    response.map(|body| {
+        Body::from_stream(body.into_data_stream().map(move |chunk| {
+            let _lease = &lease;
+            chunk
+        }))
+    })
+}
+
+// ServeFile retains the established Range and HEAD semantics. The descriptor keeps the
+// already-validated file open across renames and avoids resolving the share path again.
+async fn serve_nas_file(
+    app: &App,
+    file: std::fs::File,
+    request: Request,
+    mime: &'static str,
+) -> Result<Response> {
+    use futures_util::StreamExt;
+    use http_body_util::BodyExt;
+    use std::os::fd::AsRawFd;
+    let slot = app
+        .store
+        .prepared
+        .read_slot()
+        .map_err(prepared_storage::api_error)?;
+    let open = tokio::spawn(async move {
+        let path = PathBuf::from(format!("/proc/self/fd/{}", file.as_raw_fd()));
+        let response = serve(path, request).await?;
+        drop(file);
+        Ok::<_, ApiError>((slot, response))
+    });
+    let (slot, mut response) = tokio::time::timeout(prepared_storage::PROBE, open)
+        .await
+        .map_err(|_| {
+            ApiError(
+                StatusCode::SERVICE_UNAVAILABLE,
+                "prepared_storage_unavailable",
+            )
+        })?
+        .map_err(|_| bad("invalid_prepared_data"))??;
+    if response.status().is_success() {
+        response
+            .headers_mut()
+            .insert(h::CONTENT_TYPE, axum::http::HeaderValue::from_static(mime));
+    }
+    if response.body().is_end_stream() {
+        return Ok(response);
+    }
+    // The in-flight read owns its slot, even when the HTTP client closes the stream.
+    Ok(response.map(|body| {
+        Body::from_stream(
+            futures_util::stream::unfold(Some((slot, body)), |state| async {
+                let (slot, mut body) = state?;
+                let read = tokio::spawn(async move {
+                    let frame = body.frame().await?;
+                    Some((frame, (slot, body)))
+                });
+                match tokio::time::timeout(std::time::Duration::from_secs(20), read).await {
+                    Ok(Ok(Some((Ok(frame), state)))) => match frame.into_data() {
+                        Ok(bytes) => Some((Ok(bytes), Some(state))),
+                        Err(_) => None,
+                    },
+                    Ok(Ok(None)) => None,
+                    _ => Some((
+                        Err(std::io::Error::other("prepared_storage_unavailable")),
+                        None,
+                    )),
+                }
+            })
+            .fuse(),
+        )
+    }))
+}
+
+async fn open_prepared_nas(
+    app: &App,
+    target: &NasLocation,
+    id: &str,
+    file: String,
+) -> Result<std::fs::File> {
+    app.store
+        .prepared
+        .open_file(target, id, file)
+        .await
+        .map_err(prepared_storage::api_error)
+}
+
 async fn prepared(
     app: &App,
     id: &str,
@@ -1019,8 +1153,8 @@ async fn prepared(
     query: &BTreeMap<String, String>,
     request: Request,
 ) -> Result<Response> {
+    let (meta, _lease) = playback_meta(app, id).await?;
     let folder = app.store.folder(id).await?;
-    let meta = app.store.meta(id).await?;
     if meta["status"] != "ready" {
         // Python `data`/`telemetry`: a sentence when the record holds no error of its own.
         let body = if name == "telemetry" {
@@ -1036,6 +1170,39 @@ async fn prepared(
             json!({"status":meta["status"],"error":error})
         };
         return Ok((StatusCode::CONFLICT, Json(body)).into_response());
+    }
+    if let Some(target) = prepared_storage::location(&meta)? {
+        match open_prepared_nas(app, &target, id, format!("{name}.json.gz")).await {
+            Ok(file) if query.get("format").is_some_and(|v| v == "gzip") => {
+                return Ok(hold_playback(
+                    serve_nas_file(app, file, request, "application/gzip").await?,
+                    _lease,
+                ));
+            }
+            Ok(file) => {
+                let result = app
+                    .store
+                    .prepared
+                    .quick(move || crate::logs::read_gzip_file(file).map_err(std::io::Error::other))
+                    .await
+                    .map_err(prepared_storage::api_error)?;
+                return Ok(Json(result).into_response());
+            }
+            Err(e) if e.0 == StatusCode::NOT_FOUND => {}
+            Err(e) => return Err(e),
+        }
+        match open_prepared_nas(app, &target, id, format!("{name}.json")).await {
+            Ok(file) => {
+                return Ok(hold_playback(
+                    serve_nas_file(app, file, request, "application/json").await?,
+                    _lease,
+                ));
+            }
+            Err(e) if name == "telemetry" && e.0 == StatusCode::NOT_FOUND => {
+                return Ok(no_telemetry());
+            }
+            Err(e) => return Err(e),
+        }
     }
     let path = folder.join("prepared").join(format!("{name}.json.gz"));
     if path.exists() {
@@ -1054,14 +1221,13 @@ async fn prepared(
     }
     let path = folder.join("prepared").join(format!("{name}.json"));
     if name == "telemetry" && !path.is_file() {
-        return Ok((
-            StatusCode::NOT_FOUND,
-            Json(json!({"error":"차량 정보가 없는 변환 데이터입니다. 로그 목록에서 제거 후 변환해 주세요."})),
-        )
-            .into_response());
+        return Ok(no_telemetry());
     }
     safe_file(&folder, &path).await?;
     serve(path, request).await
+}
+fn no_telemetry() -> Response {
+    (StatusCode::NOT_FOUND, Json(json!({"error":"차량 정보가 없는 변환 데이터입니다. 로그 목록에서 제거 후 변환해 주세요."}))).into_response()
 }
 async fn data(
     State(app): State<App>,
@@ -1069,7 +1235,14 @@ async fn data(
     Query(q): Query<BTreeMap<String, String>>,
     request: Request,
 ) -> Result<Response> {
-    prepared(&app, &id, "data", &q, request).await
+    let mut response = prepared(&app, &id, "data", &q, request).await?;
+    if response.status().is_success() {
+        response.headers_mut().insert(
+            "x-roadviewer-playback",
+            axum::http::HeaderValue::from_static("1"),
+        );
+    }
+    Ok(response)
 }
 async fn telemetry(
     State(app): State<App>,
@@ -1086,29 +1259,38 @@ async fn track(
 ) -> Result<Response> {
     let target = app.store.meta(&id).await?;
     let key = crate::track::route_order(&target).0;
-    let mut ready_segments = app
+    let ready: Vec<_> = app
         .store
         .records
         .read()
         .await
         .values()
         .filter(|m| m["status"] == "ready")
-        .filter_map(|m| {
-            let (k, segment) = crate::track::route_order(m);
-            if k != key {
-                return None;
-            }
-            Some((segment, m["id"].as_str()?.to_owned()))
-        })
+        .filter(|m| crate::track::route_order(m).0 == key)
+        .cloned()
+        .collect();
+    let shares = app.store.prepared.track_shares(&ready).await?;
+    let mut ready_segments = ready
+        .iter()
+        .filter_map(|m| Some((crate::track::route_order(m).1, m["id"].as_str()?.to_owned())))
         .collect::<Vec<_>>();
     ready_segments.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
     let root = app.store.root.clone();
     let if_none_match = header(&headers, "if-none-match").to_owned();
-    let answer = tokio::task::spawn_blocking(move || {
-        crate::track::build_single_track(&root, &id, &key, &ready_segments, &if_none_match)
-    })
-    .await
-    .map_err(|_| bad("invalid_track_data"))?;
+    let has_nas = !shares.is_empty();
+    let operation = move || {
+        prepared_storage::with_track_dirs(shares, Some(&id), |paths| {
+            crate::track::build_single_track(
+                &root,
+                &id,
+                &key,
+                &ready_segments,
+                paths,
+                &if_none_match,
+            )
+        })
+    };
+    let answer = run_tracks(&app, has_nas, operation).await?;
     Ok(tracks_answer_response(answer))
 }
 fn tracks_answer_response(answer: crate::track::TracksAnswer) -> Response {
@@ -1145,14 +1327,36 @@ async fn tracks(
             .map(str::to_owned)
             .collect::<std::collections::BTreeSet<_>>()
     });
+    let shares = app.store.prepared.track_shares(&metas).await?;
+    let has_nas = !shares.is_empty();
     let root = app.store.root.clone();
     let if_none_match = header(&headers, "if-none-match").to_owned();
-    let answer = tokio::task::spawn_blocking(move || {
-        crate::track::build_tracks(&root, &metas, wanted.as_ref(), &if_none_match)
-    })
-    .await
-    .map_err(|_| bad("invalid_track_data"))?;
-    Ok(tracks_answer_response(answer))
+    let operation = move || {
+        prepared_storage::with_track_dirs(shares, None, |paths| {
+            crate::track::build_tracks(&root, &metas, wanted.as_ref(), paths, &if_none_match)
+        })
+    };
+    Ok(tracks_answer_response(
+        run_tracks(&app, has_nas, operation).await?,
+    ))
+}
+async fn run_tracks(
+    app: &App,
+    has_nas: bool,
+    op: impl FnOnce() -> std::io::Result<crate::track::TracksAnswer> + Send + 'static,
+) -> Result<crate::track::TracksAnswer> {
+    if has_nas {
+        app.store
+            .prepared
+            .quick(op)
+            .await
+            .map_err(prepared_storage::api_error)
+    } else {
+        tokio::task::spawn_blocking(op)
+            .await
+            .map_err(|_| bad("invalid_track_data"))?
+            .map_err(prepared_storage::api_error)
+    }
 }
 async fn video(
     State(app): State<App>,
@@ -1161,7 +1365,7 @@ async fn video(
     request: Request,
 ) -> Result<Response> {
     let folder = app.store.folder(&id).await?;
-    let meta = app.store.meta(&id).await?;
+    let (meta, lease) = playback_meta(&app, &id).await?;
     if meta["status"] != "ready" {
         return Ok((
             StatusCode::CONFLICT,
@@ -1170,16 +1374,18 @@ async fn video(
             .into_response());
     }
     // Python `video`: the front camera by default when the conversion produced it.
-    let summary: Value = read_json(&folder.join("prepared/summary.json"))
-        .await
-        .unwrap_or(Value::Null);
+    let target = prepared_storage::location(&meta)?;
+    let videos = if target.is_some() {
+        meta["videos"].clone()
+    } else {
+        read_json::<Value>(&folder.join("prepared/summary.json"))
+            .await
+            .unwrap_or(Value::Null)["videos"]
+            .clone()
+    };
     let preferred = ["front", "qcamera", "wide"]
         .into_iter()
-        .find(|k| {
-            summary["videos"][k]
-                .as_object()
-                .is_some_and(|v| !v.is_empty())
-        })
+        .find(|k| videos[k].as_object().is_some_and(|v| !v.is_empty()))
         .unwrap_or("qcamera");
     let source = q.get("source").map(String::as_str).unwrap_or(preferred);
     let name = match source {
@@ -1189,27 +1395,38 @@ async fn video(
         _ => return Err(missing("not_found")),
     };
     // Python `video`: the stored MP4 wherever the index has it, else the converted one in prepared/.
-    let path = match crate::media_read::media_file(&app.archive, &id, &meta, name).await {
+    let mut response = match crate::media_read::media_file(&app.archive, &id, &meta, name).await {
         Err(e) => return Ok(e.into_response()),
         Ok(Some(Source::Remote(file))) => {
-            return Ok(crate::media_read::remote_response(
-                &app.archive,
-                &file,
-                "video/mp4",
-                None,
-                request.headers(),
-            )
-            .await);
+            return Ok(hold_playback(
+                crate::media_read::remote_response(
+                    &app.archive,
+                    &file,
+                    "video/mp4",
+                    None,
+                    request.headers(),
+                )
+                .await,
+                lease,
+            ));
         }
-        Ok(Some(Source::Path(path))) => path,
-        Ok(None) => folder.join("prepared").join(name),
+        Ok(None) if target.is_some() => {
+            let file = open_prepared_nas(&app, &target.unwrap(), &id, name.to_owned()).await?;
+            serve_nas_file(&app, file, request, "video/mp4").await?
+        }
+        found => {
+            let path = match found {
+                Ok(Some(Source::Path(path))) => path,
+                _ => folder.join("prepared").join(name),
+            };
+            media_file_check(&folder, &path).await?;
+            serve(path, request).await?
+        }
     };
-    media_file_check(&folder, &path).await?;
-    let mut response = serve(path, request).await?;
     response
         .headers_mut()
         .insert(h::CACHE_CONTROL, "no-cache".parse().unwrap());
-    Ok(response)
+    Ok(hold_playback(response, lease))
 }
 async fn thumbnail(
     State(app): State<App>,
@@ -1217,9 +1434,18 @@ async fn thumbnail(
     request: Request,
 ) -> Result<Response> {
     let folder = app.store.folder(&id).await?;
-    let path = folder.join("prepared/thumbnail.jpg");
-    safe_file(&folder, &path).await?;
-    let mut response = serve(path, request).await?;
+    let meta = app.store.meta(&id).await?;
+    let mut response = if let Some(target) = prepared_storage::location(&meta)? {
+        if meta["prepared_stale"] == true {
+            return Err(missing("not_found"));
+        }
+        let file = open_prepared_nas(&app, &target, &id, "thumbnail.jpg".into()).await?;
+        serve_nas_file(&app, file, request, "image/jpeg").await?
+    } else {
+        let path = folder.join("prepared/thumbnail.jpg");
+        safe_file(&folder, &path).await?;
+        serve(path, request).await?
+    };
     response
         .headers_mut()
         .insert(h::CACHE_CONTROL, "private, max-age=86400".parse().unwrap());
@@ -1251,7 +1477,15 @@ async fn original(
         Ok(Some(Source::Path(path))) => path,
         Ok(None) => folder.join(&kind),
     };
-    if kind.ends_with(".mp4") && !path.is_file() {
+    if kind.ends_with(".mp4") && !tokio::fs::try_exists(&path).await? {
+        if let Some(target) = prepared_storage::location(&meta)? {
+            let file = open_prepared_nas(&app, &target, &id, kind.clone()).await?;
+            return Ok(attachment(
+                serve_nas_file(&app, file, request, "video/mp4").await?,
+                &meta,
+                &kind,
+            ));
+        }
         path = folder.join("prepared").join(&kind);
     }
     if !path.exists()
@@ -1277,7 +1511,9 @@ async fn original(
                     Err(e) => return Ok(e.into_response()),
                 }
             }
-            Ok(None) => folder.join("prepared").join(mp4),
+            Ok(None) => prepared_download_path(&app, &folder, &meta, mp4)
+                .await?
+                .ok_or_else(|| missing("not_found"))?,
         };
         media_file_check(&folder, &retained).await?;
         let exports = app.store.root.join(".exports");
@@ -1308,6 +1544,40 @@ async fn original(
     media_file_check(&folder, &path).await?;
     Ok(attachment(serve(path, request).await?, &meta, &kind))
 }
+pub(crate) async fn prepared_download_path(
+    app: &App,
+    folder: &std::path::Path,
+    meta: &Value,
+    mp4: &str,
+) -> Result<Option<PathBuf>> {
+    if meta["prepared_stale"] == true {
+        return Ok(None);
+    }
+    let prepared = app
+        .store
+        .prepared
+        .read_dir(folder, meta)
+        .await
+        .map_err(prepared_storage::api_error)?;
+    let path = prepared.join(mp4);
+    if prepared_storage::location(meta)?.is_some() {
+        let check = path.clone();
+        let found = app
+            .store
+            .prepared
+            .quick(move || match crate::archive::nas::share_meta(&check) {
+                Ok(m) => Ok(m.is_file()),
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(false),
+                Err(e) => Err(e),
+            })
+            .await
+            .map_err(prepared_storage::api_error)?;
+        Ok(found.then_some(path))
+    } else {
+        Ok(path.is_file().then_some(path))
+    }
+}
+
 /// A file a media route serves: inside the recording folder it must stay there (no link out); elsewhere it is a
 /// path the archive index resolved on the share, which must be a regular file there and not a link.
 async fn media_file_check(folder: &std::path::Path, path: &std::path::Path) -> Result<()> {

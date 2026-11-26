@@ -7,7 +7,7 @@ use crate::{
 use anyhow::Context;
 use serde_json::{Value, json};
 use std::{
-    collections::{BTreeMap, VecDeque},
+    collections::{BTreeMap, BTreeSet, VecDeque},
     process::Stdio,
     sync::{
         Arc,
@@ -25,6 +25,7 @@ pub struct Jobs {
     store: Arc<Store>,
     uploads: Arc<Uploads>,
     active: Mutex<BTreeMap<String, Arc<Notify>>>,
+    pending_nas: Mutex<BTreeSet<String>>,
     // Held while one admission measures, decides and reserves.
     memory: Mutex<Arc<MemoryGate>>,
     pub progress: RwLock<BTreeMap<String, Value>>,
@@ -401,6 +402,7 @@ impl Jobs {
             store,
             uploads,
             active: Mutex::new(BTreeMap::new()),
+            pending_nas: Mutex::default(),
             memory: Mutex::new(Arc::new(MemoryGate::default())),
             progress: RwLock::new(BTreeMap::new()),
         });
@@ -420,13 +422,21 @@ impl Jobs {
                 .map_err(|_| anyhow::anyhow!("invalid conversion record"))?;
             let journal = folder.join(".conversion.json");
             let mut journaled = None;
+            let mut nas_pending = false;
             if journal.is_file() {
                 let work: Value = read_json(&journal).await?;
                 let generation = work["generation"]
                     .as_str()
                     .filter(|v| crate::store::valid_id(v))
                     .context("invalid conversion journal")?;
-                jobs.publish(&record, generation).await?;
+                // A NAS publication waits for the share after startup, with its local stage intact.
+                nas_pending = work.get("prepared_target").is_some()
+                    || work.get("prepared_previous").is_some();
+                if nas_pending {
+                    jobs.pending_nas.lock().await.insert(record.clone());
+                } else {
+                    jobs.publish(&record, generation).await?;
+                }
                 journaled = Some(format!(".convert-{generation}"));
             }
             // A conversion a killed process left before it completed: no journal names it, so it was
@@ -448,7 +458,10 @@ impl Jobs {
                 .meta(&record)
                 .await
                 .map_err(|_| anyhow::anyhow!("missing conversion record"))?;
-            if meta["status"] == "ready" && meta.get("video_downloads").is_none() {
+            if meta["status"] == "ready"
+                && meta.get("video_downloads").is_none()
+                && meta.get("prepared_nas").is_none()
+            {
                 meta["video_downloads"] = download_entries(&folder).await?;
                 jobs.store
                     .save_meta(meta.clone())
@@ -456,8 +469,14 @@ impl Jobs {
                     .map_err(|_| anyhow::anyhow!("download metadata recovery failed"))?;
             }
             if meta["status"] == "processing" {
-                meta["status"] = json!("queued");
-                meta["error"] = Value::Null;
+                if nas_pending {
+                    meta["status"] = json!("unconverted");
+                    meta["error"] = json!(crate::prepared::WAIT_MESSAGE);
+                    meta["deferred"] = json!(crate::prepared::WAITING);
+                } else {
+                    meta["status"] = json!("queued");
+                    meta["error"] = Value::Null;
+                }
                 jobs.store
                     .save_meta(meta)
                     .await
@@ -619,22 +638,36 @@ impl Jobs {
                         .total_cmp(&b["uploaded"].as_f64().unwrap_or(0.))
                 })
         });
+        let mut nas_ready = BTreeMap::new();
+        let pending = self.pending_nas.lock().await.clone();
+        if !pending.is_empty() {
+            let records = self.store.records.read().await;
+            self.pending_nas
+                .lock()
+                .await
+                .retain(|id| records.contains_key(id));
+        }
         for row in rows {
             let record = row["id"].as_str().context("missing conversion id")?;
             // A job deferred for its archive waits for the archiver to queue it again once the archive
             // answers: picked up here it would sit in the queue under the deferral warning, and loop
             // through the same deferral while the archive is away.
             let waiting = |m: &Value| m["status"] == "unconverted" && m["deferred"] == "storage";
-            let eligible = row["status"] == "queued"
+            let prepared_wait = row["deferred"] == crate::prepared::WAITING;
+            let resume = pending.contains(record);
+            let eligible = resume
+                || row["status"] == "queued"
                 || (row["status"] == "unconverted"
-                    && automatic
-                    && row["auto_excluded"] != true
+                    && (automatic && row["auto_excluded"] != true
+                        || prepared_wait && row["manual_conversion"] == true)
                     && !waiting(&row));
             if !eligible {
                 continue;
             }
             let lock = self.store.record_lock(record).await;
-            let _guard = lock.lock().await;
+            let Ok(_guard) = lock.try_lock() else {
+                continue;
+            };
             if self.busy(record).await {
                 continue;
             }
@@ -642,7 +675,66 @@ impl Jobs {
             let Ok(mut meta) = self.store.meta(record).await else {
                 continue;
             };
+            if resume {
+                let journal = self.store.root.join(record).join(".conversion.json");
+                let work: Value = match read_json(&journal).await {
+                    Ok(work) => work,
+                    Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                        self.pending_nas.lock().await.remove(record);
+                        continue;
+                    }
+                    Err(e) => return Err(e.into()),
+                };
+                // Release the scheduler and let the publication lock serialize recovery with edits.
+                let target: Option<crate::prepared::NasLocation> =
+                    serde_json::from_value(work["prepared_target"].clone())?;
+                let previous: Option<crate::prepared::NasLocation> =
+                    serde_json::from_value(work["prepared_previous"].clone())?;
+                let relevant = if meta["status"] == "ready" {
+                    previous.as_ref()
+                } else {
+                    target.as_ref()
+                };
+                if meta["status"] == "error" && meta["conversion_id"] == work["generation"] {
+                    // Keep the stage on a non-network failure. Retrying the conversion schedules
+                    // publication again with its original generation instead of overwriting the journal.
+                    continue;
+                }
+                if let Some(target) = relevant
+                    && !self.prepared_ready(&mut nas_ready, target).await
+                {
+                    continue;
+                }
+                let generation = work["generation"]
+                    .as_str()
+                    .filter(|key| crate::store::valid_id(key))
+                    .context("invalid conversion journal")?
+                    .to_owned();
+                let cancel = Arc::new(Notify::new());
+                {
+                    let mut active = self.active.lock().await;
+                    if active.len() >= limit {
+                        continue;
+                    }
+                    active.insert(record.to_owned(), cancel);
+                }
+                let jobs = self.clone();
+                let record = record.to_owned();
+                tokio::spawn(async move {
+                    if let Err(error) = jobs.publish(&record, &generation).await {
+                        jobs.publication_error(&record, &generation, error).await;
+                    }
+                    jobs.active.lock().await.remove(&record);
+                });
+                continue;
+            }
             if !matches!(meta["status"].as_str(), Some("queued" | "unconverted")) || waiting(&meta)
+            {
+                continue;
+            }
+            if prepared_wait
+                && let Some(target) = self.store.prepared.target("").await?
+                && !self.prepared_ready(&mut nas_ready, &target).await
             {
                 continue;
             }
@@ -701,16 +793,7 @@ impl Jobs {
             tokio::spawn(async move {
                 let result = jobs.run(&record, &generation, cancel, reservation).await;
                 if let Err(error) = result {
-                    tracing::warn!(record=%record,"conversion_worker_failed");
-                    let lock = jobs.store.record_lock(&record).await;
-                    let _guard = lock.lock().await;
-                    if let Ok(mut meta) = jobs.store.meta(&record).await
-                        && meta["conversion_id"] == generation
-                    {
-                        meta["status"] = json!("error");
-                        meta["error"] = json!(error.to_string());
-                        let _ = jobs.store.save_meta(meta).await;
-                    }
+                    jobs.publication_error(&record, &generation, error).await;
                 }
                 jobs.active.lock().await.remove(&record);
                 jobs.progress.write().await.remove(&record);
@@ -718,6 +801,42 @@ impl Jobs {
         }
         Ok(())
     }
+    async fn prepared_ready(
+        &self,
+        ready: &mut BTreeMap<std::path::PathBuf, bool>,
+        target: &crate::prepared::NasLocation,
+    ) -> bool {
+        if let Some(ready) = ready.get(&target.share) {
+            return *ready;
+        }
+        let connected = self.store.prepared.check(target).await.is_ok();
+        ready.insert(target.share.clone(), connected);
+        connected
+    }
+
+    async fn publication_error(&self, record: &str, generation: &str, error: anyhow::Error) {
+        let lock = self.store.record_lock(record).await;
+        let _guard = lock.lock().await;
+        if let Ok(mut meta) = self.store.meta(record).await
+            && meta["conversion_id"] == generation
+            && meta["status"] != "ready"
+        {
+            if error
+                .downcast_ref::<std::io::Error>()
+                .is_some_and(|e| e.kind() == std::io::ErrorKind::NotConnected)
+            {
+                meta["status"] = json!("unconverted");
+                meta["error"] = json!(crate::prepared::WAIT_MESSAGE);
+                meta["deferred"] = json!(crate::prepared::WAITING);
+            } else {
+                tracing::warn!(%record, "conversion_worker_failed");
+                meta["status"] = json!("error");
+                meta["error"] = json!(error.to_string());
+            }
+            let _ = self.store.save_meta(meta).await;
+        }
+    }
+
     async fn run(
         &self,
         record: &str,
@@ -731,11 +850,35 @@ impl Jobs {
             .await
             .map_err(|_| anyhow::anyhow!("record unavailable"))?;
         let staging = folder.join(format!(".convert-{generation}"));
-        let meta = self
+        let mut meta = self
             .store
             .meta(record)
             .await
             .map_err(|_| anyhow::anyhow!("record unavailable"))?;
+        if folder.join(crate::prepared::MOVE_JOURNAL).exists() {
+            let lock = self.store.record_lock(record).await;
+            let _guard = lock.lock().await;
+            meta = self
+                .store
+                .meta(record)
+                .await
+                .map_err(|_| anyhow::anyhow!("record unavailable"))?;
+            self.store
+                .prepared
+                .finish_pending(&self.store, &folder, &mut meta)
+                .await?;
+        }
+        let target = self.store.prepared.target(generation).await?;
+        if let Some(target) = &target {
+            self.store.prepared.check(target).await?;
+        }
+        let previous = if meta["prepared_stale"] == true {
+            None
+        } else if crate::prepared::location(&meta)?.is_some() {
+            Some(self.store.prepared.read_dir(&folder, &meta).await?)
+        } else {
+            None
+        };
         let label = meta["name"].as_str().unwrap_or("recording").to_owned();
         // Python `run_job`: archived inputs are read where they are, Drive-only ones from staged verified copies.
         let inputs = match self.store.archive() {
@@ -754,6 +897,9 @@ impl Jobs {
                 &staging,
                 label,
                 inputs.as_ref(),
+                target,
+                previous,
+                crate::prepared::location(&meta)?,
             )
             .await;
         for path in inputs.iter().flat_map(|i| &i.staged) {
@@ -771,6 +917,9 @@ impl Jobs {
         staging: &std::path::Path,
         label: String,
         inputs: Option<&crate::media_read::Inputs>,
+        target: Option<crate::prepared::NasLocation>,
+        previous: Option<std::path::PathBuf>,
+        previous_nas: Option<crate::prepared::NasLocation>,
     ) -> anyhow::Result<()> {
         if let Some(message) = inputs.and_then(|i| i.deferred) {
             // Converting without the archived files would replace a good result with one lacking its videos;
@@ -835,6 +984,9 @@ impl Jobs {
             .iter()
             .map(|k| ((*k).to_owned(), json!(input(k))))
             .collect::<serde_json::Map<_, _>>();
+        if let Some(previous) = previous {
+            command.env(crate::convert::PREPARED_DIR, previous);
+        }
         command
             .arg("convert-log")
             .arg(input("rlog.zst"))
@@ -972,11 +1124,17 @@ impl Jobs {
                 produced.insert(mp4.into(), json!(stat.len()));
             }
         }
-        atomic_json(
-            &folder.join(".conversion.json"),
-            &json!({"generation":generation,"produced":produced,"carried":carried}),
-        )
-        .await?;
+        let mut work = json!({"generation":generation,"produced":produced,"carried":carried});
+        if let Some(target) = target {
+            work["prepared_target"] = json!(target);
+        }
+        if let Some(previous) = previous_nas {
+            work["prepared_previous"] = json!(previous);
+        }
+        atomic_json(&folder.join(".conversion.json"), &work).await?;
+        if work.get("prepared_target").is_some() || work.get("prepared_previous").is_some() {
+            self.pending_nas.lock().await.insert(record.to_owned());
+        }
         self.publish(record, generation).await
     }
     async fn publish(&self, record: &str, generation: &str) -> anyhow::Result<()> {
@@ -993,6 +1151,12 @@ impl Jobs {
             .meta(record)
             .await
             .map_err(|_| anyhow::anyhow!("record unavailable"))?;
+        let journal_path = folder.join(".conversion.json");
+        let mut journal: Value = read_json(&journal_path).await?;
+        let nas_target: Option<crate::prepared::NasLocation> =
+            serde_json::from_value(journal["prepared_target"].clone())?;
+        let nas_previous: Option<crate::prepared::NasLocation> =
+            serde_json::from_value(journal["prepared_previous"].clone())?;
         if meta["cancel_requested"] == generation {
             meta["status"] = json!("unconverted");
             meta["auto_excluded"] = json!(true);
@@ -1002,10 +1166,13 @@ impl Jobs {
                 .save_meta(meta)
                 .await
                 .map_err(|_| anyhow::anyhow!("save conversion cancellation failed"))?;
-            tokio::fs::remove_file(folder.join(".conversion.json")).await?;
+            if let Some(target) = &nas_target {
+                self.store.prepared.remove_nas(record, target).await?;
+            }
+            tokio::fs::remove_file(&journal_path).await?;
             return Ok(());
         }
-        let prepared = folder.join("prepared");
+        let local_prepared = folder.join("prepared");
         let staging = folder.join(format!(".convert-{generation}"));
         let backup = folder.join(format!(".previous-{generation}"));
         if meta["conversion_id"] != generation {
@@ -1017,31 +1184,54 @@ impl Jobs {
                     _ => {}
                 }
             }
-            tokio::fs::remove_file(folder.join(".conversion.json")).await?;
+            if let Some(target) = &nas_target {
+                self.store.prepared.remove_nas(record, target).await?;
+            }
+            tokio::fs::remove_file(&journal_path).await?;
             return Ok(());
         }
-        let journal_path = folder.join(".conversion.json");
-        let journal: Value = read_json(&journal_path).await.unwrap_or(Value::Null);
+        let prepared = if nas_target.is_some() {
+            &staging
+        } else {
+            &local_prepared
+        };
         let installed = read_json::<String>(&prepared.join(".generation"))
             .await
             .ok()
             .as_deref()
             == Some(generation);
-        if installed && meta["status"] == "ready" {
-            // The metadata of this publication is durable: only the originals it lists remain to go.
+        let committed = meta["status"] == "ready"
+            && if let Some(target) = &nas_target {
+                crate::prepared::location(&meta)?.as_ref() == Some(target)
+            } else {
+                installed
+            };
+        if committed {
             return self
-                .finish_publication(&folder, &journal_path, &journal, &backup)
+                .finish_prepared_publication(
+                    &folder,
+                    &journal_path,
+                    &journal,
+                    &backup,
+                    &staging,
+                    nas_target.as_ref(),
+                    nas_previous.as_ref(),
+                )
                 .await;
         }
         if !installed {
+            anyhow::ensure!(
+                nas_target.is_none(),
+                "completed conversion generation is missing"
+            );
             anyhow::ensure!(
                 staging.join("summary.json").is_file(),
                 "completed conversion staging is missing; old output preserved"
             );
             if prepared.exists() {
-                tokio::fs::rename(&prepared, &backup).await?;
+                tokio::fs::rename(prepared, &backup).await?;
             }
-            tokio::fs::rename(&staging, &prepared).await?;
+            tokio::fs::rename(&staging, prepared).await?;
             sync_dirs(&[&folder]).await?;
             crate::fault::point("publish_installed");
         }
@@ -1086,7 +1276,7 @@ impl Jobs {
                     crate::fault::point("publish_mp4_moved");
                 }
                 // The conversion synced the MP4 itself; its new name must be durable before the original goes.
-                sync_dirs(&[&folder, &prepared]).await?;
+                sync_dirs(&[&folder, prepared]).await?;
                 // The MP4 is new content: a copy of the previous one no longer describes it.
                 if index::drop_remote(&mut meta, mp4, None).is_some() {
                     tracing::info!(kind = mp4, "remote_copy_superseded_left_on_archive");
@@ -1115,16 +1305,25 @@ impl Jobs {
         }
         meta["video_codecs"] = json!(codecs);
         meta["video_origins"] = json!(origins);
-        meta["video_downloads"] = download_entries(&folder).await?;
+        meta["video_downloads"] = download_entries_from(&folder, prepared).await?;
+        let manifest = if let Some(target) = &nas_target {
+            self.store
+                .prepared
+                .install(&folder, prepared, target)
+                .await?
+        } else {
+            Default::default()
+        };
+        crate::prepared::set_location(&mut meta, nas_target.as_ref(), manifest);
         apply_summary(&mut meta, &summary);
         meta["status"] = json!("ready");
+        meta.as_object_mut().unwrap().remove("deferred");
         meta["error"] = Value::Null;
         meta["manual_conversion"] = json!(false);
         meta["decoder_version"] = json!("hars-v28-runtime-geometry");
         // Originals go only after the index that describes their absence (a promoted copy, a visible
         // MP4) is durable; until then every step above is redone the same on a restart. Once it is,
         // the journal is what still names them.
-        let mut journal = journal;
         journal["generation"] = json!(generation);
         journal["originals"] = json!(originals);
         atomic_json(&journal_path, &journal).await?;
@@ -1133,7 +1332,60 @@ impl Jobs {
             .await
             .map_err(|_| anyhow::anyhow!("conversion metadata publication failed"))?;
         crate::fault::point("publish_meta_saved");
-        self.finish_publication(&folder, &journal_path, &journal, &backup)
+        self.finish_prepared_publication(
+            &folder,
+            &journal_path,
+            &journal,
+            &backup,
+            &staging,
+            nas_target.as_ref(),
+            nas_previous.as_ref(),
+        )
+        .await
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    async fn finish_prepared_publication(
+        &self,
+        folder: &std::path::Path,
+        journal_path: &std::path::Path,
+        journal: &Value,
+        backup: &std::path::Path,
+        staging: &std::path::Path,
+        target: Option<&crate::prepared::NasLocation>,
+        previous: Option<&crate::prepared::NasLocation>,
+    ) -> anyhow::Result<()> {
+        let record = folder
+            .file_name()
+            .and_then(|n| n.to_str())
+            .context("invalid recording id")?;
+        if let Some(target) = target {
+            let f = self
+                .store
+                .prepared
+                .open_file(target, record, ".generation".into())
+                .await?;
+            let published: String = self
+                .store
+                .prepared
+                .quick(move || {
+                    serde_json::from_reader(std::io::BufReader::new(f))
+                        .map_err(std::io::Error::other)
+                })
+                .await?;
+            anyhow::ensure!(
+                published == target.generation,
+                "prepared publication marker mismatch"
+            );
+        }
+        if let Some(previous) = previous {
+            self.store.prepared.remove_nas(record, previous).await?;
+        }
+        if target.is_some() {
+            crate::prepared::remove_local(folder.join("prepared")).await?;
+            crate::prepared::remove_local(staging.to_owned()).await?;
+        }
+        self.finish_publication(folder, journal_path, journal, backup)
             .await
     }
 
@@ -1221,7 +1473,11 @@ impl Jobs {
         ) else {
             return Ok(false);
         };
-        let Ok(summary) = read_json::<Value>(&folder.join("prepared/summary.json")).await else {
+        if meta["prepared_stale"] == true {
+            return Ok(false);
+        }
+        let prepared = self.store.prepared.read_dir(&folder, &meta).await?;
+        let Ok(summary) = read_json::<Value>(&prepared.join("summary.json")).await else {
             return Ok(false);
         };
         if meta["conversion_id"] != generation {
@@ -1231,8 +1487,11 @@ impl Jobs {
         let mut warnings = summary["warnings"].as_array().cloned().unwrap_or_default();
         warnings.push(warning.clone());
         meta["warnings"] = json!(warnings);
-        meta["video_downloads"] = download_entries(&folder).await?;
+        if crate::prepared::location(&meta)?.is_none() {
+            meta["video_downloads"] = download_entries(&folder).await?;
+        }
         meta["status"] = json!("ready");
+        meta.as_object_mut().unwrap().remove("deferred");
         meta["error"] = Value::Null;
         meta["manual_conversion"] = json!(false);
         self.store
@@ -1302,6 +1561,13 @@ fn mtime_ns(stat: &std::fs::Metadata) -> u64 {
 }
 
 pub(crate) async fn download_entries(folder: &std::path::Path) -> std::io::Result<Value> {
+    download_entries_from(folder, &folder.join("prepared")).await
+}
+
+async fn download_entries_from(
+    folder: &std::path::Path,
+    prepared: &std::path::Path,
+) -> std::io::Result<Value> {
     let mut downloads = vec![];
     for (source, raw, mp4) in [
         ("qcamera", "qcamera.ts", "camera.mp4"),
@@ -1309,7 +1575,7 @@ pub(crate) async fn download_entries(folder: &std::path::Path) -> std::io::Resul
         ("wide", "ecamera.hevc", "ecamera.mp4"),
     ] {
         let retained = folder.join(mp4);
-        let derived = folder.join("prepared").join(mp4);
+        let derived = prepared.join(mp4);
         let original = folder.join(raw);
         let (kind, path) = if retained.is_file() {
             (mp4, retained)

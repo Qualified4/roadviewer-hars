@@ -139,10 +139,18 @@ function setTime(time,seekVideo=true,lazy=false){
  renderTime(lazy);if(t>=data.duration&&seekPointer===null&&playing)pause();syncVideo(seekVideo);render(lazy);window.renderBookmarks?.();
 }
 function step(n){if(loading)return;pause();if(data)setTime(data.frames[Math.max(0,Math.min(data.frames.length-1,idx+n))].t)}
-function toggle(){if(!data||loading)return;if(playing){pause();return}if(t>=data.duration-.05)setTime(0);playing=true;last=performance.now();playLabel(true);syncVideo(true)}
+let playbackLeaseAt=-Infinity,playbackLeaseSupported=false;
+function refreshPlaybackLease(){
+ if(!playbackLeaseSupported||!playing||!document.getElementById('play')||performance.now()-playbackLeaseAt<12000)return;
+ playbackLeaseAt=performance.now();
+ const id=location.pathname.split('/').filter(Boolean).at(-1);
+ fetch('../../api/logs/'+encodeURIComponent(id)+'/playback',{method:'POST',headers:{'X-RoadViewer-Request':'1'}}).catch(()=>{});
+}
+function toggle(){if(!data||loading)return;if(playing){pause();return}if(t>=data.duration-.05)setTime(0);playing=true;refreshPlaybackLease();last=performance.now();playLabel(true);syncVideo(true)}
 function tick(now){
  now=Math.max(now,last);
  if(playing&&data){
+  refreshPlaybackLease();
   const waiting=seekPointer!==null||videoAvailable()&&!firstVideoFrame()&&!finalVideoFrame()&&(v.seeking||pendingVideoSeek!==null||v.readyState<3&&!v.ended);
   if(waiting)syncVideo();
   else{const next=t+(now-last)/1000*Number($('speed').value);setTime(next>=data.duration-.001?data.duration:next,false,true);if(t>=data.duration){pause();playedToEnd()}}
@@ -421,7 +429,11 @@ async function loadData(){const id=location.pathname.split('/').filter(Boolean).
   }
   throw Error(state.error||'로그 변환에 실패했습니다. 목록을 확인하세요.');
  }
- if(!res.ok)throw Error('로그를 불러오지 못했습니다. 목록을 확인하세요.');
+ if(!res.ok){
+  const issue=res.status===503?await res.json().catch(()=>null):null;
+  throw Error(issue?.message||'로그를 불러오지 못했습니다. 목록을 확인하세요.');
+ }
+ playbackLeaseSupported=res.headers.get('X-RoadViewer-Playback')==='1';
  data=expandReplayData(await readReplayJson(res));showError('');document.body.classList.remove('replay-loading');renderRecordingName($('routeName'),data.route,recordingNameFiles).id='route';placeholderTitle();$('details').textContent=`${data.frames.length.toLocaleString()} 모델 프레임 · ${data.video?'영상 있음':'영상 없음'}`;$('seek').max=data.duration;$('end').textContent=clock(data.duration);$('warnings').textContent=data.warnings.join('\n');$('warnings').hidden=!data.warnings.length;$('noVideo').hidden=!!data.video;v.hidden=!data.video;t=0;const source=setupVideoSources();if(source){selectVideo(source)}else{videoSource=null;setPlaybackState(true,'재생 준비 완료')}updateVideoBuffer();setTime(0)}
 // Transport presses glow and fade instead of rippling ([data-glow], ripple.js); the keys light their buttons too.
 const flash=button=>window.rvGlow?.(button);

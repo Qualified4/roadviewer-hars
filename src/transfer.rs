@@ -1345,8 +1345,18 @@ async fn download_selected(
             let kept = || async {
                 Ok::<_, media_read::MediaError>(match file(mp4).await? {
                     Some(found) => Some(found),
-                    None => Some(folder.join("prepared").join(mp4))
-                        .filter(|p| p.is_file())
+                    None => crate::http::prepared_download_path(app, &folder, &meta, mp4)
+                        .await
+                        .map_err(|e| {
+                            media_read::MediaError::new(
+                                if e.0 == StatusCode::SERVICE_UNAVAILABLE {
+                                    "storage_unavailable"
+                                } else {
+                                    "not_found"
+                                },
+                                false,
+                            )
+                        })?
                         .map(Source::Path),
                 })
             };

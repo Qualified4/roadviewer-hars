@@ -78,7 +78,10 @@ pub fn additional_videos(
             }
         } else {
             let original = original_of(kind).unwrap();
-            if stored(folder, meta, original) || folder.join("prepared").join(kind).is_file() {
+            if stored(folder, meta, original)
+                || meta["prepared_stale"] != true && crate::prepared::size(meta, kind).is_some()
+                || folder.join("prepared").join(kind).is_file()
+            {
                 continue;
             }
         }
@@ -214,9 +217,13 @@ pub async fn clear_prepared(
     revision: u64,
     archived: &BTreeSet<String>,
 ) -> std::io::Result<()> {
-    match tokio::fs::remove_dir_all(folder.join("prepared")).await {
-        Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
-        _ => {}
+    if crate::prepared::location(meta)?.is_some()
+        || folder.join(crate::prepared::MOVE_JOURNAL).exists()
+    {
+        // Retain the previous generation until the replacement and its index are durable.
+        meta["prepared_stale"] = json!(true);
+    } else {
+        crate::prepared::remove_local(folder.join("prepared")).await?;
     }
     for (_, original, mp4) in SOURCES {
         let readable = match location(meta, original) {
@@ -326,7 +333,9 @@ pub async fn apply(store: &Store, update: &Value) -> Result<Value> {
         meta["video"] = json!(true);
         meta["bytes"] = json!(original_bytes(&folder, &meta));
         // HARS's download list (`/download/video`) must name the camera files now on disk.
-        meta["video_downloads"] = crate::jobs::download_entries(&folder).await?;
+        if !restored || crate::prepared::location(&meta)?.is_none() {
+            meta["video_downloads"] = crate::jobs::download_entries(&folder).await?;
+        }
         crate::fault::point("update_before_metadata");
         store.save_meta(meta.clone()).await?;
     }
