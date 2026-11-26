@@ -1413,7 +1413,7 @@
    circle('rv-bookmarks',AMBER,6,BASE,2),
    circle('rv-snap','rgba(61,203,146,.25)',9,MINT,2),
    {id:'rv-car',type:'symbol',source:'rv-car',layout:{
-    'icon-image':['get','icon'],'icon-rotation-alignment':'viewport','icon-pitch-alignment':'viewport',
+    'icon-image':'rv-vehicle','icon-rotation-alignment':'viewport','icon-pitch-alignment':'viewport',
     'icon-rotate':['get','bearing'],'icon-allow-overlap':true,'icon-ignore-placement':true,
    }},
   ];
@@ -1526,18 +1526,16 @@
    const ctx=art.getContext('2d');ctx.scale(2,2);
    const color=carColorHex()||'#F2F4F6';
    const rect=(x,y,w,h,r)=>ctx.roundRect?ctx.roundRect(x,y,w,h,r):ctx.rect(x,y,w,h);
-   for(const [name,arrow] of [['rv-vehicle',mapCar==='arrow'],['rv-navigation',true]]){
-    ctx.clearRect(0,0,32,32);
-    ctx.fillStyle=color;ctx.strokeStyle=BASE;ctx.lineWidth=1.5;ctx.lineJoin='round';
-    ctx.beginPath();
-    if(arrow){ctx.moveTo(16,4);ctx.lineTo(26,26);ctx.lineTo(16,20);ctx.lineTo(6,26);ctx.closePath()}
-    else rect(8.5,2.5,15,27,4);
-    ctx.fill();ctx.stroke();
-    if(!arrow){ctx.beginPath();ctx.fillStyle='#324157';rect(11,6,10,4,1);ctx.fill()}
-    const image=ctx.getImageData(0,0,64,64);
-    if(map.hasImage(name))map.updateImage(name,image);
-    else map.addImage(name,image,{pixelRatio:2});
-   }
+   const arrow=mapCar==='arrow';
+   ctx.fillStyle=color;ctx.strokeStyle=BASE;ctx.lineWidth=1.5;ctx.lineJoin='round';
+   ctx.beginPath();
+   if(arrow){ctx.moveTo(16,4);ctx.lineTo(26,26);ctx.lineTo(16,20);ctx.lineTo(6,26);ctx.closePath()}
+   else rect(8.5,2.5,15,27,4);
+   ctx.fill();ctx.stroke();
+   if(!arrow){ctx.beginPath();ctx.fillStyle='#324157';rect(11,6,10,4,1);ctx.fill()}
+   const image=ctx.getImageData(0,0,64,64);
+   if(map.hasImage('rv-vehicle'))map.updateImage('rv-vehicle',image);
+   else map.addImage('rv-vehicle',image,{pixelRatio:2});
   }
   redrawMiniCar=drawMiniCar;
   const shortArc=(from,to)=>((to-from)%360+540)%360-180;
@@ -1546,7 +1544,7 @@
   function cameraAt(pos){
    const {map,bearing,zoom}=small;
    const {clientWidth,clientHeight}=map.getContainer();
-   // Keep the arrow below the HUD and inside the darker part of the corner fade.
+   // Keep the vehicle marker below the HUD and inside the darker part of the corner fade.
    const padding={top:Math.min(clientHeight*.22,hud.offsetTop+hud.offsetHeight+12),bottom:0,left:clientWidth*.4,right:0};
    return {center:lngLat(pos),pitch:56,bearing,zoom,padding};
   }
@@ -1562,7 +1560,7 @@
     const center=map.getCenter(),[lng,lat]=lngLat(pos);
     if(center.lng!==lng||center.lat!==lat)map.jumpTo({center:[lng,lat]});
    }
-   miniData('car',[feature('Point',lngLat(pos),{icon:large?'rv-vehicle':'rv-navigation',bearing:large?pos.bearing-map.getBearing():0})]);
+   miniData('car',[feature('Point',lngLat(pos),{bearing:large?pos.bearing-map.getBearing():0})]);
   }
   function centreMini(duration){
    small.map.easeTo({center:lngLat(position(t)),pitch:0,bearing:0,zoom:FOLLOW_ZOOM,padding:{top:0,bottom:0,left:0,right:0},duration});
