@@ -240,7 +240,8 @@ let bsdHeight=.8;
   // spends longer slowing down before it lands (an ease that is quick through the middle and long at the landing end).
   const clamp01=v=>Math.max(0,Math.min(1,v)),inOut=v=>.5-.5*Math.cos(Math.PI*clamp01(v)),landing=v=>{const p=clamp01(v);return 1-Math.pow(1-(.5-.5*Math.cos(Math.PI*p)),1.6)};
   const ARROW_FADE=.35;  // share of an arrow's movement over which it turns from its chevron's look into the arrow's
-  const ARROW_STAGGER=.18,arrowEase=(progress,i,back=false)=>{const p=(progress-i*ARROW_STAGGER)/(1-2*ARROW_STAGGER);return back?1-landing(1-p):inOut(p)};
+  const ARROW_STAGGER=.18,arrowProgress=(progress,i)=>(progress-i*ARROW_STAGGER)/(1-2*ARROW_STAGGER);
+  const arrowEase=(progress,i,back=false)=>{const p=arrowProgress(progress,i);return back?1-landing(1-p):inOut(p)};
   // paintChevron: set where the path is drawn (also used for the lifting arrows).
   // Switching straight from one side to the other (its arrows up, its blinker now off, the other side's on): the arrows
   // cross over at their own height instead of going back to the road while the others rise from it. The side going off is
@@ -335,8 +336,8 @@ let bsdHeight=.8;
        for(const k of [0,2]){const a=ground(s,(k-1)*half,-.52),b=ground(s,(k-1)*half,-.52-thick);if(a&&b)rear[k]=[front[k][0]+b[0]-a[0],front[k][1]+b[1]-a[1]]}
        return {front,rear,strength,fill,edge,fillOut,edgeOut,reach:Math.max(4,Math.hypot(front[2][0]-front[1][0],front[2][1]-front[1][1])),points:[rear[0],front[0],front[1],front[2],rear[2],rear[1]]};
       };
-      // The arrows' chevrons, picked when the movement began and followed along the road since. Forming: three chevrons
-      // starting at least 7 m ahead if there is room for all three. Settling back: the first will be about 7 m ahead when the
+      // The arrows' chevrons, picked when the movement began and followed along the road since. Forming: the three nearest
+      // chevrons then, with a short slide on the ground for the first. Settling back: the first will be about 7 m ahead when the
       // innermost arrow lands (the road keeps flowing meanwhile; landing time from the easing, distance from the speed then),
       // so the arrows land near, midway and far with no chevron skipped. Beyond the lead there is no place: that arrow comes
       // from (or goes into) the car instead. Each side has its own three: on a switch from one side to the other, the side
@@ -350,16 +351,24 @@ let bsdHeight=.8;
        const start=states[side].start,startFrame=start===null?frame:data.frames[nearest(start)],odometer=startFrame.odometer||0,startAt=5.5+phaseOf(odometer);
        const speed=motionAllowed()&&start!==null?Math.max(0,(startFrame.egoSpeedKph||0)/3.6*.4):0;
        const startReach=Math.min((carAheadDistance(startFrame)??Infinity)+RADAR_TO_CAMERA-1,startFrame.overlay?.pathX?.at(-1)??0);
-       const first=settling[side]?Math.round((landAt+speed*(1-2*ARROW_STAGGER)*BLINKER_SETTLE-startAt)/step)
-        :startAt<landAt&&startAt+3*step<startReach?1:0;
-       const ids=[first,first+1,first+2];
-       return {start:start??-Infinity,road:ids.map(id=>startAt+id*step+roadAt(odometer)),back:settling[side]};
+       const back=settling[side],first=back?Math.round((landAt+speed*(1-2*ARROW_STAGGER)*BLINKER_SETTLE-startAt)/step):0;
+       // Aim near the return point with room for the path chevron to stay visible before it lifts.
+       const slide=back?0:Math.max(0,Math.min(1.2,landAt+.4-startAt,startReach-startAt-1));
+       return {start:start??-Infinity,road:[first,first+1,first+2].map(id=>startAt+id*step+roadAt(odometer)),back,slide};
       });
       const same=(a,b)=>Math.abs(a-b)<step/2;
       if(picks[0]&&picks[1]){const later=picks[1].start>picks[0].start?1:0,other=picks[1-later];
-       if(picks[later].road.some(u=>other.road.some(v=>same(u,v))))picks[later].road=picks[later].road.map(u=>u+3*step)}
-      if(controlOn)slots=picks.map(pick=>pick?pick.road.map((u,i)=>{const d=u-now,landing=pick.back?landAt+step*i:d;return landing<reachable?chevronAt(Math.max(1,d)):null}):[null,null,null]);
-      // (landing: roughly where it lands; only used against the lead)
+       if(picks[later].road.some(u=>other.road.some(v=>same(u,v)))){picks[later].road=picks[later].road.map(u=>u+3*step);picks[later].slide=0}}
+      if(controlOn)slots=picks.map((pick,side)=>pick?pick.road.map((u,i)=>{
+       const d=u-now,landing=pick.back?landAt+step*i:d;  // approximate landing distance for the lead cutoff
+       if(landing>=reachable)return null;
+       const distance=Math.max(1,d);
+       if(i!==0||pick.slide===0)return chevronAt(distance);
+       const slideShare=pick.slide*.22;  // about 0.13 s on the road for a 1 m slide
+       const offset=Math.min(pick.slide,Math.max(0,end-distance-1))*inOut(arrowProgress(morph[side],0)/slideShare);
+       const chevron=chevronAt(distance+offset);
+       return chevron?{...chevron,slideShare}:chevronAt(distance);
+      }):[null,null,null]);
       paintChevron=(front,rear,reach,strength,fill,fillOut,edge,edgeOut)=>{
        // Fill: fainter than the edges. It holds its light from the apex over most of the wings (an eased curve, not a
        // straight fall) and eases down near the wing ends (about 0.87 of this radius) to a floor of a third, never clear.
@@ -493,7 +502,7 @@ let bsdHeight=.8;
   // own path chevron (the nearest to the outermost arrow, the next one coming in to the second, then the third) or, without
   // one (longitudinal control off, lead close), from a small chevron at the bottom of the picture as if coming out of the
   // car; with no chevron at all this runs more slowly.
-  // The three arrows go one after another; each eases in and out on a straight path, outline and colour blending.
+  // The three arrows go one after another; each eases through the air on a straight path, outline and colour blending.
   {
    // Scale from the actual picture width, lifting larger arrows to leave room for the path below.
    const arrowScale=coarse.matches||document.fullscreenElement?1:Math.max(1,Math.min(2,vw/900));
@@ -507,8 +516,9 @@ let bsdHeight=.8;
     const progress=morph[side];if(!(progress>0&&progress<1))continue;
     context.save();context.lineWidth=1.5;context.lineJoin='round';
     blinkerArrows(side,arrowLeft,arrowRight,arrowY,anchors,arrowScale).forEach((target,i)=>{
-     const order=2-i,e=arrowEase(progress,order,settling[side]),pulse=blinkerPulse(t,i);if(e<=0)return;  // not set off yet: still a chevron on the road (or nothing)
+     const order=2-i,eased=arrowEase(progress,order,settling[side]),pulse=blinkerPulse(t,i);if(eased<=0)return;  // still a chevron on the road (or nothing)
      const source=slots[side][chevronOf(i,side)],from=source?.points||springFrom(),start=source?source.strength:0;
+     const e=source?.slideShare?inOut((arrowProgress(progress,order)-source.slideShare)/(1-source.slideShare)):eased;
      // From the car the arrow first heads straight ahead and then curves out to its place: its centre follows a quadratic
      // curve whose control point lies straight ahead of the start, at the target's height; the outline blends on the way.
      // From a chevron it moves straight.
