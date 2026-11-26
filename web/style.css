@@ -1121,8 +1121,8 @@ select,.rv-choice-trigger{font-weight:500}
  .video-map-toolbar{top:6px;left:6px;right:6px}
  .video-map-controls button{min-height:44px;padding-inline:8px}
 }
-.video-wrap.has-video-map .video-hud{z-index:4;pointer-events:none}
-.video-wrap.has-video-map .ego-speed{font-weight:550;letter-spacing:.015em;text-shadow:none;font-variant-numeric:tabular-nums}
+.video-wrap.has-video-map .video-hud{z-index:5;pointer-events:none}
+.video-wrap.has-video-map .ego-speed{font-weight:550;letter-spacing:.015em;font-variant-numeric:tabular-nums}
 .video-wrap.has-video-map .ego-speed strong{font-weight:650;letter-spacing:inherit}
 .video-wrap.has-video-map .video-messages{z-index:4}
 .video-wrap.has-video-map .video-title{z-index:4;max-width:calc(100% - min(310px,41cqw) - 32px)}

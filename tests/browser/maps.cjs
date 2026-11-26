@@ -85,24 +85,42 @@ const assertToolbar=async (page,selector)=>assert(await page.locator(selector).e
  return buttons.every((b,i)=>b.left>=box.left&&b.right<=box.right&&buttons.slice(i+1).every(c=>b.right<=c.left||b.bottom<=c.top||c.right<=b.left||c.bottom<=b.top));
 }),'map controls fit without overlap at 390 px');
 
-async function assertMiniCorner(page){
+async function assertMiniCar(page,kind){
+ await page.waitForFunction(kind=>{
+  const map=rvTestMini;
+  if(!map.getLayer('rv-car'))return false;
+  const icon=map.getLayoutProperty('rv-car','icon-image'),image=typeof icon==='string'?map.getImage(icon)?.data:null;
+  if(!image)return false;
+  const alpha=(x,y)=>image.data[4*(y*image.width+x)+3];
+  // The upper shoulder of the vehicle is filled, while the arrow only has its tip at that height.
+  return alpha(32,10)>200&&alpha(22,10)===(kind==='arrow'?0:255)
+   &&map.queryRenderedFeatures({layers:['rv-car']}).some(marker=>marker.properties.bearing===0);
+ },kind);
+}
+async function assertMiniCorner(page,kind='vehicle'){
+ await page.locator('#egoSpeed').scrollIntoViewIfNeeded();
  const state=await page.evaluate(()=>{
   const mini=document.getElementById('videoMap'),stage=document.getElementById('videoStage');
   const mapBox=mini.getBoundingClientRect(),stageBox=stage.getBoundingClientRect(),hud=stage.querySelector('.video-hud');
-  const map=rvTestMini,arrow=map.project(map.getCenter());
+  const map=rvTestMini,car=map.project(map.getCenter()),speed=hud.querySelector('#egoSpeed'),unit=hud.querySelector('.ego-speed span');
+  const speedBox=speed.getBoundingClientRect();
+  hud.style.pointerEvents='auto';
+  const stack=document.elementsFromPoint(speedBox.left+speedBox.width/2,speedBox.top+speedBox.height/2);
+  hud.style.removeProperty('pointer-events');
+  const mapHit=stack.indexOf(mini.querySelector('.video-map-open'));
   return {top:mapBox.top-stageBox.top,right:stageBox.right-mapBox.right,margin:getComputedStyle(mini).margin,
    mask:getComputedStyle(mini.querySelector('.video-map-surface')).maskImage,
-   hudAbove:Number(getComputedStyle(hud).zIndex)>Number(getComputedStyle(mini).zIndex),
-   arrowBelowHud:mapBox.top+arrow.y>hud.getBoundingClientRect().bottom};
+   hudAbove:stack.includes(speed)&&mapHit>stack.indexOf(speed),
+   speedShadow:getComputedStyle(speed).textShadow,unitShadow:getComputedStyle(unit).textShadow,
+   carBelowHud:mapBox.top+car.y>hud.getBoundingClientRect().bottom};
  });
  assert(Math.abs(state.top)<.5&&Math.abs(state.right)<.5&&state.margin==='0px','3D map is flush with the video corner '+JSON.stringify(state));
  assert.match(state.mask,/^radial-gradient/);
- assert(state.hudAbove&&state.arrowBelowHud,'the HUD remains above the map and clear of the arrow '+JSON.stringify(state));
+ assert(state.hudAbove&&state.carBelowHud,'the HUD remains above the map and clear of the vehicle '+JSON.stringify(state));
+ assert.match(state.speedShadow,/rgba\(0, 0, 0, 0\.55\) 0px 1px 3px/,'speed retains its soft shadow');
+ assert.equal(state.unitShadow,state.speedShadow,'the speed unit shares the shadow');
  assert(await page.locator('#videoMap').getByLabel('지도 출처').isHidden());
- await page.waitForFunction(async()=>{
-  const data=await rvTestMini.getSource('rv-car')?.getData(),marker=data?.features[0]?.properties;
-  return marker?.icon==='rv-navigation'&&marker.bearing===0;
- });
+ await assertMiniCar(page,kind);
 }
 
 (async()=>{
@@ -625,6 +643,13 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await page.waitForFunction(()=>rvTestMini.getStyle()?.layers.filter(layer=>layer.type==='symbol').every(layer=>layer.id==='rv-car'));
    assert.equal(await page.locator('#routeMapView .rv-map').evaluate(el=>el.dataset.tiles),scheme);
    await dialog.getByLabel('작은 지도 글자 숨기기').uncheck();
+   await dialog.locator('#mapCarIcon [data-map-car="arrow"]').tap();
+   await assertMiniCar(page,'arrow');
+   await page.locator('#overlayHeightClose').tap();
+   await assertMiniCorner(page,'arrow');
+   await page.locator('#overlayHeightSettings').tap();
+   await dialog.locator('#mapCarIcon [data-map-car="vehicle"]').tap();
+   await assertMiniCar(page,'vehicle');
    await dialog.getByRole('button',{name:'다크',exact:true}).tap();
    await page.locator('#overlayHeightClose').tap();
    assert(await open.isVisible());
@@ -688,6 +713,7 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    const page=await context.newPage(),errors=[];
    page.on('pageerror',error=>errors.push(error.message));
    await context.addInitScript(hookMaps);
+   await context.addInitScript(()=>localStorage.setItem('roadviewer-map-car-icon','arrow'));
    if(!REAL)await context.route(OFM+'**',stubTiles);
    const testVideo=video;
    for(const log of [logs[1],logs[2]])await context.route('**/api/logs/'+log.id+'/video**',route=>route.fulfill({body:testVideo,contentType:'video/mp4'}));
@@ -731,7 +757,7 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await editor.waitFor({state:'hidden'});
    await page.waitForFunction(async()=>((await rvTestMini.getSource('rv-bookmarks').getData()).features.length===2));
    await page.evaluate(()=>scrollTo(0,0));await settleLayout(page);
-   await assertMiniCorner(page);
+   await assertMiniCorner(page,'arrow');
    await screenshot(page,'01-desktop-3d-minimap');
 
    const geometry=()=>page.locator('#videoStage').boundingBox();
