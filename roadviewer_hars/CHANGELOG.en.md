@@ -1,3 +1,7 @@
+## 2.1.2
+
+- Applied the vehicle icon setting to the 3D faded minimap and restored the top-right speed HUD layer with a soft drop shadow.
+
 ## 2.1.1
 
 - Improved car-follow zoom to level 16 in the expanded replay map and Map tab, added a full-route fit button, and added clickable bookmark markers in the Map tab to jump to that moment.
