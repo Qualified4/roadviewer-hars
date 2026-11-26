@@ -1355,11 +1355,30 @@ impl Jobs {
         target: Option<&crate::prepared::NasLocation>,
         previous: Option<&crate::prepared::NasLocation>,
     ) -> anyhow::Result<()> {
+        let record = folder
+            .file_name()
+            .and_then(|n| n.to_str())
+            .context("invalid recording id")?;
+        if let Some(target) = target {
+            let f = self
+                .store
+                .prepared
+                .open_file(target, record, ".generation".into())
+                .await?;
+            let published: String = self
+                .store
+                .prepared
+                .quick(move || {
+                    serde_json::from_reader(std::io::BufReader::new(f))
+                        .map_err(std::io::Error::other)
+                })
+                .await?;
+            anyhow::ensure!(
+                published == target.generation,
+                "prepared publication marker mismatch"
+            );
+        }
         if let Some(previous) = previous {
-            let record = folder
-                .file_name()
-                .and_then(|n| n.to_str())
-                .context("invalid recording id")?;
             self.store.prepared.remove_nas(record, previous).await?;
         }
         if target.is_some() {

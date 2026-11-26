@@ -33,15 +33,21 @@ pub const WAIT_MESSAGE: &str = "재생 데이터 NAS 연결을 기다리는 중�
 type Sizes = BTreeMap<String, u64>;
 type Digest = [u8; 32];
 
+#[derive(Clone, Default, Deserialize, Serialize)]
+struct Integrity {
+    sizes: Sizes,
+    sha256: BTreeMap<String, Digest>,
+}
+
 #[derive(Default)]
 pub(crate) struct Manifest {
-    sizes: Sizes,
+    integrity: Integrity,
     thumbnail: Value,
     summary: Value,
 }
 
 impl Manifest {
-    fn read(path: &Path, sizes: Sizes) -> Self {
+    fn read(path: &Path, integrity: Integrity) -> Self {
         let json_file = |name: &str| {
             nas::open_share_file(&path.join(name))
                 .ok()
@@ -49,7 +55,7 @@ impl Manifest {
                 .unwrap_or(Value::Null)
         };
         Self {
-            sizes,
+            integrity,
             thumbnail: json_file("thumbnail.json"),
             summary: json_file("summary.json"),
         }
@@ -85,7 +91,7 @@ pub fn total(meta: &Value) -> u64 {
 pub(crate) fn set_location(meta: &mut Value, target: Option<&NasLocation>, manifest: Manifest) {
     if let Some(target) = target {
         meta["prepared_nas"] = json!(target);
-        meta["prepared_files"] = json!(manifest.sizes);
+        meta["prepared_files"] = json!(manifest.integrity.sizes);
         meta["prepared_thumbnail"] = manifest.thumbnail;
         if meta["prepared_stale"] != true {
             for key in crate::listing::LIST_FIELDS.into_iter().chain(["videos"]) {
@@ -535,6 +541,7 @@ impl Prepared {
                 generation: generation.clone(),
             }),
             generation,
+            verified: None,
         };
         atomic_json(&folder.join(MOVE_JOURNAL), &work).await?;
         self.complete_move(store, &folder, &mut meta, &work).await?;
@@ -552,7 +559,16 @@ impl Prepared {
         if !valid_id(&work.generation) {
             return Err(io::Error::other("invalid_prepared_move"));
         }
-        if location(meta)? != work.target {
+        if location(meta)? == work.target {
+            // After an interruption the original may be partially deleted. Verify against
+            // the durable manifest, including when that original no longer exists.
+            let integrity = work
+                .verified
+                .clone()
+                .ok_or_else(|| io::Error::other("prepared_verification_missing"))?;
+            self.verify_destination(folder, work.target.as_ref(), integrity)
+                .await?;
+        } else {
             if location(meta)? != work.source {
                 return Err(io::Error::other("prepared_move_conflict"));
             }
@@ -583,6 +599,9 @@ impl Prepared {
                 }
                 _ => return Err(io::Error::other("invalid_prepared_move")),
             };
+            let mut verified = work.clone();
+            verified.verified = Some(manifest.integrity.clone());
+            atomic_json(&folder.join(MOVE_JOURNAL), &verified).await?;
             let stale = meta["prepared_stale"] == true;
             set_location(meta, work.target.as_ref(), manifest);
             if stale {
@@ -592,6 +611,10 @@ impl Prepared {
                 .save_meta(meta.clone())
                 .await
                 .map_err(|_| io::Error::other("prepared_metadata_save"))?;
+            crate::fault::point("prepared_migration_committed");
+            if let Some(target) = &work.target {
+                self.check(target).await?;
+            }
         }
         // The old copy can now go. A restart after metadata commit re-enters only this phase.
         if let Some(source) = &work.source {
@@ -601,6 +624,41 @@ impl Prepared {
         }
         tokio::fs::remove_file(folder.join(MOVE_JOURNAL)).await?;
         Ok(())
+    }
+
+    async fn verify_destination(
+        &self,
+        folder: &Path,
+        target: Option<&NasLocation>,
+        integrity: Integrity,
+    ) -> io::Result<()> {
+        let local = folder.join("prepared");
+        let nas = if let Some(target) = target {
+            Some((
+                self.share_for(target).await,
+                recording_id(folder)?.to_owned(),
+                target.generation.clone(),
+            ))
+        } else {
+            None
+        };
+        self.write(move |progress| {
+            let mut buffer = vec![0; archive::CHUNK];
+            if let Some((share, record, generation)) = nas {
+                let pin = share.owned()?;
+                let parent = pin.record(&record, false)?;
+                verify(
+                    &parent.generation(&generation)?,
+                    &integrity,
+                    &progress,
+                    &mut buffer,
+                )?;
+                pin.confirm(&share.owned()?)
+            } else {
+                verify(&local, &integrity, &progress, &mut buffer)
+            }
+        })
+        .await
     }
 
     pub(crate) async fn finish_pending(
@@ -616,11 +674,12 @@ impl Prepared {
     }
 }
 
-#[derive(Deserialize, Serialize)]
+#[derive(Clone, Deserialize, Serialize)]
 struct Move {
     source: Option<NasLocation>,
     target: Option<NasLocation>,
     generation: String,
+    verified: Option<Integrity>,
 }
 
 enum MoveResult {
@@ -919,25 +978,17 @@ impl CopyProgress {
 }
 
 fn verify(
-    source: &Path,
     dest: &Path,
-    sizes: &Sizes,
-    known: &BTreeMap<&str, Digest>,
+    integrity: &Integrity,
     progress: &CopyProgress,
     buffer: &mut [u8],
 ) -> io::Result<()> {
-    if files(dest)? != *sizes {
+    if files(dest)? != integrity.sizes {
         return Err(io::Error::other("prepared_size_mismatch"));
     }
-    for name in sizes.keys() {
-        let mut digest = |path: &Path| {
-            progress.copy(nas::open_share_file(&path.join(name))?, io::sink(), buffer)
-        };
-        let from = match known.get(name.as_str()) {
-            Some(&digest) => digest,
-            None => digest(source)?,
-        };
-        if from != digest(dest)? {
+    for name in integrity.sizes.keys() {
+        let digest = progress.copy(nas::open_share_file(&dest.join(name))?, io::sink(), buffer)?;
+        if integrity.sha256.get(name) != Some(&digest) {
             return Err(io::Error::other("prepared_sha256_mismatch"));
         }
     }
@@ -950,7 +1001,7 @@ fn copy_generation(
     generation: &str,
     progress: &CopyProgress,
     still_owned: impl Fn() -> io::Result<()>,
-) -> io::Result<Sizes> {
+) -> io::Result<Integrity> {
     progress.touch()?;
     let sizes = files(source)?;
     if !sizes.contains_key("summary.json")
@@ -962,13 +1013,22 @@ fn copy_generation(
     let parent = target.parent().unwrap();
     let part = parent.join(format!(".part-{generation}"));
     let mut buffer = vec![0; archive::CHUNK];
-    let mut known = BTreeMap::new();
+    let mut integrity = Integrity {
+        sizes,
+        sha256: BTreeMap::new(),
+    };
     // After rename but before metadata commit, only a verified identical target is adopted.
     match fs::symlink_metadata(target) {
         Ok(_) => {
-            verify(source, target, &sizes, &known, progress, &mut buffer)?;
+            for name in integrity.sizes.keys() {
+                let file = nas::open_share_file(&source.join(name))?;
+                integrity
+                    .sha256
+                    .insert(name.clone(), progress.copy(file, io::sink(), &mut buffer)?);
+            }
+            verify(target, &integrity, progress, &mut buffer)?;
             sync_directory(parent)?;
-            return Ok(sizes);
+            return Ok(integrity);
         }
         Err(e) if e.kind() == ErrorKind::NotFound => {}
         Err(e) => return Err(e),
@@ -978,21 +1038,23 @@ fn copy_generation(
         _ => {}
     }
     fs::create_dir(&part)?;
-    for name in sizes.keys() {
+    for name in integrity.sizes.keys() {
         let from = nas::open_share_file(&source.join(name))?;
         let mut to = fs::OpenOptions::new()
             .write(true)
             .create_new(true)
             .open(part.join(name))?;
-        known.insert(name.as_str(), progress.copy(from, &mut to, &mut buffer)?);
+        integrity
+            .sha256
+            .insert(name.clone(), progress.copy(from, &mut to, &mut buffer)?);
         to.sync_all()?;
     }
-    verify(source, &part, &sizes, &known, progress, &mut buffer)?;
+    verify(&part, &integrity, progress, &mut buffer)?;
     sync_directory(&part)?;
     still_owned()?;
     progress.touch()?;
     fs::rename(&part, target)?;
     sync_directory(parent)?;
     crate::fault::point("prepared_generation_installed");
-    Ok(sizes)
+    Ok(integrity)
 }

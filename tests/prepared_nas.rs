@@ -220,7 +220,8 @@ async fn verified_move_resumes_after_rename_and_restores_local_playback() {
     assert_eq!(fs::read(target.join("camera.mp4")).unwrap(), CAMERA);
     drop(server);
 
-    let server = Server::start(&root, true, None).await;
+    let crash = "prepared_migration_committed";
+    let server = Server::start(&root, true, Some((crash, &marker))).await;
     fs::write(target.join("camera.mp4"), vec![0; CAMERA.len()]).unwrap();
     assert_eq!(
         server.move_and_wait("nas").await["failed"],
@@ -234,14 +235,34 @@ async fn verified_move_resumes_after_rename_and_restores_local_playback() {
     );
     fs::write(target.join("camera.mp4"), CAMERA).unwrap();
 
-    let moved = server.move_and_wait("nas").await;
-    assert_eq!(moved["moved"], 1, "{moved}");
+    server.start_move("nas").await;
+    until(|| async { fs::read_to_string(&marker).is_ok_and(|s| s == crash) }).await;
     let location = prepared::location(&meta(&folder)).unwrap().unwrap();
     assert_eq!(location.share, share);
     assert_eq!(
         target.file_name().unwrap().to_str().unwrap(),
         location.generation
     );
+    assert_eq!(
+        fs::read(folder.join("prepared/camera.mp4")).unwrap(),
+        CAMERA
+    );
+    drop(server);
+
+    let server = Server::start(&root, true, None).await;
+    fs::write(target.join("camera.mp4"), vec![0; CAMERA.len()]).unwrap();
+    assert_eq!(
+        server.move_and_wait("nas").await["failed"],
+        1,
+        "verify again before retiring the source"
+    );
+    assert_eq!(
+        fs::read(folder.join("prepared/camera.mp4")).unwrap(),
+        CAMERA
+    );
+    fs::write(target.join("camera.mp4"), CAMERA).unwrap();
+    let moved = server.move_and_wait("nas").await;
+    assert_eq!(moved["moved"], 1, "{moved}");
     assert!(!folder.join("prepared").exists());
     assert_eq!(
         server.request("GET", SETTINGS, Value::Null).await.1["nas_bytes"],

@@ -32,19 +32,21 @@ async function nasPlayback(browser,data){
  const request=suffix=>fetch(base+suffix);
  try{
   await until(async()=>{try{return (await request('/health')).ok}catch{return false}});
-  const replay=await browser.newPage();
+  const replay=await browser.newPage({viewport:{width:320,height:844}});
   await replay.goto(base+'/#storage');
   await replay.locator('#preparedLocation:enabled').waitFor();
   await replay.getByLabel('저장 위치',{exact:true}).selectOption('nas');
   await replay.getByLabel('NAS 공유 폴더',{exact:true}).fill(share);
   await replay.getByRole('button',{name:'재생 저장소 저장'}).click();
   await replay.getByText('NAS 연결됨',{exact:true}).waitFor();
+  assert(await replay.locator('#storageSettings').evaluate(panel=>panel.scrollWidth<=panel.clientWidth),'prepared settings fit 320px');
   replay.once('dialog',dialog=>dialog.accept());
   await replay.getByRole('button',{name:'기존 재생 데이터 NAS로 이동'}).click();
   await replay.waitForFunction(()=>document.getElementById('preparedMoveStatus')?.textContent.includes('완료'));
   const result=await (await request('/api/settings/prepared/move')).json();
   assert.equal(result.moved,1,JSON.stringify(result));assert(!fs.existsSync(prepared));
   assert.equal(JSON.parse(fs.readFileSync(path.join(folder,'meta.json'))).prepared_nas.share,share);
+  await replay.setViewportSize({width:960,height:720});
   const ranges=[];
   replay.on('response',response=>{if(new URL(response.url()).pathname.endsWith('/video')&&response.status()===206)ranges.push(response.headers()['content-range'])});
   await replay.goto(base+'/view/'+id+'/');

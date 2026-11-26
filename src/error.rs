@@ -18,9 +18,9 @@ impl IntoResponse for ApiError {
             "prepared_storage_unavailable" => {
                 Some("재생 데이터 NAS에 연결할 수 없습니다. NAS 연결과 저장공간 설정을 확인하세요.")
             }
-            "invalid_prepared_path" => {
-                Some("NAS 경로에 /share/nas/재생폴더 형식의 하위 폴더 경로를 입력하세요.")
-            }
+            "invalid_prepared_path" => Some(
+                "NAS 경로에 /share/nas/roadviewer-prepared 형식의 하위 폴더 경로를 입력하세요.",
+            ),
             "prepared_migration_running" => Some("재생 데이터를 이동하는 중입니다."),
             "log_unavailable" if self.0 == StatusCode::CONFLICT => Some(
                 "원본 로그가 없어 영상을 추가할 수 없습니다. 로그와 영상을 함께 다시 업로드하세요.",

@@ -1145,3 +1145,4 @@ body.uploading,body:has(.library-page.uploading) { overscroll-behavior-y: contai
 @media(min-width:1024px),(min-width:600px) and (orientation:landscape){.log-map .log-map-handle{display:none}}
 
 #preparedFields{border:0;margin:0;padding:0;min-width:0}
+#preparedMoveActions{flex-wrap:wrap}
