@@ -519,6 +519,23 @@ pub fn cache_counts(root: &Path) -> (usize, usize, bool) {
     (segments, routes, response)
 }
 
+#[derive(serde::Serialize, PartialEq, Eq, PartialOrd, Ord)]
+pub struct UnconvertedSegment {
+    segment: Option<u64>,
+    id: String,
+    status: String,
+}
+
+impl UnconvertedSegment {
+    pub fn from_meta(meta: &Value) -> Option<Self> {
+        Some(Self {
+            segment: route_order(meta).1,
+            id: meta["id"].as_str()?.to_owned(),
+            status: meta["status"].as_str()?.to_owned(),
+        })
+    }
+}
+
 /// Builds the `/api/logs/{id}/track` response for a single route (`key`) only,
 /// skipping disk reads completely on a lightweight ETag match (`304 Not Modified`).
 pub fn build_single_track(
@@ -526,6 +543,7 @@ pub fn build_single_track(
     id: &str,
     key: &str,
     ready_segments: &[(Option<u64>, String)],
+    unconverted: &[UnconvertedSegment],
     paths: &PreparedPaths,
     if_none_match: &str,
 ) -> TracksAnswer {
@@ -541,7 +559,7 @@ pub fn build_single_track(
         .collect::<Vec<_>>();
 
     let mut hasher = Sha256::new();
-    hasher.update(b"rv-track-v1\0");
+    hasher.update(b"rv-track-v2\0");
     hasher.update(id.as_bytes());
     hasher.update([0u8]);
     hasher.update(key.as_bytes());
@@ -558,6 +576,7 @@ pub fn build_single_track(
         }
         hash_segment_sig(&mut hasher, *sig);
     }
+    hasher.update(serde_json::to_vec(unconverted).unwrap());
     let etag = format!("\"{}\"", &hex::encode(hasher.finalize())[..32]);
     if if_none_match == etag {
         return TracksAnswer::NotModified { etag };
@@ -615,7 +634,11 @@ pub fn build_single_track(
             "points": track["points"],
         }));
     }
-    let bytes = serde_json::to_vec(&json!({"id": id, "segments": segments})).unwrap();
+    let mut value = json!({"id": id, "segments": segments});
+    if !unconverted.is_empty() {
+        value["unconverted"] = json!(unconverted);
+    }
+    let bytes = serde_json::to_vec(&value).unwrap();
     TracksAnswer::Ok { etag, bytes }
 }
 

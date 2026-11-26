@@ -2,6 +2,7 @@
 // screen: map + segment sheet), ③ the replay's 주행 상황 | 지도 view and ④ the small map in the video's top-right corner,
 // in the dark and the light theme. The OpenFreeMap basemap (MapLibre in Leaflet) is stubbed with small fixtures (no
 // network) unless RV_MAP_REAL_TILES=1; the positions are synthetic, never a real drive.
+// RV_MAP_PARTS=native runs the focused desktop scenario, RV_TESLA_SHOTS also captures desktop and mobile.
 const fs=require('fs'),os=require('os'),path=require('path'),zlib=require('zlib'),assert=require('node:assert/strict'),{spawn}=require('child_process'),{chromium}=require('playwright');
 const {settleLayout,waitForSteadyLayout}=require('./browser-helpers.cjs');
 // OpenFreeMap stubs: a style per theme (a background, a GeoJSON street grid around the routes and a symbol layer of
@@ -34,21 +35,84 @@ function fixtureStyle(scheme){
 // Each Leaflet map of the page (window.rvTestMaps), for the checks against MapLibre's own projection.
 const hookMaps=()=>{window.rvTestNearLine=(root,at)=>Math.min(Infinity,...[...root.querySelectorAll('.leaflet-overlay-pane path.map-current')].flatMap(p=>{const M=p.getScreenCTM(),q=[...(p.getAttribute('d')||'').matchAll(/(-?[\d.]+)[ ,](-?[\d.]+)/g)].map(m=>[+m[1]*M.a+ +m[2]*M.c+M.e,+m[1]*M.b+ +m[2]*M.d+M.f]);
   return q.slice(1).map((b,i)=>{const a=q[i],dx=b[0]-a[0],dy=b[1]-a[1],l=dx*dx+dy*dy,k=l?Math.max(0,Math.min(1,((at[0]-a[0])*dx+(at[1]-a[1])*dy)/l)):0;return Math.hypot(a[0]+dx*k-at[0],a[1]+dy*k-at[1])})}));
- let L;Object.defineProperty(window,'L',{configurable:true,get:()=>L,set(v){L=v;try{v.Map.addInitHook(function(){(window.rvTestMaps||=[]).push(this)})}catch{}}})};
+ let L;Object.defineProperty(window,'L',{configurable:true,get:()=>L,set(v){L=v;try{v.Map.addInitHook(function(){(window.rvTestMaps||=[]).push(this)})}catch{}}})
+ let gl;
+ Object.defineProperty(window,'maplibregl',{configurable:true,get:()=>gl,set(api){
+  gl=api;
+  api.Map=class extends api.Map{
+   constructor(options){
+    super(options);
+    if(!this.getContainer().classList.contains('video-map-canvas'))return;
+    window.rvTestMini=this;
+    window.rvNativeCreated=(window.rvNativeCreated||0)+1;
+    window.rvNativeResizes=window.rvNativeRemoved=0;
+    this.on('resize',()=>window.rvNativeResizes++);
+    this.on('remove',()=>window.rvNativeRemoved++);
+   }
+  };
+ }});
+};
+function stubTiles(route){
+ const url=route.request().url(),style=url===SIMPLE_LIGHT?['light']:Object.entries(STYLE_OF).find(([,u])=>url===u);
+ if(style)return route.fulfill({json:fixtureStyle(style[0])});
+ if(url===OFM+'planet')return route.fulfill({json:{tilejson:'3.0.0',tiles:[OFM+'planet/fixture/{z}/{x}/{y}.pbf'],minzoom:0,maxzoom:14}});
+ return route.fulfill({body:Buffer.alloc(0),contentType:'application/x-protobuf'});
+}
+const nativePoint=(page,a,b=a,k=0)=>page.evaluate(([a,b,k])=>{
+ const map=rvTestMini,{x,y}=map.project([a[2]+k*(b[2]-a[2]),a[1]+k*(b[1]-a[1])]),box=map.getContainer().getBoundingClientRect();
+ return document.fullscreenElement?.classList.contains('is-turned')?[box.right-y,box.top+x]:[box.left+x,box.top+y];
+},[a,b,k]);
+const tapNative=async (page,...at)=>page.touchscreen.tap(...await nativePoint(page,...at));
+const waitSeek=(page,t,tolerance=.65)=>page.waitForFunction(([t,tol])=>Math.abs(document.getElementById('seek')?.valueAsNumber-t)<tol,[t,tolerance]);
+
+async function assertMiniCorner(page){
+ const state=await page.evaluate(()=>{
+  const mini=document.getElementById('videoMap'),stage=document.getElementById('videoStage');
+  const mapBox=mini.getBoundingClientRect(),stageBox=stage.getBoundingClientRect(),hud=stage.querySelector('.video-hud');
+  const map=rvTestMini,arrow=map.project(map.getCenter());
+  return {top:mapBox.top-stageBox.top,right:stageBox.right-mapBox.right,margin:getComputedStyle(mini).margin,
+   mask:getComputedStyle(mini.querySelector('.video-map-surface')).maskImage,
+   hudAbove:Number(getComputedStyle(hud).zIndex)>Number(getComputedStyle(mini).zIndex),
+   arrowBelowHud:mapBox.top+arrow.y>hud.getBoundingClientRect().bottom};
+ });
+ assert(Math.abs(state.top)<.5&&Math.abs(state.right)<.5&&state.margin==='0px','3D map is flush with the video corner '+JSON.stringify(state));
+ assert.match(state.mask,/^radial-gradient/);
+ assert(state.hudAbove&&state.arrowBelowHud,'the HUD remains above the map and clear of the arrow '+JSON.stringify(state));
+ assert(await page.locator('#videoMap').getByLabel('지도 출처').isHidden());
+ await page.waitForFunction(async()=>{
+  const data=await rvTestMini.getSource('rv-car')?.getData(),marker=data?.features[0]?.properties;
+  return marker?.icon==='rv-navigation'&&marker.bearing===0;
+ });
+}
+
 (async()=>{
- const dir=fs.mkdtempSync(path.join(os.tmpdir(),'rv-maps-')),shots=process.env.RV_MAP_SHOTS;
+ const dir=fs.mkdtempSync(path.join(os.tmpdir(),'rv-maps-')),shots=process.env.RV_MAP_SHOTS,verifyShots=process.env.RV_TESLA_SHOTS;
  if(shots)fs.mkdirSync(shots,{recursive:true});
+ if(verifyShots)fs.mkdirSync(verifyShots,{recursive:true});
+ const screenshot=async(page,name)=>{
+  if(!verifyShots)return;
+  await settleLayout(page);
+  if(REAL)await page.waitForFunction(()=>rvTestMini.getSource('openmaptiles')&&rvTestMini.areTilesLoaded());
+  await page.screenshot({path:path.join(verifyShots,name+'.png')});
+ };
  fs.writeFileSync(path.join(dir,'.processing-settings.json'),JSON.stringify({auto_convert:false}));
- // Route A: eight segments winding north-east (segment 1 has video); route B: one segment elsewhere; route C: no GPS.
+ // Route A: eight segments winding north-east (segments 1 and 2 have video); route B: one segment elsewhere; route C: no GPS.
  const track=(lat,lon,dlat,dlon)=>Array.from({length:61},(_,i)=>[i,+(lat+i*dlat).toFixed(6),+(lon+i*dlon+Math.sin(i/9)*2e-5).toFixed(6),12.5,Math.round(Math.atan2(dlon,dlat)*180/Math.PI+360)%360]);
  const turns=[[8e-5,6e-5],[0,1e-4],[7e-5,4e-5],[1e-4,0],[6e-5,-5e-5],[0,9e-5],[8e-5,3e-5],[5e-5,7e-5]];
  const routeA=[];{let [lat,lon]=ORIGIN;turns.forEach(([dlat,dlon],k)=>{routeA.push(track(lat,lon,dlat,dlon));lat=+(lat+60*dlat).toFixed(6);lon=+(lon+60*dlon).toFixed(6)})}
- // Segment 1 (the one with video): its bearing climbs 3° a second through north (350° … 359°, 2° …), and its sample
- // at 31 s holds the fix of 30 s (a GPS hold while moving).
- routeA[1].forEach((p,i)=>{p[4]=(350+3*i)%360});routeA[1][31][1]=routeA[1][30][1];routeA[1][31][2]=routeA[1][30][2];
+ // Segment 1 begins with a turn through north. Its sample at 31 s repeats the fix of 30 s while moving.
+ routeA[1].forEach((p,i)=>{p[4]=(350+3*i)%360});
+ for(let i=1;i<=5;i++){
+  const prev=routeA[1][i-1],angle=prev[4]*Math.PI/180;
+  routeA[1][i][1]=prev[1]+Math.cos(angle)*.0001;
+  routeA[1][i][2]=prev[2]+Math.sin(angle)*.0001/Math.cos(prev[1]*Math.PI/180);
+ }
+ routeA[1][31][1]=routeA[1][30][1];routeA[1][31][2]=routeA[1][30][2];
+ routeA[1][42][3]=0;routeA[1][42][4]=210;
+ routeA[1][45][3]=40;
  const hex=k=>'0123456789'[k];
  const logs=[
-  ...routeA.map((points,k)=>({id:hex(k).repeat(32),name:`00000395--0d0eda17c5 / 구간 ${k}`,uploaded:30+k,points,tags:k===0?[{name:'출근',color:'blue'}]:[],video:k===1})),
+  ...routeA.map((points,k)=>({id:hex(k).repeat(32),name:`00000395--0d0eda17c5 / 구간 ${k}`,uploaded:30+k,points,tags:k===0?[{name:'출근',color:'blue'}]:[],video:k===1||k===2})),
   {id:'c'.repeat(32),name:'00000396--1a2b3c4d5e / 구간 0',uploaded:20,points:track(ORIGIN[0]+.03,ORIGIN[1]+.03,-6e-5,-4e-5),tags:[{name:'주말',color:'rose'}]},
   {id:'d'.repeat(32),name:'00000397--9f8e7d6c5b / 구간 0',uploaded:10,points:null},
  ];
@@ -57,7 +121,7 @@ const hookMaps=()=>{window.rvTestNearLine=(root,at)=>Math.min(Infinity,...[...ro
   const folder=path.join(dir,log.id);fs.mkdirSync(path.join(folder,'prepared'),{recursive:true});
   fs.writeFileSync(path.join(folder,'rlog.zst'),'fixture');
   fs.writeFileSync(path.join(folder,'meta.json'),JSON.stringify({id:log.id,status:'ready',name:log.name,uploaded:log.uploaded,files:{},video:false,tags:log.tags||[],decoder_version:'v28-runtime-geometry',duration:60}));
-  fs.writeFileSync(path.join(folder,'prepared/data.json'),JSON.stringify({route:log.name,key:'map-'+log.id[0],duration:60,warnings:[],video:log.video?{start:0,duration:60}:null,frames:Array.from({length:61},(_,i)=>({t:i,id:i,valid:true,lanes:[],edges:[],lp:[],es:[],leads:[]}))}));
+  fs.writeFileSync(path.join(folder,'prepared/data.json'),JSON.stringify({route:log.name,key:'map-'+log.id[0],duration:60,warnings:[],video:log.video?{start:0,duration:60}:null,frames:Array.from({length:61},(_,i)=>({t:i,id:i,valid:true,egoSpeedKph:(log.points?.[i]?.[3]??0)*3.6,lanes:[],edges:[],lp:[],es:[],leads:[]}))}));
   const summary={duration:60,warnings:[],model_frames:61,video:null,videos:{},started_at:1762400000+log.uploaded*60,start_v:3,track_v:2,has_track:!!log.points};
   if(log.points){summary.track_distance_m=900;fs.writeFileSync(path.join(folder,'prepared/track.json.gz'),zlib.gzipSync(JSON.stringify({v:2,source:'gpsLocationExternal',points:log.points})))}
   fs.writeFileSync(path.join(folder,'prepared/summary.json'),JSON.stringify(summary));
@@ -498,238 +562,52 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    // Never two maps: while the panel shows 지도 the small map stays hidden; back on 주행 상황 it appears.
    await page.waitForTimeout(300);assert(await page.locator('#videoMap').isHidden(),'no small map while the panel shows the map');
    await page.locator('#roadTab').tap();
-   const mini=page.locator('#videoMap');await mini.locator('.map-car').waitFor();await settleLayout(page);await page.waitForTimeout(150);
-   // 작은 지도 색상: 자동 follows the theme; 라이트/다크 override only the small map's style and are kept on this browser.
-   const tilesOf=sel=>page.locator(sel).evaluate(e=>e.dataset.tiles),other=scheme==='dark'?'light':'dark';
-   const labelsOf=sel=>page.waitForFunction(sel=>document.querySelector(sel)?.dataset.labels,sel).then(h=>h.jsonValue());
-   const styleAsked=tone=>REAL?Promise.resolve():page.waitForRequest(r=>r.url()===STYLE_OF[tone],{timeout:5000});
-   const simpleAsked=tone=>REAL?Promise.resolve():page.waitForRequest(r=>r.url()===(tone==='light'?SIMPLE_LIGHT:STYLE_OF.dark),{timeout:5000});
-   {assert.equal(await tilesOf('#videoMap .rv-map'),scheme);
-    const pick=async label=>{await page.locator('#overlayHeightSettings').tap();await dialog.waitFor();await dialog.locator('#videoMiniMapTone button',{hasText:label}).tap();if(label!=='자동'){await dialog.locator('#videoMiniMapTone').scrollIntoViewIfNeeded();await shot('minimap-tone')}await page.locator('#overlayHeightClose').tap();await dialog.waitFor({state:'hidden'})};
-    {const asked=styleAsked(other);await pick(other==='light'?'라이트':'다크');await asked}assert.equal(await tilesOf('#videoMap .rv-map'),other);
-    assert.equal(await page.evaluate(()=>localStorage.getItem('roadviewer-minimap-tone')),other);
-    assert.equal(await page.locator('#videoMiniMapTone button[aria-pressed=true]').textContent(),other==='light'?'라이트':'다크');
-    {const asked=styleAsked(scheme);await pick('자동');await asked}assert.equal(await tilesOf('#videoMap .rv-map'),scheme);await settleLayout(page)}
-   // 작은 지도 글자 숨기기: off by default; on, the small map alone hides the style's symbol layers (names, icons, arrows)
-   // with no other style asked, and keeps them hidden through a tone change; kept with the display preferences.
-   // 작은 지도 회색으로 (checked further down) takes the grey style.
-   {const keyOf=()=>page.locator('#videoMap .rv-map').evaluate(e=>e.dataset.tileKey),labels=want=>page.waitForFunction(want=>document.querySelector('#videoMap .rv-map').dataset.labels===want,want,{timeout:5000});
-    assert.equal(await keyOf(),scheme);assert.equal(await labelsOf('#videoMap .rv-map'),'shown');
-    await page.locator('#overlayHeightSettings').tap();await dialog.waitFor();const box=dialog.getByLabel('작은 지도 글자 숨기기');assert.equal(await box.isChecked(),false);
-    const styles=tiles.filter(url=>url.startsWith(OFM+'styles/')).length;
-    await box.check();await labels('hidden');
-    assert.equal(tiles.filter(url=>url.startsWith(OFM+'styles/')).length,styles,'no other style for the labels');
-    assert.equal(await page.locator('#videoMap .rv-map').evaluate(e=>e.dataset.simple),'false','the colours stay');
-    await shot('minimap-plain');
-    await page.locator('#overlayHeightClose').tap();await dialog.waitFor({state:'hidden'});
-    assert.equal(await keyOf(),scheme+'-nolabels');assert.equal(await page.locator('#routeMapView .rv-map').evaluate(e=>e.dataset.tileKey),scheme,'the panel map keeps its labels');
-    assert.equal(await labelsOf('#routeMapView .rv-map'),'shown','the panel map shows its names');
-    assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('roadviewer-display-preferences')).checks.videoMiniMapPlain),true);
-    // Another tone loads the other style with its names hidden from the start.
-    {const asked=styleAsked(other);await page.locator('#overlayHeightSettings').tap();await dialog.waitFor();await dialog.locator('#videoMiniMapTone button',{hasText:other==='light'?'라이트':'다크'}).tap();await asked}
-    await page.waitForFunction(other=>document.querySelector('#videoMap .rv-map').dataset.tiles===other,other);await page.waitForTimeout(REAL?1500:300);await labels('hidden');
-    assert.equal(await keyOf(),other+'-nolabels');
-    {const asked=styleAsked(scheme);await dialog.locator('#videoMiniMapTone button',{hasText:'자동'}).tap();await asked}
-    await box.uncheck();await labels('shown');
-    // 작은 지도 회색으로: the grey style without the busy layers, names kept; the panel map keeps its colours.
-    {const grey=dialog.getByLabel('작은 지도 회색으로');assert.equal(await grey.isChecked(),false);
-     {const asked=simpleAsked(scheme);await grey.check();await asked}
-     await page.waitForFunction(()=>document.querySelector('#videoMap .rv-map').dataset.simple==='true',null,{timeout:5000});
-     if(!REAL)await page.waitForFunction(()=>(document.querySelector('#videoMap .rv-map').dataset.removed||'').includes('poi_r1'),null,{timeout:5000});
-     await labels('shown');assert.equal(await page.locator('#routeMapView .rv-map').evaluate(e=>e.dataset.simple),'false');
-     assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('roadviewer-display-preferences')).checks.videoMiniMapGrey),true);
-     {const asked=styleAsked(scheme);await grey.uncheck();await asked}}await labels('shown');await page.locator('#overlayHeightClose').tap();await dialog.waitFor({state:'hidden'});
-    assert.equal(await keyOf(),scheme)}
-   // Where it sits: the stage's top-right corner, a third of its width (104–180px, 4:3), under the speed and wheel
-   // (drawn on top; never narrower than they are); clear of the title, the bottom row, the fullscreen button and the transport; the segment's
-   // car always in the middle of the part below the speed (it follows the car like 따라가기).
-   const geometry=()=>page.evaluate(()=>{
-    const stage=document.getElementById('videoStage').getBoundingClientRect(),el=document.getElementById('videoMap'),map=el.getBoundingClientRect(),hud=document.querySelector('.video-hud').getBoundingClientRect();
-    const r=s=>[...document.querySelectorAll(s)].filter(e=>e.offsetParent||getComputedStyle(e).position==='fixed').map(e=>e.getBoundingClientRect()).filter(b=>b.width&&b.height);
-    const hit=(b,box=map)=>!(b.right<=box.left||b.left>=box.right||b.bottom<=box.top||b.top>=box.bottom);
-    const title=document.querySelector('.video-title').getBoundingClientRect(),style=getComputedStyle(el);
-    const titleClear=!hit(title);
-    // The current segment's line, marked map-current.
-    const track=[...el.querySelectorAll('.leaflet-overlay-pane path.map-current')].map(p=>p.getBoundingClientRect()).filter(b=>b.width||b.height);
-    const current=track.length?track.reduce((a,b)=>({left:Math.min(a.left,b.left),right:Math.max(a.right,b.right),top:Math.min(a.top,b.top),bottom:Math.max(a.bottom,b.bottom)})):null;
-    return {stage:{w:Math.round(stage.width),top:Math.round(stage.top),right:Math.round(stage.right)},map:{w:Math.round(map.width),h:Math.round(map.height),top:Math.round(map.top),right:Math.round(map.right)},
-     hudOnMap:hud.left>=map.left-1&&hud.right<=map.right+1&&hud.top>=map.top-1&&hud.bottom<=map.bottom+1&&Number(getComputedStyle(document.querySelector('.video-hud')).zIndex)>Number(style.zIndex),
-     titleClear,covers:['.video-tools','.video-fullscreen','.playback'].filter(s=>r(s).some(b=>hit(b))),
-     trackInside:(()=>{const car=el.querySelector('.map-car')?.getBoundingClientRect();if(!car||!car.width)return false;
-      return Math.abs((car.left+car.right)/2-(map.left+map.right)/2)<=3&&Math.abs((car.top+car.bottom)/2-(map.top+map.height*.6))<=3})(),
-     hud:[hud.left,hud.top,hud.right,hud.bottom].map(Math.round),hudZ:getComputedStyle(document.querySelector('.video-hud')).zIndex,cur:current&&[current.left,current.top,current.right,current.bottom].map(Math.round),n:track.length,rows:['.video-tools','.video-fullscreen','.video-title'].map(q=>{const b=document.querySelector(q).getBoundingClientRect();return [b.left,b.top,b.right,b.bottom].map(Math.round)}),stageH:Math.round(stage.height),large:el.classList.contains('is-large'),shown:!el.hidden,marked:document.getElementById('videoStage').classList.contains('has-video-map')};
-   });
-   const small=async label=>{
-    const g=await geometry(),want=Math.max(104,g.hud[2]-g.hud[0],Math.min(180,g.stage.w/3)),floor=Math.min(...g.rows.slice(0,2).map(r=>r[1]))-8;
-    assert(g.shown&&g.marked&&!g.large,label+JSON.stringify(g));
-    // 4:3, or shorter where the bottom row comes first.
-    assert(Math.abs(g.map.w-want)<=1.5&&(Math.abs(g.map.h-g.map.w*.75)<=1.5||g.map.h<g.map.w*.75&&Math.abs(g.map.top+g.map.h-floor)<=1.5),label+' size '+JSON.stringify(g));
-    assert(g.stage.right-g.map.right<=12.5&&g.map.top-g.stage.top<=12.5,label+' corner '+JSON.stringify(g));
-    assert(g.hudOnMap&&g.titleClear&&g.trackInside,label+' '+JSON.stringify(g));assert.deepEqual(g.covers,[],label+' '+JSON.stringify(g));
-   };
-   await small('portrait');
-   assert.equal(await mini.locator('.map-car-body').evaluate(e=>getComputedStyle(e).width),'24px','compact mobile minimap uses the smaller vehicle');
-   // The car (smaller here than on the big map) sits on the current segment's line: its body centred on the marker's anchor.
-   {const d=await mini.evaluate(m=>{const b=m.querySelector('.map-car-body').getBoundingClientRect(),c=[b.left+b.width/2,b.top+b.height/2];
-     return window.rvTestNearLine(m,c)});
-    assert(d<=1,'car on the line: '+d)}
-   // Smooth following. The car's place on the map (car centre minus the map pane's on-screen origin, both including
-   // the sub-pixel translates) moves on every frame of playback by a fraction of a pixel, never a whole-pixel jump; the
-   // heading turns between samples the short way round, with no CSS transition; a held GPS sample is passed over.
-   {const frame=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
-    const carOnMap=()=>mini.evaluate(m=>{const a=m.querySelector('.leaflet-map-pane').getBoundingClientRect(),b=m.querySelector('.map-car-body').getBoundingClientRect();return [b.left+b.width/2-a.left,b.top+b.height/2-a.top]});
-    const turn=()=>mini.locator('.map-car-body').evaluate(b=>Number(/rotate\(([-\d.]+)deg\)/.exec(b.style.transform)?.[1]));
-    await page.evaluate(()=>{const b=document.getElementById('play');if(b.dataset.playing==='true')b.click()});assert.equal(await mini.locator('.map-car-body').evaluate(b=>getComputedStyle(b).transitionDuration),'0s','no heading transition');
-    await seek(3.5);await frame();assert(Math.abs(await turn()-.5)<.01,'359° → 2°: 0.5° half way '+await turn());
-    await seek(3.25);await frame();assert(Math.abs(await turn()-359.75)<.01,'a quarter of the way '+await turn());
-    await seek(30);await frame();const at30=await carOnMap();await seek(31);await frame();const at31=await carOnMap();await seek(32);await frame();const at32=await carOnMap();
-    const mid=[(at30[0]+at32[0])/2,(at30[1]+at32[1])/2];
-    assert(Math.hypot(at31[0]-mid[0],at31[1]-mid[1])<.6&&Math.hypot(at32[0]-at30[0],at32[1]-at30[1])>4,'the held sample at 31 s is passed over '+JSON.stringify([at30,at31,at32]));
-    // One second of playback from 0.5 s: per frame, the car's place and the DOM writes to the time readout, the no-video
-    // note and the bookmark time (written only when they change: the label at most once a second, the note when playing
-    // starts or stops).
-    await seek(.5);await frame();
-    const run=await page.evaluate(()=>new Promise(resolve=>{
-     const m=document.getElementById('videoMap'),pane=m.querySelector('.leaflet-map-pane'),body=m.querySelector('.map-car-body'),time=document.getElementById('time');
-     const writes={label:0,total:0,note:0,bookmark:0},watch=(target,key,options)=>new MutationObserver(records=>{writes[key]+=records.length}).observe(target,options);
-     watch(time,'label',{attributes:true});watch(time.querySelector('.time-total'),'total',{childList:true,characterData:true,subtree:true});
-     watch(document.getElementById('noVideo'),'note',{childList:true,characterData:true,subtree:true,attributes:true});watch(document.querySelector('.bookmark-time'),'bookmark',{childList:true,characterData:true,subtree:true});
-     // The current segment's line is drawn once: only the car moves.
-     const paths=[...m.querySelectorAll('.leaflet-overlay-pane path.map-current')],d0=paths.map(p=>p.getAttribute('d'));
-     const out=[],play=document.getElementById('play');play.click();const started=performance.now();
-     const step=()=>{const a=pane.getBoundingClientRect(),b=body.getBoundingClientRect();out.push([b.left+b.width/2-a.left,b.top+b.height/2-a.top]);
-      if(performance.now()-started<1000)requestAnimationFrame(step);else{play.click();setTimeout(()=>resolve({out,writes,redrawn:paths.filter((p,i)=>!p.isConnected||p.getAttribute('d')!==d0[i]).length,paths:paths.length}))}};
-     requestAnimationFrame(step);
-    }));
-    const steps=run.out.slice(1).map((p,i)=>Math.hypot(p[0]-run.out[i][0],p[1]-run.out[i][1])),moved=steps.filter(d=>d>.001).length,biggest=Math.max(...steps);
-    const fractional=run.out.filter(p=>p.some(v=>Math.abs(v-Math.round(v))>.05)).length;
-    assert(biggest<1&&moved>=steps.length*.6&&fractional>=run.out.length/3,'smooth: '+JSON.stringify({frames:run.out.length,moved,biggest,fractional}));
-    assert(run.paths===1&&run.redrawn===0,'the segment drawn once: '+JSON.stringify({paths:run.paths,redrawn:run.redrawn,frames:run.out.length}));
-    assert(run.writes.label<=4&&run.writes.total===0&&run.writes.note<=2&&run.writes.bookmark<=2,'per-frame DOM writes: '+JSON.stringify(run.writes))}
-   // Following scrolls what is drawn: over 2 s of playback the small map's basemap (MapLibre) draws at most twice (it is
-   // panned and redrawn only when the car nears the edge of its drawn margin), and on every frame the basemap, the lines
-   // and the car stay together: the car's centre is where MapLibre places its position, on the current segment's line
-   // (within a pixel). Stepping on (paused) until
-   // the basemap is re-centred: together (within a pixel) just before and just after, the car
-   // still in its place on the map.
-   // The replay maps draw up to their margin (1: a full size) beyond each edge, as much as keeps the basemap canvas within 4000 device
-   // pixels on its longer side; the basemap and the route lines use the same margin.
-   {const margins=await page.evaluate(()=>window.rvTestMaps.filter(m=>m.rvFitMargin&&m.getSize().x>0).map(m=>{const s=m.getSize(),r=Math.min(devicePixelRatio||1,2),side=Math.max(s.x,s.y)*r;
-     return {margin:m.rvMargin,layer:m.rvGlLayer?.options.padding,lines:m.options.renderer.options.padding,canvas:Math.round((1+2*m.rvMargin)*side),max:m.rvMarginMax,full:(1+2*m.rvMarginMax)*side<=4000}}));
-    assert(margins.length>=1&&margins.every(m=>m.layer===m.margin&&m.lines===m.margin&&m.canvas<=4001&&m.margin>=.1&&(!m.full||m.margin===m.max)),'replay map margins: '+JSON.stringify(margins))}
-   {const frame=()=>page.evaluate(()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r))));
-    await page.evaluate(()=>{
-     const m=document.getElementById('videoMap'),map=window.rvTestMaps.find(x=>m.contains(x.getContainer())),gl=map.rvGl;
-     window.rvTestSmall={renders:0};gl.on('render',()=>window.rvTestSmall.renders++);
-     window.rvTestAlign=()=>{
-      let car=null;map.eachLayer(l=>{if(l.options?.icon?.options?.className==='map-car')car=l.getLatLng()});
-      const c=gl.getCanvas().getBoundingClientRect(),q=gl.project([car.lng,car.lat]),b=m.querySelector('.map-car-body').getBoundingClientRect(),at=[b.left+b.width/2,b.top+b.height/2],box=m.getBoundingClientRect();
-      const line=window.rvTestNearLine(m,at);
-      return {base:Math.hypot(c.left+q.x-at[0],c.top+q.y-at[1]),line,place:Math.hypot(at[0]-(box.left+box.width/2),at[1]-(box.top+box.height*.6)),drawn:m.querySelector('.leaflet-gl-layer').style.transform};
-     };
-    });
-    await seek(5);await frame();await page.waitForTimeout(400);
-    const run=await page.evaluate(()=>new Promise(resolve=>{
-     const out=[],play=document.getElementById('play'),from=window.rvTestSmall.renders;play.click();const started=performance.now();
-     const step=()=>{out.push(window.rvTestAlign());if(performance.now()-started<2000)requestAnimationFrame(step);else{play.click();resolve({frames:out.length,renders:window.rvTestSmall.renders-from,base:Math.max(...out.map(a=>a.base)),line:Math.max(...out.map(a=>a.line)),place:Math.max(...out.map(a=>a.place))})}};
-     requestAnimationFrame(step);
-    }));
-    assert(run.frames>30&&run.renders<=2&&run.base<=1&&run.line<=1&&run.place<=1,'scrolled, together: '+JSON.stringify(run));
-    let last=await page.evaluate(()=>window.rvTestAlign()),recentred=null;
-    for(let s=6;s<=29&&!recentred;s++){await seek(s);await frame();const now=await page.evaluate(()=>window.rvTestAlign());if(now.drawn!==last.drawn)recentred=[last,now];else last=now}
-    assert(recentred&&recentred.every(a=>a.base<=1&&a.line<=1&&a.place<=1),'re-centred, together: '+JSON.stringify(recentred))}
-   // ⑤ The bottom-left corner resizes it, here by touch (real touch events through CDP): wider, anchored at its top-right,
-   // 4:3, not enlarged by the drag, kept in this browser; a double tap on the corner goes back to the default size.
-   {const grip=mini.locator('.video-map-grip'),b0=await mini.boundingBox(),g=await grip.boundingBox(),cdp=await context.newCDPSession(page);
-    const x=g.x+g.width/2,y=g.y+g.height/2,touch=(type,px,py)=>cdp.send('Input.dispatchTouchEvent',{type,touchPoints:type==='touchEnd'?[]:[{x:px,y:py}]});
-    await touch('touchStart',x,y);for(let k=1;k<=8;k++)await touch('touchMove',x-6*k,y+4.5*k);await touch('touchEnd');await page.waitForTimeout(200);
-    const b1=await mini.boundingBox(),kept=Number(await page.evaluate(()=>localStorage.getItem('roadviewer-minimap-size')));
-    assert(b1.width>b0.width+30,'touch: wider '+JSON.stringify([b0,b1]));
-    assert(Math.abs(b1.x+b1.width-(b0.x+b0.width))<=1.5&&Math.abs(b1.y-b0.y)<=1.5,'touch: anchored at its top-right '+JSON.stringify([b0,b1]));
-    assert(Math.abs(b1.height-b1.width*.75)<=1.5,'touch: 4:3 '+JSON.stringify(b1));
-    assert(!await mini.evaluate(e=>e.classList.contains('is-large')),'the drag does not enlarge');assert(kept>0&&kept<1,'kept '+kept);
-    await shot('minimap-resized');
-    await grip.dblclick();await page.waitForTimeout(200);const b2=await mini.boundingBox();
-    assert(Math.abs(b2.width-b0.width)<=1,'double tap: default size '+JSON.stringify([b0,b2]));assert.equal(await page.evaluate(()=>localStorage.getItem('roadviewer-minimap-size')),null)}
-   // Enlarged: a plain rectangle filling the picture (12px or 8px margins); the title, speed and wheel and fullscreen
-   // button float over it and still take taps; the quality and overlay controls are hidden; the messages sit at the
-   // bottom edge, over the map.
-   const large=async label=>{
-    await page.waitForFunction(()=>getComputedStyle(document.querySelector('.video-tools')).visibility==='hidden',null,{timeout:2000}).catch(()=>{});
-    const g=await page.evaluate(()=>{
-     const stage=document.getElementById('videoStage').getBoundingClientRect(),el=document.getElementById('videoMap'),map=el.getBoundingClientRect(),tools=document.querySelector('.video-tools');
-     const usable=q=>{const e=document.querySelector(q),b=e.getBoundingClientRect();return !!b.width&&!!document.elementFromPoint(b.left+b.width/2,b.top+b.height/2)?.closest(q)};
-     const messages=document.querySelector('.video-messages').getBoundingClientRect();
-     return {large:el.classList.contains('is-large'),marked:document.getElementById('videoStage').classList.contains('video-map-large'),
-      margins:[map.left-stage.left,stage.right-map.right,map.top-stage.top,stage.bottom-map.bottom].map(Math.round),
-      title:usable('.video-title .app-title-button'),fullscreen:usable('.video-fullscreen'),hud:Number(getComputedStyle(document.querySelector('.video-hud')).zIndex)>Number(getComputedStyle(el).zIndex),
-      toolsHidden:getComputedStyle(tools).visibility==='hidden',messagesGap:Math.round(map.bottom-messages.bottom)};
-    });
-    assert(g.large&&g.marked,label+JSON.stringify(g));
-    assert(g.margins.every(m=>m>=7&&m<=12.5)&&new Set(g.margins).size<=2,label+' fills the picture '+JSON.stringify(g));
-    assert(g.title&&g.fullscreen&&g.hud&&g.toolsHidden,label+' controls '+JSON.stringify(g));
-    assert(g.messagesGap>=-1&&g.messagesGap<=6,label+' messages at the bottom edge '+JSON.stringify(g));
-   };
-   await shot('replay');
-   // Pressed, it is not brightened like the controls (that washed a light map out to white); released, it enlarges.
-   {const b=await mini.boundingBox();await page.mouse.move(b.x+b.width/2,b.y+b.height*.7);await page.mouse.down();const f=await mini.evaluate(m=>[m.matches(':active'),getComputedStyle(m).filter]);await page.mouse.up();assert.deepEqual(f,[true,'none'],'no press brightening')}
-   await page.waitForFunction(()=>document.getElementById('videoMap').classList.contains('is-large'));await settleLayout(page);await page.waitForTimeout(150);
-   await large('portrait large');
-   await shot('replay-large');
-   await mini.tap();await page.waitForFunction(()=>!document.getElementById('videoMap').classList.contains('is-large'));await page.waitForTimeout(100);
-   // The small map folds its credit into an ⓘ: a tap shows it (without enlarging the map), another hides it.
-   {const credit=mini.locator('.leaflet-control-attribution'),toggle=mini.locator('.rv-credit-toggle');
-    assert(await credit.isHidden()&&await toggle.isVisible(),'the small map folds its credit');
-    await toggle.tap();await credit.waitFor();assert.equal(await credit.innerText(),'OpenFreeMap © OpenMapTiles © OSM');assert.equal(await toggle.getAttribute('aria-expanded'),'true');
-    await page.waitForTimeout(150);assert(!await page.evaluate(()=>document.getElementById('videoMap').classList.contains('is-large')),'ⓘ does not enlarge the map');
-    await toggle.tap();await credit.waitFor({state:'hidden'})}
-   // Landscape phone, desktop and fullscreen: the same rules.
-   await page.setViewportSize({width:844,height:390});await settleLayout(page);await page.waitForTimeout(150);await small('landscape');
-   await page.setViewportSize({width:1280,height:800});await settleLayout(page);await page.waitForTimeout(150);await small('desktop');
-   await mini.tap();await page.waitForFunction(()=>document.getElementById('videoMap').classList.contains('is-large'));await page.waitForTimeout(150);
-   await large('desktop large');
-   await mini.tap();await page.waitForFunction(()=>!document.getElementById('videoMap').classList.contains('is-large'));
-   assert.equal(await page.evaluate(()=>getComputedStyle(document.querySelector('.video-tools')).visibility),'visible','the controls come back');
-   await page.evaluate(()=>document.getElementById("fullscreenButton").click());
-   if(await page.waitForFunction(()=>document.fullscreenElement,null,{timeout:3000}).then(()=>true,()=>false)){
-    await page.waitForTimeout(250);await small('fullscreen');await page.evaluate(()=>document.exitFullscreen());await page.waitForFunction(()=>!document.fullscreenElement);
-   }else console.log('maps: fullscreen unavailable here, skipped');
-   await page.setViewportSize({width:390,height:844});await settleLayout(page);
-   // With motion on, the map is not redrawn while it changes size: its container keeps the larger of the two sizes,
-   // centred in the moving frame (so the frame is always covered), and follows the frame again once the motion has ended
-   // (a redraw per frame made the animation stutter).
-   {await page.emulateMedia({reducedMotion:'no-preference'});
-    await page.evaluate(()=>{window.rvVideoMapState=()=>{const m=document.getElementById('videoMap'),box=m.querySelector('.video-map-canvas'),a=m.getBoundingClientRect(),b=box.getBoundingClientRect();
-     return {held:!!box.style.width,box:[Math.round(b.width),Math.round(b.height)],frame:[Math.round(a.width),Math.round(a.height)],centred:Math.abs((a.left+a.right)-(b.left+b.right))<2&&Math.abs((a.top+a.bottom)-(b.top+b.bottom))<2,large:m.classList.contains('is-large')}}});
-    const state=()=>page.evaluate(()=>rvVideoMapState());
-    for(const large of [true,false]){
-     const before=await state();assert(!before.held&&before.large!==large&&before.box.join()===before.frame.join(),'at rest the map fills its frame '+JSON.stringify(before));
-     // The motion is sampled halfway through the frame's own size transition, in the task of the tap: the hold is set by
-     // the tap and lifted by a 280 ms timer, which cannot run before this task ends. (Waiting for a frame in which the
-     // frame had moved saw it already released when a loaded machine delayed that frame past the timer; a sample 120 ms
-     // after the tap could still see it unmoved.)
-     const during=await page.evaluate(()=>{const m=document.getElementById('videoMap');m.click();m.getBoundingClientRect();
-      const moving=m.getAnimations().filter(a=>['width','height'].includes(a.transitionProperty)&&a.playState==='running');
-      if(!moving.length)return {motion:false,...rvVideoMapState()};
-      for(const a of moving)a.currentTime=a.effect.getComputedTiming().duration/2;
-      return {motion:true,...rvVideoMapState()}});
-     assert(during.motion,'the frame changes size in a transition '+JSON.stringify({before,during}));assert(during.held&&during.centred&&during.frame.join()!==before.frame.join()&&during.box[0]>=during.frame[0]&&during.box[1]>=during.frame[1]&&(large||during.box[0]>=before.box[0]&&during.box[1]>=before.box[1]),'held, centred and covering the moving frame (shrinking: at least its larger size, or a few px over it when the room was measured again meanwhile) '+JSON.stringify({before,during}));
-     await page.waitForFunction(large=>{const s=rvVideoMapState();return !s.held&&s.large===large&&s.box.join()===s.frame.join()},large,{timeout:5000}).catch(()=>{});
-     const after=await state();assert(!after.held&&after.large===large&&after.box.join()===after.frame.join()&&after.frame.join()!==before.frame.join()&&(!large||[0,1].every(k=>during.box[k]>=after.frame[k]-2&&during.box[k]-after.frame[k]<12)),'released at the new size (growing: held at that size, or a few px over it when the room for the map was measured again meanwhile: still covering) '+JSON.stringify({during,after}))}
-    await page.emulateMedia({reducedMotion:'reduce'});await settleLayout(page)}
-   // A phone held upright turns the fullscreen picture a quarter (CSS): the small map is still there, measured in the
-   // picture's own frame (it was hidden: its room, taken from sideways screen rectangles, came out negative).
-   await page.evaluate(()=>{try{Object.defineProperty(screen.orientation,'lock',{configurable:true,value:()=>Promise.reject(new DOMException('refused','NotSupportedError'))})}catch{}document.getElementById("fullscreenButton").click()});
-   if(await page.waitForFunction(()=>document.querySelector('.camera-panel').classList.contains('is-turned'),null,{timeout:3000}).then(()=>true,()=>false)){
-    await page.waitForTimeout(400);
-    const t=await page.evaluate(()=>{const m=document.getElementById('videoMap'),b=m.getBoundingClientRect(),s=document.getElementById('videoStage').getBoundingClientRect(),h=document.querySelector('#videoStage .video-hud').getBoundingClientRect();
-     return {noRoom:m.classList.contains('no-room'),room:parseFloat(m.style.getPropertyValue('--vmap-room')),map:[b.left,b.top,b.width,b.height].map(Math.round),stage:[s.left,s.top,s.width,s.height].map(Math.round),hud:[h.width,h.height].map(Math.round)}});
-    assert(!t.noRoom&&t.room>100,'the small map has room in the turned fullscreen picture '+JSON.stringify(t));
-    assert(t.map[3]>t.map[2]&&t.map[3]>=t.hud[1]-1&&t.map[0]>=t.stage[0]&&t.map[1]>=t.stage[1]&&t.map[0]+t.map[2]<=t.stage[0]+t.stage[2]+1&&t.map[1]+t.map[3]<=t.stage[1]+t.stage[3]+1,'turned with the picture and inside it '+JSON.stringify(t));
-    await shot('mini-turned');
-    await page.evaluate(()=>document.exitFullscreen());await page.waitForFunction(()=>!document.fullscreenElement);await settleLayout(page);
-   }else{console.log('maps: turned fullscreen unavailable here, skipped');await page.evaluate(()=>document.fullscreenElement&&document.exitFullscreen());await page.waitForFunction(()=>!document.fullscreenElement)}
-   await page.evaluate(()=>{delete screen.orientation.lock});
+   const mini=page.locator('#videoMap'),open=mini.locator('.video-map-open'),close=mini.locator('.video-map-close');
+   await mini.locator('canvas').waitFor();await settleLayout(page);
+   await page.waitForFunction(()=>window.rvTestMini?.getLayer('background')&&rvTestMini.getPaintProperty('background','background-color')==='#0E1219'&&rvTestMini.hasImage('rv-vehicle'));
+   assert.equal(await mini.locator('.leaflet-container').count(),0);
+   await assertMiniCorner(page);
+   assert.equal(await page.evaluate(()=>rvTestMini.getPitch()),56);
+   assert((await mini.boundingBox()).width<=174.5);
+   // The analysis tab's basemap preferences remain independent.
+   await page.locator('#overlayHeightSettings').tap();await dialog.waitFor();
+   await dialog.getByRole('button',{name:'라이트',exact:true}).tap();
+   if(!REAL)await page.waitForFunction(()=>window.rvTestMini?.getLayer('background')&&rvTestMini.getPaintProperty('background','background-color')==='#f0eeea');
+   await dialog.getByLabel('작은 지도 글자 숨기기').check();
+   await page.waitForFunction(()=>rvTestMini.getStyle()?.layers.filter(layer=>layer.type==='symbol').every(layer=>layer.id==='rv-car'));
+   assert.equal(await page.locator('#routeMapView .rv-map').evaluate(el=>el.dataset.tiles),scheme);
+   await dialog.getByLabel('작은 지도 글자 숨기기').uncheck();
+   await dialog.getByRole('button',{name:'다크',exact:true}).tap();
+   await page.locator('#overlayHeightClose').tap();
+   assert(await open.isVisible());
+   await open.tap();await close.waitFor();
+   await mini.getByLabel('지도 출처').tap();
+   assert(await mini.getByRole('link',{name:'OpenFreeMap'}).isVisible());
+   await mini.getByLabel('지도 출처').tap();
+   assert.equal(await page.evaluate(()=>rvTestMini.getPitch()),0);
+   assert.equal(await page.evaluate(()=>rvTestMini.getBearing()),0);
+   assert(await mini.locator('.video-map-legend').isHidden(),'the phone leaves room for the route');
+   await tapNative(page,routeA[1][18],routeA[1][19],.5);
+   await waitSeek(page,18.5);
+   await open.waitFor(); // Auto-collapse is the default.
+   await page.evaluate(()=>Object.defineProperty(screen.orientation,'lock',{configurable:true,value:()=>Promise.reject(new DOMException('refused','NotSupportedError'))}));
+   await page.locator('#fullscreenButton').tap();
+   await page.waitForFunction(()=>document.fullscreenElement?.classList.contains('is-turned'));
+   await open.tap();await close.waitFor();
+   const pin=mini.locator('.video-map-pin');await pin.tap();
+   const touch=await context.newCDPSession(page);
+   const turnedStart=await nativePoint(page,routeA[1][22]),turnedEnd=await nativePoint(page,routeA[1][26],routeA[1][27],.5);
+   await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x:turnedStart[0],y:turnedStart[1]}]});
+   await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x:turnedEnd[0],y:turnedEnd[1]}]});
+   await mini.locator('.video-map-preview').waitFor();
+   assert(Math.abs(Number(await page.locator('#seek').inputValue())-18.5)<.65);
+   await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+   await waitSeek(page,26.5);
+   const snapCard=mini.locator('.video-map-preview');
+   assert.match(await snapCard.innerText(),/구간 1.*45 km\/h/s,'turned fullscreen snaps to the same GPS timeline');
+   await page.waitForTimeout(400);assert(await close.isVisible(),'pinned remains expanded after the seek');
+   await close.tap();await page.evaluate(()=>document.exitFullscreen());
+   await page.waitForFunction(()=>!document.fullscreenElement);
    await mapTab.tap();await page.locator('#videoMap').waitFor({state:'hidden'});await page.locator('#routeMapView .map-car').waitFor();
    // Tapping segment 0 of the drive on the map opens that segment at that point.
    {const lines=page.locator('#routeMapView .leaflet-overlay-pane path.leaflet-interactive');assert(await lines.count()>=2);
@@ -745,25 +623,120 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    assert(await page.locator('#mapTab').isHidden());assert(await page.locator('#videoMap').isHidden());
    assert.deepEqual(errors,[]);
    await context.close();
-   // The same corner with a mouse on a desktop (no touch): shown on hover, larger then smaller within its limits, the
-   // size back after a reload.
-   if(scheme==='dark'){const desk=await browser.newContext({viewport:{width:1280,height:800},colorScheme:scheme,reducedMotion:'reduce'}),dp=await desk.newPage(),derrors=[];
-    dp.on('pageerror',error=>derrors.push(error.message));await desk.route(`**/api/logs/${withVideo}/video**`,route=>route.fulfill({body:video,contentType:'video/mp4'}));
-    await dp.goto(base+`view/${withVideo}/`);await dp.waitForFunction(()=>!!document.getElementById('play')&&!document.getElementById('play').disabled);
-    await dp.locator('#overlayHeightSettings').click();await dp.locator('#overlayHeightDialog').waitFor();await dp.getByLabel('영상 위 작은 지도').check();await dp.locator('#overlayHeightClose').click();
-    const dm=dp.locator('#videoMap');await dm.locator('.map-car').waitFor();await settleLayout(dp);await dp.waitForTimeout(150);
-    const b0=await dm.boundingBox();await dm.hover();await dp.waitForTimeout(300);const g=await dm.locator('.video-map-grip').boundingBox();
-    assert(Number(await dm.locator('.video-map-grip').evaluate(e=>getComputedStyle(e,'::before').opacity))>.5,'the corner shows on hover');
-    await dp.mouse.move(g.x+g.width/2,g.y+g.height/2);await dp.mouse.down();await dp.mouse.move(g.x-80,g.y+60,{steps:8});await dp.mouse.up();await dp.waitForTimeout(150);
-    const b1=await dm.boundingBox();assert(b1.width>b0.width+60,'mouse: wider '+JSON.stringify([b0,b1]));
-    assert(Math.abs(b1.x+b1.width-(b0.x+b0.width))<=1.5&&Math.abs(b1.y-b0.y)<=1.5&&Math.abs(b1.height-b1.width*.75)<=1.5,'mouse: anchored, 4:3 '+JSON.stringify(b1));
-    assert(!await dm.evaluate(e=>e.classList.contains('is-large')),'the drag does not enlarge');
-    if(shots){await dp.waitForTimeout(REAL?3000:150);await dp.screenshot({path:path.join(shots,'minimap-resized-desktop-dark.png')})}
-    {const g1=await dm.locator('.video-map-grip').boundingBox();await dp.mouse.move(g1.x+g1.width/2,g1.y+g1.height/2);await dp.mouse.down();await dp.mouse.move(g1.x+600,g1.y-400,{steps:8});await dp.mouse.up();await dp.waitForTimeout(150)}
-    const b2=await dm.boundingBox();assert(b2.width>=103.5&&b2.width<b1.width,'mouse: smaller, not below the least size '+JSON.stringify(b2));
-    await dp.reload();await dp.waitForFunction(()=>!!document.getElementById('play')&&!document.getElementById('play').disabled);await dm.locator('.map-car').waitFor();await settleLayout(dp);await dp.waitForTimeout(150);
-    {const b3=await dm.boundingBox(),info=await dp.evaluate(()=>({f:localStorage.getItem('roadviewer-minimap-size'),v:document.getElementById('videoStage').style.getPropertyValue('--vmap-f'),min:document.getElementById('videoStage').style.getPropertyValue('--vmap-min-w'),sized:document.getElementById('videoStage').classList.contains('vmap-sized'),w:document.getElementById('videoStage').getBoundingClientRect().width}));assert(Math.abs(b3.width-Math.max(b2.width,parseFloat(info.min)))<=1.5&&info.sized,'kept after a reload (never narrower than the speed) '+JSON.stringify([b1,b2,b3,info]))}
-    assert.deepEqual(derrors,[]);await desk.close()}
+  }
+  if(PARTS.includes('native')||(PARTS.includes('main')&&SCHEMES.includes('dark'))){
+   const context=await browser.newContext({viewport:{width:1440,height:900},colorScheme:'dark'});
+   const page=await context.newPage(),errors=[];
+   page.on('pageerror',error=>errors.push(error.message));
+   await context.addInitScript(hookMaps);
+   if(!REAL)await context.route(OFM+'**',stubTiles);
+   const testVideo=video;
+   for(const log of [logs[1],logs[2]])await context.route('**/api/logs/'+log.id+'/video**',route=>route.fulfill({body:testVideo,contentType:'video/mp4'}));
+   const missing=logs[4].id;let requests=0;
+   await page.route('**/api/logs/'+withVideo+'/track',async route=>{
+    const headers={...route.request().headers()};delete headers['if-none-match'];
+    const response=await route.fetch({headers}),value=await response.json();
+    value.segments=value.segments.filter(segment=>segment.id!==missing);
+    value.unconverted=[{id:missing,segment:4,status:requests?'queued':'unconverted'}];
+    await route.fulfill({response,json:value});
+   });
+   await page.route('**/api/logs/'+missing+'/convert',route=>{
+    assert.equal(route.request().method(),'POST');
+    assert.equal(route.request().headers()['x-roadviewer-request'],'1');
+    requests++;
+    return route.fulfill({json:{status:'queued'}});
+   });
+   await page.goto(base+'view/'+withVideo+'/');
+   await page.locator('#play:enabled').waitFor();
+   const dialog=page.locator('#overlayHeightDialog'),mini=page.locator('#videoMap'),open=mini.locator('.video-map-open'),close=mini.locator('.video-map-close');
+   await page.locator('#overlayHeightSettings').click();
+   await dialog.getByLabel('영상 위 작은 지도').check();
+   await page.locator('#overlayHeightClose').click();
+   await page.waitForFunction(()=>window.rvTestMini?.getLayer('background')&&rvTestMini.getPaintProperty('background','background-color')==='#0E1219'&&rvTestMini.hasImage('rv-vehicle'));
+   const seek=async value=>page.locator('#seek').evaluate((el,t)=>{el.value=t;el.dispatchEvent(new Event('input'))},value);
+   await seek(3);await page.waitForFunction(()=>Math.abs(rvTestMini.getBearing()+1)<.15);
+   await seek(4);await page.waitForFunction(()=>Math.abs(rvTestMini.getBearing()-2)<.15);
+   await seek(42);await page.waitForFunction(()=>Math.abs(rvTestMini.getZoom()-17.1)<.02);
+   assert(Math.abs(await page.evaluate(()=>rvTestMini.getBearing())-2)<.15,'low speed keeps the previous heading');
+   await seek(45);await page.waitForFunction(()=>Math.abs(rvTestMini.getZoom()-14.6)<.02);
+   await seek(14);
+   await page.waitForFunction(()=>Math.abs(rvTestMini.getZoom()-16.36)<.02&&Math.abs(rvTestMini.getBearing()-90)<.15);
+   const forward=await page.evaluate(([,lat,lon])=>{const map=rvTestMini,car=map.project(map.getCenter()),next=map.project([lon,lat]);
+    return {x:next.x-car.x,y:next.y-car.y};
+   },routeA[1][15]);
+   assert(forward.y<0&&Math.abs(forward.x)<1,'the route extends up from the arrow '+JSON.stringify(forward));
+   await page.locator('#bookmarkOpen').click();
+   const editor=page.locator('.bookmark-dialog');
+   await editor.locator('.bookmark-title').fill('차선 합류');
+   await editor.locator('.bookmark-save').click();
+   await editor.waitFor({state:'hidden'});
+   await page.waitForFunction(async()=>((await rvTestMini.getSource('rv-bookmarks').getData()).features.length===1));
+   await page.evaluate(()=>scrollTo(0,0));await settleLayout(page);
+   await assertMiniCorner(page);
+   await screenshot(page,'01-desktop-3d-minimap');
+
+   const geometry=()=>page.locator('#videoStage').boundingBox();
+   const frame=await geometry(),initialResizes=await page.evaluate(()=>rvNativeResizes);
+   await open.click();await page.waitForFunction(()=>!document.querySelector('.video-map-canvas').style.width&&!rvTestMini.isMoving());
+   assert.equal(await page.evaluate(()=>rvNativeResizes)-initialResizes,1,'opening resizes the WebGL canvas once');
+   assert.equal(await page.evaluate(()=>rvTestMini.getPitch()),0);
+   assert.equal(await page.evaluate(()=>rvTestMini.getBearing()),0);
+   assert.deepEqual(await geometry(),frame,'the overlay leaves the video geometry intact');
+   assert.equal(await page.evaluate(()=>!!window.L),false,'native replay loads without Leaflet');
+   const pin=mini.locator('.video-map-pin'),follow=mini.locator('.video-map-follow'),card=mini.locator('.video-map-preview');
+   await pin.click();
+   const a=await nativePoint(page,routeA[1][30],routeA[1][31],.2),b=await nativePoint(page,routeA[1][38],routeA[1][39],.5);
+   await page.mouse.move(...a);await page.mouse.down();await page.mouse.move(...b,{steps:5});
+   await card.waitFor();assert.equal(Number(await page.locator('#seek').inputValue()),14,'scrubbing previews before committing');
+   assert.match(await card.innerText(),/구간 1.*45 km\/h.*km/s);
+   await page.mouse.up();await waitSeek(page,38.5);
+   await screenshot(page,'02-desktop-expanded-snap');
+   const blank=await page.locator('#videoMap canvas').boundingBox();
+   await page.mouse.move(blank.x+blank.width*.2,blank.y+blank.height*.4);await page.mouse.down();
+   await page.mouse.move(blank.x+blank.width*.25,blank.y+blank.height*.42,{steps:5});await page.mouse.up();
+   assert.equal(await follow.getAttribute('aria-pressed'),'false');
+   await follow.click();await page.waitForFunction(()=>!rvTestMini.isMoving());
+   assert.equal(await follow.getAttribute('aria-pressed'),'true');
+
+   // Clicking a newly created bookmark seeks to its exact time and uses its title in the card.
+   await page.mouse.click(...await nativePoint(page,routeA[1][14]));
+   await waitSeek(page,14,.02);assert.match(await card.innerText(),/차선 합류/);
+   await page.mouse.click(...await nativePoint(page,routeA[3].at(-1),routeA[5][0],.5));
+   assert.match(await card.innerText(),/구간 4.*미변환/s);
+   await card.getByRole('button',{name:'변환',exact:true}).click();
+   await card.getByText('변환 대기 중').waitFor();
+   assert.equal(requests,1);
+   assert(await card.getByRole('button',{name:'변환',exact:true}).isDisabled());
+
+   // The next segment reuses the same MapLibre instance and the pinned expansion.
+   await page.mouse.click(...await nativePoint(page,routeA[2][24],routeA[2][25],.5));
+   await page.waitForURL(new RegExp('/view/'+logs[2].id+'/$'));await waitSeek(page,24.5);
+   await close.waitFor();
+   assert.equal(await pin.getAttribute('aria-pressed'),'true');
+   assert.equal(await page.evaluate(()=>rvNativeCreated),1);
+   const beforeClose=await page.evaluate(()=>rvNativeResizes);
+   await close.click();
+   await page.waitForFunction(()=>!document.querySelector('.video-map-canvas').style.width&&!rvTestMini.isMoving());
+   assert.equal(await page.evaluate(()=>rvNativeResizes)-beforeClose,1,'closing resizes the WebGL canvas once');
+   await page.getByRole('link',{name:'로그 목록'}).click();await page.waitForURL(base);
+   assert.equal(await page.evaluate(()=>rvNativeRemoved),1,'leaving the drive releases the native map');
+   assert.deepEqual(errors,[]);
+   await context.close();
+  }
+  if(verifyShots){
+   const context=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,colorScheme:'dark',reducedMotion:'reduce'});
+   if(!REAL)await context.route(OFM+'**',stubTiles);
+   const testVideo=video;
+   await context.route('**/api/logs/'+withVideo+'/video**',route=>route.fulfill({body:testVideo,contentType:'video/mp4'}));
+   const page=await context.newPage();await context.addInitScript(hookMaps);
+   await page.goto(base+'view/'+withVideo+'/');await page.locator('#play:enabled').waitFor();
+   await page.locator('#overlayHeightSettings').tap();await page.getByLabel('영상 위 작은 지도').check();await page.locator('#overlayHeightClose').tap();
+   await page.waitForFunction(()=>window.rvTestMini?.getLayer('background')&&rvTestMini.getPaintProperty('background','background-color')==='#0E1219'&&rvTestMini.hasImage('rv-vehicle'));
+   await screenshot(page,'03-mobile-3d-minimap');
+   await page.locator('.video-map-open').tap();await page.locator('.video-map-pin').tap();
+   await tapNative(page,routeA[1][35]);await page.locator('.video-map-preview').waitFor();
+   await screenshot(page,'04-mobile-expanded-snap');
+   await context.close();
   }
   // Many drives (60 of one segment and one of 40) on wide screens: the all-drives map lists them in a glass card on
   // the right (its own scroll, a row per drive in its line's colour; hover highlights, a tap selects with the actions

@@ -488,7 +488,7 @@ function goToAdjacentSegment(direction){
 addEventListener('keydown',e=>{
  if(!SHORTCUT_KEYS.has(e.code)||e.defaultPrevented||e.ctrlKey||e.altKey||e.metaKey)return;
  const target=e.target instanceof Element?e.target:document.body;
- if(document.querySelector('dialog[open]')||takesKeys(target))return;
+ if(document.querySelector('dialog[open]')||takesKeys(target)||target.matches('.video-map.is-large .maplibregl-canvas'))return;
  e.preventDefault();e.stopPropagation();
  if(e.code==='Space'){flash($('play'));toggle()}
  else if(e.code==='ArrowLeft'){flash($('prev'));step(-1)}
@@ -1115,7 +1115,7 @@ let barFoldChanged=()=>{};
  let lastTap=0,dismissed=-1e9;
  function tap(e){
   const now=performance.now();if(now-lastTap<450)return;lastTap=now;
-  const onPicture=stage.contains(e.target)&&!e.target.closest('button,select,input,label,a,summary,[role=button],.glass,.video-tools,.video-title,.video-hud,.video-messages');
+  const onPicture=stage.contains(e.target)&&!e.target.closest('button,select,input,label,a,summary,[role=button],.video-map,.glass,.video-tools,.video-title,.video-hud,.video-messages');
   if(onPicture&&playing()&&!root.classList.contains('hud-idle')){clearTimeout(timer);root.classList.remove('hud-awake');dismissed=now;sync();return}
   wake();
  }

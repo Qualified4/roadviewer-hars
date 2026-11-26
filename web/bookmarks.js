@@ -39,6 +39,7 @@
   const response=await fetch(url+suffix,{method,headers:{'Content-Type':'application/json','X-RoadViewer-Request':'1'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
   const result=await response.json();if(!response.ok)throw Error(result.error||'북마크를 저장하지 못했습니다.');return result.bookmarks;
  }
+ function share(){window.dispatchEvent(new CustomEvent("rv:bookmarks",{detail:{id,items}}))}
  function jump(item){if(!data||loading)return;setTime(item.time);last=performance.now()}
  function capture(time){captured=time;find('.bookmark-time').textContent=clock(captured)}
  // Following playback (called every frame) with the editor closed, the unseen time text is written once a second;
@@ -85,12 +86,12 @@
  function lockEditor(value){busy=value;find('fieldset').disabled=value||!ready;find('.bookmark-save').disabled=value||!ready;find('.bookmark-close').disabled=value;renderList()}
  async function load(){
   if(busy)return;lockEditor(true);
-  try{items=await request();ready=true;loadError='';renderMarkers(true)}catch(error){loadError='북마크를 불러오지 못했습니다. 다시 시도해 주세요.';message(loadError)}
+  try{items=await request();ready=true;loadError='';renderMarkers(true);share()}catch(error){loadError='북마크를 불러오지 못했습니다. 다시 시도해 주세요.';message(loadError)}
   finally{lockEditor(false)}
  }
  async function mutate(method,suffix='',body){
   if(busy)return;lockEditor(true);message('저장 중…');
-  try{items=await request(method,suffix,body);renderMarkers(true);resetEditor();follow=true;message(method==='DELETE'?'북마크를 삭제했습니다.':'북마크를 저장했습니다.');if(dialog.open)dialog.close()}
+  try{items=await request(method,suffix,body);renderMarkers(true);share();resetEditor();follow=true;message(method==='DELETE'?'북마크를 삭제했습니다.':'북마크를 저장했습니다.');if(dialog.open)dialog.close()}
   catch(error){message(error.name==='TimeoutError'?'응답이 지연되고 있습니다. 다시 저장을 눌러 주세요.':error.message);loadError='목록을 다시 확인해 주세요.'}
   finally{lockEditor(false)}
  }

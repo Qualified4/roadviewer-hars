@@ -1251,16 +1251,20 @@ async fn track(
 ) -> Result<Response> {
     let target = app.store.meta(&id).await?;
     let key = crate::track::route_order(&target).0;
-    let ready: Vec<_> = app
+    let (ready, unconverted): (Vec<_>, Vec<_>) = app
         .store
         .records
         .read()
         .await
         .values()
-        .filter(|m| m["status"] == "ready")
         .filter(|m| crate::track::route_order(m).0 == key)
         .cloned()
+        .partition(|m| m["status"] == "ready");
+    let mut unconverted: Vec<_> = unconverted
+        .iter()
+        .filter_map(crate::track::UnconvertedSegment::from_meta)
         .collect();
+    unconverted.sort_unstable();
     let shares = app.store.prepared.track_shares(&ready).await?;
     let mut ready_segments = ready
         .iter()
@@ -1277,6 +1281,7 @@ async fn track(
                 &id,
                 &key,
                 &ready_segments,
+                &unconverted,
                 paths,
                 &if_none_match,
             )
