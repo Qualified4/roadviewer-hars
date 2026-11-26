@@ -1,3 +1,7 @@
+## 2.1.1
+
+- Improved car-follow zoom to level 16 in the expanded replay map and Map tab, added a full-route fit button, and added clickable bookmark markers in the Map tab to jump to that moment.
+
 ## 2.1.0
 
 - Added a Tesla-style 3D faded minimap to the replay view, with an expanded 2D map supporting route-snap scrubbing, bookmark pins, and dashed bridge lines across unconverted segments.
