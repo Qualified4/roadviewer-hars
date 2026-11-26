@@ -116,7 +116,7 @@ CI는 기존 `Rust checks`, `Container (amd64)`, `Container (aarch64)`, `HARS re
 
 ### 아카이빙
 
-- `tests/archive_backends.rs`, `tests/archiver*.rs`, `tests/archive_*.rs`, `archive_e2e.py`: OAuth 장치 흐름과 토큰 갱신, resumable 업로드의 끊김 후 재개와 세션 만료 후 재시작, size·md5·sha256 검증, copy·move, 단계별 크래시 뒤 복구, 원격 장애 중 로컬 보존, NAS 미마운트·끊김, 수동 실행과 `archive_running`, 기록 삭제에서 원격 삭제 저널까지, 원격 Range 재생과 다운로드, 아카이브 입력 재변환, 지도 보충.
+- `tests/archive_backends.rs`, `tests/archiver*.rs`, `tests/archive_*.rs`, `archive_e2e.py`: OAuth 장치 흐름과 토큰 갱신, resumable 업로드의 끊김 후 재개와 세션 만료 후 재시작, size·md5·sha256 검증, copy·move, 단계별 크래시 뒤 복구, 원격 장애 중 로컬 보존, NAS 미마운트·끊김, 수동 실행과 `archive_running`, 기록 삭제에서 원격 삭제 저널까지, 원격 Range 재생과 다운로드, 아카이브 입력 재변환.
 - Python 구조의 폴더와 파일을 모의 Drive에 두고 아카이브·정리·삭제·연결 해제를 모두 실행한 뒤 바이트와 메타가 그대로임을 단언한다.
 - 독립 검토 지적: 언마운트 직후 로컬 디스크에 보관, 포기한 확인 작업의 뒤늦은 삭제, 다른 소유자 폴더에서의 삭제, 끊긴 요청의 임시 사본, 공유 폴더의 심볼릭 링크. 모두 재현 테스트와 함께 수정했다.
 - 중단된 NAS 복사가 다음 주기의 임시 파일을 rename하던 경합은 병렬 부하에서 100회 중 8회 실패했고, 대상별 배타 락과 취소 확인을 넣은 뒤 100회 중 0회다.

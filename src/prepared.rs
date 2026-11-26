@@ -506,10 +506,6 @@ impl Prepared {
         if self.playing(record).await
             || matches!(meta["status"].as_str(), Some("processing" | "queued"))
             || folder.join(".conversion.json").exists()
-            || folder
-                .join("prepared")
-                .join(archive::track_fill::STAGED)
-                .is_file()
         {
             return Ok(MoveResult::Skipped);
         }

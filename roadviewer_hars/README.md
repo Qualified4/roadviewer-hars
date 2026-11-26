@@ -6,7 +6,7 @@
 >
 > [구현·검증 현황](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) · [병행 설치·전환·롤백 절차](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md) · [실제 HAOS 검증](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/HAOS-VALIDATION.md)
 
-현재 버전: **2.0.23**
+현재 버전: **2.0.24**
 
 openpilot 로그와 전방·와이드 카메라 영상을 Home Assistant 안에서 함께 재생하고 분석하는 앱입니다.
 
@@ -27,7 +27,7 @@ openpilot 로그와 전방·와이드 카메라 영상을 Home Assistant 안에�
 - 주행 전체 또는 구간별 변환, 메모리 여유에 따른 자동·수동 변환의 동시 처리, **메모리 대기 중** 표시, 재압축 없는 MP4 보관
 - 영상 나중에 추가, MP4·원본 형식 다운로드
 - 구간 태그와 북마크 탭의 장면 북마크
-- GPS 주행 경로 지도: 로그 탭의 **목록 | 지도** 전체 지도(목록에 주행 번호 표시), 주행 지도, 재생 화면 **지도** 탭과 영상 위 작은 지도(OpenFreeMap, API 키 불필요). Drive에만 있는 로그는 선택해서 경로를 채움
+- GPS 주행 경로 지도: 로그 탭의 **목록 | 지도** 전체 지도(목록에 주행 번호 표시), 주행 지도, 재생 화면 **지도** 탭과 영상 위 작은 지도(OpenFreeMap, API 키 불필요). 지도 경로가 없는 로그는 다시 변환해 경로를 생성할 수 있습니다.
 - 검색·필터 칩과 날짜별 주행 카드(썸네일, 출발 시각, 구간 상태 막대, 자동 제어 비율·개입 횟수, 기본 접힘), 구간별 저장 위치(로컬·Drive·NAS) 표시
 - 구간별 핀 고정, 목록 안 선택 모드의 일괄 태그·다운로드·변환·제거·완전 삭제, 재생 화면 ⋯ 메뉴의 제거·다운로드·완전 삭제, 저장공간 한도와 자동 정리
 - 실험 기능: 오래된 기록을 Google Drive 또는 NAS로 복사·이동하는 아카이빙, Drive 연결·연결 해제

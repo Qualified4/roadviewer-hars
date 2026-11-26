@@ -20,7 +20,6 @@ pub mod nas;
 pub mod pending;
 pub mod resolve;
 pub mod settings;
-pub mod track_fill;
 
 pub use archiver::{Archive, Factory, Host};
 pub use archiver_manual::Transfer;

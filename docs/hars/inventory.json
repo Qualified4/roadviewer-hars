@@ -415,8 +415,6 @@
         "archive_preferences",
         "archive_preferences_api",
         "run_archive",
-        "run_track_fill",
-        "stop_track_fill",
         "drive_connection",
         "drive_changed",
         "gdrive_auth_error",

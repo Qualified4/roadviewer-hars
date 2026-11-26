@@ -379,22 +379,6 @@ body.uploading,body:has(.library-page.uploading) { overscroll-behavior-y: contai
 }
 
 @media(min-width:601px) and (max-width:1000px){.storage-basic-fields>.storage-field:last-child{grid-column:1/-1}}
-/* Drive 로그 지도 채우기: the title and its switch on one line (like 아카이빙 사용), the help below, then the progress
-   meter with its count and the run/stop button. */
-.track-fill{display:flex;flex-direction:column;gap:6px;padding:18px 0 6px}
-.track-fill-head{display:flex;align-items:center;justify-content:space-between;gap:16px}
-.track-fill-head h3{margin:0;font-size:14px;font-weight:700;color:var(--text)}.track-fill-head h3 label{margin:0;font:inherit;color:inherit;letter-spacing:inherit;cursor:pointer}.track-fill-head .auto-convert-control{flex:none}
-.track-fill-help{margin:0;font-size:12px;color:var(--muted);max-width:72ch}
-.track-fill-progress{display:flex;align-items:center;gap:12px;margin-top:6px}
-.track-fill-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:6px}
-.track-fill-meter{height:6px;border-radius:3px;background:var(--track);box-shadow:var(--track-shadow);overflow:hidden}
-.track-fill-meter>span{display:block;height:100%;width:var(--fill,0%);border-radius:inherit;background:var(--accent);transition:width .4s var(--ease,ease)}
-.track-fill-meter[data-state="error"]>span{background:var(--warn)}
-.track-fill-status{margin:0;font-size:12.5px;color:var(--text-2);font-variant-numeric:tabular-nums;white-space:pre-line}
-.track-fill-status[data-state="error"]{color:var(--warn-text)}
-#trackFillRun{flex:none;margin:0}
-@media(max-width:600px){.track-fill-progress{align-items:flex-end}}
-@media(prefers-reduced-motion:reduce){.track-fill-meter>span{transition:none}}
 .archive-job{display:grid;gap:6px;margin-top:8px}.archive-job progress{width:100%;height:8px;accent-color:var(--accent)}.archive-job p{margin:0;font-size:12px;color:var(--muted);overflow-wrap:anywhere;white-space:pre-line;font-variant-numeric:tabular-nums}.archive-job[data-state="failed"] p,.archive-job[data-state="interrupted"] p,.archive-job[data-state="partial"] p{color:var(--warn-text)}
 .archive-all-summary{display:grid;grid-template-columns:auto 1fr;gap:6px 16px;margin:0;padding:4px 22px 10px;font-size:13px}.archive-all-summary dt{color:var(--muted)}.archive-all-summary dd{margin:0;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
 .archive-all-dialog .archive-mode{margin:0 22px 8px}.archive-all-excluded{margin:0 22px 8px;padding-left:18px;font-size:12px;color:var(--muted)}.archive-all-excluded:empty{display:none}

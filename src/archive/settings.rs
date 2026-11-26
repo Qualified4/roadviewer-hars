@@ -21,13 +21,9 @@ const RANGES: [(&str, i64, Option<i64>); 6] = [
     ("archive_nas_max_mb", 0, None),
     ("archive_nas_margin_mb", 0, None),
 ];
-const BOOLS: [&str; 3] = [
-    "archive_enabled",
-    "archive_allow_local_delete",
-    "archive_gdrive_fill_tracks",
-];
+const BOOLS: [&str; 2] = ["archive_enabled", "archive_allow_local_delete"];
 /// Python `KEYS` (the fields of `values()`).
-pub const KEYS: [&str; 13] = [
+pub const KEYS: [&str; 12] = [
     "archive_enabled",
     "archive_backend",
     "archive_mode",
@@ -40,7 +36,6 @@ pub const KEYS: [&str; 13] = [
     "archive_nas_max_mb",
     "archive_nas_margin_mb",
     "archive_gdrive_folder_name",
-    "archive_gdrive_fill_tracks",
 ];
 pub const CREDENTIAL_KEYS: [&str; 2] = ["archive_gdrive_client_id", "archive_gdrive_client_secret"];
 
@@ -89,7 +84,6 @@ pub struct ArchiveSettings {
     pub gdrive_client_id: String,
     pub gdrive_client_secret: Secret,
     pub gdrive_folder_name: String,
-    pub gdrive_fill_tracks: bool,
     /// Python `RV_ARCHIVE_ALLOW_ANY_PATH=1` (tests point the archive at temporary folders).
     pub allow_any_path: bool,
 }
@@ -186,7 +180,6 @@ impl ArchiveSettings {
             } else {
                 folder.to_owned()
             },
-            gdrive_fill_tracks: boolean(options.get("archive_gdrive_fill_tracks")),
             allow_any_path,
         }
     }
@@ -227,7 +220,6 @@ pub fn values(s: &ArchiveSettings) -> Map<String, Value> {
         "archive_nas_max_mb": s.nas_max_bytes / MB,
         "archive_nas_margin_mb": s.nas_margin_bytes / MB,
         "archive_gdrive_folder_name": s.gdrive_folder_name,
-        "archive_gdrive_fill_tracks": s.gdrive_fill_tracks,
     });
     match v {
         Value::Object(m) => m,
@@ -372,6 +364,8 @@ pub fn load(root: &Path, options: &Map<String, Value>, allow_any_path: bool) -> 
                 };
                 data.remove("version");
                 data.remove("migrated_from");
+                // Ignore the retired preference when loading files saved by older versions.
+                data.remove("archive_gdrive_fill_tracks");
                 if !validate(&Value::Object(data.clone()), allow_any_path).is_empty() {
                     return Err(());
                 }
