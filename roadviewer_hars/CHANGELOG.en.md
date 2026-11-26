@@ -1,3 +1,7 @@
+## 2.1.0
+
+- Added a Tesla-style 3D faded minimap to the replay view, with an expanded 2D map supporting route-snap scrubbing, bookmark pins, and dashed bridge lines across unconverted segments.
+
 ## 2.0.26
 
 - In replay, turning on a turn signal makes the first arrow glide forward briefly from its existing ground position toward the return point about 7 m ahead before lifting off.
