@@ -1072,12 +1072,9 @@ select,.rv-choice-trigger{font-weight:500}
 .rv-map.is-credit-compact:not(.is-credit-open) .leaflet-control-attribution{display:none}
 .rv-map.is-credit-compact.is-credit-open .leaflet-control-attribution{margin:0 32px 6px 0;border-radius:6px}
 /* The canvas fades into the video. The controls sit outside the mask so their targets stay visible. */
-.video-map{--vmap-edge:12px;--vmap-inset:14px;--vmap-ratio:.774;--vmap-w:min(310px,calc(100cqw * .41));position:absolute;top:var(--vmap-edge);right:var(--vmap-edge);z-index:3;width:var(--vmap-w);height:min(calc(var(--vmap-w) * var(--vmap-ratio)),var(--vmap-room,240px));transition:width .28s var(--m2-standard,ease),height .28s var(--m2-standard,ease),top .28s,right .28s;color:#F0F4F8;color-scheme:dark;font-weight:500;letter-spacing:.015em;font-variant-numeric:tabular-nums;--focus:#5BE3AE}
-.video-map-surface{position:absolute;inset:0;
- -webkit-mask-image:linear-gradient(to left,#000 58%,rgba(0,0,0,.65) 78%,transparent),linear-gradient(to bottom,#000 56%,rgba(0,0,0,.60) 78%,transparent);
- -webkit-mask-composite:source-in;
- mask-image:linear-gradient(to left,#000 58%,rgba(0,0,0,.65) 78%,transparent),linear-gradient(to bottom,#000 56%,rgba(0,0,0,.60) 78%,transparent);
- mask-composite:intersect}
+.video-map{--vmap-inset:14px;--vmap-ratio:.774;--vmap-w:min(310px,calc(100cqw * .41));position:absolute;top:0;right:0;margin:0;z-index:3;width:var(--vmap-w);height:min(calc(var(--vmap-w) * var(--vmap-ratio)),var(--vmap-room,240px));transition:width .28s var(--m2-standard,ease),height .28s var(--m2-standard,ease),top .28s,right .28s;color:#F0F4F8;color-scheme:dark;font-weight:500;letter-spacing:.015em;font-variant-numeric:tabular-nums;--focus:#5BE3AE}
+.video-map-surface{--vmap-mask:radial-gradient(ellipse 99% 99% at 100% 0%,#000 43%,rgba(0,0,0,.84) 61%,rgba(0,0,0,.47) 77%,rgba(0,0,0,.09) 93%,transparent 100%);position:absolute;inset:0;
+ -webkit-mask-image:var(--vmap-mask);mask-image:var(--vmap-mask)}
 .video-map .video-map-canvas{position:absolute;inset:0}
 .video-map-open{position:absolute;inset:0;width:100%;background:none;border:0;border-radius:0;box-shadow:none;cursor:zoom-in;touch-action:none}
 .video-map .video-map-open:where(:enabled):is(:hover,:active){background:none;filter:none}
@@ -1088,10 +1085,11 @@ select,.rv-choice-trigger{font-weight:500}
 .video-map:is(.is-sizing,.is-instant){transition:none}
 .video-map.no-room:not(.is-large){display:none}
 .video-map-grip{position:absolute;left:0;bottom:0;z-index:2;width:32px;height:32px;padding:6px;display:grid;place-items:end start;touch-action:none;cursor:nesw-resize}
-.video-map-grip::before{content:"";width:11px;height:11px;border-left:2px solid #DBE2EA;border-bottom:2px solid #DBE2EA;border-bottom-left-radius:7px;opacity:.7;transition:opacity .15s}
-@media(hover:hover) and (pointer:fine){.video-map-grip::before{opacity:0}.video-map:hover .video-map-grip::before,.video-map.is-sizing .video-map-grip::before{opacity:.9}}
+.video-map-grip::before{content:"";width:11px;height:11px;border-left:2px solid #DBE2EA;border-bottom:2px solid #DBE2EA;border-bottom-left-radius:7px;opacity:0;transition:opacity .15s}
+@media(hover:hover) and (pointer:fine){.video-map:hover .video-map-grip::before{opacity:.9}}
+.video-map.is-sizing .video-map-grip::before{opacity:.9}
 .video-map.is-large .video-map-grip{display:none}
-.video-wrap.vmap-sized .video-map{--vmap-w:clamp(max(104px,var(--vmap-min-w,0px)),calc(100cqw * var(--vmap-f)),calc(100cqw - 2 * var(--vmap-edge)))}
+.video-wrap.vmap-sized .video-map{--vmap-w:clamp(max(104px,var(--vmap-min-w,0px)),calc(100cqw * var(--vmap-f)),100cqw)}
 .video-map-controls{position:absolute;inset:0;pointer-events:none}
 .video-map-toolbar{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;gap:8px}
 .video-map-toolbar>div{display:flex;gap:6px}
@@ -1111,7 +1109,7 @@ select,.rv-choice-trigger{font-weight:500}
 .video-map-credit summary::-webkit-details-marker{display:none}
 .video-map-credit>div{position:absolute;bottom:0;right:30px;width:max-content;max-width:calc(100cqw - 52px);padding:3px 6px;border-radius:6px;font-size:10px}
 .video-map-credit a{color:#D3E1F3}
-@container(max-width:520px){.video-map{--vmap-edge:8px}}
+.video-map:not(.is-large) .video-map-credit{display:none}
 @media(max-width:600px){
  .video-map{--vmap-w:min(174px,calc(100cqw * .48));--vmap-ratio:.816;--vmap-inset:0px}
  .video-map.is-large .video-map-surface{border-radius:0}

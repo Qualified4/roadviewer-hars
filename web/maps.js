@@ -1133,6 +1133,11 @@
   // where it gave none).
   const same=(p,q)=>!!p&&!!q&&p[1]===q[1]&&p[2]===q[2];
   const held=(points,j)=>j>0&&j<points.length-1&&same(points[j-1],points[j])&&!same(points[j-2],points[j-1])&&!same(points[j],points[j+1])&&!(Number.isFinite(points[j][3])&&points[j][3]<.5);
+  function legBearing(from,to){
+   if(!from||!to||same(from,to))return null;
+   const radians=Math.PI/180,longitude=((to[2]-from[2])%360+540)%360-180;
+   return Math.atan2(longitude*Math.cos(from[1]*radians),to[1]-from[1])/radians;
+  }
   function heading(points,j){
    const p=points[j];if(Number.isFinite(p[4]))return p[4];
    // A stopped start may repeat one fix for seconds: orient before playback, using the first distinct fix.
@@ -1140,7 +1145,7 @@
    while(next<points.length&&same(p,points[next]))next++;
    while(previous>=0&&same(p,points[previous]))previous--;
    const [from,to]=next<points.length?[p,points[next]]:previous>=0?[points[previous],p]:[p,p];
-   return same(from,to)?null:Math.atan2((to[2]-from[2])*Math.cos(p[1]*Math.PI/180),to[1]-from[1])*180/Math.PI;
+   return legBearing(from,to);
   }
   function position(time,points=route[current].points){
    let i=0;
@@ -1150,7 +1155,8 @@
    const a=points[from],b=points[to],span=b[0]-a[0],k=span>0?Math.max(0,Math.min(1,(time-a[0])/span)):0;
    const lat=a[1]+(b[1]-a[1])*k,lon=a[2]+(b[2]-a[2])*k,ha=heading(points,from),hb=heading(points,to);
    const bearing=ha!==null&&hb!==null?ha+(((hb-ha)%360+540)%360-180)*k:ha??hb??0;
-   return {latlng:[lat,lon],bearing:(bearing%360+360)%360,speed:(a[3]??0)+((b[3]??0)-(a[3]??0))*k,index:i,k,from,to};
+   const course=legBearing(a,b)??legBearing(points[from-1],a)??bearing;
+   return {latlng:[lat,lon],course,bearing:(bearing%360+360)%360,speed:(a[3]??0)+((b[3]??0)-(a[3]??0))*k,index:i,k,from,to};
   }
   const carIcon=(L,bearing)=>L.divIcon({className:'map-car',html:`<span class="map-car-body" data-car-icon="${mapCar}" data-car-color="${mapCarColor}" style="${carColorStyle()}transform:rotate(${bearing.toFixed(2)}deg)">${carArt(mapCar)}</span>`,iconSize:[44,44],iconAnchor:[22,22]});
   // The drive's lines: this log's segment solid, the drive's other segments faded. Only the large map seeks on a tap
@@ -1378,7 +1384,7 @@
    circle('rv-bookmarks',AMBER,6,BASE,2),
    circle('rv-snap','rgba(61,203,146,.25)',9,MINT,2),
    {id:'rv-car',type:'symbol',source:'rv-car',layout:{
-    'icon-image':'rv-vehicle','icon-rotation-alignment':'viewport','icon-pitch-alignment':'viewport',
+    'icon-image':['get','icon'],'icon-rotation-alignment':'viewport','icon-pitch-alignment':'viewport',
     'icon-rotate':['get','bearing'],'icon-allow-overlap':true,'icon-ignore-placement':true,
    }},
   ];
@@ -1477,18 +1483,20 @@
    const map=small?.map;if(!map?.getLayer('rv-car'))return;
    const art=document.createElement('canvas');art.width=64;art.height=64;
    const ctx=art.getContext('2d');ctx.scale(2,2);
-   ctx.fillStyle=carColorHex()||'#F2F4F6';ctx.strokeStyle=BASE;ctx.lineWidth=1.5;
-   ctx.beginPath();
+   const color=carColorHex()||'#F2F4F6';
    const rect=(x,y,w,h,r)=>ctx.roundRect?ctx.roundRect(x,y,w,h,r):ctx.rect(x,y,w,h);
-   if(mapCar==='arrow'){ctx.moveTo(16,4);ctx.lineTo(25,26);ctx.lineTo(16,21);ctx.lineTo(7,26);ctx.closePath()}
-   else rect(8.5,2.5,15,27,4);
-   ctx.fill();ctx.stroke();
-   if(mapCar==='vehicle'){
-    ctx.beginPath();ctx.fillStyle='#324157';rect(11,6,10,4,1);ctx.fill();
+   for(const [name,arrow] of [['rv-vehicle',mapCar==='arrow'],['rv-navigation',true]]){
+    ctx.clearRect(0,0,32,32);
+    ctx.fillStyle=color;ctx.strokeStyle=BASE;ctx.lineWidth=1.5;ctx.lineJoin='round';
+    ctx.beginPath();
+    if(arrow){ctx.moveTo(16,4);ctx.lineTo(26,26);ctx.lineTo(16,20);ctx.lineTo(6,26);ctx.closePath()}
+    else rect(8.5,2.5,15,27,4);
+    ctx.fill();ctx.stroke();
+    if(!arrow){ctx.beginPath();ctx.fillStyle='#324157';rect(11,6,10,4,1);ctx.fill()}
+    const image=ctx.getImageData(0,0,64,64);
+    if(map.hasImage(name))map.updateImage(name,image);
+    else map.addImage(name,image,{pixelRatio:2});
    }
-   const image=ctx.getImageData(0,0,64,64);
-   if(map.hasImage('rv-vehicle'))map.updateImage('rv-vehicle',image);
-   else map.addImage('rv-vehicle',image,{pixelRatio:2});
   }
   redrawMiniCar=drawMiniCar;
   const shortArc=(from,to)=>((to-from)%360+540)%360-180;
@@ -1496,12 +1504,15 @@
   const hasVideo=()=>typeof data!=='undefined'&&!!data?.video;
   function cameraAt(pos){
    const {map,bearing,zoom}=small;
-   return {center:lngLat(pos),pitch:56,bearing,zoom,padding:{top:Math.min(map.getContainer().clientHeight*.36,hud.offsetHeight+24),bottom:0,left:0,right:0}};
+   const {clientWidth,clientHeight}=map.getContainer();
+   // Keep the arrow below the HUD and inside the darker part of the corner fade.
+   const padding={top:Math.min(clientHeight*.22,hud.offsetTop+hud.offsetHeight+12),bottom:0,left:clientWidth*.4,right:0};
+   return {center:lngLat(pos),pitch:56,bearing,zoom,padding};
   }
   function followMini(pos){
    const {map}=small,speed=pos.speed*3.6,targetZoom=zoomAt(speed);
-   small.bearing??=pos.bearing;small.zoom??=targetZoom;
-   const delta=speed>=3?shortArc(small.bearing,pos.bearing):0,zoomDelta=targetZoom-small.zoom;
+   small.bearing??=pos.course;small.zoom??=targetZoom;
+   const delta=speed>=3?shortArc(small.bearing,pos.course):0,zoomDelta=targetZoom-small.zoom;
    small.bearing+=Math.abs(delta)<.05?delta:delta*.14;
    small.zoom+=Math.abs(zoomDelta)<.005?zoomDelta:zoomDelta*.14;
    small.smoothing=Math.abs(delta)>=.05||Math.abs(zoomDelta)>=.005;
@@ -1510,7 +1521,7 @@
     const local=map.project(lngLat(pos)),box=map.getContainer(),pad=16;
     if(local.x<pad||local.y<pad||local.x>box.clientWidth-pad||local.y>box.clientHeight-pad)map.jumpTo({center:lngLat(pos)});
    }
-   miniData('car',[feature('Point',lngLat(pos),{bearing:small.bearing-map.getBearing()})]);
+   miniData('car',[feature('Point',lngLat(pos),{icon:large?'rv-vehicle':'rv-navigation',bearing:large?pos.bearing-map.getBearing():0})]);
   }
   function fitDrive(duration=0){
    const {map}=small;if(!bounds||bounds.isEmpty())return;
@@ -1531,7 +1542,7 @@
     let map;
     if(reused){slot.replaceWith(reused.container);map=reused.map}
     else map=new gl.Map({
-     container:slot,style:miniStyle(null,true),center:lngLat(initial),bearing:initial.bearing,pitch:56,
+     container:slot,style:miniStyle(null,true),center:lngLat(initial),bearing:initial.course,pitch:56,
      zoom:zoomAt(initial.speed*3.6),attributionControl:false,trackResize:false,
      dragPan:false,dragRotate:false,boxZoom:false,touchZoomRotate:false,touchPitch:false,
      scrollZoom:false,doubleClickZoom:false,keyboard:false,renderWorldCopies:false,
@@ -1563,10 +1574,9 @@
   }
   function measureSmall(){
    const frame=stage.getBoundingClientRect(),box=inStage(frame,frame),speed=inStage(hud.getBoundingClientRect(),frame);
-   const top=parseFloat(getComputedStyle(mini).getPropertyValue('--vmap-edge'))||12;
    stage.style.setProperty('--vmap-min-w',Math.ceil(speed.width)+'px');
    const rows=[...stage.querySelectorAll('.video-tools,.video-fullscreen')].map(el=>el.getBoundingClientRect()).filter(row=>row.width&&row.height);
-   const room=Math.min(box.height-2*top,...rows.map(row=>inStage(row,frame).top-8-top));
+   const room=Math.min(box.height,...rows.map(row=>inStage(row,frame).top-8));
    mini.style.setProperty('--vmap-room',Math.floor(room)+'px');
    mini.classList.toggle('no-room',room<speed.height+28);
   }
@@ -1811,7 +1821,7 @@
    if(mini.classList.contains('is-large')||e.button>0)return;e.preventDefault();e.stopPropagation();try{grip.setPointerCapture(e.pointerId)}catch{}
    const frame=stage.getBoundingClientRect(),r=inStage(mini.getBoundingClientRect(),frame),box=inStage(frame,frame),room=parseFloat(mini.style.getPropertyValue('--vmap-room'))||box.height,at=point(e);
    const style=getComputedStyle(mini),ratio=Number(style.getPropertyValue('--vmap-ratio'));
-   const min=Math.max(104,parseFloat(stage.style.getPropertyValue('--vmap-min-w'))||0),max=Math.max(min,Math.min(box.width-2*(parseFloat(style.getPropertyValue('--vmap-edge'))||12),room/ratio));
+   const min=Math.max(104,parseFloat(stage.style.getPropertyValue('--vmap-min-w'))||0),max=Math.max(min,Math.min(box.width,room/ratio));
    sizing={id:e.pointerId,x:at.x,y:at.y,w:r.width,min,max,ratio,stageW:box.width,moved:false,f:null};mini.classList.add('is-sizing');
   });
   grip.addEventListener('pointermove',e=>{

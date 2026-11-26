@@ -65,6 +65,26 @@ const nativePoint=(page,a,b=a,k=0)=>page.evaluate(([a,b,k])=>{
 const tapNative=async (page,...at)=>page.touchscreen.tap(...await nativePoint(page,...at));
 const waitSeek=(page,t,tolerance=.65)=>page.waitForFunction(([t,tol])=>Math.abs(document.getElementById('seek')?.valueAsNumber-t)<tol,[t,tolerance]);
 
+async function assertMiniCorner(page){
+ const state=await page.evaluate(()=>{
+  const mini=document.getElementById('videoMap'),stage=document.getElementById('videoStage');
+  const mapBox=mini.getBoundingClientRect(),stageBox=stage.getBoundingClientRect(),hud=stage.querySelector('.video-hud');
+  const map=rvTestMini,arrow=map.project(map.getCenter());
+  return {top:mapBox.top-stageBox.top,right:stageBox.right-mapBox.right,margin:getComputedStyle(mini).margin,
+   mask:getComputedStyle(mini.querySelector('.video-map-surface')).maskImage,
+   hudAbove:Number(getComputedStyle(hud).zIndex)>Number(getComputedStyle(mini).zIndex),
+   arrowBelowHud:mapBox.top+arrow.y>hud.getBoundingClientRect().bottom};
+ });
+ assert(Math.abs(state.top)<.5&&Math.abs(state.right)<.5&&state.margin==='0px','3D map is flush with the video corner '+JSON.stringify(state));
+ assert.match(state.mask,/^radial-gradient/);
+ assert(state.hudAbove&&state.arrowBelowHud,'the HUD remains above the map and clear of the arrow '+JSON.stringify(state));
+ assert(await page.getByLabel('지도 출처').isHidden());
+ await page.waitForFunction(async()=>{
+  const data=await rvTestMini.getSource('rv-car')?.getData(),marker=data?.features[0]?.properties;
+  return marker?.icon==='rv-navigation'&&marker.bearing===0;
+ });
+}
+
 (async()=>{
  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'rv-maps-')),shots=process.env.RV_MAP_SHOTS,verifyShots=process.env.RV_TESLA_SHOTS;
  if(shots)fs.mkdirSync(shots,{recursive:true});
@@ -80,10 +100,15 @@ const waitSeek=(page,t,tolerance=.65)=>page.waitForFunction(([t,tol])=>Math.abs(
  const track=(lat,lon,dlat,dlon)=>Array.from({length:61},(_,i)=>[i,+(lat+i*dlat).toFixed(6),+(lon+i*dlon+Math.sin(i/9)*2e-5).toFixed(6),12.5,Math.round(Math.atan2(dlon,dlat)*180/Math.PI+360)%360]);
  const turns=[[8e-5,6e-5],[0,1e-4],[7e-5,4e-5],[1e-4,0],[6e-5,-5e-5],[0,9e-5],[8e-5,3e-5],[5e-5,7e-5]];
  const routeA=[];{let [lat,lon]=ORIGIN;turns.forEach(([dlat,dlon],k)=>{routeA.push(track(lat,lon,dlat,dlon));lat=+(lat+60*dlat).toFixed(6);lon=+(lon+60*dlon).toFixed(6)})}
- // Segment 1 (the one with video): its bearing climbs 3° a second through north (350° … 359°, 2° …), and its sample
- // at 31 s holds the fix of 30 s (a GPS hold while moving).
- routeA[1].forEach((p,i)=>{p[4]=(350+3*i)%360});routeA[1][31][1]=routeA[1][30][1];routeA[1][31][2]=routeA[1][30][2];
-  routeA[1][42][3]=0;routeA[1][42][4]=210;
+ // Segment 1 begins with a turn through north. Its sample at 31 s repeats the fix of 30 s while moving.
+ routeA[1].forEach((p,i)=>{p[4]=(350+3*i)%360});
+ for(let i=1;i<=5;i++){
+  const prev=routeA[1][i-1],angle=prev[4]*Math.PI/180;
+  routeA[1][i][1]=prev[1]+Math.cos(angle)*.0001;
+  routeA[1][i][2]=prev[2]+Math.sin(angle)*.0001/Math.cos(prev[1]*Math.PI/180);
+ }
+ routeA[1][31][1]=routeA[1][30][1];routeA[1][31][2]=routeA[1][30][2];
+ routeA[1][42][3]=0;routeA[1][42][4]=210;
  routeA[1][45][3]=40;
  const hex=k=>'0123456789'[k];
  const logs=[
@@ -541,7 +566,7 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await mini.locator('canvas').waitFor();await settleLayout(page);
    await page.waitForFunction(()=>window.rvTestMini?.getLayer('background')&&rvTestMini.getPaintProperty('background','background-color')==='#0E1219'&&rvTestMini.hasImage('rv-vehicle'));
    assert.equal(await mini.locator('.leaflet-container').count(),0);
-   assert.match(await mini.locator('.video-map-surface').evaluate(el=>getComputedStyle(el).maskComposite),/intersect/);
+   await assertMiniCorner(page);
    assert.equal(await page.evaluate(()=>rvTestMini.getPitch()),56);
    assert((await mini.boundingBox()).width<=174.5);
    // The analysis tab's basemap preferences remain independent.
@@ -554,11 +579,11 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await dialog.getByLabel('작은 지도 글자 숨기기').uncheck();
    await dialog.getByRole('button',{name:'다크',exact:true}).tap();
    await page.locator('#overlayHeightClose').tap();
+   assert(await open.isVisible());
+   await open.tap();await close.waitFor();
    await mini.getByLabel('지도 출처').tap();
    assert(await mini.getByRole('link',{name:'OpenFreeMap'}).isVisible());
    await mini.getByLabel('지도 출처').tap();
-   assert(await open.isVisible());
-   await open.tap();await close.waitFor();
    assert.equal(await page.evaluate(()=>rvTestMini.getPitch()),0);
    assert.equal(await page.evaluate(()=>rvTestMini.getBearing()),0);
    assert(await mini.locator('.video-map-legend').isHidden(),'the phone leaves room for the route');
@@ -634,7 +659,12 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await seek(42);await page.waitForFunction(()=>Math.abs(rvTestMini.getZoom()-17.1)<.02);
    assert(Math.abs(await page.evaluate(()=>rvTestMini.getBearing())-2)<.15,'low speed keeps the previous heading');
    await seek(45);await page.waitForFunction(()=>Math.abs(rvTestMini.getZoom()-14.6)<.02);
-   await seek(14);await page.waitForFunction(()=>Math.abs(rvTestMini.getZoom()-16.36)<.02);
+   await seek(14);
+   await page.waitForFunction(()=>Math.abs(rvTestMini.getZoom()-16.36)<.02&&Math.abs(rvTestMini.getBearing()-90)<.15);
+   const forward=await page.evaluate(([,lat,lon])=>{const map=rvTestMini,car=map.project(map.getCenter()),next=map.project([lon,lat]);
+    return {x:next.x-car.x,y:next.y-car.y};
+   },routeA[1][15]);
+   assert(forward.y<0&&Math.abs(forward.x)<1,'the route extends up from the arrow '+JSON.stringify(forward));
    await page.locator('#bookmarkOpen').click();
    const editor=page.locator('.bookmark-dialog');
    await editor.locator('.bookmark-title').fill('차선 합류');
@@ -642,6 +672,7 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await editor.waitFor({state:'hidden'});
    await page.waitForFunction(async()=>((await rvTestMini.getSource('rv-bookmarks').getData()).features.length===1));
    await page.evaluate(()=>scrollTo(0,0));await settleLayout(page);
+   await assertMiniCorner(page);
    await screenshot(page,'01-desktop-3d-minimap');
 
    const geometry=()=>page.locator('#videoStage').boundingBox();
