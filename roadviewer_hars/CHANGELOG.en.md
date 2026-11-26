@@ -1,3 +1,7 @@
+## 2.0.25
+
+- In replay, turn-signal arrows lift off from at least 7 m ahead when there is room for all three ground arrows.
+
 ## 2.0.24
 
 - Removed the Storage controls and background task for generating routes separately from conversion. Reconvert logs without a map route to generate one.

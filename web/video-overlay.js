@@ -335,27 +335,30 @@ let bsdHeight=.8;
        for(const k of [0,2]){const a=ground(s,(k-1)*half,-.52),b=ground(s,(k-1)*half,-.52-thick);if(a&&b)rear[k]=[front[k][0]+b[0]-a[0],front[k][1]+b[1]-a[1]]}
        return {front,rear,strength,fill,edge,fillOut,edgeOut,reach:Math.max(4,Math.hypot(front[2][0]-front[1][0],front[2][1]-front[1][1])),points:[rear[0],front[0],front[1],front[2],rear[2],rear[1]]};
       };
-      // The arrows' chevrons, picked when the movement began and followed along the road since. Forming: the three nearest
-      // chevrons then. Settling back: three chevrons in a row, the first being the one that will be about 7 m ahead when the
+      // The arrows' chevrons, picked when the movement began and followed along the road since. Forming: three chevrons
+      // starting at least 7 m ahead if there is room for all three. Settling back: the first will be about 7 m ahead when the
       // innermost arrow lands (the road keeps flowing meanwhile; landing time from the easing, distance from the speed then),
       // so the arrows land near, midway and far with no chevron skipped. Beyond the lead there is no place: that arrow comes
       // from (or goes into) the car instead. Each side has its own three: on a switch from one side to the other, the side
       // that began later takes the next three chevrons if its first pick would share one with the other side's.
       // A chevron is named by its place on the road (road: its distance ahead plus 40% of the odometer, constant as it flows).
-      const odometerAt=time=>data.frames[nearest(time)]?.odometer||0,phaseOf=odometer=>motionAllowed()?(((-odometer*.4)%step)+step)%step:1.5;
+      const landAt=7,phaseOf=odometer=>motionAllowed()?(((-odometer*.4)%step)+step)%step:1.5;
       const roadAt=odometer=>motionAllowed()?odometer*.4:0,now=roadAt(frame.odometer||0);
       const reachable=Math.min(Number.isFinite(cut)?cut-1:Infinity,xs?.at(-1)??0);
       const picks=[0,1].map(side=>{
        if(!(morph[side]>0))return null;
-       const start=states[side].start,odometer=start===null?frame.odometer||0:odometerAt(start),startAt=5.5+phaseOf(odometer);
-       const speed=motionAllowed()&&start!==null?Math.max(0,(data.frames[nearest(start)]?.egoSpeedKph||0)/3.6*.4):0;
-       const first=Math.round((7+speed*(1-2*ARROW_STAGGER)*BLINKER_SETTLE-startAt)/step),ids=settling[side]?[first,first+1,first+2]:[0,1,2];
+       const start=states[side].start,startFrame=start===null?frame:data.frames[nearest(start)],odometer=startFrame.odometer||0,startAt=5.5+phaseOf(odometer);
+       const speed=motionAllowed()&&start!==null?Math.max(0,(startFrame.egoSpeedKph||0)/3.6*.4):0;
+       const startReach=Math.min((carAheadDistance(startFrame)??Infinity)+RADAR_TO_CAMERA-1,startFrame.overlay?.pathX?.at(-1)??0);
+       const first=settling[side]?Math.round((landAt+speed*(1-2*ARROW_STAGGER)*BLINKER_SETTLE-startAt)/step)
+        :startAt<landAt&&startAt+3*step<startReach?1:0;
+       const ids=[first,first+1,first+2];
        return {start:start??-Infinity,road:ids.map(id=>startAt+id*step+roadAt(odometer)),back:settling[side]};
       });
       const same=(a,b)=>Math.abs(a-b)<step/2;
       if(picks[0]&&picks[1]){const later=picks[1].start>picks[0].start?1:0,other=picks[1-later];
        if(picks[later].road.some(u=>other.road.some(v=>same(u,v))))picks[later].road=picks[later].road.map(u=>u+3*step)}
-      if(controlOn)slots=picks.map(pick=>pick?pick.road.map((u,i)=>{const d=u-now,landing=pick.back?7+2.5*i:d;return landing<reachable?chevronAt(Math.max(1,d)):null}):[null,null,null]);
+      if(controlOn)slots=picks.map(pick=>pick?pick.road.map((u,i)=>{const d=u-now,landing=pick.back?landAt+step*i:d;return landing<reachable?chevronAt(Math.max(1,d)):null}):[null,null,null]);
       // (landing: roughly where it lands; only used against the lead)
       paintChevron=(front,rear,reach,strength,fill,fillOut,edge,edgeOut)=>{
        // Fill: fainter than the edges. It holds its light from the apex over most of the wings (an eased curve, not a
