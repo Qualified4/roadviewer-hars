@@ -78,7 +78,7 @@ async function assertMiniCorner(page){
  assert(Math.abs(state.top)<.5&&Math.abs(state.right)<.5&&state.margin==='0px','3D map is flush with the video corner '+JSON.stringify(state));
  assert.match(state.mask,/^radial-gradient/);
  assert(state.hudAbove&&state.arrowBelowHud,'the HUD remains above the map and clear of the arrow '+JSON.stringify(state));
- assert(await page.getByLabel('지도 출처').isHidden());
+ assert(await page.locator('#videoMap').getByLabel('지도 출처').isHidden());
  await page.waitForFunction(async()=>{
   const data=await rvTestMini.getSource('rv-car')?.getData(),marker=data?.features[0]?.properties;
   return marker?.icon==='rv-navigation'&&marker.bearing===0;
