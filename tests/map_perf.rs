@@ -367,7 +367,7 @@ async fn st1_tracks_cache_hit_304_and_invalidation_on_mutation_remove_delete() {
     assert_eq!(h2[h::ETAG].to_str().unwrap(), etag1);
     assert_eq!(b2, b1);
 
-    // Simulate TrackFill / reconversion updating summary.json & track.json.gz + save_meta
+    // Simulate reconversion updating summary.json & track.json.gz + save_meta
     let prepared1 = a.store.root.join(&r1).join("prepared");
     std::fs::write(
         prepared1.join("summary.json"),

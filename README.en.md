@@ -2,7 +2,7 @@
 
 [한국어](README.md) · English
 
-> **This repository is Road Viewer 2.x, rebuilt in Rust.** The current version is **2.0.23**.
+> **This repository is Road Viewer 2.x, rebuilt in Rust.** The current version is **2.0.24**.
 >
 > It succeeds the Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha), whose repository no longer receives new features. The Home Assistant app store and sidebar show it as **Road Viewer**. It is a separate app with a different slug, so the 1.x app is not updated to it automatically. To move from 1.x, see [cutover and rollback](docs/hars/CUTOVER.md) (Korean). Unverified environments and remaining risks are listed in the [implementation and validation status](docs/hars/STATUS.md) (Korean).
 >
@@ -148,7 +148,7 @@ Lane probability and lateral y[0] distance share the same layout alongside road-
 
 ## Drive route maps
 
-Converting a log also stores its position once per second (about 1 KB per minute), so routes can be drawn on a map. The device GPS is used when it has a fix, else the car's own GPS sent over CAN (`carState.vehicleGps`), else carrot's estimated position. Logs converted by earlier versions are filled in the background; logs that exist only on Google Drive are filled when you turn on **Drive 로그 지도 채우기** (fill maps from Drive logs) on the storage tab or press **한 번 실행** (run once).
+Converting a log also stores its position once per second (about 1 KB per minute), so routes can be drawn on a map. The device GPS is used when it has a fix, else the car's own GPS sent over CAN (`carState.vehicleGps`), else carrot's estimated position. Reconvert logs without a map route to generate one.
 
 **All drives**: the **목록 | 지도** (List | Map) switch at the top right of the Logs tab draws every drive the current search and filters show, one pastel line each. Picking a drive in the glass card list on the right fits the map to it and opens **재생 · 주행 지도 · 목록에서 보기** (Play, Drive map, Show in list) inside the card. The button at the top right folds and unfolds the list without moving the map. List cards show the drive number (for example, **주행 395**) alongside the date and time. When you select another drive, the buttons on the two cards fold and unfold smoothly, or switch immediately if reduced motion is enabled.
 

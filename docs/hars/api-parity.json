@@ -1,10 +1,11 @@
 {
-  "hars_version": "2.0.0",
+  "hars_version": "2.0.24",
   "python_version": "1.3.16",
   "python_commit": "71add1a04ed505fc2cb6982052db4a9945d0808f",
   "summary": {
     "python_routes": 53,
-    "implemented": 53,
+    "implemented": 51,
+    "removed": 2,
     "not_ported": 0,
     "error_body": "UI errors carry a code in `error` and the Python sentence in `message`"
   },
@@ -255,15 +256,15 @@
         "GET",
         "POST"
       ],
-      "hars": "implemented",
-      "hars_note": "does not wait for video playback as Python does"
+      "hars": "removed",
+      "hars_note": "removed in 2.0.24; reconvert recordings to generate missing routes"
     },
     {
       "path": "/api/settings/archive/tracks/stop",
       "methods": [
         "POST"
       ],
-      "hars": "implemented"
+      "hars": "removed"
     },
     {
       "path": "/api/settings/device-network",

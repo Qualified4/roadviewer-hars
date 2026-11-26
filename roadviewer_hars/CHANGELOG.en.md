@@ -1,3 +1,7 @@
+## 2.0.24
+
+- Removed the Storage controls and background task for generating routes separately from conversion. Reconvert logs without a map route to generate one.
+
 ## 2.0.23
 
 - Choose local storage or a NAS share for replay data in Storage settings. Move existing data in either direction with size and SHA-256 verification. Conversions targeting NAS wait if it disconnects, and the recording list remains available.

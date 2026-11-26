@@ -711,16 +711,6 @@ async fn drive_sign_in_routes_report_codes_never_tokens() {
         (StatusCode::OK, json!({"connected": false}))
     );
     assert!(!drive_auth(&e).connected());
-    // Signed out, a maps pass is still accepted (Python `run_track_fill`); with nothing to read it simply ends.
-    let (status, _) = e
-        .req("POST", "/api/settings/archive/tracks/run", Value::Null)
-        .await;
-    assert_eq!(status, StatusCode::ACCEPTED);
-    assert!(!e.a().track_run_once().await);
-    let (_, body) = e
-        .req("GET", "/api/settings/archive/tracks/run", Value::Null)
-        .await;
-    assert_eq!(body["track_fill"]["manual"], false);
 }
 
 fn drive_auth(e: &Env) -> std::sync::Arc<roadviewer_hars::archive::DriveAuth> {
@@ -777,86 +767,4 @@ async fn capacity_moves_take_pinned_recordings_last() {
         e.root.join(&pinned).exists(),
         "moving never deletes the recording"
     );
-}
-
-/// Python `TrackBackfill.status()` fields; HARS conversions write the route themselves, so a moved log counts as read.
-/// A pass by hand is accepted once at a time (tests/archive_track_fill.rs runs them).
-#[tokio::test]
-async fn drive_maps_status_has_python_fields() {
-    let e = drive_env(json!({"archive_mode": "move", "archive_allow_local_delete": true})).await;
-    let id = e.record('a', &[("rlog.zst", data(1000, 1))], OLD).await;
-    let prepared = e.root.join(&id).join("prepared");
-    std::fs::create_dir_all(&prepared).unwrap();
-    std::fs::write(prepared.join("data.json.gz"), b"x").unwrap();
-    std::fs::write(
-        prepared.join("summary.json"),
-        br#"{"track_v":2,"has_track":false,"track_read":true}"#,
-    )
-    .unwrap();
-    e.cycle().await;
-    assert_eq!(e.loc(&id, "rlog.zst").await, "gdrive");
-    let (_, storage) = e.req("GET", "/api/settings/storage", Value::Null).await;
-    let fill = &storage["archive"]["track_fill"];
-    let keys: Vec<&str> = fill
-        .as_object()
-        .unwrap()
-        .keys()
-        .map(String::as_str)
-        .collect();
-    let mut want = vec![
-        "enabled",
-        "manual",
-        "running",
-        "stopping",
-        "waiting",
-        "total",
-        "done",
-        "failed",
-        "pending",
-        "last_error",
-        "retry_in",
-        "finished_at",
-    ];
-    want.sort();
-    let mut got = keys.clone();
-    got.sort();
-    assert_eq!(got, want);
-    assert_eq!(
-        (
-            fill["total"].clone(),
-            fill["done"].clone(),
-            fill["pending"].clone()
-        ),
-        (json!(1), json!(1), json!(0))
-    );
-    let (status, body) = e
-        .req("GET", "/api/settings/archive/tracks/run", Value::Null)
-        .await;
-    assert_eq!(
-        (status, body["track_fill"]["running"].clone()),
-        (StatusCode::OK, json!(false))
-    );
-    let (status, body) = e
-        .req("POST", "/api/settings/archive/tracks/run", Value::Null)
-        .await;
-    assert_eq!(
-        (
-            status,
-            body["started"].clone(),
-            body["track_fill"]["manual"].clone()
-        ),
-        (StatusCode::ACCEPTED, json!(true), json!(true))
-    );
-    let (status, body) = e
-        .req("POST", "/api/settings/archive/tracks/run", Value::Null)
-        .await;
-    assert_eq!(
-        (status, body["error"].clone()),
-        (StatusCode::CONFLICT, json!("track_fill_running"))
-    );
-    let (status, body) = e
-        .req("POST", "/api/settings/archive/tracks/stop", Value::Null)
-        .await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["track_fill"]["manual"], false);
 }

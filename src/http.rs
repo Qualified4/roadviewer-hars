@@ -243,14 +243,6 @@ pub fn ingress(app: App) -> Router {
             get(http_archive::run).post(http_archive::run),
         )
         .route(
-            "/api/settings/archive/tracks/run",
-            get(http_archive::track_fill_run).post(http_archive::track_fill_run),
-        )
-        .route(
-            "/api/settings/archive/tracks/stop",
-            post(http_archive::track_fill_stop),
-        )
-        .route(
             "/api/settings/archive/gdrive/connect",
             post(http_archive::gdrive_connect),
         )

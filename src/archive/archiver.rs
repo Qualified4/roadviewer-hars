@@ -190,7 +190,6 @@ pub struct Archive {
     pub(crate) job: Mutex<Option<Value>>,
     pub(crate) transfer: Mutex<Option<Arc<Transfer>>>,
     pub(crate) index_cache: Mutex<Option<(Instant, [u64; 5])>>,
-    pub(crate) track_fill: super::track_fill::TrackFill,
     started: AtomicBool,
     /// Device-flow polling unit (tests shorten Google's interval).
     connection_interval: Mutex<Duration>,
@@ -275,7 +274,6 @@ impl Archive {
             job: Mutex::new(None),
             transfer: Mutex::default(),
             index_cache: Mutex::default(),
-            track_fill: Default::default(),
             started: AtomicBool::new(false),
             connection_interval: Mutex::new(Duration::from_secs(1)),
             me: me.clone(),
@@ -359,8 +357,6 @@ impl Archive {
             || updated.error != old.error
             || updated.gdrive_client_id != old.gdrive_client_id;
         let enabled_now = updated.enabled && !old.enabled;
-        // Drive maps turned on: the first pass starts now, not after the hour.
-        let fill_tracks = updated.gdrive_fill_tracks && !old.gdrive_fill_tracks;
         if refresh {
             let factory = self
                 .factory
@@ -386,9 +382,6 @@ impl Archive {
         *lock(&self.index_cache) = None;
         self.settings_changed.store(true, Ordering::SeqCst);
         self.wake.notify_waiters();
-        if fill_tracks {
-            self.track_fill.wake();
-        }
     }
 
     pub fn migrated_from(&self) -> String {
@@ -496,7 +489,6 @@ impl Archive {
         let me = self.arc();
         tokio::spawn(async move { me.run_loop().await });
         self.requeue_when_storage_answers();
-        self.start_track_fill();
     }
 
     async fn run_loop(self: Arc<Self>) {

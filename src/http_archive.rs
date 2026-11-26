@@ -434,44 +434,6 @@ pub fn touched(meta: &Value) -> bool {
         .any(|k| index::location(meta, k) != "local")
 }
 
-/// Python `TrackBackfill.status()` (also the storage block's `archive.track_fill`).
-pub async fn track_fill(app: &App) -> Value {
-    app.archive.track_fill_status().await
-}
-
-/// `/api/settings/archive/tracks/run` (Python `run_track_fill`): GET is the status; POST starts one pass over the
-/// Drive-only recordings that still need a route, setting on or off. Never two passes at once.
-pub async fn track_fill_run(AxState(app): AxState<App>, method: Method) -> Response {
-    if method == Method::GET {
-        return reply(
-            StatusCode::OK,
-            json!({"track_fill": track_fill(&app).await}),
-        );
-    }
-    if !app.archive.settings().remote() {
-        return error(StatusCode::CONFLICT, "gdrive_not_selected");
-    }
-    if !app.archive.track_fill().request_run() {
-        return reply(
-            StatusCode::CONFLICT,
-            json!({"error": "track_fill_running", "track_fill": track_fill(&app).await}),
-        );
-    }
-    reply(
-        StatusCode::ACCEPTED,
-        json!({"started": true, "track_fill": track_fill(&app).await}),
-    )
-}
-
-/// `/api/settings/archive/tracks/stop` (Python `stop_track_fill`): stops after the recording being read.
-pub async fn track_fill_stop(AxState(app): AxState<App>) -> Response {
-    app.archive.track_fill().request_stop();
-    reply(
-        StatusCode::OK,
-        json!({"track_fill": track_fill(&app).await}),
-    )
-}
-
 /// After an explicit deletion (Python `process_pending`): the NAS files go now, outside the locks; a remote
 /// backend's files are only queued and removed by the archiver cycle, so Drive never holds a request.
 pub async fn process_pending(archive: &Archive) {

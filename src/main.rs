@@ -9,7 +9,7 @@ use std::{net::SocketAddr, path::PathBuf};
 const SHUTDOWN_LIMIT: std::time::Duration = std::time::Duration::from_secs(5);
 /// Commands whose standard output is their one JSON result, so their log goes to stderr. The server and
 /// `convert-log` keep logging to stdout: the conversion process's log lines are relayed by `jobs` from there.
-const RESULT_ON_STDOUT: [&str; 11] = [
+const RESULT_ON_STDOUT: [&str; 10] = [
     "__inspect",
     "__probe",
     "__thumbnail",
@@ -17,7 +17,6 @@ const RESULT_ON_STDOUT: [&str; 11] = [
     "__pure-reverse",
     "remux",
     "reverse",
-    "track-log",
     "analyze-log",
     "import-auth",
     "inspect-log",
@@ -138,19 +137,6 @@ async fn run() -> anyhow::Result<()> {
         let result = prepare(source, dest, label, progress).await;
         roadviewer_hars::profile::finish();
         result?;
-        return Ok(());
-    }
-    if args.get(1).is_some_and(|v| v == "track-log") {
-        anyhow::ensure!(
-            args.len() == 4,
-            "usage: roadviewer-hars track-log RLOG PREPARED"
-        );
-        let (rlog, prepared) = (PathBuf::from(&args[2]), PathBuf::from(&args[3]));
-        let fields = tokio::task::spawn_blocking(move || {
-            roadviewer_hars::archive::track_fill::extract(&rlog, &prepared)
-        })
-        .await??;
-        println!("{fields}");
         return Ok(());
     }
     if args.get(1).is_some_and(|v| v == "analyze-log") {
