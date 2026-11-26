@@ -64,6 +64,26 @@ const nativePoint=(page,a,b=a,k=0)=>page.evaluate(([a,b,k])=>{
 },[a,b,k]);
 const tapNative=async (page,...at)=>page.touchscreen.tap(...await nativePoint(page,...at));
 const waitSeek=(page,t,tolerance=.65)=>page.waitForFunction(([t,tol])=>Math.abs(document.getElementById('seek')?.valueAsNumber-t)<tol,[t,tolerance]);
+const routeMap=page=>page.evaluateHandle(()=>rvTestMaps.find(map=>map.getContainer().classList.contains('route-map-canvas')));
+const assertFollow=async(page,native=false)=>{
+ await page.waitForFunction(async native=>{
+  const el=document.querySelector(native?'#videoMap':'#routeMapView'),map=native?rvTestMini:rvTestMaps.find(m=>el.contains(m.getContainer()));
+  if(map.getZoom()!==16)return false;
+  const box=map.getContainer().getBoundingClientRect();
+  if(native){
+   const car=(await map.getSource('rv-car')?.getData())?.features[0];
+   if(!car||map.isMoving())return false;
+   const {x,y}=map.project(car.geometry.coordinates);
+   return Math.hypot(x-box.width/2,y-box.height/2)<1;
+  }
+  const car=el.querySelector('.map-car-body').getBoundingClientRect();
+  return Math.hypot(car.left+car.width/2-box.left-box.width/2,car.top+car.height/2-box.top-box.height/2)<1;
+ },native);
+};
+const assertToolbar=async (page,selector)=>assert(await page.locator(selector).evaluate(toolbar=>{
+ const box=toolbar.getBoundingClientRect(),buttons=[...toolbar.querySelectorAll('button')].map(el=>el.getBoundingClientRect());
+ return buttons.every((b,i)=>b.left>=box.left&&b.right<=box.right&&buttons.slice(i+1).every(c=>b.right<=c.left||b.bottom<=c.top||c.right<=b.left||c.bottom<=b.top));
+}),'map controls fit without overlap at 390 px');
 
 async function assertMiniCorner(page){
  const state=await page.evaluate(()=>{
@@ -117,10 +137,11 @@ async function assertMiniCorner(page){
   {id:'d'.repeat(32),name:'00000397--9f8e7d6c5b / 구간 0',uploaded:10,points:null},
  ];
  const A=routeA.length,withVideo=logs[1].id;
+ const savedBookmark={id:'ab'.repeat(16),time:8.375,title:'저장된 교차로',note:''};
  const writeLog=log=>{
   const folder=path.join(dir,log.id);fs.mkdirSync(path.join(folder,'prepared'),{recursive:true});
   fs.writeFileSync(path.join(folder,'rlog.zst'),'fixture');
-  fs.writeFileSync(path.join(folder,'meta.json'),JSON.stringify({id:log.id,status:'ready',name:log.name,uploaded:log.uploaded,files:{},video:false,tags:log.tags||[],decoder_version:'v28-runtime-geometry',duration:60}));
+  fs.writeFileSync(path.join(folder,'meta.json'),JSON.stringify({id:log.id,status:'ready',name:log.name,uploaded:log.uploaded,files:{},video:false,tags:log.tags||[],decoder_version:'v28-runtime-geometry',duration:60,bookmarks:log.id===withVideo?[savedBookmark]:[]}));
   fs.writeFileSync(path.join(folder,'prepared/data.json'),JSON.stringify({route:log.name,key:'map-'+log.id[0],duration:60,warnings:[],video:log.video?{start:0,duration:60}:null,frames:Array.from({length:61},(_,i)=>({t:i,id:i,valid:true,egoSpeedKph:(log.points?.[i]?.[3]??0)*3.6,lanes:[],edges:[],lp:[],es:[],leads:[]}))}));
   const summary={duration:60,warnings:[],model_frames:61,video:null,videos:{},started_at:1762400000+log.uploaded*60,start_v:3,track_v:2,has_track:!!log.points};
   if(log.points){summary.track_distance_m=900;fs.writeFileSync(path.join(folder,'prepared/track.json.gz'),zlib.gzipSync(JSON.stringify({v:2,source:'gpsLocationExternal',points:log.points})))}
@@ -450,6 +471,17 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    {const tops=await page.locator('.vehicle-tabs [role=tab]').evaluateAll(tabs=>tabs.map(t=>Math.round(t.getBoundingClientRect().top)));assert.equal(new Set(tops).size,1,'one tab row '+tops)}
    assert.equal(await page.locator('#roadMode').count(),0,'no 주행 상황 | 지도 switch any more');
    await mapTab.tap();await page.locator('#mapView').waitFor();await page.locator('#routeMapView .map-car').waitFor();await shot('map-tab');
+   const mapFollow=page.locator('#mapFollow'),mapOverview=page.locator('#mapOverview');
+   await assertFollow(page);
+   await assertToolbar(page,'#routeMapView .route-map-controls');
+   const savedMark=page.locator('#routeMapView').getByRole('button',{name:/저장된 교차로/});
+   assert.equal(await savedMark.evaluate(el=>getComputedStyle(el,'::before').backgroundColor),'rgb(245, 196, 81)');
+   await savedMark.tap();await waitSeek(page,savedBookmark.time,.02);await assertFollow(page);
+   const mapHandle=await routeMap(page);
+   await mapOverview.tap();
+   assert.equal(await mapFollow.getAttribute('aria-pressed'),'false');
+   assert(await mapHandle.evaluate((map,tracks)=>map.getZoom()<16&&tracks.every(points=>points.every(([,lat,lon])=>map.getBounds().contains([lat,lon]))),routeA),'the entire drive fits in the analysis map');
+   await mapFollow.tap();await assertFollow(page);await mapHandle.dispose();
    // The road-view vehicle is the default; changing the icon keeps its bearing and location intact.
    {const car=page.locator('#routeMapView .map-car-body');assert.equal(await car.getAttribute('data-car-icon'),'vehicle');
     assert.equal(await car.evaluate(e=>e.getBoundingClientRect().width>=44),true,'larger vehicle marker');
@@ -489,10 +521,25 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    const carAt=()=>page.locator('#routeMapView .map-car').evaluate(e=>e.style.transform||e.getAttribute('style'));
    const seek=value=>page.locator('#seek').evaluate((e,value)=>{e.value=String(value);e.dispatchEvent(new Event('input'))},value);
    const start=await carAt();await seek(40);await page.waitForFunction(start=>document.querySelector('#routeMapView .map-car').style.transform!==start,start);
+   await assertFollow(page);
+   // A save while the map already exists updates its markers, and jumps to the saved fractional second.
+   await seek(34.25);
+   await page.locator('#bookmarkOpen').tap();
+   const liveEditor=page.locator('.bookmark-dialog');
+   await liveEditor.locator('.bookmark-title').fill('지도에서 기록');
+   await liveEditor.locator('.bookmark-save').tap();
+   await liveEditor.waitFor({state:'hidden'});
+   const liveMark=page.locator('#routeMapView').getByRole('button',{name:/지도에서 기록/});
+   await seek(40);await liveMark.tap();await waitSeek(page,34.25,.02);
+   await page.locator('#bookmarkTab').tap();
+   page.once('dialog',dialog=>dialog.accept());
+   await page.getByRole('button',{name:'지도에서 기록 삭제'}).tap();
+   await page.getByRole('button',{name:'지도에서 기록 삭제'}).waitFor({state:'detached'});
+   await mapTab.tap();assert.equal(await liveMark.count(),0);
    {const box=await page.locator('#routeMapView').boundingBox();await page.touchscreen.tap(box.x+box.width/2,box.y+box.height-30);
     await page.mouse.move(box.x+box.width/2,box.y+box.height/2);await page.mouse.down();await page.mouse.move(box.x+box.width/2+60,box.y+box.height/2+40,{steps:5});await page.mouse.up();
     await page.waitForFunction(()=>document.getElementById('mapFollow').getAttribute('aria-pressed')==='false');
-    await page.locator('#mapFollow').tap();assert.equal(await page.locator('#mapFollow').getAttribute('aria-pressed'),'true')}
+    await mapFollow.tap();await assertFollow(page)}
    // A pinch narrows the 지도 tab's margin (basemap and lines) to 0.1 for the gesture (MapLibre redraws the whole canvas
    // each frame); a second after it, the full margin again, the car, lines and basemap together. A one-finger drag
    // moves what is drawn with the pane: a few redraws at most, the map left where the drag left it, nothing cut off.
@@ -518,6 +565,7 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
     await touch('touchStart',pair(40));const pinching=await state();
     for(let k=1;k<=10;k++){await touch('touchMove',pair(40+3*k));await page.waitForTimeout(16)}
     const during=await state();await touch('touchEnd',[]);await page.waitForTimeout(300);const ended=await state();
+    assert.equal(await mapFollow.getAttribute('aria-pressed'),'false','a pinch turns 따라가기 off');
     assert(pinching.layer===.1&&pinching.lines===.1&&during.layer===.1&&during.lines===.1&&ended.layer===.1,'narrow while pinching '+JSON.stringify([pinching,during,ended]));
     assert(during.basemapCovers,'the basemap covers the map while pinching '+JSON.stringify(during));
     await page.waitForTimeout(1300);const after=await state();
@@ -552,7 +600,7 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
     assert(dragged.layer===full.margin&&mid.layer===full.margin,'full margin while dragging '+JSON.stringify([mid,dragged]));
     assert([mid,held,dragged].every(s=>s.basemapCovers&&s.linesCover),'nothing cut off while dragging '+JSON.stringify([mid,held,dragged]));
     assert(dragged.base<=1&&dragged.line<=1,'together after the drag '+JSON.stringify(dragged));
-    await page.locator('#mapFollow').tap();assert.equal(await page.locator('#mapFollow').getAttribute('aria-pressed'),'true')}
+    await mapFollow.tap();await assertFollow(page)}
    tilesUsed();
    // ④ 겹쳐 보기 설정 › 지도 › 영상 위 작은 지도: off by default, kept on this browser, tap to enlarge and shrink.
    await page.locator('#overlayHeightSettings').tap();const dialog=page.locator('#overlayHeightDialog');await dialog.waitFor();
@@ -580,7 +628,15 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await dialog.getByRole('button',{name:'다크',exact:true}).tap();
    await page.locator('#overlayHeightClose').tap();
    assert(await open.isVisible());
+   await seek(24);
    await open.tap();await close.waitFor();
+   await assertFollow(page,true);
+   await assertToolbar(page,'#videoMap .video-map-toolbar');
+   const miniFollow=mini.locator('.video-map-follow');
+   await mini.locator('.video-map-overview').tap();
+   assert.equal(await miniFollow.getAttribute('aria-pressed'),'false');
+   await assertToolbar(page,'#videoMap .video-map-toolbar');
+   await miniFollow.tap();await assertFollow(page,true);
    await mini.getByLabel('지도 출처').tap();
    assert(await mini.getByRole('link',{name:'OpenFreeMap'}).isVisible());
    await mini.getByLabel('지도 출처').tap();
@@ -611,8 +667,11 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await mapTab.tap();await page.locator('#videoMap').waitFor({state:'hidden'});await page.locator('#routeMapView .map-car').waitFor();
    // Tapping segment 0 of the drive on the map opens that segment at that point.
    {const lines=page.locator('#routeMapView .leaflet-overlay-pane path.leaflet-interactive');assert(await lines.count()>=2);
-    await seek(0);await page.waitForTimeout(100);
-    const first=lines.first();await first.evaluate(p=>p.closest('.leaflet-container').scrollIntoView({block:'center'}));await tapLine(first,.85);
+    await seek(0);await mapOverview.tap();
+    const first=lines.first();
+    await page.evaluate(()=>scrollTo(0,document.scrollingElement.scrollHeight));
+    await waitForSteadyLayout(page,'#routeMapView');
+    await tapLine(first,.15);
     await page.waitForURL(new RegExp(`view/${logs[0].id}/$`));await page.waitForFunction(()=>!!document.getElementById('play')&&!document.getElementById('play').disabled&&Number(document.getElementById('seek').value)>0)}
    assert(await page.locator('#videoMiniMap').isChecked(),'the small map setting is kept');
    // A segment with GPS but no video: the panel's map only, no small map over the picture.
@@ -670,7 +729,7 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await editor.locator('.bookmark-title').fill('차선 합류');
    await editor.locator('.bookmark-save').click();
    await editor.waitFor({state:'hidden'});
-   await page.waitForFunction(async()=>((await rvTestMini.getSource('rv-bookmarks').getData()).features.length===1));
+   await page.waitForFunction(async()=>((await rvTestMini.getSource('rv-bookmarks').getData()).features.length===2));
    await page.evaluate(()=>scrollTo(0,0));await settleLayout(page);
    await assertMiniCorner(page);
    await screenshot(page,'01-desktop-3d-minimap');
@@ -681,15 +740,17 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    assert.equal(await page.evaluate(()=>rvNativeResizes)-initialResizes,1,'opening resizes the WebGL canvas once');
    assert.equal(await page.evaluate(()=>rvTestMini.getPitch()),0);
    assert.equal(await page.evaluate(()=>rvTestMini.getBearing()),0);
+   await assertFollow(page,true);
    assert.deepEqual(await geometry(),frame,'the overlay leaves the video geometry intact');
    assert.equal(await page.evaluate(()=>!!window.L),false,'native replay loads without Leaflet');
-   const pin=mini.locator('.video-map-pin'),follow=mini.locator('.video-map-follow'),card=mini.locator('.video-map-preview');
+   const pin=mini.locator('.video-map-pin'),follow=mini.locator('.video-map-follow'),overview=mini.locator('.video-map-overview'),card=mini.locator('.video-map-preview');
    await pin.click();
    const a=await nativePoint(page,routeA[1][30],routeA[1][31],.2),b=await nativePoint(page,routeA[1][38],routeA[1][39],.5);
    await page.mouse.move(...a);await page.mouse.down();await page.mouse.move(...b,{steps:5});
    await card.waitFor();assert.equal(Number(await page.locator('#seek').inputValue()),14,'scrubbing previews before committing');
    assert.match(await card.innerText(),/구간 1.*45 km\/h.*km/s);
    await page.mouse.up();await waitSeek(page,38.5);
+   await assertFollow(page,true);
    await screenshot(page,'02-desktop-expanded-snap');
    const blank=await page.locator('#videoMap canvas').boundingBox();
    await page.mouse.move(blank.x+blank.width*.2,blank.y+blank.height*.4);await page.mouse.down();
@@ -697,10 +758,19 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    assert.equal(await follow.getAttribute('aria-pressed'),'false');
    await follow.click();await page.waitForFunction(()=>!rvTestMini.isMoving());
    assert.equal(await follow.getAttribute('aria-pressed'),'true');
+   await assertFollow(page,true);
+   await page.locator('#videoMap canvas').hover({position:{x:180,y:130}});await page.mouse.wheel(0,-120);
+   await page.waitForFunction(()=>document.querySelector('.video-map-follow').getAttribute('aria-pressed')==='false'&&rvTestMini.getZoom()>16&&!rvTestMini.isMoving());
+   await follow.click();await assertFollow(page,true);
 
    // Clicking a newly created bookmark seeks to its exact time and uses its title in the card.
    await page.mouse.click(...await nativePoint(page,routeA[1][14]));
    await waitSeek(page,14,.02);assert.match(await card.innerText(),/차선 합류/);
+   await overview.click();await page.waitForFunction(()=>!rvTestMini.isMoving()&&rvTestMini.getZoom()<16);
+   assert.equal(await follow.getAttribute('aria-pressed'),'false');
+   assert(await page.evaluate(tracks=>{const box=rvTestMini.getCanvas();return tracks.every(points=>points.every(([,lat,lon])=>{
+    const {x,y}=rvTestMini.project([lon,lat]);return x>=0&&x<=box.clientWidth&&y>=0&&y<=box.clientHeight;
+   }))},routeA),'the entire drive fits in the expanded replay map');
    await page.mouse.click(...await nativePoint(page,routeA[3].at(-1),routeA[5][0],.5));
    assert.match(await card.innerText(),/구간 4.*미변환/s);
    await card.getByRole('button',{name:'변환',exact:true}).click();

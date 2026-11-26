@@ -32,8 +32,8 @@
     <details class="video-map-credit"><summary aria-label="지도 출처">ⓘ</summary><div></div></details>
     <div class="video-map-controls" hidden>
      <div class="video-map-toolbar">
-      <button class="video-map-follow" type="button" aria-pressed="true">내 차 추적</button>
-      <div><button class="video-map-pin" type="button" aria-pressed="false">핀 고정</button><button class="video-map-close" type="button" aria-label="경로 지도 작게 보기">닫기</button></div>
+      <div><button class="video-map-follow" type="button" aria-pressed="true" data-no-ripple>내 차 추적</button><button class="video-map-overview" type="button" data-no-ripple>전체 경로</button></div>
+      <div><button class="video-map-pin" type="button" aria-pressed="false" data-no-ripple>핀 고정</button><button class="video-map-close" type="button" aria-label="경로 지도 작게 보기" data-no-ripple>닫기</button></div>
      </div>
      <ul class="video-map-legend" aria-label="경로 범례"><li>현재 구간</li><li>변환 완료</li><li>미변환</li></ul>
      <div class="video-map-preview" hidden>
@@ -65,7 +65,14 @@
   <p class="note road-footer">위쪽은 전방 x, 오른쪽은 횡방향 +y · 단위 m · 모델이 추정한 도로 형태이며 실제 측량값이 아닙니다.</p>
  </div>
  <div id="mapView" class="map-view" role="tabpanel" aria-labelledby="mapTab" hidden>
-<div id="routeMapView" class="route-map-view"><div class="route-map-canvas" role="region" aria-label="주행 경로 지도 · 경로를 누르면 그 위치로 이동합니다"></div><button id="mapFollow" class="map-follow" type="button" aria-pressed="true" title="차량 위치를 따라 지도를 움직입니다"><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 19 20 12 16 5 20Z"/></svg><span>따라가기</span></button></div></div>
+  <div id="routeMapView" class="route-map-view">
+   <div class="route-map-canvas" role="region" aria-label="주행 경로 지도 · 경로나 북마크를 누르면 그 위치로 이동합니다"></div>
+   <div class="route-map-controls" hidden>
+    <button id="mapFollow" type="button" aria-pressed="true" title="차량 위치를 따라 지도를 움직입니다" data-no-ripple><svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3 19 20 12 16 5 20Z"/></svg><span>따라가기</span></button>
+    <button id="mapOverview" type="button" data-no-ripple>전체 경로</button>
+   </div>
+  </div>
+ </div>
  <div id="laneView" class="lane-view" role="tabpanel" aria-labelledby="laneTab" hidden>
   <section class="boundary-summary" aria-labelledby="boundaryTitle"><div class="boundary-toolbar"><div><h3 id="boundaryTitle">차선 · 도로 경계</h3><span id="boundaryMode">차선 확률 · 로드엣지 표준편차</span></div><button id="boundaryDistance" class="view-toggle" type="button" aria-pressed="false" aria-controls="boundaryLanes boundaryEdges" title="확률·표준편차 대신 첫 점의 좌우 거리 표시"><span>y[0] 거리</span><span class="toggle-track" aria-hidden="true"></span></button></div><div class="readouts lane-readouts" id="boundaryLanes"><div class="boundary-lane"><span class="boundary-index">차선 0</span><span class="boundary-position">왼쪽 바깥</span><strong id="lane0">—</strong></div><div class="boundary-lane"><span class="boundary-index">차선 1</span><span class="boundary-position">왼쪽</span><strong id="left">—</strong><i id="laneLineLeft" class="lane-line-mark" role="img" hidden></i></div><div class="boundary-lane"><span class="boundary-index">차선 2</span><span class="boundary-position">오른쪽</span><strong id="right">—</strong><i id="laneLineRight" class="lane-line-mark" role="img" hidden></i></div><div class="boundary-lane"><span class="boundary-index">차선 3</span><span class="boundary-position">오른쪽 바깥</span><strong id="lane3">—</strong></div></div><div class="readouts edge-readouts" id="boundaryEdges"><div class="boundary-edge"><span id="edge0Label">왼쪽 로드엣지</span><strong id="edge0">—</strong></div><div class="boundary-edge"><span id="edge1Label">오른쪽 로드엣지</span><strong id="edge1">—</strong></div><div class="boundary-lead"><span>앞차 거리</span><strong id="lead">—</strong></div></div></section>
  </div>

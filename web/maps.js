@@ -1022,6 +1022,10 @@
   // ---- ③ 주행 상황 | 지도 and ④ the small map over the video.
   const id=location.pathname.split('/').filter(Boolean).at(-1);
   const mapTab=document.getElementById('mapTab'),view=document.getElementById('routeMapView'),follow=document.getElementById('mapFollow'),mini=document.getElementById('videoMap'),miniToggle=document.getElementById('videoMiniMap');
+  const routeControls=view.querySelector('.route-map-controls'),overviewButton=document.getElementById('mapOverview');
+  const FOLLOW_ZOOM=16;
+  const savedBookmarks=window.rvBookmarks?.();
+  let bookmarks=savedBookmarks?.id===id?savedBookmarks.items:[];
   // Park both replay maps during SPA swaps within one drive.
   const replayPool=globalThis.__rvReplayMapPool??={active:new Map(),parked:new Map()};
   function destroyParked(slot){
@@ -1084,7 +1088,14 @@
    if(nextCurrent<0){destroyAllParked();return}  // This segment has no GPS: no map (its drive's other segments are not this replay).
    route=nextRoute;unconverted=value.unconverted||[];current=nextCurrent;driveKey=route.map(s=>s.id).join(',');
    for(const [slot,entry] of replayPool.parked)if(!sameDrive(entry))destroyParked(slot);
-   if(small){drawMiniRoute();if(large&&miniFollowing&&!resizing)fitDrive()}
+   if(big){
+    big.layerGroup.clearLayers();
+    big.lines=layers(window.L,big.layerGroup);
+    big.layerGroup.addLayer(big.bookmarks);
+    drawRouteBookmarks();
+   }
+   if(small)drawMiniRoute();
+   lastKey='';
    // The 지도 tab appears once this segment has a track; a saved 지도 tab (telemetry.js fell back to 주행 상황) returns.
    mapTab.hidden=false;let saved=null;try{saved=localStorage.getItem('roadviewer-analysis-tab')}catch{}
    if(saved==='map')window.selectAnalysisTab?.('map',false);syncMini();
@@ -1123,7 +1134,7 @@
   }};
   function setMode(next){
    mode=next;
-   if(mode==='map'){if(route)ensureBig();else loadLeaflet().catch(()=>{})}else render?.();
+   if(mode==='map'){lastKey='';if(route)ensureBig();else loadLeaflet().catch(()=>{})}else render?.();
    syncMini();
   }
   window.addEventListener('rv:analysistab',e=>{const next=e.detail==='map'?'map':'road';if(next!==mode)setMode(next)});
@@ -1209,12 +1220,14 @@
     }else{
      map=createMap(L,slot,{margin:BIG_MARGIN,warmup:true,autoDispose:false});
     }
+    if(reused)map.invalidateSize({animate:false});
+    map.setView(position(typeof t==='number'?t:0).latlng,FOLLOW_ZOOM,{animate:false});
     const layerGroup=L.layerGroup().addTo(map),abort=new AbortController();
     big={map,layerGroup,lines:layers(L,layerGroup),handlers:[],abort};
+    big.bookmarks=L.layerGroup().addTo(layerGroup);
+    drawRouteBookmarks();
+    routeControls.hidden=false;
     replayPool.active.set('big',driveKey);
-    if(reused)map.invalidateSize({animate:false});
-    const bounds=L.latLngBounds(route.flatMap(segment=>latlngs(segment.points)));
-    map.fitBounds(bounds,{padding:[24,24],animate:false,maxZoom:17});
     bindMap(big,'dragstart',()=>{setFollow(false);big.held=true;big.anchor=dragAnchor(map)});
     bindMap(big,'move',()=>dragMove(big));
     bindMap(big,'moveend',()=>{if(big.held){big.held=false;recentre(big)}});
@@ -1230,12 +1243,16 @@
     // A zoom by hand (two fingers, the wheel, the buttons, +/-, a box zoom; a double tap or click through zoomstart)
     // narrows the margin first, before Leaflet's own handlers.
     const opts={capture:true,passive:true,signal:abort.signal};
-    for(const type of ['pointerdown','touchstart','mousedown','wheel','keydown','dblclick'])box.addEventListener(type,e=>{if(e.touches)big.touches=e.touches.length;if(zoomInput(e))narrow(big);big.eager=performance.now()+800;settle(big)},opts);
+    for(const type of ['pointerdown','touchstart','mousedown','wheel','keydown','dblclick','click'])box.addEventListener(type,e=>{
+     if(e.touches)big.touches=e.touches.length;
+     if(zoomInput(e)){narrow(big);setFollow(false)}
+     else if(e.type==='keydown'&&e.key.startsWith('Arrow'))setFollow(false);
+     big.eager=performance.now()+800;settle(big);
+    },opts);
     for(const type of ['touchmove','touchend','touchcancel'])box.addEventListener(type,e=>{big.touches=e.touches.length;if(type==='touchmove'&&e.touches.length>=2&&map.rvNarrow)narrow(big)},opts);
    }finally{bigPending=false}
   }
-  // A zoom (buttons, wheel, pinch) is left to Leaflet; following picks up again when it ends, and after a resize.
-  // The basemap's sub-pixel alignment also follows Leaflet's own moves (a drag with 따라가기 off, a zoom, a resize).
+  // Keep the basemap aligned during Leaflet's own movement, including free exploration.
   function watchView(target){
    bindMap(target,'zoomstart',()=>{target.zooming=true});
    bindMap(target,'zoomend',()=>{target.zooming=false;lastKey=''});
@@ -1266,7 +1283,7 @@
    if(target.align!==value){target.align=value;box.style.translate=value}
   }
   // Leaflet's view brought to what is shown (the translate back under a pixel).
-  function settle(target){if(target.follow&&target.shift&&!target.zooming&&(target===small||following))followCar(target,target.follow.latlng,target.follow.share,true)}
+  function settle(target){if(target.follow&&target.shift&&!target.zooming&&following)followCar(target,target.follow.latlng,target.follow.share,true)}
   function shiftPane(target,value){if(target.shift===value)return;target.shift=value;target.map.getPane('mapPane').style.translate=value}
   function redrawBasemap(map,force=false){  // Still loading: MapLibre draws on its own frame.
    const layer=map.rvGlLayer,zooming=layer?._zooming;
@@ -1278,7 +1295,7 @@
   // the default 0.1, then the full margin again: each a single resize and redraw, the shown area unmoved.
   const ZOOM_HOLD=1000,ZOOM_KEYS=new Set(['+','=','-','_']);
   const zoomInput=e=>e.type==='wheel'||e.type==='dblclick'||(e.type==='touchstart'&&e.touches.length>=2)||(e.type==='keydown'&&ZOOM_KEYS.has(e.key))||
-   (e.type==='mousedown'&&e.shiftKey)||(e.type==='pointerdown'&&!!e.target?.closest?.('.leaflet-control-zoom'));
+   (e.type==='mousedown'&&e.shiftKey)||((e.type==='pointerdown'||e.type==='click'&&e.detail===0)&&!!e.target?.closest?.('.leaflet-control-zoom'));
   function narrow(target){
    const {map}=target;clearTimeout(target.widen);target.widen=setTimeout(()=>widen(target),ZOOM_HOLD);
    if(map.rvNarrow||map._animatingZoom)return;map.rvNarrow=true;setMargin(target);
@@ -1307,8 +1324,20 @@
    redrawBasemap(map,force);map.options.renderer?._update?.();
    target.anchor=window.L.DomUtil.getPosition(map.getPane('mapPane'));alignBasemap(target,true);
   }
-  function setFollow(on){if(!on&&big)settle(big);following=on;follow.setAttribute('aria-pressed',String(on));follow.classList.toggle('is-off',!on);if(on)update(true);else if(big)shiftPane(big,'')}
+  function setFollow(on){
+   if(on===following||!big)return;
+   if(!on)settle(big);
+   following=on;
+   follow.setAttribute('aria-pressed',String(on));
+   shiftPane(big,'');
+   if(on){big.map.setView(position(t).latlng,FOLLOW_ZOOM,{animate:false});update(true)}
+  }
   follow.onclick=()=>setFollow(!following);
+  overviewButton.onclick=()=>{
+   setFollow(false);
+   const bounds=window.L.latLngBounds(route.flatMap(segment=>latlngs(segment.points)));
+   big.map.fitBounds(bounds,{padding:[24,routeControls.offsetHeight+20],animate:false,maxZoom:17});
+  };
   function draw(target,pos,force){
    const {lines,map}=target,points=route[current].points,now=pos.latlng;
    // The current segment is drawn once; as the car moves only the marker moves, so the line is never projected,
@@ -1348,7 +1377,7 @@
   const stage=document.getElementById('videoStage'),hud=stage.querySelector('.video-hud');
   const openMap=mini.querySelector('.video-map-open'),closeMap=mini.querySelector('.video-map-close');
   const controls=mini.querySelector('.video-map-controls'),pin=mini.querySelector('.video-map-pin');
-  const followMiniButton=mini.querySelector('.video-map-follow'),preview=mini.querySelector('.video-map-preview');
+  const followMiniButton=mini.querySelector('.video-map-follow'),overviewMiniButton=mini.querySelector('.video-map-overview'),preview=mini.querySelector('.video-map-preview');
   const previewButton=preview.querySelector('button'),previewStatus=preview.querySelector('small');
   const credit=mini.querySelector('.video-map-credit');
   credit.querySelector('div').innerHTML=SHORT_ATTRIBUTION;
@@ -1429,7 +1458,7 @@
   }
   const miniData=(name,features)=>small?.map.getSource('rv-'+name)?.setData(collection(features));
   let routeGeometry=[],bridgeGeometry=[],bounds=null,screenRoute=null;
-  let bookmarks=[],selection=null,miniVideo=null,large=false,pinned=false,miniFollowing=true,resizing=false,resizeRevision=0,returnTimer=0;
+  let selection=null,miniVideo=null,large=false,pinned=false,miniFollowing=true,resizing=false,resizeRevision=0,returnTimer=0;
   const conversions=new Map();
   let conversionTimer=0;
 
@@ -1474,9 +1503,21 @@
    const points=route[current].points;
    miniData('bookmarks',bookmarks.map((bookmark,index)=>feature('Point',lngLat(position(bookmark.time,points)),{index})));
   }
+  function drawRouteBookmarks(){
+   if(!big)return;
+   const L=window.L,group=big.bookmarks;
+   group.clearLayers();
+   const icon=L.divIcon({className:'map-bookmark',iconSize:[28,28],iconAnchor:[14,14]});
+   for(const bookmark of bookmarks){
+    const title=clock(bookmark.time)+' · '+bookmark.title;
+    const marker=L.marker(position(bookmark.time).latlng,{icon,title,zIndexOffset:1000,autoPanOnFocus:false}).addTo(group);
+    marker.getElement()?.setAttribute('aria-label',title);
+    marker.on('click',()=>seekReplay(id,bookmark.time));
+   }
+  }
   window.addEventListener('rv:bookmarks',event=>{
    if(event.detail.id!==id)return;
-   bookmarks=event.detail.items;drawMiniBookmarks();
+   bookmarks=event.detail.items;drawMiniBookmarks();drawRouteBookmarks();
   });
 
   function drawMiniCar(){
@@ -1518,17 +1559,20 @@
    small.smoothing=Math.abs(delta)>=.05||Math.abs(zoomDelta)>=.005;
    if(!resizing&&!large)map.jumpTo(cameraAt(pos));
    if(!resizing&&large&&miniFollowing&&!map.isMoving()){
-    const local=map.project(lngLat(pos)),box=map.getContainer(),pad=16;
-    if(local.x<pad||local.y<pad||local.x>box.clientWidth-pad||local.y>box.clientHeight-pad)map.jumpTo({center:lngLat(pos)});
+    const center=map.getCenter(),[lng,lat]=lngLat(pos);
+    if(center.lng!==lng||center.lat!==lat)map.jumpTo({center:[lng,lat]});
    }
    miniData('car',[feature('Point',lngLat(pos),{icon:large?'rv-vehicle':'rv-navigation',bearing:large?pos.bearing-map.getBearing():0})]);
   }
+  function centreMini(duration){
+   small.map.easeTo({center:lngLat(position(t)),pitch:0,bearing:0,zoom:FOLLOW_ZOOM,padding:{top:0,bottom:0,left:0,right:0},duration});
+  }
   function fitDrive(duration=0){
    const {map}=small;if(!bounds||bounds.isEmpty())return;
-   const pad=Math.min(40,map.getContainer().clientHeight/5);
+   const pad=Math.min(40,map.getContainer().clientHeight/5),top=mini.querySelector('.video-map-toolbar').offsetHeight+16;
    map.setPadding({left:0,right:0,top:0,bottom:0});
    // linear fitBounds uses easeTo for the transition to north-up.
-   map.fitBounds(bounds,{pitch:0,bearing:0,maxZoom:17.1,padding:pad,linear:true,duration});
+   map.fitBounds(bounds,{pitch:0,bearing:0,maxZoom:17.1,padding:{top:Math.max(top,pad),bottom:pad,left:pad,right:pad},linear:true,duration});
   }
   async function ensureSmall(){
    if(small||smallPending||!route)return;
@@ -1555,6 +1599,8 @@
     for(const event of ['dragstart','zoomstart','movestart'])bindMap(small,event,e=>{if(large&&e.originalEvent)setMiniFollow(false)});
     map.keyboard.disableRotation();
     const canvas=map.getCanvas();canvas.tabIndex=-1;
+    canvas.addEventListener('wheel',event=>{if(large&&!resizing&&event.deltaY)setMiniFollow(false)},
+     {passive:true,signal:small.abort.signal});
     canvas.addEventListener('keydown',event=>{if(large&&/^(Arrow|[+=_-])/.test(event.key))setMiniFollow(false)},
      {signal:small.abort.signal});
     resizeMini();drawMiniRoute();ready();applyMiniStyle();
@@ -1599,7 +1645,7 @@
    measureSmall();
    if(resizing)return;
    if(!small)ensureSmall();
-   else if(resizeMini()&&large&&miniFollowing)fitDrive();
+   else resizeMini();
   });
   resizeWatch.observe(stage);resizeWatch.observe(mini);resizeWatch.observe(hud);
   miniToggle.addEventListener('change',syncMini);
@@ -1630,7 +1676,7 @@
    credit.open=false;
    setExpandedInput(false);setMiniFollow(true);showPreview(null);
    if(!moving)resizeMini();
-   if(large)fitDrive(moving?280:0);
+   if(large)centreMini(moving?280:0);
    else map.easeTo({...cameraAt(position(t)),duration:moving?280:0});
    const finish=()=>{
     resizing=false;releaseCanvas();
@@ -1660,7 +1706,8 @@
   openMap.onclick=()=>setLarge(true);
   closeMap.onclick=()=>setLarge(false);
   pin.onclick=()=>setPinned(!pinned);
-  followMiniButton.onclick=()=>{if(!resizing){setMiniFollow(true);fitDrive(reduced()?0:280)}};
+  followMiniButton.onclick=()=>{if(!resizing){clearTimeout(returnTimer);setMiniFollow(true);centreMini(reduced()?0:280)}};
+  overviewMiniButton.onclick=()=>{if(!resizing){clearTimeout(returnTimer);setMiniFollow(false);showPreview(null);fitDrive(reduced()?0:280)}};
   mini.addEventListener('keydown',event=>{if(large&&event.key==='Escape'){event.preventDefault();setLarge(false)}});
 
   function projectedRoute(){

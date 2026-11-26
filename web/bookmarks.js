@@ -39,7 +39,8 @@
   const response=await fetch(url+suffix,{method,headers:{'Content-Type':'application/json','X-RoadViewer-Request':'1'},...(body?{body:JSON.stringify(body)}:{}),signal:AbortSignal.timeout(20000)});
   const result=await response.json();if(!response.ok)throw Error(result.error||'북마크를 저장하지 못했습니다.');return result.bookmarks;
  }
- function share(){window.dispatchEvent(new CustomEvent("rv:bookmarks",{detail:{id,items}}))}
+ window.rvBookmarks=()=>({id,items});
+ function share(){window.dispatchEvent(new CustomEvent('rv:bookmarks',{detail:window.rvBookmarks()}))}
  function jump(item){if(!data||loading)return;setTime(item.time);last=performance.now()}
  function capture(time){captured=time;find('.bookmark-time').textContent=clock(captured)}
  // Following playback (called every frame) with the editor closed, the unseen time text is written once a second;
