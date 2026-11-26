@@ -1,3 +1,7 @@
+## 2.0.26
+
+- In replay, turning on a turn signal makes the first arrow glide forward briefly from its existing ground position toward the return point about 7 m ahead before lifting off.
+
 ## 2.0.25
 
 - In replay, turn-signal arrows lift off from at least 7 m ahead when there is room for all three ground arrows.
