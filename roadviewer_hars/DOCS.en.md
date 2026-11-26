@@ -431,6 +431,16 @@ Deletion can occur only after all files have arrived, passed validation/checksum
 
 This is an upload-admission budget, not a filesystem quota: conversion output or other disk users can exceed estimates. Lowering the budget does not immediately delete files.
 
+## Store replay data on NAS
+
+**Storage → Replay data storage** defaults to Local. In Home Assistant **Settings → System → Storage**, add network storage with usage **Share**. Create a dedicated subfolder on the share, such as `/share/nas/roadviewer-prepared`, then select NAS and save. Complete the first setup while the share is mounted. Preserve the ownership marker at `.roadviewer-prepared/.roadviewer-storage.json` on the NAS and `.prepared-storage.json` in the app data directory.
+
+The setting applies to new conversions. Use **Move existing replay data to NAS** or **Move replay data back to local** for existing recordings. Each copy is checked by size and SHA-256, then the local metadata is committed before the old output is deleted. Recordings being played or converted are skipped. Start the same direction again to resume an interrupted move. To move recordings to another share, move them back to local first. Existing NAS generations continue to use the share recorded in their metadata.
+
+Conversion runs in a local work directory, then copies its results to a temporary generation on the same share and renames it after verification. Leave enough local working space for conversion. Conversions targeting NAS wait when the share or ownership marker fails its check, and requests for NAS replay data report a connection error. The list, recording metadata and original-file archive settings stay local. **NAS replay data** shows the size of the NAS generations currently referenced by recordings.
+
+Use `GET/POST /api/settings/prepared` to read or change the location. Use `GET/POST /api/settings/prepared/move` to read move status or start a move with `direction` set to `nas` or `local`. For older data without a route track, move it back to local storage to use the existing map backfill, or reconvert the recording to build the track.
+
 ## NAS archiving (experimental)
 
 HARS 2.x writes only to its own folder, marked by a sentinel owned by `roadviewer-hars`, and imports Python 1.x NAS folders read-only. Pointing the HARS path at Python's shared folder is rejected as `not_owned`. See [sharing a Drive account or NAS](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md#같은-drive-계정nas를-함께-쓸-때) (Korean).

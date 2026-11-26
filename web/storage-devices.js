@@ -23,6 +23,60 @@ function showStorage(s){
  if(percent!==null){const value=Math.max(0,Math.min(100,percent));$('storageMeter').setAttribute('aria-valuenow',String(value));$('storageMeter').setAttribute('aria-valuetext',`${Math.round(percent)}% 사용`);$('storageMeterFill').style.width=value+'%';$('storageMeter').classList.toggle('is-near-limit',percent>=90)}
  showArchive(s.archive);updateEditor();showHeaderStorage(s);
 }
+let preparedConfig=null,preparedRun=null,preparedTimer=null,preparedBusy=false;
+function syncPrepared(){
+ const nas=$('preparedLocation').value==='nas',running=preparedRun?.state==='running';
+ $('preparedPathField').hidden=!nas;$('preparedPath').required=nas;
+ $('preparedFields').disabled=preparedBusy||running||!preparedConfig;
+ $('preparedMoveNas').disabled=preparedBusy||running||!preparedConfig?.path;
+ $('preparedMoveLocal').disabled=preparedBusy||running||!preparedConfig?.path&&!preparedConfig?.nas_bytes;
+}
+function showPrepared(config){
+ preparedConfig=config;$('preparedLocation').value=config.location;$('preparedPath').value=config.path||'';
+ $('preparedNasUsage').textContent=storageSize(config.nas_bytes);
+ $('preparedStatus').textContent=config.state==='connected'?'NAS 연결됨':config.path?'NAS에 연결할 수 없습니다. 처음 설정하는 폴더라면 연결한 뒤 다시 저장하세요.':'로컬에 저장합니다.';
+ syncPrepared();
+}
+async function pollPrepared(){
+ clearTimeout(preparedTimer);
+ try{
+  const wasRunning=preparedRun?.state==='running';
+  preparedRun=await api('api/settings/prepared/move');
+  const {state,moved,skipped,failed,total,error}=preparedRun;
+  if(state!=='idle'){
+   const summary=`이동 ${moved}/${total} · 건너뜀 ${skipped} · 실패 ${failed}`;
+   $('preparedMoveStatus').textContent=state==='running'?`이동 중 · ${summary}`:state==='failed'?`${error==='prepared_storage_unavailable'?'NAS 연결 대기':'이동 실패'} · ${summary}. 연결이나 여유 공간을 확인하고 같은 버튼으로 이어서 진행하세요.`:`완료 · ${summary}`;
+  }
+  if(state==='running'&&!storageDetails.hidden)preparedTimer=setTimeout(pollPrepared,1500);
+  if(wasRunning&&state!=='running'){
+   showPrepared(await api('api/settings/prepared'));
+   showStorage(await api('api/settings/storage'));
+  }
+ }catch(e){$('preparedMoveStatus').textContent=e.message}
+ finally{syncPrepared()}
+}
+async function loadPrepared(){
+ try{showPrepared(await api('api/settings/prepared'));await pollPrepared()}
+ catch(e){$('preparedStatus').textContent=e.message}
+}
+storageDetails.addEventListener('toggle',()=>{if(storageDetails.hidden)clearTimeout(preparedTimer)});
+$('preparedLocation').onchange=syncPrepared;
+$('preparedForm').onsubmit=async e=>{
+ e.preventDefault();preparedBusy=true;syncPrepared();$('preparedStatus').textContent='저장 중…';
+ try{showPrepared(await settingsRequest('api/settings/prepared',{location:$('preparedLocation').value,path:$('preparedPath').value.trim()}))}
+ catch(e){$('preparedStatus').textContent=e.message}
+ finally{preparedBusy=false;syncPrepared()}
+};
+async function movePrepared(direction){
+ const target=direction==='nas'?'NAS':'로컬';
+ if(!confirm(`기존 재생 데이터를 ${target}로 옮길까요? 사본을 검증한 뒤 원래 위치에서 지웁니다. 재생·변환 중인 기록은 건너뜁니다.`))return;
+ preparedBusy=true;syncPrepared();$('preparedMoveStatus').textContent='이동을 시작하는 중…';
+ try{preparedRun=await settingsRequest('api/settings/prepared/move',{direction});await pollPrepared()}
+ catch(e){$('preparedMoveStatus').textContent=e.message}
+ finally{preparedBusy=false;syncPrepared()}
+}
+$('preparedMoveNas').onclick=()=>void movePrepared('nas');
+$('preparedMoveLocal').onclick=()=>void movePrepared('local');
 // The library header: local usage against the limit and the archive connection, from the same storage block.
 function showHeaderStorage(s){
  headerStorage.used=s.used_bytes;headerStorage.max=s.max_bytes;const a=s.archive,drive=a?.backend==='gdrive';
@@ -153,6 +207,7 @@ async function storageSnapshot(){
  // As api() for the storage block, plus the server's clock from the Date header.
  const response=await fetch('api/settings/storage',{cache:'no-store',headers:{'X-RoadViewer-Request':'1'},signal:AbortSignal.timeout(60000)});
  const date=Date.parse(response.headers.get('Date')||''),result=apiResult(response.status,await response.text());
+ result.preparedApi=response.headers.get('X-RoadViewer-Prepared')==='1';
  if(Number.isFinite(date))gdriveSkew=date/1000-Date.now()/1000;
  return result;
 }
@@ -451,8 +506,9 @@ function updateEditor(changed=false){
 async function loadStorageEditor(){
  if(editorLoading)return;editorLoading=true;$('storageRetry').hidden=true;
  try{
-  if(editorLoaded){showStorage(await api('api/settings/storage'));return}
-  const [storage,archive]=await Promise.all([api('api/settings/storage'),api('api/settings/archive')]);
+  if(editorLoaded){const storage=await storageSnapshot();showStorage(storage);if(storage.preparedApi)void loadPrepared();return}
+  const [storage,archive]=await Promise.all([storageSnapshot(),api('api/settings/archive')]);
+  if(storage.preparedApi)void loadPrepared();
   fillLocalSettings(storage);fillArchiveSettings(archive);archiveSettingsNeedsSave=!!archive.settings_error;savedStorage=localStorageValues();savedArchive=archiveValues();editorLoaded=true;
   archiveForm.dataset.loaded='true';$('storageEditorFields').disabled=false;showStorage(storage);updateEditor();
   editorStatus(archive.settings_error?'아카이빙 설정을 읽지 못해 꺼졌습니다. 설정을 확인하고 저장하세요. ('+archive.settings_error+')':'저장된 설정을 불러왔습니다.',archive.settings_error?'error':'idle');

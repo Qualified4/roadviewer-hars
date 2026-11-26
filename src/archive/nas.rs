@@ -65,7 +65,7 @@ fn kind_ok(kind: &str) -> bool {
 }
 
 /// Python `_probe`, plus the owner mark when `owner` is given.
-fn probe_sync(path: Option<&Path>, local: Option<String>, owner: Option<&str>) -> Probe {
+pub(crate) fn probe_sync(path: Option<&Path>, local: Option<String>, owner: Option<&str>) -> Probe {
     let Some(path) = path else {
         return Probe::unavailable("path_missing");
     };
@@ -329,7 +329,7 @@ pub(crate) fn share_meta(path: &Path) -> std::io::Result<std::fs::Metadata> {
 
 /// A regular file on the share, opened without following a link. It is checked before the open as well: a FIFO
 /// there would hang the open.
-fn open_share_file(path: &Path) -> std::io::Result<std::fs::File> {
+pub(crate) fn open_share_file(path: &Path) -> std::io::Result<std::fs::File> {
     if !share_meta(path)?.is_file() {
         return Err(not_found("not_a_file"));
     }
@@ -353,7 +353,7 @@ fn open_share_file(path: &Path) -> std::io::Result<std::fs::File> {
     Ok(file)
 }
 
-fn mounted(path: &Path, allow_any_path: bool) -> bool {
+pub(crate) fn mounted(path: &Path, allow_any_path: bool) -> bool {
     if allow_any_path {
         return true;
     }

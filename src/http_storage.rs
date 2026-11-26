@@ -9,6 +9,7 @@ use axum::{
     body::Bytes,
     extract::{Path, Query, State},
     http::{HeaderMap, Method, header::CONTENT_TYPE},
+    response::{IntoResponse, Response},
 };
 use serde_json::{Value, json};
 use std::{collections::BTreeMap, sync::atomic::Ordering, time::Duration};
@@ -35,7 +36,7 @@ pub async fn settings(
     method: Method,
     headers: HeaderMap,
     body: Bytes,
-) -> Result<Json<Value>> {
+) -> Result<Response> {
     let registration = app.store.registration.lock().await;
     let mut settings = storage::load_settings(&app.store.root).await?;
     if method == Method::POST {
@@ -66,7 +67,7 @@ pub async fn settings(
     if app.archive.settings().remote() {
         snapshot["archive"]["track_fill"] = crate::http_archive::track_fill(&app).await;
     }
-    Ok(Json(snapshot))
+    Ok(([("x-roadviewer-prepared", "1")], Json(snapshot)).into_response())
 }
 
 pub async fn pin(
@@ -185,4 +186,43 @@ pub async fn cleanup(State(app): State<App>) -> Result<Json<Value>> {
         app.used.store(used, Ordering::Relaxed);
     }
     Ok(Json(json!({"removed_bytes":removed})))
+}
+
+pub async fn prepared_settings(
+    State(app): State<App>,
+    method: Method,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<Value>> {
+    if method == Method::POST {
+        let data = json_type(&headers)
+            .then(|| serde_json::from_slice::<Value>(&body).ok())
+            .flatten()
+            .ok_or_else(|| bad("invalid_prepared_location"))?;
+        app.store.prepared.configure(&app.store.root, &data).await?;
+    }
+    Ok(Json(app.store.prepared.snapshot(&app.store).await))
+}
+
+pub async fn prepared_move(
+    State(app): State<App>,
+    method: Method,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Result<Json<Value>> {
+    if method == Method::GET {
+        return Ok(Json(app.store.prepared.migration().await));
+    }
+    let data = json_type(&headers)
+        .then(|| serde_json::from_slice::<Value>(&body).ok())
+        .flatten()
+        .ok_or_else(|| bad("invalid_prepared_location"))?;
+    let to_nas = match data["direction"].as_str() {
+        Some("nas") => true,
+        Some("local") => false,
+        _ => return Err(bad("invalid_prepared_location")),
+    };
+    Ok(Json(
+        crate::prepared::Prepared::start_move(app.store, to_nas).await?,
+    ))
 }

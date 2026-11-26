@@ -891,6 +891,13 @@ pub async fn purge(root: &Path, id: &str) -> std::io::Result<()> {
         Err(e) => Err(e),
     }
 }
+async fn purge_recording(store: &Store, id: &str) -> std::io::Result<()> {
+    store
+        .prepared
+        .purge_hidden(&hidden_path(&store.root, id), id)
+        .await?;
+    purge(&store.root, id).await
+}
 async fn gone(root: &Path, id: &str) -> std::io::Result<bool> {
     Ok(!tokio::fs::try_exists(root.join(id)).await?
         && !tokio::fs::try_exists(hidden_path(root, id)).await?)
@@ -948,7 +955,18 @@ pub async fn delete_records(
     for meta in metas.iter().filter(|m| ids.iter().any(|i| m["id"] == *i)) {
         let judgement = match judge(meta, &metas) {
             // Drive is extension storage: only an explicit complete deletion may remove its files.
-            Judgement::Delete if reason != "manual" && has_remote_refs(meta) => Judgement::Skip,
+            Judgement::Delete
+                if reason != "manual"
+                    && (has_remote_refs(meta)
+                        || meta.get("prepared_nas").is_some()
+                        || store
+                            .root
+                            .join(meta["id"].as_str().unwrap_or_default())
+                            .join(crate::prepared::MOVE_JOURNAL)
+                            .exists()) =>
+            {
+                Judgement::Skip
+            }
             j => j,
         };
         match judgement {
@@ -976,14 +994,19 @@ pub async fn delete_records(
         }
     }
     for id in &targets {
-        purge(&store.root, id).await?;
-    }
-    for id in &targets {
-        if !gone(&store.root, id).await? {
-            return Err(std::io::Error::other("recording folder still present").into());
+        if let Err(e) = purge_recording(store, id).await
+            && e.kind() != ErrorKind::NotConnected
+        {
+            return Err(e.into());
         }
     }
-    journal_remove(&store.root, &targets).await?;
+    let mut done = Vec::new();
+    for id in &targets {
+        if gone(&store.root, id).await? {
+            done.push(id.clone());
+        }
+    }
+    journal_remove(&store.root, &done).await?;
     drop(held);
     Ok(targets)
 }
@@ -1009,7 +1032,7 @@ pub async fn recover(store: &Store, _registration: &MutexGuard<'_, ()>) -> std::
     for id in &hidden {
         let lock = store.record_lock(id).await;
         let _guard = lock.lock().await;
-        match purge(&store.root, id).await {
+        match purge_recording(store, id).await {
             Ok(()) => done.push(id.clone()),
             Err(e) => failure = Some(e),
         }

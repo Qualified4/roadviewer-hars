@@ -118,6 +118,7 @@ pub struct Store {
     pub records: RwLock<BTreeMap<String, Value>>,
     record_locks: Mutex<BTreeMap<String, Arc<Mutex<()>>>>,
     pub registration: Mutex<()>,
+    pub prepared: crate::prepared::Prepared,
     pub processing: RwLock<Value>,
     /// The archiver bound to this store (upload admission and deletion consult it).
     pub archive: std::sync::RwLock<std::sync::Weak<crate::archive::Archive>>,
@@ -188,8 +189,10 @@ impl Store {
                 && processing["keep_original_video"].is_boolean(),
             "invalid processing settings"
         );
+        let prepared = crate::prepared::Prepared::open(&root).await?;
         Ok(Arc::new(Self {
             root,
+            prepared,
             records: RwLock::new(records),
             record_locks: Mutex::new(BTreeMap::new()),
             registration: Mutex::new(()),

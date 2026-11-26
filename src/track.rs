@@ -373,7 +373,10 @@ pub fn route_order(meta: &Value) -> (String, Option<u64>) {
 }
 
 fn file_stamp(path: &Path) -> Option<FileStamp> {
-    let m = std::fs::metadata(path).ok()?;
+    let m = std::fs::symlink_metadata(path).ok()?;
+    if !m.is_file() {
+        return None;
+    }
     let mtime = m
         .modified()
         .ok()
@@ -387,12 +390,35 @@ fn file_stamp(path: &Path) -> Option<FileStamp> {
     Some((mtime, m.len(), ino))
 }
 
-fn segment_sig(folder: &Path) -> SegmentSig {
-    let prepared = folder.join("prepared");
-    (
-        file_stamp(&prepared.join("summary.json")),
-        file_stamp(&prepared.join("track.json.gz")),
-    )
+type PreparedPaths = BTreeMap<String, Option<PathBuf>>;
+
+fn prepared_path(root: &Path, id: &str, paths: &PreparedPaths) -> Option<PathBuf> {
+    paths
+        .get(id)
+        .cloned()
+        .unwrap_or_else(|| Some(root.join(id).join("prepared")))
+}
+
+fn segment_sig(prepared: Option<&Path>) -> SegmentSig {
+    if let Some(prepared) = prepared {
+        (
+            file_stamp(&prepared.join("summary.json")),
+            file_stamp(&prepared.join("track.json.gz")),
+        )
+    } else {
+        (None, None)
+    }
+}
+
+fn track_summary(prepared: &Path) -> std::io::Result<Value> {
+    let file = crate::archive::nas::open_share_file(&prepared.join("summary.json"))?;
+    serde_json::from_reader(std::io::BufReader::new(file)).map_err(std::io::Error::other)
+}
+
+fn prepared_track(prepared: &Path) -> anyhow::Result<Value> {
+    crate::logs::read_gzip_file(crate::archive::nas::open_share_file(
+        &prepared.join("track.json.gz"),
+    )?)
 }
 
 fn hash_stamp(hasher: &mut Sha256, stamp: Option<FileStamp>) {
@@ -421,7 +447,7 @@ fn empty_segment() -> CachedSegment {
     }
 }
 
-fn load_segment(folder: &Path, sig: SegmentSig) -> CachedSegment {
+fn load_segment(folder: &Path, prepared: Option<&Path>, sig: SegmentSig) -> CachedSegment {
     {
         let cache = TRACK_CACHE.lock().unwrap();
         if let Some((cached_sig, seg)) = cache.segments.get(folder)
@@ -430,35 +456,29 @@ fn load_segment(folder: &Path, sig: SegmentSig) -> CachedSegment {
             return seg.clone();
         }
     }
-    let seg = if sig.0.is_none() || sig.1.is_none() {
-        empty_segment()
-    } else {
-        let prepared = folder.join("prepared");
-        let parsed = std::fs::read(prepared.join("summary.json"))
-            .ok()
-            .and_then(|v| serde_json::from_slice::<Value>(&v).ok());
-        match parsed {
-            Some(summary) if summary["has_track"] == true => {
-                match crate::logs::read_gzip(&prepared.join("track.json.gz")) {
-                    Ok(track) if track["points"].as_array().is_some_and(|p| !p.is_empty()) => {
-                        let coords = track["points"]
-                            .as_array()
-                            .unwrap()
-                            .iter()
-                            .filter_map(|p| Some([p[1].as_f64()?, p[2].as_f64()?]))
-                            .collect::<Vec<_>>();
-                        CachedSegment {
-                            has_track: true,
-                            duration: summary["duration"].clone(),
-                            track_distance_m: summary["track_distance_m"].clone(),
-                            simplified_150: simplify(&coords, 150),
-                        }
+    let seg = if let Some(prepared) = prepared.filter(|_| sig.0.is_some() && sig.1.is_some()) {
+        match track_summary(prepared).ok() {
+            Some(summary) if summary["has_track"] == true => match prepared_track(prepared) {
+                Ok(track) if track["points"].as_array().is_some_and(|p| !p.is_empty()) => {
+                    let coords = track["points"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .filter_map(|p| Some([p[1].as_f64()?, p[2].as_f64()?]))
+                        .collect::<Vec<_>>();
+                    CachedSegment {
+                        has_track: true,
+                        duration: summary["duration"].clone(),
+                        track_distance_m: summary["track_distance_m"].clone(),
+                        simplified_150: simplify(&coords, 150),
                     }
-                    _ => empty_segment(),
                 }
-            }
+                _ => empty_segment(),
+            },
             _ => empty_segment(),
         }
+    } else {
+        empty_segment()
     };
     TRACK_CACHE
         .lock()
@@ -506,11 +526,18 @@ pub fn build_single_track(
     id: &str,
     key: &str,
     ready_segments: &[(Option<u64>, String)],
+    paths: &PreparedPaths,
     if_none_match: &str,
 ) -> TracksAnswer {
     let stamped = ready_segments
         .iter()
-        .map(|(segment, seg_id)| (*segment, seg_id.clone(), segment_sig(&root.join(seg_id))))
+        .map(|(segment, seg_id)| {
+            (
+                *segment,
+                seg_id.clone(),
+                segment_sig(prepared_path(root, seg_id, paths).as_deref()),
+            )
+        })
         .collect::<Vec<_>>();
 
     let mut hasher = Sha256::new();
@@ -542,6 +569,9 @@ pub fn build_single_track(
             continue;
         }
         let folder = root.join(&seg_id);
+        let Some(prepared) = prepared_path(root, &seg_id, paths) else {
+            continue;
+        };
         let cached_meta = {
             let cache = TRACK_CACHE.lock().unwrap();
             cache
@@ -554,10 +584,7 @@ pub fn build_single_track(
             Some((false, _, _)) => continue,
             Some((true, dur, dist)) => (dur, dist),
             None => {
-                let prepared = folder.join("prepared");
-                let Ok(summary) = std::fs::read(prepared.join("summary.json")).and_then(|v| {
-                    serde_json::from_slice::<Value>(&v).map_err(std::io::Error::other)
-                }) else {
+                let Ok(summary) = track_summary(&prepared) else {
                     continue;
                 };
                 if summary["has_track"] != true {
@@ -574,8 +601,7 @@ pub fn build_single_track(
                 )
             }
         };
-        let Ok(track) = crate::logs::read_gzip(&folder.join("prepared").join("track.json.gz"))
-        else {
+        let Ok(track) = prepared_track(&prepared) else {
             continue;
         };
         if track["points"].as_array().is_none_or(|p| p.is_empty()) {
@@ -599,6 +625,7 @@ pub fn build_tracks(
     root: &Path,
     metas: &[Value],
     wanted: Option<&BTreeSet<String>>,
+    paths: &PreparedPaths,
     if_none_match: &str,
 ) -> TracksAnswer {
     // Group all recordings by route key, preserving `metas` ordering (sorted by recording id).
@@ -634,7 +661,7 @@ pub fn build_tracks(
         let ready_segments = ready
             .into_iter()
             .map(|(segment, seg_id)| {
-                let sig = segment_sig(&root.join(&seg_id));
+                let sig = segment_sig(prepared_path(root, &seg_id, paths).as_deref());
                 (seg_id, segment, sig)
             })
             .collect::<Vec<_>>();
@@ -716,7 +743,11 @@ pub fn build_tracks(
                 let mut points = vec![];
                 let mut distance_m = 0.0f64;
                 for (seg_id, _, seg_sig) in &sig.ready_segments {
-                    let seg = load_segment(&root.join(seg_id), *seg_sig);
+                    let seg = load_segment(
+                        &root.join(seg_id),
+                        prepared_path(root, seg_id, paths).as_deref(),
+                        *seg_sig,
+                    );
                     if !seg.has_track {
                         continue;
                     }

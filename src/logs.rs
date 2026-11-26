@@ -233,7 +233,10 @@ pub fn write_gzip(path: &Path, value: &Value) -> anyhow::Result<()> {
     Ok(())
 }
 pub fn read_gzip(path: &Path) -> anyhow::Result<Value> {
-    let file = std::fs::File::open(path)?;
+    read_gzip_file(std::fs::File::open(path)?)
+}
+
+pub(crate) fn read_gzip_file(file: std::fs::File) -> anyhow::Result<Value> {
     let mut bytes = Vec::new();
     flate2::read::GzDecoder::new(BufReader::new(file))
         .take(LOG_LIMIT + 1)

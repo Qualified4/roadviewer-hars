@@ -10,7 +10,7 @@ use std::{
 };
 
 const SKIPPED_EVENTS_WARNING: &str = "지원하지 않는 새 로그 이벤트";
-const LIST_FIELDS: [&str; 7] = [
+pub(crate) const LIST_FIELDS: [&str; 7] = [
     "drive_summary",
     "started_at",
     "start_source",
@@ -154,7 +154,14 @@ pub fn download_options(folder: &Path, meta: &Value) -> Vec<Value> {
     let mut rows = vec![];
     for (source, original, mp4) in SOURCES {
         let prepared = folder.join("prepared").join(mp4);
-        let video = stored(folder, meta, mp4) || prepared.is_file();
+        let prepared_bytes = if meta.get("prepared_nas").is_some() {
+            (meta["prepared_stale"] != true)
+                .then(|| crate::prepared::size(meta, mp4))
+                .flatten()
+        } else {
+            file_size(&prepared)
+        };
+        let video = stored(folder, meta, mp4) || prepared_bytes.is_some();
         let raw = stored(folder, meta, original);
         if !raw && !video {
             continue;
@@ -169,7 +176,7 @@ pub fn download_options(folder: &Path, meta: &Value) -> Vec<Value> {
         let size = if stored(folder, meta, mp4) {
             media_size(folder, meta, mp4)
         } else if video {
-            file_size(&prepared).unwrap_or(0)
+            prepared_bytes.unwrap_or(0)
         } else {
             media_size(folder, meta, original)
         };
@@ -188,7 +195,14 @@ fn file_fields(folder: &Path, meta: &Value) -> Map<String, Value> {
     }
     let mut row = Map::new();
     row.insert("bytes".into(), json!(original_bytes(folder, meta)));
-    row.insert("video".into(), json!(has_video(folder, meta)));
+    let has_prepared_video = meta["prepared_stale"] != true
+        && SOURCES
+            .iter()
+            .any(|(_, _, mp4)| crate::prepared::size(meta, mp4).is_some());
+    row.insert(
+        "video".into(),
+        json!(has_video(folder, meta) || has_prepared_video),
+    );
     row.insert(
         "video_download".into(),
         json!(video_download_kind(folder, meta)),
@@ -208,28 +222,50 @@ fn file_fields(folder: &Path, meta: &Value) -> Map<String, Value> {
     };
     row.insert("log_bytes".into(), json!(log));
     let prepared = folder.join("prepared");
-    row.insert("prepared_bytes".into(), json!(tree_size(&prepared)));
-    if prepared.join("thumbnail.jpg").is_file() {
-        row.insert("thumbnail".into(), json!(true));
-        let info = std::fs::read(prepared.join("thumbnail.json"))
-            .ok()
-            .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
-            .filter(Value::is_object)
-            .unwrap_or_else(|| json!({}));
-        if let Some(v) = info.get("version") {
-            row.insert("thumbnail_version".into(), v.clone());
+    if meta.get("prepared_nas").is_some() {
+        row.insert("prepared_bytes".into(), json!(crate::prepared::total(meta)));
+        if meta["prepared_stale"] != true && crate::prepared::size(meta, "thumbnail.jpg").is_some()
+        {
+            row.insert("thumbnail".into(), json!(true));
+            let info = &meta["prepared_thumbnail"];
+            if let Some(v) = info.get("version") {
+                row.insert("thumbnail_version".into(), v.clone());
+            }
+            if info["score"].is_number() {
+                row.insert("thumbnail_score".into(), info["score"].clone());
+            }
         }
-        if info["score"].is_number() {
-            row.insert("thumbnail_score".into(), info["score"].clone());
+        if meta["status"] == "ready" {
+            for key in LIST_FIELDS {
+                if let Some(v) = meta.get(key).filter(|v| !v.is_null()) {
+                    row.insert(key.into(), v.clone());
+                }
+            }
         }
-    }
-    if meta["status"] == "ready"
-        && let Ok(bytes) = std::fs::read(prepared.join("summary.json"))
-        && let Ok(summary) = serde_json::from_slice::<Value>(&bytes)
-    {
-        for key in LIST_FIELDS {
-            if let Some(v) = summary.get(key).filter(|v| !v.is_null()) {
-                row.insert(key.into(), v.clone());
+    } else {
+        row.insert("prepared_bytes".into(), json!(tree_size(&prepared)));
+        if prepared.join("thumbnail.jpg").is_file() {
+            row.insert("thumbnail".into(), json!(true));
+            let info = std::fs::read(prepared.join("thumbnail.json"))
+                .ok()
+                .and_then(|b| serde_json::from_slice::<Value>(&b).ok())
+                .filter(Value::is_object)
+                .unwrap_or_else(|| json!({}));
+            if let Some(v) = info.get("version") {
+                row.insert("thumbnail_version".into(), v.clone());
+            }
+            if info["score"].is_number() {
+                row.insert("thumbnail_score".into(), info["score"].clone());
+            }
+        }
+        if meta["status"] == "ready"
+            && let Ok(bytes) = std::fs::read(prepared.join("summary.json"))
+            && let Ok(summary) = serde_json::from_slice::<Value>(&bytes)
+        {
+            for key in LIST_FIELDS {
+                if let Some(v) = summary.get(key).filter(|v| !v.is_null()) {
+                    row.insert(key.into(), v.clone());
+                }
             }
         }
     }
@@ -249,10 +285,18 @@ fn file_fields(folder: &Path, meta: &Value) -> Map<String, Value> {
 
 pub fn row(folder: &Path, meta: &Value) -> Map<String, Value> {
     let mut row = meta.as_object().cloned().unwrap_or_default();
-    for key in ["bookmarks", "storage", "content_hashes"]
-        .iter()
-        .chain(&SUMMARY_COPIES)
-        .chain(&INTERNAL)
+    for key in [
+        "bookmarks",
+        "storage",
+        "content_hashes",
+        "prepared_nas",
+        "prepared_files",
+        "prepared_thumbnail",
+        "prepared_stale",
+    ]
+    .iter()
+    .chain(&SUMMARY_COPIES)
+    .chain(&INTERNAL)
     {
         row.remove(*key);
     }

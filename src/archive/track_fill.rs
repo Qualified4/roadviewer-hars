@@ -19,7 +19,7 @@ use std::{
 
 pub const TRACK_V: u64 = 2;
 pub const FILE: &str = "track.json.gz";
-const STAGED: &str = "track.json.gz.migrating";
+pub(crate) const STAGED: &str = "track.json.gz.migrating";
 const SUMMARY_FIELDS: [&str; 5] = [
     "track_v",
     "has_track",
@@ -190,7 +190,9 @@ fn read_summary(folder: &Path) -> Option<Value> {
 }
 
 fn converted(folder: &Path, m: &Value) -> bool {
-    m["status"] == "ready" && folder.join("prepared/data.json.gz").is_file()
+    m["status"] == "ready"
+        && m.get("prepared_nas").is_none()
+        && folder.join("prepared/data.json.gz").is_file()
 }
 
 /// Python `drive_only`: moved to Drive, or a Drive copy whose local file is gone.
@@ -469,8 +471,22 @@ impl Archive {
     }
 
     async fn track_read(&self, id: &str, rlog: PathBuf) -> Option<Value> {
+        let record_lock = self.host.store.record_lock(id).await;
+        let guard = record_lock.lock().await;
+        let meta = self.host.meta(id).await?;
+        let folder = self.host.folder(id);
+        if !converted(&folder, &meta) {
+            return None;
+        }
+        let _location = self
+            .host
+            .store
+            .prepared
+            .hold_location(id, Duration::ZERO)
+            .await;
+        drop(guard);
         let reader = lock(&self.track_fill.reader).clone();
-        reader(rlog, self.host.folder(id).join("prepared")).await
+        reader(rlog, folder.join("prepared")).await
     }
 
     async fn track_process(&self, id: &str, m: &Value, rlog: Option<PathBuf>) {
@@ -662,6 +678,7 @@ impl Archive {
         };
         let revision = |v: &Value| v["conversion_revision"].as_u64().unwrap_or(0);
         if current["status"] != "ready"
+            || current.get("prepared_nas").is_some()
             || revision(&current) != revision(m)
             || self.host.busy(id).await
             || !self.host.folder(id).join("prepared").is_dir()

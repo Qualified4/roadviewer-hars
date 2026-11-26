@@ -16,6 +16,7 @@ const CAMERAS: [(&str, &str, &str, &str); 3] = [
 /// Python `RV_MEDIA_PATHS` / `RV_RECORDING_DIR`: where the server found each video (the archive, a staged copy) and
 /// the recording folder, when the log is not read from it.
 pub const MEDIA_PATHS: &str = "HARS_MEDIA_PATHS";
+pub const PREPARED_DIR: &str = "HARS_CONVERT_PREPARED_DIR";
 pub const RECORDING_DIR: &str = "HARS_RECORDING_DIR";
 pub const VIDEO_INPUTS: [&str; 6] = [
     "qcamera.ts",
@@ -74,7 +75,7 @@ async fn carry_previous(
     camera: &str,
     mp4: &str,
 ) -> anyhow::Result<Carried> {
-    let prepared = recording.join("prepared");
+    let prepared = previous_dir(recording);
     let summary: Value = store::read_json(&prepared.join("summary.json")).await?;
     let entry = summary["videos"][camera].clone();
     anyhow::ensure!(
@@ -121,17 +122,26 @@ async fn carry_previous(
 /// Whether the result published now plays `camera`: its summary lists the camera and the MP4 it
 /// plays is still there (in `prepared/`, stored next to the originals, or archived).
 async fn previous_plays(recording: &Path, meta: &Value, camera: &str, mp4: &str) -> bool {
-    let Ok(summary) = store::read_json::<Value>(&recording.join("prepared/summary.json")).await
-    else {
+    if meta["prepared_stale"] == true {
+        return false;
+    }
+    let prepared = previous_dir(recording);
+    let Ok(summary) = store::read_json::<Value>(&prepared.join("summary.json")).await else {
         return false;
     };
     summary["videos"][camera].is_object()
-        && (recording.join("prepared").join(mp4).is_file()
+        && (prepared.join(mp4).is_file()
             || recording.join(mp4).is_file()
             || crate::archive::index::is_archived_location(&crate::archive::index::location(
                 meta, mp4,
             )))
 }
+fn previous_dir(recording: &Path) -> PathBuf {
+    std::env::var_os(PREPARED_DIR)
+        .map(PathBuf::from)
+        .unwrap_or_else(|| recording.join("prepared"))
+}
+
 fn seconds(v: &Value) -> Option<f64> {
     v.as_str()
         .and_then(|v| v.parse().ok())

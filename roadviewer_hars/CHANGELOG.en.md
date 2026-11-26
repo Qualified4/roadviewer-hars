@@ -1,3 +1,7 @@
+## 2.0.23
+
+- Choose local storage or a NAS share for replay data in Storage settings. Move existing data in either direction with size and SHA-256 verification. Conversions targeting NAS wait if it disconnects, and the recording list remains available.
+
 ## 2.0.22
 
 - The replay overlay smoothly changes CCNC truck boxes to 8 m long, 2.3 m wide, and twice the configured height. Amber light beams fade upward from the rear ground marker.

@@ -511,6 +511,16 @@ API 포트 상태는 시작 시 Supervisor에서 이 앱의 네트워크 매핑�
 
 장치 개발자는 [Device API v1](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/device-api.md)을 참고하세요. 이 저장소는 서버와 웹 UI를 제공하며 장치 업로더 구현은 별도입니다.
 
+## 재생 데이터의 NAS 저장
+
+**저장공간 → 재생 데이터 저장소**의 기본값은 로컬입니다. Home Assistant의 **설정 → 시스템 → 저장소**에서 용도가 **Share**인 네트워크 저장소를 연결하고, 공유에 전용 하위 폴더(예: `/share/nas/roadviewer-prepared`)를 만든 뒤 NAS 공유를 선택해 저장하세요. 최초 설정은 공유가 마운트된 상태에서 완료합니다. 재생 데이터의 소유 확인 파일은 공유 폴더의 `.roadviewer-prepared/.roadviewer-storage.json`, 로컬 연결 설정은 데이터 디렉터리의 `.prepared-storage.json`입니다. 두 파일을 보존하세요.
+
+위치 설정은 새 변환에 적용됩니다. 기존 재생 데이터는 **기존 재생 데이터 NAS로 이동** 또는 **재생 데이터 로컬로 되돌리기**로 옮기세요. 기록별로 복사본의 크기와 SHA-256을 대조하고 로컬 메타데이터가 새 위치를 가리킨 뒤 원래 산출물을 지웁니다. 재생 또는 변환 중인 기록은 건너뜁니다. 중단된 작업은 같은 방향의 버튼으로 이어서 실행할 수 있습니다. 기존 NAS 경로를 바꾸려면 새 경로로 옮기기 전에 먼저 기존 세대를 로컬로 되돌리세요. NAS에 저장된 세대는 해당 경로를 계속 참조합니다.
+
+변환은 로컬 작업 공간에서 실행한 다음 NAS의 같은 공유에 임시 세대를 쓰고, 검증한 뒤 최종 이름으로 바꿉니다. 변환 중에는 로컬 작업 파일을 위한 여유 공간이 필요합니다. NAS 연결이나 소유 확인이 실패하면 NAS 대상 변환이 대기하고, NAS 재생 데이터 요청에 연결 오류가 나타납니다. 기록 목록과 메타데이터, 원본 아카이빙 설정은 로컬에 남습니다. 저장공간의 **NAS 재생 데이터**는 현재 기록이 가리키는 NAS 세대의 사용량입니다.
+
+API는 `GET/POST /api/settings/prepared`로 위치를 조회·저장하고, `GET/POST /api/settings/prepared/move`로 이관 상태를 조회하거나 `direction`에 `nas` 또는 `local`을 지정하여 시작합니다. 기존 데이터에 지도 경로가 없으면 로컬로 되돌린 뒤 기존 지도 채우기를 실행하거나, 해당 기록을 다시 변환해 경로를 생성할 수 있습니다.
+
 ## NAS 아카이빙 (실험 기능)
 
 HARS 2.x는 owner가 `roadviewer-hars`인 sentinel이 있는 자기 폴더에만 쓰고, Python 1.x의 NAS 폴더는 읽기 전용으로 가져옵니다. HARS 경로를 Python의 공유 폴더로 지정하면 `not_owned`로 거부됩니다. 자세한 내용은 [같은 Drive 계정·NAS를 함께 쓸 때](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md#같은-drive-계정nas를-함께-쓸-때)를 참고하세요.
