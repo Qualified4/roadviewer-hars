@@ -26,6 +26,7 @@
  // 지도 테마 (the same popover): 자동 follows the app's theme, 라이트 and 다크 fix the basemap for every map on the page
  // but the small map over the video (its own 색상 setting); kept on this browser.
  const TONE_KEY='roadviewer-map-tone';let mapTone='auto';try{const saved=localStorage.getItem(TONE_KEY);if(saved==='light'||saved==='dark')mapTone=saved}catch{}
+ let redrawMiniCar=()=>{};
  // The same vehicle silhouette as the road view (12 × 22, with a front windshield).
  const CAR_KEY='roadviewer-map-car-icon';let mapCar='vehicle';try{if(localStorage.getItem(CAR_KEY)==='arrow')mapCar='arrow'}catch{}
  const CAR_COLORS={auto:'자동',white:'흰색',mint:'민트',blue:'파랑',cyan:'하늘',violet:'보라',rose:'분홍',amber:'주황',red:'빨강'};
@@ -37,14 +38,14 @@
  function setMapCarColor(color){
   if(!Object.hasOwn(CAR_COLORS,color)||color===mapCarColor)return;mapCarColor=color;try{localStorage.setItem(CAR_COLOR_KEY,color)}catch{}
   for(const body of document.querySelectorAll('.map-car-body')){body.dataset.carColor=color;if(color==='auto')body.style.removeProperty('--map-car-color');else body.style.setProperty('--map-car-color',carColorHex())}
-  syncCarChoices();
+  syncCarChoices();redrawMiniCar();
  }
  const carArt=kind=>kind==='arrow'?'<svg viewBox="0 0 24 24" width="22" height="22" aria-hidden="true"><path d="M12 3 19 20 12 16 5 20Z"/></svg>':'<svg viewBox="0 0 24 24" width="44" height="44" aria-hidden="true"><rect class="map-vehicle-shell" x="6" y="1" width="12" height="22" rx="3"/><rect class="map-vehicle-glass" x="8" y="4" width="8" height="3" rx="1"/></svg>';
  function showCarChoice(root){for(const choice of root.querySelectorAll('button[data-map-car]'))choice.setAttribute('aria-pressed',String(choice.dataset.mapCar===mapCar));for(const choice of root.querySelectorAll('button[data-map-color]'))choice.setAttribute('aria-pressed',String(choice.dataset.mapColor===mapCarColor))}
  function setMapCar(kind){
   if(!['vehicle','arrow'].includes(kind)||kind===mapCar)return;mapCar=kind;try{localStorage.setItem(CAR_KEY,kind)}catch{}
   for(const body of document.querySelectorAll('.map-car-body')){body.dataset.carIcon=kind;body.innerHTML=carArt(kind)}
-  syncCarChoices();
+  syncCarChoices();redrawMiniCar();
  }
  const link=(href,text)=>`<a href="${href}" target="_blank" rel="noopener">${text}</a>`;
  const ATTRIBUTION=`${link('https://openfreemap.org','OpenFreeMap')} ${link('https://www.openmaptiles.org/','© OpenMapTiles')} Data from ${link('https://www.openstreetmap.org/copyright','OpenStreetMap')}`;
@@ -79,17 +80,30 @@
   const entry=sessionCache.logTracks.get(logId);if(!entry)return;
   for(const [k,v] of [...sessionCache.logTracks])if(v===entry)sessionCache.logTracks.delete(k);
  }
+ // Load the vendor assets once, including overlapping replay initialization.
+ const mapAssets=globalThis.__rvMapAssets??=new Map();
+ function loadMapAsset(id,name,tag){
+  if(mapAssets.has(id))return mapAssets.get(id);
+  const url=new URL('vendor/'+name+version,assetBase).href;
+  const pending=new Promise((resolve,reject)=>{
+   const el=document.createElement(tag);el.id=id;
+   if(tag==='script')el.src=url;else{el.rel='stylesheet';el.href=url}
+   el.onload=()=>resolve();el.onerror=()=>{el.remove();reject(Error('지도를 불러오지 못했습니다.'))};
+   document.head.append(el);
+  }).catch(error=>{mapAssets.delete(id);throw error});
+  mapAssets.set(id,pending);return pending;
+ }
+ const loadMapLibre=()=>Promise.all([
+  loadMapAsset('rvMaplibreCss','maplibre-gl.css','link'),
+  window.maplibregl?.Map||loadMapAsset('rvMaplibreJs','maplibre-gl.js','script'),
+ ]).then(()=>window.maplibregl);
  let leaflet=null;
  function loadLeaflet(){
-  if(window.L?.maplibreGL)return Promise.resolve(window.L);
-  if(leaflet)return leaflet;
-  const add=(tag,attrs)=>new Promise((resolve,reject)=>{const el=document.createElement(tag);Object.assign(el,attrs);el.onload=resolve;el.onerror=()=>reject(Error('지도를 불러오지 못했습니다.'));document.head.append(el)});
-  const url=name=>new URL('vendor/'+name+version,assetBase).href,sheet=(id,name)=>document.head.querySelector('#'+id)?Promise.resolve():add('link',{id,rel:'stylesheet',href:url(name)});
-  // The binding needs both globals (L, maplibregl), so it comes last.
-  leaflet=Promise.all([sheet('rvLeafletCss','leaflet.css'),sheet('rvMaplibreCss','maplibre-gl.css'),
-   window.L?.map?null:add('script',{id:'rvLeafletJs',src:url('leaflet.js')}),window.maplibregl?.Map?null:add('script',{id:'rvMaplibreJs',src:url('maplibre-gl.js')})])
-   .then(()=>window.L.maplibreGL?null:add('script',{id:'rvMaplibreLeafletJs',src:url('leaflet-maplibre-gl.js')})).then(()=>window.L).catch(e=>{leaflet=null;throw e});
-  return leaflet;
+  return leaflet??=Promise.all([
+   loadMapLibre(),loadMapAsset('rvLeafletCss','leaflet.css','link'),
+   window.L?.map||loadMapAsset('rvLeafletJs','leaflet.js','script'),
+  ]).then(()=>window.L.maplibreGL||loadMapAsset('rvMaplibreLeafletJs','leaflet-maplibre-gl.js','script'))
+   .then(()=>window.L).catch(error=>{leaflet=null;throw error});
  }
  // A map with this app's look: no Leaflet prefix, the OpenFreeMap style of the current theme, zoom buttons only where
  // asked. At most two exist on a page (library: the list's map and 주행 지도; replay: the 지도 tab and the small map);
@@ -1008,18 +1022,7 @@
   // ---- ③ 주행 상황 | 지도 and ④ the small map over the video.
   const id=location.pathname.split('/').filter(Boolean).at(-1);
   const mapTab=document.getElementById('mapTab'),view=document.getElementById('routeMapView'),follow=document.getElementById('mapFollow'),mini=document.getElementById('videoMap'),miniToggle=document.getElementById('videoMiniMap');
-  // 작은 지도 색상: 자동 (app theme) | 라이트 | 다크, kept on this browser.
-  const toneSwitch=document.getElementById('videoMiniMapTone'),TONE_KEY='roadviewer-minimap-tone';
-  let miniTone='auto';try{const saved=localStorage.getItem(TONE_KEY);if(['auto','light','dark'].includes(saved))miniTone=saved}catch{}
-  const showTone=()=>{for(const b of toneSwitch.querySelectorAll('button'))b.setAttribute('aria-pressed',String(b.dataset.tone===miniTone))};showTone();
-  toneSwitch.addEventListener('click',event=>{const b=event.target.closest('button[data-tone]');if(!b||b.dataset.tone===miniTone)return;miniTone=b.dataset.tone;showTone();try{localStorage.setItem(TONE_KEY,miniTone)}catch{}for(const map of maps)if(map.getContainer().closest('#videoMap'))applyTiles(map)});
-  // 글자 없는 지도: the small map without place and road names (the style's symbol layers hidden); saved with the
-  // other display preferences (app.js, .overlay-settings-body inputs).
-  const miniPlain=document.getElementById('videoMiniMapPlain'),miniGrey=document.getElementById('videoMiniMapGrey');
-  for(const box of [miniPlain,miniGrey])box.addEventListener('change',()=>{for(const map of maps)if(map.getContainer().closest('#videoMap'))applyTiles(map)});
-  // Session-scoped replay map pool: reuses live Leaflet+MapLibre WebGL instances when navigating between segments of
-  // the same drive (preventing WebGL context teardown/recreation), and destroys them immediately on library/other-drive
-  // transitions or after a short idle GC timeout so detached maps can never leak.
+  // Park both replay maps during SPA swaps within one drive.
   const replayPool=globalThis.__rvReplayMapPool??={active:new Map(),parked:new Map()};
   function destroyParked(slot){
    const entry=replayPool.parked.get(slot);if(!entry)return;
@@ -1027,28 +1030,37 @@
    try{entry.map.remove()}catch{}
   }
   function destroyAllParked(){for(const slot of [...replayPool.parked.keys()])destroyParked(slot)}
-  let route=null,driveKey='',current=-1,big=null,small=null,bigPending=false,smallPending=false,lastKey='',following=true,mode='road';
+  let route=null,unconverted=[],driveKey='',current=-1,big=null,small=null,bigPending=false,smallPending=false,lastKey='',following=true,mode='road';
+  let disposed=false;
+  const sameDrive=entry=>entry.driveKey===driveKey||route?.some(segment=>entry.ids.includes(segment.id));
   function parkTarget(slot,target){
    clearTimeout(target.widen);clearTimeout(target.warmupTimer);target.abort?.abort();
    for(const [ev,fn] of target.handlers||[])target.map.off(ev,fn);
    target.layerGroup?.clearLayers();target.layerGroup?.remove();
-   const map=target.map,pane=map.getPane('mapPane'),glBox=map.rvGlLayer?.getContainer?.();
-   if(pane)pane.style.translate='';if(glBox)glBox.style.translate='';
-   map.rvNarrow=false;detachMapFromPage(map);
+   const map=target.map;
+   if(slot==='small'){
+    map.stop();
+   }else{
+    const pane=map.getPane('mapPane'),glBox=map.rvGlLayer?.getContainer?.();
+    if(pane)pane.style.translate='';if(glBox)glBox.style.translate='';
+    map.rvNarrow=false;detachMapFromPage(map);
+   }
    destroyParked(slot);
    const timer=globalThis.setTimeout(()=>destroyParked(slot),2500);
-   replayPool.parked.set(slot,{driveKey,map,container:map.getContainer(),timer});
+   replayPool.parked.set(slot,{driveKey,ids:[...route,...unconverted].map(segment=>segment.id),map,container:map.getContainer(),timer,
+    styleKey:target.appliedStyle,basemaps:target.basemaps,pinned:slot==='small'&&pinned&&large});
   }
   function claimParked(slot){
    const entry=replayPool.parked.get(slot);if(!entry)return null;
-   if(entry.driveKey!==driveKey){destroyParked(slot);return null}
+   if(!sameDrive(entry)){destroyParked(slot);return null}
    replayPool.parked.delete(slot);globalThis.clearTimeout(entry.timer);return entry;
   }
-  const waitSwap=slot=>document.body.hidden&&replayPool.active.get(slot)===driveKey?new Promise(resolve=>addEventListener('pageshow',resolve,{once:true})):Promise.resolve();
+  const waitSwap=slot=>document.body.hidden&&replayPool.active.has(slot)?new Promise(resolve=>addEventListener('pageshow',resolve,{once:true})):Promise.resolve();
   if(typeof onPageDispose==='function')onPageDispose(()=>{
+   disposed=true;
    for(const [slot,target] of [['big',big],['small',small]]){
-    if(replayPool.active.get(slot)===driveKey)replayPool.active.delete(slot);
     if(!target)continue;
+    replayPool.active.delete(slot);
     if(globalThis.__rvNavNext==='replay'&&driveKey)parkTarget(slot,target);
     else{clearTimeout(target.widen);clearTimeout(target.warmupTimer);target.abort?.abort();try{target.map.remove()}catch{}}
    }
@@ -1065,18 +1077,19 @@
   }catch{}
   // Eagerly preload Leaflet+MapLibre when the user already has the map tab or mini-map enabled.
   {let savedTab=null;try{savedTab=localStorage.getItem('roadviewer-analysis-tab')}catch{}
-   if(savedTab==='map'||miniToggle?.checked)loadLeaflet().catch(()=>{})}
+   if(savedTab==='map')loadLeaflet().catch(()=>{});else if(miniToggle?.checked)loadMapLibre().catch(()=>{})}
   function applyTrack(value){
    if(!value?.segments?.length)return;
    const nextRoute=value.segments.filter(segment=>segment.points.length),nextCurrent=nextRoute.findIndex(segment=>segment.id===id);
    if(nextCurrent<0){destroyAllParked();return}  // This segment has no GPS: no map (its drive's other segments are not this replay).
-   route=nextRoute;current=nextCurrent;driveKey=route.map(s=>s.id).join(',');
-   for(const [slot,entry] of [...replayPool.parked])if(entry.driveKey!==driveKey)destroyParked(slot);
+   route=nextRoute;unconverted=value.unconverted||[];current=nextCurrent;driveKey=route.map(s=>s.id).join(',');
+   for(const [slot,entry] of replayPool.parked)if(!sameDrive(entry))destroyParked(slot);
+   if(small){drawMiniRoute();if(large&&miniFollowing&&!resizing)fitDrive()}
    // The 지도 tab appears once this segment has a track; a saved 지도 tab (telemetry.js fell back to 주행 상황) returns.
    mapTab.hidden=false;let saved=null;try{saved=localStorage.getItem('roadviewer-analysis-tab')}catch{}
    if(saved==='map')window.selectAnalysisTab?.('map',false);syncMini();
   }
-  let asked=false,trackLoading=false;
+  let asked=false,trackLoading=false,trackRequest=0;
   function fetchReplayTrack(force=false,driveSig=null){
    if(!force&&asked)return;
    const cached=getCachedLogTrack(id);
@@ -1084,12 +1097,17 @@
     asked=true;applyTrack(cached.value);return;
    }
    asked=true;trackLoading=true;
+   const request=++trackRequest;
    const headers=cached?.etag?{'If-None-Match':cached.etag}:{};
-   fetch(`../../api/logs/${id}/track`,{cache:'no-cache',headers}).then(async r=>{
-    if(r.status===304&&cached){if(driveSig)cached.driveSig=driveSig;return cached.value}
+   return fetch(`../../api/logs/${id}/track`,{cache:'no-cache',headers}).then(async r=>{
+    if(request!==trackRequest)return null;
+    if(r.status===304&&cached){if(driveSig)cached.driveSig=driveSig;return route?undefined:cached.value}
     if(!r.ok)return null;
-    const value=await r.json();setCachedLogTrack(id,{etag:r.headers.get('ETag'),value,driveSig});return value;
-   }).then(value=>{trackLoading=false;if(value)applyTrack(value)}).catch(()=>{trackLoading=false;asked=false});
+    const value=await r.json();
+    if(request===trackRequest&&!disposed)setCachedLogTrack(id,{etag:r.headers.get('ETag'),value,driveSig:driveSig??cached?.driveSig});
+    return value;
+   }).then(value=>{if(request!==trackRequest||disposed)return;trackLoading=false;if(value)applyTrack(value);else if(value===null)asked=false})
+    .catch(()=>{if(request===trackRequest){trackLoading=false;asked=false}});
   }
   // Start fetching the track immediately on replay entry (deferred to end of init so all const/let bindings exist).
   window.rvMaps={replayLog(log,logs){
@@ -1124,30 +1142,30 @@
    const [from,to]=next<points.length?[p,points[next]]:previous>=0?[points[previous],p]:[p,p];
    return same(from,to)?null:Math.atan2((to[2]-from[2])*Math.cos(p[1]*Math.PI/180),to[1]-from[1])*180/Math.PI;
   }
-  function position(time){
-   const points=route[current].points;let i=0;
+  function position(time,points=route[current].points){
+   let i=0;
    while(i<points.length-1&&points[i+1][0]<=time)i++;
    let from=i,to=Math.min(i+1,points.length-1);
    if(held(points,to))to++;else if(held(points,from))from--;
    const a=points[from],b=points[to],span=b[0]-a[0],k=span>0?Math.max(0,Math.min(1,(time-a[0])/span)):0;
    const lat=a[1]+(b[1]-a[1])*k,lon=a[2]+(b[2]-a[2])*k,ha=heading(points,from),hb=heading(points,to);
    const bearing=ha!==null&&hb!==null?ha+(((hb-ha)%360+540)%360-180)*k:ha??hb??0;
-   return {latlng:[lat,lon],bearing:Number.isFinite(bearing)?(bearing%360+360)%360:0,index:i,k,from,to};
+   return {latlng:[lat,lon],bearing:(bearing%360+360)%360,speed:(a[3]??0)+((b[3]??0)-(a[3]??0))*k,index:i,k,from,to};
   }
   const carIcon=(L,bearing)=>L.divIcon({className:'map-car',html:`<span class="map-car-body" data-car-icon="${mapCar}" data-car-color="${mapCarColor}" style="${carColorStyle()}transform:rotate(${bearing.toFixed(2)}deg)">${carArt(mapCar)}</span>`,iconSize:[44,44],iconAnchor:[22,22]});
   // The drive's lines: this log's segment solid, the drive's other segments faded. Only the large map seeks on a tap
   // (interactive).
-  function layers(L,group,interactive=true){
+  function layers(L,group){
    const shown=css('--accent')||'#3DCB92',rest=css('--muted')||'#9AA0A9',lines={others:[]};
    route.forEach((segment,i)=>{
     if(i===current)return;
-    const line=L.polyline(latlngs(segment.points),{color:rest,weight:5,opacity:.45,lineCap:'round',lineJoin:'round',interactive}).addTo(group);
-    if(interactive)line.on('click',e=>seekTo(e.latlng));lines.others.push(line);
+    const line=L.polyline(latlngs(segment.points),{color:rest,weight:5,opacity:.45,lineCap:'round',lineJoin:'round'}).addTo(group);
+    line.on('click',e=>seekTo(e.latlng));lines.others.push(line);
    });
    // The current segment, drawn whole once (draw), on top of the others. Kept unclipped and unsimplified, so the drawn
    // points are the samples and never change under the car.
-   lines.current=L.polyline([],{noClip:true,smoothFactor:0,lineCap:'round',lineJoin:'round',interactive,color:shown,weight:6,opacity:.95,className:'map-current'}).addTo(group);
-   if(interactive)lines.current.on('click',e=>seekTo(e.latlng));
+   lines.current=L.polyline([],{noClip:true,smoothFactor:0,lineCap:'round',lineJoin:'round',color:shown,weight:6,opacity:.95,className:'map-current'}).addTo(group);
+   lines.current.on('click',e=>seekTo(e.latlng));
    const initial=position(typeof t==='number'?t:0);
    lines.car=L.marker(initial.latlng,{icon:carIcon(L,initial.bearing),interactive:false,keyboard:false}).addTo(group);
    return lines;
@@ -1175,7 +1193,7 @@
    try{
     const L=await loadLeaflet().catch(e=>{showError(e.message);return null});
     await waitSwap('big');
-    if(!L||big||!route)return;
+    if(!L||disposed||big||!route)return;
     const slot=view.querySelector('.route-map-canvas');if(!slot)return;
     const reused=claimParked('big');
     let map;
@@ -1218,54 +1236,8 @@
    bindMap(target,'resize',()=>{target.eager=performance.now()+300;lastKey=''});
    bindMap(target,'move zoomend resize',()=>alignBasemap(target));
   }
-  async function ensureSmall(){
-   if(small||smallPending||!route)return;
-   smallPending=true;
-   try{
-    const L=await loadLeaflet().catch(()=>null);
-    await waitSwap('small');
-    if(!L||small||!route||mini.hidden)return;
-    const slot=mini.querySelector('.video-map-canvas');if(!slot)return;
-    const miniOpts={zoom:false,tone:()=>miniTone==='auto'?null:miniTone,labels:()=>!miniPlain.checked,grey:()=>miniGrey.checked};
-    const reused=claimParked('small');
-    let map;
-    if(reused){
-     for(const key of HELD)reused.container.style.removeProperty(key);
-     slot.replaceWith(reused.container);map=reused.map;
-     attachMapToPage(L,map,reused.container,miniOpts);
-    }else{
-     map=createMap(L,slot,{margin:SMALL_MARGIN,interactive:false,attribution:SHORT_ATTRIBUTION,warmup:true,autoDispose:false,...miniOpts});
-    }
-    const layerGroup=L.layerGroup().addTo(map);
-    small={map,layerGroup,lines:layers(L,layerGroup,false),handlers:[]};
-    replayPool.active.set('small',driveKey);
-    watchView(small);fitSmall();scheduleWarmupExpand(small);
-    // Refit when the map or the speed and wheel over it change size (the speed appears once the replay has data).
-    {const watch=new ResizeObserver(()=>{if(small&&!mini.hidden&&!resizing)fitSmall()});watch.observe(mini);watch.observe(hud)}
-   }finally{smallPending=false}
-  }
-  // The small map always follows the car at a fixed street zoom, the car centred across and a little below the middle
-  // (60% down: clear of the speed over the top, more road ahead).
-  function fitSmall(){
-   if(!small||mini.hidden)return;
-   small.map.invalidateSize({animate:false});
-   const first=route[current].points[0];if(first)small.map.setView([first[1],first[2]],SMALL_ZOOM,{animate:false});
-   lastKey='';update(true);
-  }
-  const SMALL_ZOOM=16,CAR_Y=.6;
-  // Following (the small map always, the 지도 tab with 따라가기) scrolls what is already drawn: the basemap and the lines
-  // are drawn a margin beyond each edge, and the car's movement is a translate of the map pane (the basemap, the lines
-  // and the car move together, sub-pixel, on the compositor), with no pan and no redraw. Only once the car has gone
-  // RECENTRE of the margin (either way) is the map panned once by the whole pixels and the basemap re-centred and drawn
-  // in the same frame (MapLibre's synchronous redraw), the translate falling back under a pixel: what is shown does not
-  // move. At 45 km/h (zoom 16, ~7 px/s) that is one redraw every 5-7 s instead of one per pixel (7-9 a second).
-  // The margins, a share of the size per side: memory buys fewer redraws (speed first). Both maps draw a full size
-  // beyond each edge, (1+2*1)^2 = 9x the shown area (~1100 px a side for the small map and ~2300 for the 지도 tab on a
-  // phone, tens of MB), so following redraws about every 10 s (small map) or 20 s (지도 tab) at 45 km/h. A hand zoom
-  // redraws the whole canvas each frame, so the 지도 tab narrows the margin for it (narrow); a hand drag scrolls what is
-  // drawn like following (dragMove). createMap lowers the margin where the canvas would pass GL_SIDE (large maps on
-  // tablets and desktops).
-  const SMALL_MARGIN=1,BIG_MARGIN=1,RECENTRE=.65;
+  // The analysis tab keeps its compositor-based following and Leaflet pan behavior.
+  const BIG_MARGIN=1,RECENTRE=.65;
   // eager (and for a moment after an input or a resize): pan by every whole pixel, Leaflet's own view kept on what is shown.
   function followCar(target,latlng,share,eager=performance.now()<(target.eager||0)){
    const {map}=target,pane=map.getPane('mapPane'),size=map.getSize(),reach=eager?0:RECENTRE*map.rvMargin;
@@ -1339,13 +1311,13 @@
    // The marker sits on Leaflet's whole pixel; its body takes the remaining fraction and the heading.
    lines.car.setLatLng(now);const body=lines.car.getElement()?.querySelector('.map-car-body');
    if(body){const p=map.project(now,map.getZoom()),transform=`translate(${(p.x-Math.round(p.x)).toFixed(3)}px,${(p.y-Math.round(p.y)).toFixed(3)}px) rotate(${pos.bearing.toFixed(2)}deg)`;if(lines.transform!==transform){lines.transform=transform;body.style.transform=transform}}
-   if(!target.zooming&&(target===small||following))followCar(target,now,target===small?CAR_Y:.5);
+   if(!target.zooming&&following)followCar(target,now,.5);
   }
   function update(force=false){
    if(!route||current<0||typeof t==='undefined')return;
    const pos=position(t),key=pos.index+':'+pos.k.toFixed(4),moved=force||key!==lastKey;lastKey=key;
    if(big&&mode==='map'&&moved)draw(big,pos,force);
-   if(small&&!mini.hidden&&moved)draw(small,pos,force);
+   if(small&&!mini.hidden&&(moved||small.smoothing))followMini(pos);
   }
   // Follows playback: one cheap check per frame while a map is shown.
   const loop=()=>{if(route&&current>=0&&hasVideo()!==miniVideo)syncMini();if((big&&mode==='map')||(small&&!mini.hidden))update();requestAnimationFrame(loop)};requestAnimationFrame(loop);
@@ -1354,8 +1326,11 @@
    let best=null,bestD=Infinity;const k=Math.cos(latlng.lat*Math.PI/180);
    route.forEach((segment,s)=>segment.points.forEach(p=>{const d=(p[1]-latlng.lat)**2+((p[2]-latlng.lng)*k)**2;if(d<bestD){bestD=d;best={s,t:p[0]}}}));
    if(!best)return;
-   if(best.s===current){if(!loading)setTime(Math.max(0,Math.min(best.t,data?.duration??best.t)))}
-   else{try{sessionStorage.setItem('rv-map-seek',JSON.stringify({id:route[best.s].id,t:best.t}))}catch{}goToLog({id:route[best.s].id})}
+   seekReplay(route[best.s].id,best.t);
+  }
+  function seekReplay(target,time){
+   if(target===id){if(!loading)setTime(Math.max(0,Math.min(time,data?.duration??time)))}
+   else{try{sessionStorage.setItem('rv-map-seek',JSON.stringify({id:target,t:time}))}catch{}goToLog({id:target})}
   }
   const carChoices=document.getElementById('mapCarIcon');
   if(carChoices){
@@ -1363,67 +1338,469 @@
    const colors=document.createElement('div');colors.id='mapCarColors';colors.className='map-car-color-setting sub';colors.innerHTML=carColorControl();carChoices.parentElement.after(colors);showCarChoice(colors);
    for(const choice of colors.querySelectorAll('[data-map-color]'))choice.addEventListener('click',()=>setMapCarColor(choice.dataset.mapColor));
   }
-  // ④ 영상 위 작은 지도: off by default, kept with the other display preferences. It sits in the video's top-right
-  // corner under the speed and the wheel (drawn on top of it, unchanged), only in a segment with video (the panel's
-  // map covers the others). A tap enlarges it to the picture between the top and bottom control rows, its top-left
-  // corner cut around the segment title; another tap shrinks it.
-  const stage=document.getElementById('videoStage'),hud=stage.querySelector('.video-hud'),title=stage.querySelector('.video-title');
+  // ④ The video stage owns the overlay geometry. The canvas is native MapLibre and has its own lifetime.
+  const stage=document.getElementById('videoStage'),hud=stage.querySelector('.video-hud');
+  const openMap=mini.querySelector('.video-map-open'),closeMap=mini.querySelector('.video-map-close');
+  const controls=mini.querySelector('.video-map-controls'),pin=mini.querySelector('.video-map-pin');
+  const followMiniButton=mini.querySelector('.video-map-follow'),preview=mini.querySelector('.video-map-preview');
+  const previewButton=preview.querySelector('button'),previewStatus=preview.querySelector('small');
+  const credit=mini.querySelector('.video-map-credit');
+  credit.querySelector('div').innerHTML=SHORT_ATTRIBUTION;
+  const toneSwitch=document.getElementById('videoMiniMapTone'),miniPlain=document.getElementById('videoMiniMapPlain');
+  const miniGrey=document.getElementById('videoMiniMapGrey'),TONE_KEY='roadviewer-minimap-tone';
+  let miniTone='dark';
+  try{const saved=localStorage.getItem(TONE_KEY);if(['auto','light','dark'].includes(saved))miniTone=saved}catch{}
+  const showTone=()=>{for(const button of toneSwitch.querySelectorAll('button'))button.setAttribute('aria-pressed',String(button.dataset.tone===miniTone))};
+  showTone();
+  toneSwitch.addEventListener('click',event=>{
+   const button=event.target.closest('button[data-tone]');if(!button)return;
+   miniTone=button.dataset.tone;showTone();
+   try{localStorage.setItem(TONE_KEY,miniTone)}catch{}
+   applyMiniStyle();
+  });
+  for(const box of [miniPlain,miniGrey])box.addEventListener('change',applyMiniStyle);
+
+  const MINT='#3DCB92',AMBER='#F5C451',BASE='#0E1219',FADED='#7C96B8';
+  const sourceNames=['route','bridges','bookmarks','car','snap'];
+  const collection=(features=[])=>({type:'FeatureCollection',features});
+  const feature=(type,coordinates,properties={})=>({type:'Feature',geometry:{type,coordinates},properties});
+  const coords=point=>[point[2],point[1]],lngLat=pos=>[pos.latlng[1],pos.latlng[0]];
+  const line=(id,source,paint,filter)=>({id,type:'line',source,paint,...(filter?{filter}:{}),layout:{'line-cap':'round','line-join':'round'}});
+  const circle=(id,color,radius,stroke,width)=>({id,type:'circle',source:id,paint:{
+   'circle-color':color,'circle-radius':radius,'circle-stroke-color':stroke,'circle-stroke-width':width,
+  }});
+  const currentLine=['==',['get','current'],true];
+  const overlayLayers=[
+   line('rv-bridges','rv-bridges',{'line-color':'#8B9AB0','line-width':4,'line-opacity':.65,'line-dasharray':[2,2]}),
+   line('rv-route','rv-route',{'line-color':FADED,'line-width':5},['!',currentLine]),
+   line('rv-route-casing','rv-route',{'line-color':BASE,'line-width':9},currentLine),
+   line('rv-route-current','rv-route',{'line-color':MINT,'line-width':6},currentLine),
+   circle('rv-bookmarks',AMBER,6,BASE,2),
+   circle('rv-snap','rgba(61,203,146,.25)',9,MINT,2),
+   {id:'rv-car',type:'symbol',source:'rv-car',layout:{
+    'icon-image':'rv-vehicle','icon-rotation-alignment':'viewport','icon-pitch-alignment':'viewport',
+    'icon-rotate':['get','bearing'],'icon-allow-overlap':true,'icon-ignore-placement':true,
+   }},
+  ];
+  function miniStyle(base,dark){
+   const layers=(base?.layers||[{type:'background',id:'background',paint:{'background-color':dark?BASE:'#F0EEEA'}}])
+    .filter(layer=>layer.type!=='fill-extrusion'&&!BUSY_LAYER.test(layer.id)&&!(miniPlain.checked&&layer.type==='symbol'))
+    .map(layer=>{
+     if(!dark||miniGrey.checked)return layer;
+     let paint=layer.paint;
+     if(layer.type==='background')paint={...paint,'background-color':BASE};
+     if(layer.type==='line'&&(/road|street|transportation|highway/i.test(layer.id)||layer['source-layer']==='transportation')){
+      paint={...paint,'line-color':/motorway|trunk|primary|major/i.test(layer.id)?'#2A3342':'#1E2532'};
+     }
+     if(layer.type==='symbol')paint={...paint,'text-halo-width':0,'text-color':'#A2AEBF'};
+     return {...layer,paint};
+    });
+   const sources={...base?.sources};
+   for(const name of sourceNames)sources['rv-'+name]={type:'geojson',data:collection(),tolerance:0};
+   return {...base,version:8,sources,layers:[...layers,...overlayLayers]};
+  }
+  async function applyMiniStyle(){
+   const target=small;if(!target)return;
+   const tone=miniTone==='auto'?(mini.closest(':fullscreen')?'dark':theme()):miniTone;
+   const url=(miniGrey.checked?SIMPLE_STYLES:STYLES)[tone],key=[tone,miniGrey.checked,miniPlain.checked].join(':');
+   if(target.styleKey===key)return;
+   target.styleKey=key;
+   const revision=target.styleRevision=(target.styleRevision||0)+1;
+   try{
+    let base=target.basemaps.get(url);
+    if(!base){
+     const response=await fetch(url,{signal:AbortSignal.timeout(10000)});
+     if(!response.ok)throw Error('basemap unavailable');
+     base=await response.json();target.basemaps.set(url,base);
+    }
+    if(target!==small||target.styleRevision!==revision)return;
+    target.map.setStyle(miniStyle(base,tone==='dark'),{diff:false});target.appliedStyle=key;
+   }catch{
+    if(target!==small||target.styleRevision!==revision)return;
+    target.styleKey=null;target.appliedStyle=null;
+    target.map.setStyle(miniStyle(null,tone==='dark'),{diff:false});
+   }
+  }
+  const miniData=(name,features)=>small?.map.getSource('rv-'+name)?.setData(collection(features));
+  let routeGeometry=[],bridgeGeometry=[],bounds=null,screenRoute=null;
+  let bookmarks=[],selection=null,miniVideo=null,large=false,pinned=false,miniFollowing=true,resizing=false,resizeRevision=0,returnTimer=0;
+  const conversions=new Map();
+  let conversionTimer=0;
+
+  function drawMiniRoute(){
+   bounds=new window.maplibregl.LngLatBounds();
+   routeGeometry=route.map(segment=>{
+    const coordinates=segment.points.map(coords),distances=[0];
+    coordinates.forEach((point,i)=>{
+     bounds.extend(point);
+     if(i)distances.push(distances[i-1]+new window.maplibregl.LngLat(...coordinates[i-1]).distanceTo(new window.maplibregl.LngLat(...point)));
+    });
+    return {segment,coordinates,distances};
+   });
+   bridgeGeometry=[];
+   for(let i=1;i<routeGeometry.length;i++){
+    const before=routeGeometry[i-1],after=routeGeometry[i],start=before.segment.segment,end=after.segment.segment;
+    if(!Number.isInteger(start)||!Number.isInteger(end)||end<=start+1)continue;
+    const pending=unconverted.filter(segment=>Number.isInteger(segment.segment)&&segment.segment>start&&segment.segment<end);
+    if(!pending.length)continue;
+    const a=before.coordinates.at(-1),b=after.coordinates[0];
+    const at=k=>[a[0]+(b[0]-a[0])*k,a[1]+(b[1]-a[1])*k];
+    pending.forEach((segment,j)=>{
+     const coordinates=[at(j/pending.length),at((j+1)/pending.length)];
+     bridgeGeometry.push({segment,coordinates});
+    });
+   }
+   paintMiniRoute();
+  }
+  function paintMiniRoute(){
+   miniData('route',routeGeometry.filter(row=>row.coordinates.length>1).map(({segment,coordinates})=>
+    feature('LineString',coordinates,{current:segment.id===id})));
+   miniData('bridges',bridgeGeometry.map(({coordinates})=>feature('LineString',coordinates)));
+   drawMiniBookmarks();
+   screenRoute=null;
+   if(selection?.kind==='bridge'){
+    const updated=bridgeGeometry.find(row=>row.segment.id===selection.target.id);
+    showPreview(updated?{...selection,target:updated.segment}:null);
+   }
+  }
+  function drawMiniBookmarks(){
+   if(!small||!route)return;
+   const points=route[current].points;
+   miniData('bookmarks',bookmarks.map((bookmark,index)=>feature('Point',lngLat(position(bookmark.time,points)),{index})));
+  }
+  window.addEventListener('rv:bookmarks',event=>{
+   if(event.detail.id!==id)return;
+   bookmarks=event.detail.items;drawMiniBookmarks();
+  });
+
+  function drawMiniCar(){
+   const map=small?.map;if(!map?.getLayer('rv-car'))return;
+   const art=document.createElement('canvas');art.width=64;art.height=64;
+   const ctx=art.getContext('2d');ctx.scale(2,2);
+   ctx.fillStyle=carColorHex()||'#F2F4F6';ctx.strokeStyle=BASE;ctx.lineWidth=1.5;
+   ctx.beginPath();
+   const rect=(x,y,w,h,r)=>ctx.roundRect?ctx.roundRect(x,y,w,h,r):ctx.rect(x,y,w,h);
+   if(mapCar==='arrow'){ctx.moveTo(16,4);ctx.lineTo(25,26);ctx.lineTo(16,21);ctx.lineTo(7,26);ctx.closePath()}
+   else rect(8.5,2.5,15,27,4);
+   ctx.fill();ctx.stroke();
+   if(mapCar==='vehicle'){
+    ctx.beginPath();ctx.fillStyle='#324157';rect(11,6,10,4,1);ctx.fill();
+   }
+   const image=ctx.getImageData(0,0,64,64);
+   if(map.hasImage('rv-vehicle'))map.updateImage('rv-vehicle',image);
+   else map.addImage('rv-vehicle',image,{pixelRatio:2});
+  }
+  redrawMiniCar=drawMiniCar;
+  const shortArc=(from,to)=>((to-from)%360+540)%360-180;
+  const zoomAt=speed=>Math.max(14.6,Math.min(17.1,17.35-speed*.022));
   const hasVideo=()=>typeof data!=='undefined'&&!!data?.video;
-  let miniVideo=null,resizing=0;
-  function syncMini(){
-   miniVideo=hasVideo();const on=!!route&&current>=0&&miniToggle.checked&&miniVideo&&mode!=='map'; // never two maps: the panel's map wins
-   if(!on&&mini.classList.contains('is-large'))setLarge(false,true);
-   mini.hidden=!on;stage.classList.toggle('has-video-map',on);
-   if(on){measureSmall();if(small)fitSmall();else ensureSmall()}
+  function cameraAt(pos){
+   const {map,bearing,zoom}=small;
+   return {center:lngLat(pos),pitch:56,bearing,zoom,padding:{top:Math.min(map.getContainer().clientHeight*.36,hud.offsetHeight+24),bottom:0,left:0,right:0}};
   }
-  // At least as wide as the speed and wheel; on a short picture no lower than the bottom row (none at all when only
-  // the speed's height would be left).
-  // A phone held upright shows the fullscreen picture turned a quarter (app.js, .is-turned: a CSS rotation), and screen
-  // rectangles are then sideways to the picture: measured as they are, the room came out negative and the map was hidden
-  // in fullscreen. inStage gives a rectangle in the picture's own frame (x along its width from its left edge), point a
-  // pointer position in the same frame.
+  function followMini(pos){
+   const {map}=small,speed=pos.speed*3.6,targetZoom=zoomAt(speed);
+   small.bearing??=pos.bearing;small.zoom??=targetZoom;
+   const delta=speed>=3?shortArc(small.bearing,pos.bearing):0,zoomDelta=targetZoom-small.zoom;
+   small.bearing+=Math.abs(delta)<.05?delta:delta*.14;
+   small.zoom+=Math.abs(zoomDelta)<.005?zoomDelta:zoomDelta*.14;
+   small.smoothing=Math.abs(delta)>=.05||Math.abs(zoomDelta)>=.005;
+   if(!resizing&&!large)map.jumpTo(cameraAt(pos));
+   if(!resizing&&large&&miniFollowing&&!map.isMoving()){
+    const local=map.project(lngLat(pos)),box=map.getContainer(),pad=16;
+    if(local.x<pad||local.y<pad||local.x>box.clientWidth-pad||local.y>box.clientHeight-pad)map.jumpTo({center:lngLat(pos)});
+   }
+   miniData('car',[feature('Point',lngLat(pos),{bearing:small.bearing-map.getBearing()})]);
+  }
+  function fitDrive(duration=0){
+   const {map}=small;if(!bounds||bounds.isEmpty())return;
+   const pad=Math.min(40,map.getContainer().clientHeight/5);
+   map.setPadding({left:0,right:0,top:0,bottom:0});
+   // linear fitBounds uses easeTo for the transition to north-up.
+   map.fitBounds(bounds,{pitch:0,bearing:0,maxZoom:17.1,padding:pad,linear:true,duration});
+  }
+  async function ensureSmall(){
+   if(small||smallPending||!route)return;
+   smallPending=true;
+   try{
+    const gl=await loadMapLibre();
+    await waitSwap('small');
+    if(disposed||small||!route||mini.hidden||mini.classList.contains('no-room'))return;
+    const slot=mini.querySelector('.video-map-canvas'),reused=claimParked('small');
+    const initial=position(typeof t==='number'?t:0);
+    let map;
+    if(reused){slot.replaceWith(reused.container);map=reused.map}
+    else map=new gl.Map({
+     container:slot,style:miniStyle(null,true),center:lngLat(initial),bearing:initial.bearing,pitch:56,
+     zoom:zoomAt(initial.speed*3.6),attributionControl:false,trackResize:false,
+     dragPan:false,dragRotate:false,boxZoom:false,touchZoomRotate:false,touchPitch:false,
+     scrollZoom:false,doubleClickZoom:false,keyboard:false,renderWorldCopies:false,
+    });
+    small={map,handlers:[],abort:new AbortController(),styleKey:reused?.styleKey,appliedStyle:reused?.styleKey,basemaps:reused?.basemaps||new Map()};
+    replayPool.active.set('small',driveKey);
+    const ready=()=>{drawMiniCar();paintMiniRoute();followMini(position(typeof t==='number'?t:0));if(selection)showPreview(selection)};
+    bindMap(small,'style.load',ready);
+    bindMap(small,'move',()=>{screenRoute=null});
+    for(const event of ['dragstart','zoomstart','movestart'])bindMap(small,event,e=>{if(large&&e.originalEvent)setMiniFollow(false)});
+    map.keyboard.disableRotation();
+    const canvas=map.getCanvas();canvas.tabIndex=-1;
+    canvas.addEventListener('keydown',event=>{if(large&&/^(Arrow|[+=_-])/.test(event.key))setMiniFollow(false)},
+     {signal:small.abort.signal});
+    resizeMini();drawMiniRoute();ready();applyMiniStyle();
+    if(reused?.pinned){setPinned(true);setLarge(true,true)}
+   }catch{
+    if(!disposed&&!small){mini.hidden=true;stage.classList.remove('has-video-map')}
+   }finally{smallPending=false}
+  }
+
+  // CSS rotates the fullscreen stage clockwise. Project/hit-test against the canvas in its own frame.
   const turned=()=>!!stage.closest('.is-turned');
-  const inStage=(b,frame=stage.getBoundingClientRect())=>turned()?{left:b.top-frame.top,right:b.bottom-frame.top,top:frame.right-b.right,width:b.height,height:b.width}:{left:b.left-frame.left,right:b.right-frame.left,top:b.top-frame.top,width:b.width,height:b.height};
+  const inStage=(box,frame)=>turned()?{top:frame.right-box.right,width:box.height,height:box.width}:{top:box.top-frame.top,width:box.width,height:box.height};
   const point=e=>turned()?{x:e.clientY,y:-e.clientX}:{x:e.clientX,y:e.clientY};
+  function mapPoint(event){
+   const box=small.map.getContainer().getBoundingClientRect();
+   return turned()?{x:event.clientY-box.top,y:box.right-event.clientX}:{x:event.clientX-box.left,y:event.clientY-box.top};
+  }
   function measureSmall(){
+   const frame=stage.getBoundingClientRect(),box=inStage(frame,frame),speed=inStage(hud.getBoundingClientRect(),frame);
+   const top=parseFloat(getComputedStyle(mini).getPropertyValue('--vmap-edge'))||12;
+   stage.style.setProperty('--vmap-min-w',Math.ceil(speed.width)+'px');
+   const rows=[...stage.querySelectorAll('.video-tools,.video-fullscreen')].map(el=>el.getBoundingClientRect()).filter(row=>row.width&&row.height);
+   const room=Math.min(box.height-2*top,...rows.map(row=>inStage(row,frame).top-8-top));
+   mini.style.setProperty('--vmap-room',Math.floor(room)+'px');
+   mini.classList.toggle('no-room',room<speed.height+28);
+  }
+  function syncMini(){
+   miniVideo=hasVideo();
+   const on=!!route&&current>=0&&miniToggle.checked&&miniVideo&&mode!=='map';
+   if(!on&&large)setLarge(false,true);
+   mini.hidden=!on;stage.classList.toggle('has-video-map',on);
+   if(on){measureSmall();if(small){resizeMini();lastKey=''}else ensureSmall()}
+  }
+  function resizeMini(){
+   if(!small||mini.hidden)return false;
+   const box=small.map.getContainer(),width=box.clientWidth,height=box.clientHeight;
+   if(!width||!height||(small.width===width&&small.height===height))return false;
+   small.width=width;small.height=height;small.map.resize();lastKey='';
+   return true;
+  }
+  const resizeWatch=new ResizeObserver(()=>{
    if(mini.hidden)return;
-   const frame=stage.getBoundingClientRect(),box=inStage(frame,frame),speed=inStage(hud.getBoundingClientRect(),frame);stage.style.setProperty('--vmap-min-w',Math.ceil(speed.width)+'px');
-   const top=parseFloat(getComputedStyle(mini).top)||12;
-   const rows=[...stage.querySelectorAll('.video-tools,.video-fullscreen')].map(e=>e.getBoundingClientRect()).filter(b=>b.width&&b.height).map(b=>inStage(b,frame));
-   const room=Math.min(box.height-2*top,...rows.map(b=>b.top-8-top));
-   mini.style.setProperty('--vmap-room',Math.floor(room)+'px');mini.classList.toggle('no-room',room<speed.height+28);
-  }
+   measureSmall();
+   if(resizing)return;
+   if(!small)ensureSmall();
+   else if(resizeMini()&&large&&miniFollowing)fitDrive();
+  });
+  resizeWatch.observe(stage);resizeWatch.observe(mini);resizeWatch.observe(hud);
   miniToggle.addEventListener('change',syncMini);
-  // Enlarged, the map fills the picture as a plain rectangle; the segment title, speed and wheel and the fullscreen
-  // button float over it as they float over the video, and the quality and overlay controls step aside (stage
-  // .video-map-large) so the messages take their place at the bottom edge.
-  function measureLarge(){
-   const frame=stage.getBoundingClientRect(),box=inStage(frame,frame),style=getComputedStyle(mini),top=parseFloat(style.top)||12,right=parseFloat(style.right)||12;
-   mini.style.setProperty('--vmap-large-w',Math.max(0,box.width-2*right)+'px');mini.style.setProperty('--vmap-large-h',Math.max(0,box.height-2*top)+'px');
+  addEventListener('fullscreenchange',applyMiniStyle);
+  function holdCanvas(width,height){
+   Object.assign(small.map.getContainer().style,{inset:'auto',left:'50%',top:'50%',width:width+'px',height:height+'px',transform:'translate(-50%,-50%)'});
+   resizeMini();
   }
-  new ResizeObserver(()=>{measureSmall();if(mini.classList.contains('is-large'))measureLarge()}).observe(stage);
-  function setLarge(large,instant=false){
-   if(large)measureLarge();
-   const moving=!(instant||reduced());if(moving)holdCanvas(large);else releaseCanvas();
-   mini.classList.toggle('is-large',large);stage.classList.toggle('video-map-large',large);mini.setAttribute('aria-pressed',String(large));mini.setAttribute('aria-label',large?'작은 지도 · 눌러서 작게 보기':'작은 지도 · 눌러서 크게 보기');
-   clearTimeout(resizing);
-   resizing=setTimeout(()=>{resizing=0;releaseCanvas();fitSmall()},moving?280:0);
+  function releaseCanvas(){small.map.getContainer().removeAttribute('style');resizeMini()}
+  function setExpandedInput(enabled){
+   const map=small.map,canvas=map.getCanvas();
+   for(const handler of [map.scrollZoom,map.keyboard]){
+    if(enabled)handler.enable();else handler.disable();
+   }
+   canvas.tabIndex=enabled?0:-1;
   }
-  // While the map changes size (.26 s), its Leaflet container keeps one size, centred in the moving frame and showing
-  // past its own edges: the larger of the two sizes, so the frame is covered throughout. Growing, the map is drawn
-  // once at the large size as the motion starts (held at the small size, the frame outgrew what was drawn and its
-  // sides stayed empty until the end); shrinking, once at the small size when the motion ends. Following the frame instead, the container changed size every
-  // frame and MapLibre redrew the whole canvas each time (up to 4000 px wide on a Fold's inner screen: three redraws of
-  // 55-140 ms inside the animation, 11-27 frames in 0.4 s; held, 26-44 frames and nothing over 56 ms, on the device).
-  const HELD=['inset','left','top','width','height','transform','overflow'];
-  function holdCanvas(growing){
-   const box=mini.querySelector('.video-map-canvas');if(!small||mini.hidden||!box||box.style.width)return;  // a reversal keeps the first hold
-   const wide=parseFloat(mini.style.getPropertyValue('--vmap-large-w')),tall=parseFloat(mini.style.getPropertyValue('--vmap-large-h')),grow=growing&&wide>0&&tall>0;
-   Object.assign(box.style,{inset:'auto',left:'50%',top:'50%',width:(grow?wide:mini.clientWidth)+'px',height:(grow?tall:mini.clientHeight)+'px',transform:'translate(-50%,-50%)',overflow:'visible'});
-   if(grow)small.map.invalidateSize({animate:false});
+  function setLarge(next,instant=false){
+   if(!small||next===large)return;
+   const map=small.map,box=map.getContainer(),moving=!(instant||reduced()),wasFocused=mini.contains(document.activeElement);
+   clearTimeout(returnTimer);const revision=++resizeRevision;resizing=moving;cancelGesture();
+   if(moving){
+    const inset=parseFloat(getComputedStyle(mini).getPropertyValue('--vmap-inset'))||0;
+    holdCanvas(next?stage.clientWidth-2*inset:box.clientWidth,next?stage.clientHeight-2*inset:box.clientHeight);
+   }else{mini.classList.add('is-instant');releaseCanvas()}
+   large=next;
+   mini.classList.toggle('is-large',large);stage.classList.toggle('video-map-large',large);
+   openMap.hidden=large;openMap.setAttribute('aria-expanded',String(large));controls.hidden=!large;
+   credit.open=false;
+   setExpandedInput(false);setMiniFollow(true);showPreview(null);
+   if(!moving)resizeMini();
+   if(large)fitDrive(moving?280:0);
+   else map.easeTo({...cameraAt(position(t)),duration:moving?280:0});
+   const finish=()=>{
+    resizing=false;releaseCanvas();
+    if(large)setExpandedInput(true);
+    lastKey='';watchConversion();
+   };
+   if(moving){
+    // CSS can start a frame late or retarget during a window resize. Release when it actually finishes.
+    const afterTransition=()=>{
+     if(disposed||revision!==resizeRevision)return;
+     const transitions=mini.getAnimations().filter(animation=>animation.pending||animation.playState==='running');
+     if(transitions.length)Promise.allSettled(transitions.map(animation=>animation.finished)).then(afterTransition);
+     else finish();
+    };
+    afterTransition();
+   }else{finish();mini.classList.remove('is-instant')}
+   if(wasFocused)(large?closeMap:openMap).focus({preventScroll:true});
   }
-  function releaseCanvas(){const box=mini.querySelector('.video-map-canvas');if(box)for(const key of HELD)box.style.removeProperty(key)}
-  // The bottom-left corner resizes the small map (mouse or touch), anchored at its top-right, 4:3: from its least
+  function setPinned(on){
+   pinned=on;pin.setAttribute('aria-pressed',String(on));pin.textContent=on?'핀 고정됨':'핀 고정';
+   if(on)clearTimeout(returnTimer);
+  }
+  function setMiniFollow(on){
+   miniFollowing=on;
+   followMiniButton.setAttribute('aria-pressed',String(on));followMiniButton.textContent=on?'내 차 추적':'자유 탐색 · 복귀';
+  }
+  openMap.onclick=()=>setLarge(true);
+  closeMap.onclick=()=>setLarge(false);
+  pin.onclick=()=>setPinned(!pinned);
+  followMiniButton.onclick=()=>{if(!resizing){setMiniFollow(true);fitDrive(reduced()?0:280)}};
+  mini.addEventListener('keydown',event=>{if(large&&event.key==='Escape'){event.preventDefault();setLarge(false)}});
+
+  function projectedRoute(){
+   if(screenRoute)return screenRoute;
+   const map=small.map;
+   screenRoute=[...routeGeometry,...bridgeGeometry].map(row=>{
+    const points=row.coordinates.map(lnglat=>map.project(lnglat));
+    let left=Infinity,right=-Infinity,top=Infinity,bottom=-Infinity;
+    for(const p of points){left=Math.min(left,p.x);right=Math.max(right,p.x);top=Math.min(top,p.y);bottom=Math.max(bottom,p.y)}
+    return {...row,points,left,right,top,bottom};
+   });
+   return screenRoute;
+  }
+  function nearest(at,radius,includePins=true){
+   const {map}=small;
+   if(includePins&&map.getLayer('rv-bookmarks')){
+    const hit=map.queryRenderedFeatures([[at.x-radius,at.y-radius],[at.x+radius,at.y+radius]],{layers:['rv-bookmarks']})[0];
+    const bookmark=bookmarks[hit?.properties.index];
+    if(bookmark)return {kind:'bookmark',bookmark,target:route[current],time:bookmark.time,coordinates:hit.geometry.coordinates};
+   }
+   let best=null,limit=radius*radius;
+   for(const row of projectedRoute()){
+    if(at.x<row.left-radius||at.x>row.right+radius||at.y<row.top-radius||at.y>row.bottom+radius)continue;
+    const {segment,points,coordinates,distances}=row;
+    for(let i=1;i<points.length;i++){
+     const a=points[i-1],b=points[i],dx=b.x-a.x,dy=b.y-a.y;
+     if(at.x<Math.min(a.x,b.x)-radius||at.x>Math.max(a.x,b.x)+radius||
+        at.y<Math.min(a.y,b.y)-radius||at.y>Math.max(a.y,b.y)+radius)continue;
+     const length=dx*dx+dy*dy,k=length?Math.max(0,Math.min(1,((at.x-a.x)*dx+(at.y-a.y)*dy)/length)):0;
+     const distance=(at.x-a.x-dx*k)**2+(at.y-a.y-dy*k)**2;
+     if(distance>limit||(distance===limit&&(best?.target.id===id||best?.kind==='route'&&!distances)))continue;
+     limit=distance;
+     const snapped=coordinates[i-1].map((coord,axis)=>coord+(coordinates[i][axis]-coord)*k);
+     if(!distances){best={kind:'bridge',target:segment,coordinates:snapped};continue}
+     const from=segment.points[i-1],to=segment.points[i];
+     best={kind:'route',target:segment,coordinates:snapped,time:from[0]+(to[0]-from[0])*k,
+      speed:(from[3]??0)+((to[3]??0)-(from[3]??0))*k,distance:distances[i-1]+(distances[i]-distances[i-1])*k};
+    }
+   }
+   return best;
+  }
+  function showPreview(hit){
+   selection=hit;preview.hidden=!hit;
+   miniData('snap',hit?[feature('Point',hit.coordinates)]:[]);
+   if(!hit)return;
+   const name=Number.isInteger(hit.target.segment)?'구간 '+hit.target.segment:'현재 구간';
+   preview.querySelector('b').textContent=hit.bookmark?.title||name;
+   previewButton.hidden=hit.kind!=='bridge';previewStatus.hidden=true;
+   if(hit.kind==='bridge'){
+    const status=hit.target.status;
+    preview.querySelector('span').textContent={queued:'변환 대기 중',processing:'변환 중',error:'변환 실패'}[status]||'미변환 · 예상 연결선';
+    previewButton.disabled=conversions.has(hit.target.id)||status==='queued'||status==='processing';
+   }else{
+    const details=[hit.bookmark?name:null,clock(hit.time)];
+    if(hit.kind==='route')details.push(Math.round(hit.speed*3.6)+' km/h',(hit.distance/1000).toFixed(2)+' km');
+    preview.querySelector('span').textContent=details.filter(Boolean).join(' · ');
+   }
+  }
+  function commitSnap(hit){
+   if(!hit)return;
+   showPreview(hit);
+   if(hit.kind==='bridge')return;
+   seekReplay(hit.target.id,hit.time);
+   clearTimeout(returnTimer);
+   if(!pinned)returnTimer=setTimeout(()=>setLarge(false),350);
+  }
+  function watchConversion(){
+   clearTimeout(conversionTimer);
+   if(!large||!unconverted.some(segment=>['queued','processing'].includes(segment.status)))return;
+   conversionTimer=setTimeout(async()=>{await fetchReplayTrack(true);watchConversion()},5000);
+  }
+  previewButton.onclick=async()=>{
+   const target=selection?.target;if(!target||previewButton.disabled)return;
+   conversions.set(target.id,true);previewButton.disabled=true;previewStatus.hidden=true;
+   try{
+    const response=await fetch('../../api/logs/'+encodeURIComponent(target.id)+'/convert',{
+     method:'POST',headers:{'X-RoadViewer-Request':'1'},signal:AbortSignal.timeout(20000),
+    });
+    const result=await response.json();
+    if(!response.ok)throw Error(result.message||'변환을 요청하지 못했습니다.');
+    target.status=result.status;
+    if(selection?.target.id===target.id)showPreview(selection);
+    await fetchReplayTrack(true);
+    watchConversion();
+   }catch(error){
+    if(selection?.target.id===target.id){previewStatus.textContent=error.message;previewStatus.hidden=false}
+   }finally{
+    conversions.delete(target.id);
+    if(selection?.target.id===target.id)previewButton.disabled=['queued','processing'].includes(selection.target.status);
+   }
+  };
+
+  // Pointer coordinates are shared by snapping, panning and pinch zoom, including the rotated HA fullscreen frame.
+  const pointers=new Map();
+  let gesture=null;
+  function cancelGesture(){
+   gesture=null;
+   for(const pointer of pointers.keys())if(mini.hasPointerCapture(pointer))mini.releasePointerCapture(pointer);
+   pointers.clear();
+  }
+  mini.addEventListener('pointerdown',event=>{
+   if(!large||resizing||event.button!==0||!event.target.closest('.maplibregl-canvas'))return;
+   const at=mapPoint(event),radius=event.pointerType==='touch'?28:14;
+   mini.setPointerCapture(event.pointerId);pointers.set(event.pointerId,at);
+   clearTimeout(returnTimer);small.map.stop();
+   if(pointers.size>1){gesture={kind:'pinch'};setMiniFollow(false);showPreview(null);return}
+   const hit=nearest(at,radius);
+   gesture={kind:hit?'hit':'pan',start:at,hit,radius};
+   if(hit)showPreview(hit);else showPreview(null);
+  });
+  mini.addEventListener('pointermove',event=>{
+   if(!pointers.has(event.pointerId)||!gesture)return;
+   const at=mapPoint(event),last=pointers.get(event.pointerId),map=small.map;
+   pointers.set(event.pointerId,at);
+   if(gesture.kind==='pinch'){
+    const other=[...pointers].find(([pointer])=>pointer!==event.pointerId)?.[1];
+    if(!other)return;
+    const from=Math.hypot(last.x-other.x,last.y-other.y),to=Math.hypot(at.x-other.x,at.y-other.y);
+    if(from>0&&to>0){
+     const around=map.unproject([(last.x+other.x)/2,(last.y+other.y)/2]);
+     map.zoomTo(map.getZoom()+Math.log2(to/from),{around,duration:0},{originalEvent:event});
+     map.panBy([(last.x-at.x)/2,(last.y-at.y)/2],{duration:0},{originalEvent:event});
+    }
+   }else if(gesture.kind==='pan'){
+    if(!gesture.moved&&Math.hypot(at.x-gesture.start.x,at.y-gesture.start.y)<4)return;
+    gesture.moved=true;
+    setMiniFollow(false);map.panBy([last.x-at.x,last.y-at.y],{duration:0},{originalEvent:event});
+   }else if(gesture.hit.kind==='route'||Math.hypot(at.x-gesture.start.x,at.y-gesture.start.y)>=4){
+    const snap=nearest(at,gesture.radius,false);
+    if(snap?.kind==='route'){gesture.hit=snap;showPreview(snap)}
+   }
+  });
+  function endGesture(event){
+   if(!pointers.delete(event.pointerId)||pointers.size)return;
+   const ended=gesture;gesture=null;
+   if(ended?.kind!=='hit')return;
+   if(event.type==='pointerup')commitSnap(ended.hit);else showPreview(null);
+  }
+  for(const type of ['pointerup','pointercancel','lostpointercapture'])mini.addEventListener(type,endGesture);
+  // Dragging the collapsed map opens it. The lower-left grip keeps its existing explicit resize behavior.
+  let openStart=null;
+  openMap.addEventListener('pointerdown',event=>{if(event.button===0){openStart=point(event);openMap.setPointerCapture(event.pointerId)}});
+  openMap.addEventListener('pointermove',event=>{
+   if(!openStart)return;
+   const at=point(event);
+   if(Math.hypot(at.x-openStart.x,at.y-openStart.y)>=8){openStart=null;setLarge(true)}
+  });
+  for(const type of ['pointerup','pointercancel','lostpointercapture'])openMap.addEventListener(type,()=>{openStart=null});
+
+  // The bottom-left corner resizes the small map (mouse or touch), anchored at its top-right: from its least
   // width up to the picture's width or the room above the bottom row. Kept in this browser as a share of the picture's
   // width; a double tap on the corner goes back to the default size. Dragging never toggles 크게 보기.
   const SIZE_KEY='roadviewer-minimap-size',grip=document.createElement('span');grip.className='video-map-grip';grip.setAttribute('aria-hidden','true');mini.append(grip);
@@ -1433,11 +1810,12 @@
   grip.addEventListener('pointerdown',e=>{
    if(mini.classList.contains('is-large')||e.button>0)return;e.preventDefault();e.stopPropagation();try{grip.setPointerCapture(e.pointerId)}catch{}
    const frame=stage.getBoundingClientRect(),r=inStage(mini.getBoundingClientRect(),frame),box=inStage(frame,frame),room=parseFloat(mini.style.getPropertyValue('--vmap-room'))||box.height,at=point(e);
-   const min=Math.max(104,parseFloat(stage.style.getPropertyValue('--vmap-min-w'))||0),max=Math.max(min,Math.min(box.width-2*(box.right-r.right),room/.75));
-   sizing={id:e.pointerId,x:at.x,y:at.y,w:r.width,min,max,stageW:box.width,moved:false,f:null};mini.classList.add('is-sizing');
+   const style=getComputedStyle(mini),ratio=Number(style.getPropertyValue('--vmap-ratio'));
+   const min=Math.max(104,parseFloat(stage.style.getPropertyValue('--vmap-min-w'))||0),max=Math.max(min,Math.min(box.width-2*(parseFloat(style.getPropertyValue('--vmap-edge'))||12),room/ratio));
+   sizing={id:e.pointerId,x:at.x,y:at.y,w:r.width,min,max,ratio,stageW:box.width,moved:false,f:null};mini.classList.add('is-sizing');
   });
   grip.addEventListener('pointermove',e=>{
-   if(!sizing||e.pointerId!==sizing.id)return;const at=point(e),dx=sizing.x-at.x,dy=(at.y-sizing.y)/.75;
+   if(!sizing||e.pointerId!==sizing.id)return;const at=point(e),dx=sizing.x-at.x,dy=(at.y-sizing.y)/sizing.ratio;
    if(!sizing.moved&&Math.hypot(dx,dy)<3)return;sizing.moved=true;e.preventDefault();
    const w=Math.min(sizing.max,Math.max(sizing.min,sizing.w+(Math.abs(dx)>=Math.abs(dy)?dx:dy)));sizing.f=w/sizing.stageW;applySize(sizing.f);
   });
@@ -1445,10 +1823,11 @@
   grip.addEventListener('pointerup',endSizing);grip.addEventListener('pointercancel',endSizing);
   grip.addEventListener('click',e=>e.stopPropagation());
   grip.addEventListener('dblclick',e=>{e.stopPropagation();applySize(0);try{localStorage.removeItem(SIZE_KEY)}catch{}});
-  const resize=()=>setLarge(!mini.classList.contains('is-large'));
-  mini.addEventListener('click',e=>{if(e.target.closest('a,.rv-credit-toggle'))return;resize()});
-  mini.addEventListener('keydown',e=>{if(e.key==='Enter'||e.key===' '){e.preventDefault();resize()}});
-  redrawColours=()=>{for(const target of [big,small]){if(!target)continue;const done=css('--accent'),rest=css('--muted');target.lines.others.forEach(l=>l.setStyle({color:rest}));target.lines.current.setStyle({color:done})}};
+  redrawColours=()=>{
+   applyMiniStyle();if(!big)return;
+   big.lines.others.forEach(line=>line.setStyle({color:css('--muted')}));
+   big.lines.current.setStyle({color:css('--accent')});
+  };
   if(/^[0-9a-f]{32}$/.test(id))fetchReplayTrack();
  }
 })();

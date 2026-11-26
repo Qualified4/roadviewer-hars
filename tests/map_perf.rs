@@ -128,6 +128,7 @@ async fn qw1_single_track_reads_only_target_route_and_preserves_order_and_errors
         Some(150),
     )
     .await;
+    let a2 = seed_recording(&a, "100--aaaaaaaaaa--2", "unconverted", None, None).await;
     // Unrelated route with corrupt track.json.gz — QW-1 must not read or fail on it.
     let b0 = seed_recording(
         &a,
@@ -151,6 +152,10 @@ async fn qw1_single_track_reads_only_target_route_and_preserves_order_and_errors
     assert_eq!(status, StatusCode::OK);
     let body: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(body["id"], a1);
+    assert_eq!(
+        body["unconverted"],
+        json!([{"id": a2, "segment": 2, "status": "unconverted"}])
+    );
     let segs = body["segments"].as_array().unwrap();
     assert_eq!(segs.len(), 2);
     assert_eq!(segs[0]["id"], a0);
@@ -174,6 +179,23 @@ async fn qw1_single_track_reads_only_target_route_and_preserves_order_and_errors
     assert_eq!(s304, StatusCode::NOT_MODIFIED);
     assert_eq!(h304[h::ETAG].to_str().unwrap(), etag);
     assert!(b304.is_empty());
+
+    // A status transition must update the ETag even when the GPS files are unchanged.
+    let mut pending = a.store.meta(&a2).await.unwrap();
+    pending["status"] = json!("queued");
+    a.store.save_meta(pending).await.unwrap();
+    let (status, updated, bytes) = send_raw(
+        ingress(a.clone()),
+        "GET",
+        &format!("/api/logs/{a1}/track"),
+        vec![],
+        &[("if-none-match", &etag)],
+    )
+    .await;
+    assert_eq!(status, StatusCode::OK);
+    assert_ne!(updated[h::ETAG].to_str().unwrap(), etag);
+    let body: Value = serde_json::from_slice(&bytes).unwrap();
+    assert_eq!(body["unconverted"][0]["status"], "queued");
 
     // Unrelated route B was never scanned into segment cache by single-route query
     assert_eq!(cache_counts(&a.store.root), (0, 0, false));

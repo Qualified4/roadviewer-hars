@@ -1063,25 +1063,6 @@ select,.rv-choice-trigger{font-weight:500}
 .rv-map-car-choice>span{white-space:nowrap}.rv-map-car-choice .view-switch>button{flex:1}.view-switch>button[data-map-car]{min-height:44px!important}
 
 
-/* The small map sits in the video's top-right corner, a third of the picture's width (104-180px, never narrower than
-   the speed and wheel; 4:3), under the speed and the wheel: they keep their look and are drawn on top of it (maps.js
-   fits the route below them). The segment title leaves it room; on a short picture it stops above the bottom row
-   (maps.js --vmap-room) or, with no room left below the speed, it is not shown. Enlarged (maps.js measures): the picture between the top and the bottom control rows, its top-left
-   corner cut around the title (a mask with rounded corners, anchored to the right so it holds while the map grows). */
-.video-map{--vmap-w:clamp(max(104px,var(--vmap-min-w,0px)),calc(100cqw / 3),180px);position:absolute;top:12px;right:12px;z-index:3;width:var(--vmap-w);height:min(calc(var(--vmap-w) * .75),var(--vmap-room,1000px));padding:0;border:0;border-radius:14px;overflow:hidden;background:#1b1d22;box-shadow:0 0 0 1px rgba(255,255,255,.16),0 2px 10px rgba(0,0,0,.24);cursor:zoom-in;transition:width .26s var(--m2-standard,cubic-bezier(.4,0,.2,1)),height .26s var(--m2-standard,cubic-bezier(.4,0,.2,1))}
-.video-map[hidden]{display:none}
-/* Resized by its bottom-left corner (maps.js): the width as a share of the picture (--vmap-f on the stage), still 4:3. */
-.video-map:active{filter:none}  /* not the controls' press brightening: it washes a light map out to white */
-.video-wrap.vmap-sized .video-map{--vmap-w:clamp(max(104px,var(--vmap-min-w,0px)),calc(100cqw * var(--vmap-f)),calc(100cqw - 24px))}
-.video-map.is-sizing{transition:none}
-.video-map-grip{position:absolute;left:0;bottom:0;z-index:2;width:32px;height:32px;padding:6px;display:grid;place-items:end start;touch-action:none;cursor:nesw-resize}
-.video-map-grip::before{content:"";width:11px;height:11px;border-left:2px solid rgba(255,255,255,.92);border-bottom:2px solid rgba(255,255,255,.92);border-bottom-left-radius:7px;filter:drop-shadow(0 0 1px rgba(0,0,0,.75)) drop-shadow(0 0 2px rgba(0,0,0,.35));opacity:.85;transition:opacity .15s}
-@media(hover:hover) and (pointer:fine){.video-map-grip::before{opacity:0}.video-map:hover .video-map-grip::before,.video-map.is-sizing .video-map-grip::before{opacity:.9}}
-.video-map.is-large .video-map-grip{display:none}
-.video-map.is-large{width:var(--vmap-large-w,calc(100% - 24px));height:var(--vmap-large-h,60%);cursor:zoom-out}
-.video-map-canvas{position:absolute;inset:0;border-radius:inherit;overflow:hidden}
-.video-map .rv-map.leaflet-container .leaflet-control-attribution{max-width:calc(var(--vmap-w,180px) - 30px);padding:0 4px;border-radius:5px 0 0 0;font-size:7.5px;line-height:1.5}
-.video-map.is-large .rv-map.leaflet-container .leaflet-control-attribution{max-width:none}
 /* Compact credit (maps.js compactCredit): an ⓘ in the bottom-right corner; open, the credit sits to its left. */
 .rv-credit-toggle{display:none}
 .rv-map.is-credit-compact .rv-credit-toggle{position:absolute;right:4px;bottom:4px;display:grid;place-items:center;width:24px;height:24px;margin:0;padding:0;border:1px solid var(--map-glass-border,transparent);border-radius:999px;background:var(--glass-bg);-webkit-backdrop-filter:var(--glass-filter);backdrop-filter:var(--glass-filter);color:var(--text-2);box-shadow:none;cursor:pointer;min-height:0}
@@ -1090,22 +1071,59 @@ select,.rv-choice-trigger{font-weight:500}
 .rv-map.is-credit-compact .rv-credit-toggle:focus-visible{outline:2px solid var(--focus);outline-offset:1px}
 .rv-map.is-credit-compact:not(.is-credit-open) .leaflet-control-attribution{display:none}
 .rv-map.is-credit-compact.is-credit-open .leaflet-control-attribution{margin:0 32px 6px 0;border-radius:6px}
-.video-map .rv-map.is-credit-compact .rv-credit-toggle{right:3px;bottom:3px;width:18px;height:18px}
-.video-map .rv-map.is-credit-compact .rv-credit-toggle svg{width:12px;height:12px}
-.video-map .rv-map.is-credit-compact.is-credit-open .leaflet-control-attribution{margin:0 24px 4px 0;max-width:calc(var(--vmap-w,180px) - 34px)}  /* small: clear of the resize corner */
-/* Full screen (black stage, dark controls): the small map is dark too (maps.js tone), and so are its credit and ⓘ. */
-.camera-panel:fullscreen .video-map{--text:#F2F4F6;--text-2:#C5CAD1;--muted:#AEB9C7;--map-glass-border:rgba(255,255,255,.12);--focus:#5BE3AE;color-scheme:dark}
-.video-map .map-car-body{width:20px;height:20px}.video-map .map-car-body svg{width:15px;height:15px}
-.video-map .map-car-body[data-car-icon=vehicle]{width:32px;height:32px}.video-map .map-car-body[data-car-icon=vehicle] svg{width:32px;height:32px}
-@media(max-width:600px){.video-map:not(.is-large) .map-car-body[data-car-icon=vehicle],.video-map:not(.is-large) .map-car-body[data-car-icon=vehicle] svg{width:24px;height:24px}}
-.video-map:focus-visible{outline:2px solid var(--hud-focus,var(--focus));outline-offset:2px}
-@container(max-width:520px){.video-map{top:8px;right:8px;border-radius:12px}}
+/* The canvas fades into the video. The controls sit outside the mask so their targets stay visible. */
+.video-map{--vmap-edge:12px;--vmap-inset:14px;--vmap-ratio:.774;--vmap-w:min(310px,calc(100cqw * .41));position:absolute;top:var(--vmap-edge);right:var(--vmap-edge);z-index:3;width:var(--vmap-w);height:min(calc(var(--vmap-w) * var(--vmap-ratio)),var(--vmap-room,240px));transition:width .28s var(--m2-standard,ease),height .28s var(--m2-standard,ease),top .28s,right .28s;color:#F0F4F8;color-scheme:dark;font-weight:500;letter-spacing:.015em;font-variant-numeric:tabular-nums;--focus:#5BE3AE}
+.video-map-surface{position:absolute;inset:0;
+ -webkit-mask-image:linear-gradient(to left,#000 58%,rgba(0,0,0,.65) 78%,transparent),linear-gradient(to bottom,#000 56%,rgba(0,0,0,.60) 78%,transparent);
+ -webkit-mask-composite:source-in;
+ mask-image:linear-gradient(to left,#000 58%,rgba(0,0,0,.65) 78%,transparent),linear-gradient(to bottom,#000 56%,rgba(0,0,0,.60) 78%,transparent);
+ mask-composite:intersect}
+.video-map .video-map-canvas{position:absolute;inset:0}
+.video-map-open{position:absolute;inset:0;width:100%;background:none;border:0;border-radius:0;box-shadow:none;cursor:zoom-in;touch-action:none}
+.video-map .video-map-open:where(:enabled):is(:hover,:active){background:none;filter:none}
+.video-map.is-large{top:var(--vmap-inset);right:var(--vmap-inset);z-index:6;width:calc(100% - 2 * var(--vmap-inset));height:calc(100% - 2 * var(--vmap-inset))}
+.video-map.is-large .video-map-surface{mask:none;-webkit-mask:none;background:#0E1219;border-radius:16px;overflow:hidden}
+.video-map.is-large .maplibregl-canvas{touch-action:none;cursor:grab}
+.video-map.is-large .maplibregl-canvas:active{cursor:grabbing}
+.video-map:is(.is-sizing,.is-instant){transition:none}
+.video-map.no-room:not(.is-large){display:none}
+.video-map-grip{position:absolute;left:0;bottom:0;z-index:2;width:32px;height:32px;padding:6px;display:grid;place-items:end start;touch-action:none;cursor:nesw-resize}
+.video-map-grip::before{content:"";width:11px;height:11px;border-left:2px solid #DBE2EA;border-bottom:2px solid #DBE2EA;border-bottom-left-radius:7px;opacity:.7;transition:opacity .15s}
+@media(hover:hover) and (pointer:fine){.video-map-grip::before{opacity:0}.video-map:hover .video-map-grip::before,.video-map.is-sizing .video-map-grip::before{opacity:.9}}
+.video-map.is-large .video-map-grip{display:none}
+.video-wrap.vmap-sized .video-map{--vmap-w:clamp(max(104px,var(--vmap-min-w,0px)),calc(100cqw * var(--vmap-f)),calc(100cqw - 2 * var(--vmap-edge)))}
+.video-map-controls{position:absolute;inset:0;pointer-events:none}
+.video-map-toolbar{position:absolute;top:10px;left:10px;right:10px;display:flex;justify-content:space-between;gap:8px}
+.video-map-toolbar>div{display:flex;gap:6px}
+.video-map-controls button,.video-map-credit summary,.video-map-credit>div{background:#141C27;color:inherit;border:1px solid #354358;box-shadow:none}
+.video-map-controls button{pointer-events:auto;min-height:32px;padding:4px 10px;font-size:12px;font-weight:650}
+.video-map-controls button[aria-pressed=true]{color:#A1EFCF;border-color:#497865}
+.video-map-controls button:where(:enabled):hover{background:#253345}
+.video-map-legend{position:absolute;left:12px;bottom:10px;display:flex;flex-wrap:wrap;gap:4px 12px;max-width:calc(100% - 240px);margin:0;padding:6px 8px;list-style:none;border-radius:7px;background:#141C27;font-size:11px}
+.video-map-legend li::before{content:"";display:inline-block;width:14px;margin-right:5px;vertical-align:middle;border-top:3px solid #3DCB92}
+.video-map-legend li:nth-child(2)::before{border-color:#7C96B8}
+.video-map-legend li:nth-child(3)::before{border-color:#8B9AB0;border-top-style:dashed}
+.video-map-preview{position:absolute;bottom:36px;right:10px;display:flex;flex-wrap:wrap;align-items:center;gap:4px 8px;max-width:calc(100% - 20px);padding:7px 10px;border:1px solid #354358;border-radius:10px;background:#141C27;color:#BFCBDA;font-size:12px;pointer-events:auto}
+.video-map-preview b{font-weight:700;color:#F0F4F8;overflow-wrap:anywhere}
+.video-map-preview small{flex:0 0 100%;color:#FFCA8E}
+.video-map-credit{position:absolute;right:6px;bottom:6px;z-index:1}
+.video-map-credit summary{display:grid;place-items:center;min-width:24px;height:24px;padding:0;border-radius:50%;list-style:none;cursor:pointer}
+.video-map-credit summary::-webkit-details-marker{display:none}
+.video-map-credit>div{position:absolute;bottom:0;right:30px;width:max-content;max-width:calc(100cqw - 52px);padding:3px 6px;border-radius:6px;font-size:10px}
+.video-map-credit a{color:#D3E1F3}
+@container(max-width:520px){.video-map{--vmap-edge:8px}}
+@media(max-width:600px){
+ .video-map{--vmap-w:min(174px,calc(100cqw * .48));--vmap-ratio:.816;--vmap-inset:0px}
+ .video-map.is-large .video-map-surface{border-radius:0}
+ .video-map-legend{display:none}
+ .video-map-preview{left:8px;right:8px;bottom:33px;max-width:none}
+ .video-map-toolbar{top:6px;left:6px;right:6px}
+ .video-map-controls button{min-height:44px;padding-inline:8px}
+}
 .video-wrap.has-video-map .video-hud{z-index:4;pointer-events:none}
+.video-wrap.has-video-map .ego-speed{font-weight:550;letter-spacing:.015em;text-shadow:none;font-variant-numeric:tabular-nums}
+.video-wrap.has-video-map .ego-speed strong{font-weight:650;letter-spacing:inherit}
 .video-wrap.has-video-map .video-messages{z-index:4}
-.video-wrap.has-video-map .video-title{z-index:4;max-width:calc(100% - clamp(max(104px,var(--vmap-min-w,0px)),calc(100cqw / 3),180px) - 32px)}
-.video-map.no-room{display:none}
-.video-wrap.video-map-large .video-tools{opacity:0;visibility:hidden;pointer-events:none;transition:opacity .18s,visibility 0s .18s}
-.video-wrap.video-map-large .video-messages{bottom:12px}
-@container(max-width:520px){.video-wrap.video-map-large .video-messages{bottom:8px}}
-.camera-panel:fullscreen .video-wrap.video-map-large .video-messages{bottom:calc(var(--fs-lift) + 20px)}
-@media(prefers-reduced-motion:reduce){.video-map,.map-car-body,.video-wrap.video-map-large .video-tools{transition:none}}
+.video-wrap.has-video-map .video-title{z-index:4;max-width:calc(100% - min(310px,41cqw) - 32px)}
+.video-wrap.video-map-large .video-tools{opacity:0;visibility:hidden;pointer-events:none}
+@media(prefers-reduced-motion:reduce){.video-map,.map-car-body{transition:none}}
