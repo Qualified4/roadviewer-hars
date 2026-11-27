@@ -106,6 +106,7 @@ jobs:
       - uses: actions/checkout@v7
       - run: python3 scripts/check_release.py
       - run: python3 scripts/check_coexistence.py
+      - run: python3 -m unittest scripts/test_extract_release_notes.py
   container:
     name: Container (${{ matrix.arch }})
     if: ${{ github.event_name != 'push' }}

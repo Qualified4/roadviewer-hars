@@ -15,6 +15,7 @@ jobs:
       # on a main commit whose tree passed `HARS required` in its pull request (one person works on this repository,
       # so no other merge lands untested in between). The images are still built and checked below.
       - run: python3 scripts/check_release.py --tag "$GITHUB_REF_NAME"
+      - run: python3 scripts/extract_release_notes.py --tag "$GITHUB_REF_NAME" > /dev/null
   image:
     needs: gate
     permissions:
@@ -63,4 +64,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           if [[ "$GITHUB_REF_NAME" == *-* ]]; then kind=--prerelease; else kind=--latest; fi
-          gh release create "$GITHUB_REF_NAME" "$kind" --title "Road Viewer $GITHUB_REF_NAME" --notes-file docs/hars/STATUS.md
+          notes_file="$(mktemp)"
+          trap 'rm -f "$notes_file"' EXIT
+          python3 scripts/extract_release_notes.py --tag "$GITHUB_REF_NAME" --output "$notes_file"
+          gh release create "$GITHUB_REF_NAME" "$kind" --title "Road Viewer $GITHUB_REF_NAME" --notes-file "$notes_file"
