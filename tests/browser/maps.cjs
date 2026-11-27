@@ -183,14 +183,14 @@ async function assertMiniFade(page,mini){
   const {width:w,height:h}=img,s=Math.min(w,h);
   const canvas=new OffscreenCanvas(w,h),ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);
   const at=(x,y)=>ctx.getImageData(Math.floor(x),Math.floor(y),1,1).data[0];
-  return {top:at(w*.65,1),right:at(w-2,h*.4),left:[1,.13*s,.24*s].map(x=>at(x,h*.14)),
-   bottom:[1,.13*s,.24*s].map(y=>at(w*.88,h-y)),corner:at(.21*s,h-.21*s),grip:at(11,h-20)};
+  return {top:at(w-.15*s,1),right:at(w-2,.15*s),left:[1,.37*s,.72*s].map(x=>at(x,.14*s)),
+   bottom:[1,.37*s,.72*s].map(y=>at(w-.12*s,h-y)),corner:at(.37*s,h-.37*s),grip:at(11,h-20)};
  },png.toString('base64'));
  assert(light.top>=254&&light.right>=254,'video edges stay opaque '+JSON.stringify(light));
  for(const edge of [light.left,light.bottom]){
-  assert(edge[0]<8&&edge[1]>65&&edge[1]<190&&edge[2]>235,'inner edges feather through intermediate alpha '+JSON.stringify(light));
+  assert(edge[0]<8&&edge[1]>80&&edge[1]<175&&edge[2]>235,'inner edges feather through intermediate alpha '+JSON.stringify(light));
  }
- assert(light.corner<55,'the feather follows a rounded lower-left corner '+JSON.stringify(light));
+ assert(light.corner<45,'the feather follows a rounded lower-left corner '+JSON.stringify(light));
  assert(light.grip>130,'the thin resize grip paints over the transparent corner '+JSON.stringify(light));
 }
 
