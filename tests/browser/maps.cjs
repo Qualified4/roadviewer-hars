@@ -145,6 +145,8 @@ async function assertMiniCorner(page,kind='vehicle'){
   routeA[1][i][1]=prev[1]+Math.cos(angle)*.0001;
   routeA[1][i][2]=prev[2]+Math.sin(angle)*.0001/Math.cos(prev[1]*Math.PI/180);
  }
+ // A receiver heading that smoothly interpolates through a right turn from 10 s to 11 s.
+ for(let i=6;i<routeA[1].length;i++)routeA[1][i][4]=i<=10?0:90;
  routeA[1][31][1]=routeA[1][30][1];routeA[1][31][2]=routeA[1][30][2];
  routeA[1][42][3]=0;routeA[1][42][4]=210;
  routeA[1][45][3]=40;
@@ -206,12 +208,19 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
      for(const k of shares){const at=p.getPointAtLength(length*Math.min(1,Math.max(0,k))),x=Math.round(at.x*m.a+at.y*m.c+m.e),y=Math.round(at.x*m.b+at.y*m.d+m.f);if(document.elementFromPoint(x,y)===p&&!near(x,y))return {x,y}}
      const at=p.getPointAtLength(length*share);return {x:at.x*m.a+at.y*m.c+m.e,y:at.x*m.b+at.y*m.d+m.f}},share);await page.touchscreen.tap(point.x,point.y)};
    const listRow=id=>page.locator(`#list .log-row[data-id="${id}"]`);
+   let listAttempts=0,driveAttempts=0;
+   if(scheme==='dark'){
+    await page.route('**/api/tracks',route=>++listAttempts===1?route.fulfill({status:503}):route.continue());
+    await page.route(`**/api/logs/${logs[0].id}/track`,route=>++driveAttempts===1?route.fulfill({status:503}):route.continue());
+   }
    await page.goto(base);await page.locator('.log-route').first().waitFor();
    assert(!await page.evaluate(()=>!!(window.L||window.maplibregl)),'Leaflet and MapLibre load only when a map is first shown');
    // ② The cards with GPS show their route (SVGs, no tiles); phones: a 지도 button left of 재생, no route in the thumbnail.
    // The 지도 buttons show while /api/tracks is on its way (no shape yet); maps.js draws every card's shape in one pass
    // when the routes arrive, so the first drawn shape is the point where the cards are complete.
+   if(scheme==='dark')await page.locator('.route-map-button').first().waitFor();
    await page.locator('.route-map-button svg .shape-line').first().waitFor();
+   if(scheme==='dark')assert(listAttempts>=2,'card maps recovered from a 503 without opening the overview');
    assert.equal(await page.locator('.route-map-button').count(),2);assert.equal(await page.locator('.route-map-button svg .shape-line').count(),2);
    assert.equal(await page.locator('.log-route[data-route*="00000397"] :is(.route-inset,.route-strip,.route-map-button)').count(),0,'no GPS: no route at all');
    // Both boxes from one layout once the row has stopped moving (two reads in turn once caught the list between
@@ -234,7 +243,7 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
     await page.waitForFunction(({count,marked})=>{const d=document.getElementById('driveMap');return d.open&&d.querySelectorAll('.leaflet-overlay-pane path.leaflet-interactive').length===count&&(!marked||d.querySelector(`.log-row[data-id="${marked}"]`)?.classList.contains('is-map-marked'))},{count:A,marked});
     await settleLayout(page,'#driveMap');
    };
-   const driveClosed=()=>page.waitForFunction(()=>!document.getElementById('driveMap').open);
+   const driveClosed=()=>page.waitForFunction(()=>!document.getElementById('driveMap').open&&!document.querySelector('#driveMap canvas.maplibregl-canvas'));
    // The geometry that matters: the map stays on screen above the sheet and the marked line lies inside it.
    const layout=()=>page.evaluate(()=>{
     const d=document.getElementById('driveMap'),r=s=>d.querySelector(s).getBoundingClientRect(),area=r('.drive-map-area'),bar=r('.drive-map-bar'),sheet=r('.drive-map-sheet'),list=r('.drive-map-list'),body=r('.drive-map-body');
@@ -245,6 +254,7 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
    });
    // Opened from the card's route shape: a history entry with the drive's date, distance, duration and segments.
    await cardA.locator('.route-map-button').tap();await driveOpen();
+   if(scheme==='dark')assert(driveAttempts>=2,'the drive dialog recovered from a 503 without closing');
    assert.equal(new URL(page.url()).hash,'#drive-map');
    assert.match(await page.locator('#driveMapTitle').innerText(),/\d/);
    // Opening focuses the title (not the back button) and shows no focus ring.
@@ -714,11 +724,16 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    page.on('pageerror',error=>errors.push(error.message));
    await context.addInitScript(hookMaps);
    await context.addInitScript(()=>localStorage.setItem('roadviewer-map-car-icon','arrow'));
-   if(!REAL)await context.route(OFM+'**',stubTiles);
+   let styleAttempts=0,trackAttempts=0;
+   if(!REAL)await context.route(OFM+'**',route=>{
+    if(route.request().url()===STYLE_OF.dark&&++styleAttempts===1)return route.fulfill({status:503});
+    return stubTiles(route);
+   });
    const testVideo=video;
    for(const log of [logs[1],logs[2]])await context.route('**/api/logs/'+log.id+'/video**',route=>route.fulfill({body:testVideo,contentType:'video/mp4'}));
    const missing=logs[4].id;let requests=0;
    await page.route('**/api/logs/'+withVideo+'/track',async route=>{
+    if(++trackAttempts===1)return route.fulfill({status:503});
     const headers={...route.request().headers()};delete headers['if-none-match'];
     const response=await route.fetch({headers}),value=await response.json();
     value.segments=value.segments.filter(segment=>segment.id!==missing);
@@ -739,13 +754,43 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await page.locator('#overlayHeightClose').click();
    await page.waitForFunction(()=>window.rvTestMini?.getLayer('background')&&rvTestMini.getPaintProperty('background','background-color')==='#0E1219'&&rvTestMini.hasImage('rv-vehicle'));
    const seek=async value=>page.locator('#seek').evaluate((el,t)=>{el.value=t;el.dispatchEvent(new Event('input'))},value);
+   assert(trackAttempts>=2,'the replay retried a failed track fetch');
+   if(!REAL){
+    await page.waitForFunction(()=>rvTestMini.getSource('openmaptiles'));
+    assert(styleAttempts>=2,'the minimap reloaded the basemap after a failed style request');
+   }
    await seek(3);await page.waitForFunction(()=>Math.abs(rvTestMini.getBearing()+1)<.15);
    await seek(4);await page.waitForFunction(()=>Math.abs(rvTestMini.getBearing()-2)<.15);
    await seek(42);await page.waitForFunction(()=>Math.abs(rvTestMini.getZoom()-17.1)<.02);
    assert(Math.abs(await page.evaluate(()=>rvTestMini.getBearing())-2)<.15,'low speed keeps the previous heading');
    await seek(45);await page.waitForFunction(()=>Math.abs(rvTestMini.getZoom()-14.6)<.02);
-   await seek(14);
-   await page.waitForFunction(()=>Math.abs(rvTestMini.getZoom()-16.36)<.02&&Math.abs(rvTestMini.getBearing()-90)<.15);
+   await seek(10.1);
+   await page.waitForFunction(()=>Math.abs(rvTestMini.getBearing()-9)<.5);
+   const turn=await page.evaluate(async()=>{
+    const map=rvTestMini,seek=document.getElementById('seek'),play=document.getElementById('play');
+    const samples=[];
+    let frame;
+    const sample=now=>{samples.push({now,time:seek.valueAsNumber,bearing:map.getBearing()});frame=requestAnimationFrame(sample)};
+    frame=requestAnimationFrame(sample);play.click();
+    const deadline=performance.now()+6000;
+    await new Promise(resolve=>{
+     const wait=()=>{if(seek.valueAsNumber>=10.75||performance.now()>deadline)resolve();else requestAnimationFrame(wait)};
+     requestAnimationFrame(wait);
+    });
+    play.click();cancelAnimationFrame(frame);return samples;
+   });
+   const duringTurn=turn.filter(sample=>sample.time>10.2&&sample.time<10.75);
+   assert(duringTurn.some(sample=>sample.bearing>12&&sample.bearing<45),'the heading changes between GPS samples');
+   for(let i=1;i<duringTurn.length;i++){
+    const previous=duringTurn[i-1],next=duringTurn[i];
+    assert(Math.abs(next.bearing-previous.bearing)<=55*(next.now-previous.now)/1000+1,'the rotating map respects the angular speed limit');
+   }
+   // Observe the seek on the first animation frame, well before a smoothed turn could complete.
+   const snapped=await page.evaluate(async()=>{
+    const seek=document.getElementById('seek');seek.value='14';seek.dispatchEvent(new Event('input'));
+    await new Promise(requestAnimationFrame);return {bearing:rvTestMini.getBearing(),zoom:rvTestMini.getZoom()};
+   });
+   assert(Math.abs(snapped.zoom-16.36)<.02&&Math.abs(snapped.bearing-90)<.15,JSON.stringify(snapped));
    const forward=await page.evaluate(([,lat,lon])=>{const map=rvTestMini,car=map.project(map.getCenter()),next=map.project([lon,lat]);
     return {x:next.x-car.x,y:next.y-car.y};
    },routeA[1][15]);
@@ -946,7 +991,8 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
     await open();await box('grey').check();
     await page.waitForFunction(()=>document.querySelector('#logMap .rv-map').dataset.simple==='true');
     await page.waitForFunction(()=>(document.querySelector('#logMap .rv-map').dataset.removed||'')!=='',null,{timeout:20000});await page.waitForTimeout(REAL?2500:200);
-    assert(styleUrls.includes(scheme==='light'?SIMPLE_LIGHT:STYLE_OF.dark),'grey style '+styleUrls);
+    if(scheme==='light')assert(styleUrls.includes(SIMPLE_LIGHT),'grey style '+styleUrls);
+    else assert.deepEqual(styleUrls,[],'dark grey style reuses cached basemap '+styleUrls);
     assert.equal(await page.evaluate(()=>document.querySelector('#logMap .rv-map').dataset.labels),'shown','회색 지도 keeps the names');
     {const removed=(await page.evaluate(()=>document.querySelector('#logMap .rv-map').dataset.removed)).split(' ');
      assert(!REAL?removed.includes('building-3d')&&removed.includes('poi_r1')&&!removed.includes('street-name'):removed.every(id=>!/name|label/.test(id)||/poi/.test(id)),removed.join(' '))}

@@ -327,10 +327,10 @@ pub(crate) fn share_meta(path: &Path) -> std::io::Result<std::fs::Metadata> {
     std::fs::symlink_metadata(path)
 }
 
-/// A regular file on the share, opened without following a link. It is checked before the open as well: a FIFO
-/// there would hang the open.
-pub(crate) fn open_share_file(path: &Path) -> std::io::Result<std::fs::File> {
-    if !share_meta(path)?.is_file() {
+/// A regular file inside an already-pinned directory, opened without following a link on the file
+/// itself. Checked before the open as well so a FIFO cannot hang the open.
+pub(crate) fn open_pinned_file(path: &Path) -> std::io::Result<std::fs::File> {
+    if !std::fs::symlink_metadata(path)?.is_file() {
         return Err(not_found("not_a_file"));
     }
     let mut options = std::fs::OpenOptions::new();
@@ -351,6 +351,15 @@ pub(crate) fn open_share_file(path: &Path) -> std::io::Result<std::fs::File> {
         return Err(not_found("not_a_file"));
     }
     Ok(file)
+}
+
+/// A regular file on the share, opened without following a link. It is checked before the open as well: a FIFO
+/// there would hang the open.
+pub(crate) fn open_share_file(path: &Path) -> std::io::Result<std::fs::File> {
+    if linked_folder(path) {
+        return Err(not_found("share_link"));
+    }
+    open_pinned_file(path)
 }
 
 pub(crate) fn mounted(path: &Path, allow_any_path: bool) -> bool {

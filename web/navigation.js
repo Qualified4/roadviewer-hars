@@ -57,7 +57,8 @@ async function navigate(to,{replace=false,pop=false,pressed=0}={}){
   globalThis.__rvNavNext=kind;
   try{previous?.scope.dispose()}finally{globalThis.__rvNavNext=null}
   document.getElementById('pageBase').href=url.href;
-  host.replaceChildren(root);root.hidden=false;libraryStyle.disabled=kind!=='library';document.documentElement.dataset.page=kind;current={url,scope,api};
+  host.replaceChildren(root);libraryStyle.disabled=kind!=='library';document.documentElement.dataset.page=kind;current={url,scope,api};
+  root.hidden=false;
   document.title=html.title;notice.textContent='';
   scrollTo(0,pop?(history.state?.rvScroll||0):kind==='library'?libraryScroll:0);
   dispatchEvent(new Event('pageshow'));busy(false);
