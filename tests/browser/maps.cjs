@@ -135,6 +135,40 @@ function assertReplayHud(page,shown){
   return style.opacity===(shown?'1':'0')&&(style.pointerEvents!=='none')===shown;
  }),shown);
 }
+async function assertMiniClose(page){
+ const {start,middle,end,closed}=await page.evaluate(async()=>{
+  const mini=document.getElementById('videoMap'),map=rvTestMini,canvas=map.getContainer();
+  const turned=!!mini.closest('.is-turned'),data=await map.getSource('rv-car').getData();
+  const measure=()=>{
+   const frame=mini.getBoundingClientRect(),box=canvas.getBoundingClientRect();
+   const p=map.project(data.features[0].geometry.coordinates);
+   return {w:mini.clientWidth,h:mini.clientHeight,canvasWidth:canvas.clientWidth,
+    x:p.x+(turned?box.top-frame.top:box.left-frame.left),y:p.y+(turned?frame.right-box.right:box.top-frame.top),
+    held:!!canvas.style.width,resizes:rvNativeResizes};
+  };
+  const nextFrame=()=>new Promise(requestAnimationFrame);
+  const start=measure();
+  mini.querySelector('.video-map-close').click();
+  const transitions=mini.getAnimations().filter(animation=>animation instanceof CSSTransition);
+  if(!transitions.some(animation=>animation.transitionProperty==='width'))throw Error('expected an animated minimap close');
+  // Sample the clipping frame at fixed points even when a busy runner skips a rendered frame.
+  for(const animation of transitions){animation.pause();animation.currentTime=animation.effect.getTiming().duration/2}
+  while(map.isMoving())await nextFrame();
+  const middle=measure();
+  for(const animation of transitions)animation.currentTime=animation.effect.getTiming().duration-1;
+  const end=measure();
+  for(const animation of transitions)animation.play();
+  await Promise.all(transitions.map(animation=>animation.finished));
+  await nextFrame();await nextFrame();
+  return {start,middle,end,closed:measure()};
+ });
+ const samples=JSON.stringify({start,middle,end,closed});
+ assert(middle.w<start.w&&middle.w>closed.w&&middle.held&&middle.canvasWidth===start.w,'the full canvas stays centered behind the shrinking frame '+samples);
+ assert(middle.x<middle.w&&middle.x>0&&middle.y<middle.h&&middle.y>0,'the car stays within the shrinking viewport '+samples);
+ assert.equal(end.resizes,start.resizes,'the canvas does not resize before the transition finishes');
+ assert.equal(closed.resizes,start.resizes+1,'closing resizes the WebGL canvas once');
+ assert(!closed.held&&Math.abs(closed.x-closed.w*.7)<1&&Math.hypot(end.x-closed.x,end.y-closed.y)<2,'the car keeps its position when the held canvas is released '+samples);
+}
 async function assertMiniFade(page,mini){
  // Use solid layers to measure the actual composited SVG alpha independently of tiles, HUD and video content.
  const probe=await page.addStyleTag({content:`
@@ -744,7 +778,11 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    const snapCard=mini.locator('.video-map-preview');
    assert.match(await snapCard.innerText(),/구간 1.*45 km\/h/s,'turned fullscreen snaps to the same GPS timeline');
    await page.waitForTimeout(400);assert(await close.isVisible(),'pinned remains expanded after the seek');
-   await close.tap();
+   if(scheme==='dark'){
+    await page.emulateMedia({reducedMotion:'no-preference'});
+    await assertMiniClose(page);
+    await page.emulateMedia({reducedMotion:'reduce'});
+   }else await close.tap();
    if(scheme==='dark'){
     const grip=mini.getByRole('button',{name:'작은 지도 크기 조절'});
     await grip.evaluate(el=>{
@@ -923,6 +961,8 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
     return canvas.clientWidth===box.clientWidth&&canvas.clientHeight===box.clientHeight&&Math.abs(map.getPadding().left-box.clientWidth*.4)<1
      &&Math.abs(map.getPadding().top-Math.min(box.clientHeight*.22,document.querySelector('.video-hud').offsetTop+document.querySelector('.video-hud').offsetHeight+12))<1;
    });
+   await open.click();await page.waitForFunction(()=>!document.querySelector('.video-map-canvas').style.width&&!rvTestMini.isMoving());
+   await assertMiniClose(page);
    await grip.dblclick();
    await page.waitForFunction(([w,h])=>{const el=document.getElementById('videoMap');return Math.abs(el.clientWidth-w)<1&&Math.abs(el.clientHeight-h)<1&&!el.getAnimations().length},[collapsed.width,collapsed.height]);
    assert.equal(await page.evaluate(key=>localStorage.getItem(key),key),null,'double-click restores the default size');

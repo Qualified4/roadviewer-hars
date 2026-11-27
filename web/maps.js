@@ -1683,12 +1683,22 @@
   const shortArc=(from,to)=>((to-from)%360+540)%360-180;
   const zoomAt=speed=>Math.max(14.6,Math.min(17.1,17.35-speed*.022));
   const hasVideo=()=>typeof data!=='undefined'&&!!data?.video;
-  function cameraAt(pos){
-   const {map,bearing,zoom}=small;
-   const {clientWidth,clientHeight}=map.getContainer();
+  function cameraAt(pos,viewport=small.map.getContainer()){
+   const {bearing,zoom}=small;
+   const {clientWidth,clientHeight}=viewport;
    // Keep the vehicle marker below the HUD and inside the darker part of the corner fade.
    const padding={top:Math.min(clientHeight*.22,hud.offsetTop+hud.offsetHeight+12),bottom:0,left:clientWidth*.4,right:0};
    return {center:lngLat(pos),pitch:56,bearing,zoom,padding};
+  }
+  function collapsedCamera(pos){
+   // Resolve the saved size in the current stage without changing the on-screen transition.
+   const viewport=mini.cloneNode(false);
+   viewport.removeAttribute('id');viewport.classList.remove('is-large');
+   viewport.style.visibility='hidden';
+   stage.append(viewport);
+   const camera=cameraAt(pos,viewport);
+   viewport.remove();
+   return camera;
   }
   function followMini(pos,dt=0,snap=false){
    const {map}=small,speed=pos.speed*3.6,targetZoom=zoomAt(speed);
@@ -1836,7 +1846,13 @@
    setExpandedInput(false);setMiniFollow(true);showPreview(null);
    if(!moving)resizeMini();
    if(large)centreMini(moving?280:0);
-   else map.easeTo({...cameraAt(position(t)),duration:moving?280:0});
+   else{
+    const pos=position(t);
+    // The large canvas is centered behind the shrinking frame. Aim for the final frame's padding
+    // so the car stays in the same place when that canvas is replaced by the small one.
+    const camera=moving?collapsedCamera(pos):cameraAt(pos);
+    map.easeTo({...camera,duration:moving?280:0});
+   }
    const finish=()=>{
     resizing=false;releaseCanvas();
     if(large)setExpandedInput(true);
@@ -1848,6 +1864,7 @@
      if(disposed||revision!==resizeRevision)return;
      const transitions=mini.getAnimations().filter(animation=>animation.pending||animation.playState==='running');
      if(transitions.length)Promise.allSettled(transitions.map(animation=>animation.finished)).then(afterTransition);
+     else if(map.isMoving())map.once('moveend',afterTransition);
      else finish();
     };
     afterTransition();
