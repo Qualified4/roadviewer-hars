@@ -299,6 +299,19 @@ async fn verified_move_resumes_after_rename_and_restores_local_playback() {
         200
     );
 
+    let (_, tracks) = server.request("GET", "/api/tracks", Value::Null).await;
+    assert_eq!(tracks["routes"][0]["segments"].as_array().unwrap().len(), 1);
+    // Warm requests can serve the published generation without probing its share.
+    let offline = tmp.path().join("offline");
+    fs::rename(&share, &offline).unwrap();
+    let (status, cached_tracks) = server.request("GET", "/api/tracks", Value::Null).await;
+    assert_eq!((status, cached_tracks), (200, tracks));
+    let (status, cached_track) = server
+        .request("GET", &format!("{api}/track"), Value::Null)
+        .await;
+    assert_eq!((status, cached_track), (200, track));
+    fs::rename(&offline, &share).unwrap();
+
     let sentinel = namespace.join(roadviewer_hars::archive::SENTINEL);
     let owned = fs::read(&sentinel).unwrap();
     fs::write(

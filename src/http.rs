@@ -1273,19 +1273,19 @@ async fn track(
     ready_segments.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
     let root = app.store.root.clone();
     let if_none_match = header(&headers, "if-none-match").to_owned();
-    let has_nas = !shares.is_empty();
+    let reads = prepared_storage::TrackReads::new(&root, shares, true);
+    let has_nas = reads.needs_nas();
     let operation = move || {
-        prepared_storage::with_track_dirs(shares, Some(&id), |paths| {
-            crate::track::build_single_track(
-                &root,
-                &id,
-                &key,
-                &ready_segments,
-                &unconverted,
-                paths,
-                &if_none_match,
-            )
-        })
+        let segments = reads.load(&root, Some(&id))?;
+        Ok(crate::track::build_single_track(
+            &root,
+            &id,
+            &key,
+            &ready_segments,
+            &unconverted,
+            &segments,
+            &if_none_match,
+        ))
     };
     let answer = run_tracks(&app, has_nas, operation).await?;
     Ok(tracks_answer_response(answer))
@@ -1310,7 +1310,7 @@ async fn tracks(
     Query(q): Query<BTreeMap<String, String>>,
     headers: HeaderMap,
 ) -> Result<Response> {
-    let metas = app
+    let mut metas = app
         .store
         .records
         .read()
@@ -1324,14 +1324,28 @@ async fn tracks(
             .map(str::to_owned)
             .collect::<std::collections::BTreeSet<_>>()
     });
+    if let Some(wanted) = &wanted {
+        let routes = metas
+            .iter()
+            .filter(|m| m["id"].as_str().is_some_and(|id| wanted.contains(id)))
+            .map(|m| crate::track::route_order(m).0)
+            .collect::<std::collections::BTreeSet<_>>();
+        metas.retain(|m| routes.contains(&crate::track::route_order(m).0));
+    }
     let shares = app.store.prepared.track_shares(&metas).await?;
-    let has_nas = !shares.is_empty();
     let root = app.store.root.clone();
     let if_none_match = header(&headers, "if-none-match").to_owned();
+    let reads = prepared_storage::TrackReads::new(&root, shares, false);
+    let has_nas = reads.needs_nas();
     let operation = move || {
-        prepared_storage::with_track_dirs(shares, None, |paths| {
-            crate::track::build_tracks(&root, &metas, wanted.as_ref(), paths, &if_none_match)
-        })
+        let segments = reads.load(&root, None)?;
+        Ok(crate::track::build_tracks(
+            &root,
+            &metas,
+            wanted.as_ref(),
+            &segments,
+            &if_none_match,
+        ))
     };
     Ok(tracks_answer_response(
         run_tracks(&app, has_nas, operation).await?,
@@ -1345,7 +1359,7 @@ async fn run_tracks(
     if has_nas {
         app.store
             .prepared
-            .quick(op)
+            .run_track_query(op)
             .await
             .map_err(prepared_storage::api_error)
     } else {

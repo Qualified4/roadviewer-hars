@@ -5,9 +5,9 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use sha2::{Digest, Sha256};
 use std::{
-    collections::{BTreeMap, BTreeSet, HashMap},
+    collections::{BTreeMap, BTreeSet, HashMap, VecDeque},
     path::{Path, PathBuf},
-    sync::{LazyLock, Mutex},
+    sync::{Arc, LazyLock, Mutex},
     time::UNIX_EPOCH,
 };
 
@@ -321,7 +321,12 @@ pub fn simplify(coords: &[[f64; 2]], limit: usize) -> Vec<[f64; 2]> {
 }
 
 type FileStamp = (u128, u64, u64);
-type SegmentSig = (Option<FileStamp>, Option<FileStamp>);
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) enum SegmentSig {
+    Local(Option<FileStamp>, Option<FileStamp>),
+    Nas(crate::prepared::NasLocation),
+    Unavailable,
+}
 type RouteGroupEntry = (Vec<String>, Vec<(Option<u64>, String)>);
 
 #[derive(Clone, Debug)]
@@ -350,9 +355,23 @@ struct CachedTracksResponse {
     bytes: Vec<u8>,
 }
 
+#[derive(Clone)]
+pub(crate) struct SegmentData {
+    summary: Arc<CachedSegment>,
+    points: Option<Arc<Value>>,
+}
+
+pub(crate) type NasSegments = BTreeMap<String, Option<(SegmentSig, SegmentData)>>;
+
+// The library keeps compact geometry for all segments. Full-resolution playback
+// points have their own size limit so browsing more drives cannot grow memory indefinitely.
+const MAX_CACHED_TRACK_POINTS: usize = 32_000;
+
 #[derive(Default)]
 struct TrackCache {
-    segments: HashMap<PathBuf, (SegmentSig, CachedSegment)>,
+    segments: HashMap<PathBuf, (SegmentSig, Arc<CachedSegment>)>,
+    points: VecDeque<(PathBuf, SegmentSig, Arc<Value>)>,
+    point_count: usize,
     routes: HashMap<(PathBuf, String), CachedRoute>,
     responses: HashMap<PathBuf, CachedTracksResponse>,
 }
@@ -390,35 +409,37 @@ fn file_stamp(path: &Path) -> Option<FileStamp> {
     Some((mtime, m.len(), ino))
 }
 
-type PreparedPaths = BTreeMap<String, Option<PathBuf>>;
-
-fn prepared_path(root: &Path, id: &str, paths: &PreparedPaths) -> Option<PathBuf> {
-    paths
-        .get(id)
-        .cloned()
-        .unwrap_or_else(|| Some(root.join(id).join("prepared")))
+fn local_sig(folder: &Path) -> SegmentSig {
+    let prepared = folder.join("prepared");
+    SegmentSig::Local(
+        file_stamp(&prepared.join("summary.json")),
+        file_stamp(&prepared.join("track.json.gz")),
+    )
 }
 
-fn segment_sig(prepared: Option<&Path>) -> SegmentSig {
-    if let Some(prepared) = prepared {
-        (
-            file_stamp(&prepared.join("summary.json")),
-            file_stamp(&prepared.join("track.json.gz")),
-        )
-    } else {
-        (None, None)
+fn segment_sig(folder: &Path, id: &str, nas: &NasSegments) -> SegmentSig {
+    match nas.get(id) {
+        Some(Some((sig, _))) => sig.clone(),
+        Some(None) => SegmentSig::Unavailable,
+        None => local_sig(folder),
     }
 }
 
-fn track_summary(prepared: &Path) -> std::io::Result<Value> {
-    let file = crate::archive::nas::open_share_file(&prepared.join("summary.json"))?;
+fn open_track_file(path: &Path, pinned: bool) -> std::io::Result<std::fs::File> {
+    if pinned {
+        crate::archive::nas::open_pinned_file(path)
+    } else {
+        crate::archive::nas::open_share_file(path)
+    }
+}
+
+fn track_summary(prepared: &Path, pinned: bool) -> std::io::Result<Value> {
+    let file = open_track_file(&prepared.join("summary.json"), pinned)?;
     serde_json::from_reader(std::io::BufReader::new(file)).map_err(std::io::Error::other)
 }
 
-fn prepared_track(prepared: &Path) -> anyhow::Result<Value> {
-    crate::logs::read_gzip_file(crate::archive::nas::open_share_file(
-        &prepared.join("track.json.gz"),
-    )?)
+fn prepared_track(prepared: &Path, pinned: bool) -> anyhow::Result<Value> {
+    crate::logs::read_gzip_file(open_track_file(&prepared.join("track.json.gz"), pinned)?)
 }
 
 fn hash_stamp(hasher: &mut Sha256, stamp: Option<FileStamp>) {
@@ -433,65 +454,151 @@ fn hash_stamp(hasher: &mut Sha256, stamp: Option<FileStamp>) {
     }
 }
 
-fn hash_segment_sig(hasher: &mut Sha256, sig: SegmentSig) {
-    hash_stamp(hasher, sig.0);
-    hash_stamp(hasher, sig.1);
-}
-
-fn empty_segment() -> CachedSegment {
-    CachedSegment {
-        has_track: false,
-        duration: Value::Null,
-        track_distance_m: Value::Null,
-        simplified_150: vec![],
+fn hash_segment_sig(hasher: &mut Sha256, sig: &SegmentSig) {
+    match sig {
+        SegmentSig::Local(summary, track) => {
+            hasher.update([0u8]);
+            hash_stamp(hasher, *summary);
+            hash_stamp(hasher, *track);
+        }
+        SegmentSig::Nas(location) => {
+            hasher.update([1u8]);
+            hasher.update(location.share.as_os_str().as_encoded_bytes());
+            hasher.update([0u8]);
+            hasher.update(location.generation.as_bytes());
+            hasher.update([0u8]);
+        }
+        SegmentSig::Unavailable => hasher.update([2u8]),
     }
 }
 
-fn load_segment(folder: &Path, prepared: Option<&Path>, sig: SegmentSig) -> CachedSegment {
-    {
-        let cache = TRACK_CACHE.lock().unwrap();
-        if let Some((cached_sig, seg)) = cache.segments.get(folder)
-            && *cached_sig == sig
-        {
-            return seg.clone();
-        }
+impl TrackCache {
+    fn remove_points(&mut self, index: usize) {
+        let (_, _, points) = self.points.remove(index).unwrap();
+        self.point_count -= point_count(&points);
     }
-    let seg = if let Some(prepared) = prepared.filter(|_| sig.0.is_some() && sig.1.is_some()) {
-        match track_summary(prepared).ok() {
-            Some(summary) if summary["has_track"] == true => match prepared_track(prepared) {
-                Ok(track) if track["points"].as_array().is_some_and(|p| !p.is_empty()) => {
-                    let coords = track["points"]
-                        .as_array()
-                        .unwrap()
-                        .iter()
-                        .filter_map(|p| Some([p[1].as_f64()?, p[2].as_f64()?]))
-                        .collect::<Vec<_>>();
-                    CachedSegment {
-                        has_track: true,
-                        duration: summary["duration"].clone(),
-                        track_distance_m: summary["track_distance_m"].clone(),
-                        simplified_150: simplify(&coords, 150),
-                    }
-                }
-                _ => empty_segment(),
-            },
-            _ => empty_segment(),
-        }
+
+    fn retain_points(&mut self, mut keep: impl FnMut(&Path) -> bool) {
+        self.points.retain(|(path, _, _)| keep(path));
+        self.point_count = self
+            .points
+            .iter()
+            .map(|(_, _, points)| point_count(points))
+            .sum();
+    }
+}
+
+fn point_count(points: &Value) -> usize {
+    points.as_array().map_or(0, Vec::len)
+}
+
+pub(crate) fn cached_segment(folder: &Path, sig: &SegmentSig, detail: bool) -> Option<SegmentData> {
+    let mut cache = TRACK_CACHE.lock().unwrap();
+    let (cached_sig, summary) = cache.segments.get(folder)?;
+    if cached_sig != sig {
+        return None;
+    }
+    let summary = summary.clone();
+    let points = if detail && summary.has_track {
+        let index = cache
+            .points
+            .iter()
+            .position(|(p, s, _)| p == folder && s == sig)?;
+        let entry = cache.points.remove(index).unwrap();
+        let points = entry.2.clone();
+        cache.points.push_back(entry);
+        Some(points)
     } else {
-        empty_segment()
+        None
     };
-    TRACK_CACHE
-        .lock()
-        .unwrap()
+    Some(SegmentData { summary, points })
+}
+
+pub(crate) fn read_segment(
+    folder: &Path,
+    prepared: &Path,
+    sig: SegmentSig,
+    detail: bool,
+    pinned: bool,
+) -> std::io::Result<SegmentData> {
+    let summary = track_summary(prepared, pinned)?;
+    let points = if summary["has_track"] == true {
+        let mut track = prepared_track(prepared, pinned).map_err(|e| {
+            e.downcast::<std::io::Error>()
+                .unwrap_or_else(std::io::Error::other)
+        })?;
+        let points = track["points"].take();
+        (point_count(&points) > 0).then(|| Arc::new(points))
+    } else {
+        None
+    };
+    let coords = points
+        .iter()
+        .flat_map(|p| p.as_array().unwrap())
+        .filter_map(|p| Some([p[1].as_f64()?, p[2].as_f64()?]))
+        .collect::<Vec<_>>();
+    let summary = Arc::new(CachedSegment {
+        has_track: points.is_some(),
+        duration: summary["duration"].clone(),
+        track_distance_m: summary["track_distance_m"].clone(),
+        simplified_150: simplify(&coords, 150),
+    });
+    let mut cache = TRACK_CACHE.lock().unwrap();
+    cache
         .segments
-        .insert(folder.to_path_buf(), (sig, seg.clone()));
-    seg
+        .insert(folder.to_path_buf(), (sig.clone(), summary.clone()));
+    if let Some(points) = &points {
+        let count = point_count(points);
+        if count <= MAX_CACHED_TRACK_POINTS {
+            if let Some(index) = cache.points.iter().position(|(p, _, _)| p == folder) {
+                cache.remove_points(index);
+            }
+            while cache.point_count + count > MAX_CACHED_TRACK_POINTS || cache.points.len() >= 256 {
+                cache.remove_points(0);
+            }
+            cache.point_count += count;
+            cache
+                .points
+                .push_back((folder.to_path_buf(), sig, points.clone()));
+        }
+    }
+    Ok(SegmentData {
+        summary,
+        points: if detail { points } else { None },
+    })
+}
+
+fn load_segment(
+    root: &Path,
+    id: &str,
+    sig: &SegmentSig,
+    nas: &NasSegments,
+    detail: bool,
+) -> Option<SegmentData> {
+    if let Some(segment) = nas.get(id) {
+        return segment.as_ref().map(|(_, data)| data.clone());
+    }
+    if !matches!(sig, SegmentSig::Local(Some(_), Some(_))) {
+        return None;
+    }
+    let folder = root.join(id);
+    cached_segment(&folder, sig, detail).or_else(|| {
+        read_segment(
+            &folder,
+            &folder.join("prepared"),
+            sig.clone(),
+            detail,
+            false,
+        )
+        .ok()
+    })
 }
 
 /// Invalidates cached track data for one recording folder and its store's aggregated caches.
 pub fn invalidate_recording(folder: &Path) {
     let mut cache = TRACK_CACHE.lock().unwrap();
     cache.segments.remove(folder);
+    cache.retain_points(|p| p != folder);
     if let Some(root) = folder.parent() {
         cache.responses.remove(root);
         cache.routes.retain(|(r, _), _| r != root);
@@ -504,6 +611,7 @@ pub fn invalidate_root(root: &Path) {
     cache.responses.remove(root);
     cache.routes.retain(|(r, _), _| r != root);
     cache.segments.retain(|p, _| !p.starts_with(root));
+    cache.retain_points(|p| !p.starts_with(root));
 }
 
 /// Returns `(cached_segments, cached_routes, has_cached_tracks_response)` for a store root.
@@ -538,13 +646,13 @@ impl UnconvertedSegment {
 
 /// Builds the `/api/logs/{id}/track` response for a single route (`key`) only,
 /// skipping disk reads completely on a lightweight ETag match (`304 Not Modified`).
-pub fn build_single_track(
+pub(crate) fn build_single_track(
     root: &Path,
     id: &str,
     key: &str,
     ready_segments: &[(Option<u64>, String)],
     unconverted: &[UnconvertedSegment],
-    paths: &PreparedPaths,
+    nas: &NasSegments,
     if_none_match: &str,
 ) -> TracksAnswer {
     let stamped = ready_segments
@@ -553,7 +661,7 @@ pub fn build_single_track(
             (
                 *segment,
                 seg_id.clone(),
-                segment_sig(prepared_path(root, seg_id, paths).as_deref()),
+                segment_sig(&root.join(seg_id), seg_id, nas),
             )
         })
         .collect::<Vec<_>>();
@@ -574,7 +682,7 @@ pub fn build_single_track(
                 hasher.update(n.to_le_bytes());
             }
         }
-        hash_segment_sig(&mut hasher, *sig);
+        hash_segment_sig(&mut hasher, sig);
     }
     hasher.update(serde_json::to_vec(unconverted).unwrap());
     let etag = format!("\"{}\"", &hex::encode(hasher.finalize())[..32]);
@@ -584,54 +692,18 @@ pub fn build_single_track(
 
     let mut segments = vec![];
     for (segment, seg_id, sig) in stamped {
-        if sig.0.is_none() || sig.1.is_none() {
-            continue;
-        }
-        let folder = root.join(&seg_id);
-        let Some(prepared) = prepared_path(root, &seg_id, paths) else {
+        let Some(data) = load_segment(root, &seg_id, &sig, nas, true) else {
             continue;
         };
-        let cached_meta = {
-            let cache = TRACK_CACHE.lock().unwrap();
-            cache
-                .segments
-                .get(&folder)
-                .filter(|(s, _)| *s == sig)
-                .map(|(_, c)| (c.has_track, c.duration.clone(), c.track_distance_m.clone()))
-        };
-        let (duration, distance_m) = match cached_meta {
-            Some((false, _, _)) => continue,
-            Some((true, dur, dist)) => (dur, dist),
-            None => {
-                let Ok(summary) = track_summary(&prepared) else {
-                    continue;
-                };
-                if summary["has_track"] != true {
-                    TRACK_CACHE
-                        .lock()
-                        .unwrap()
-                        .segments
-                        .insert(folder.clone(), (sig, empty_segment()));
-                    continue;
-                }
-                (
-                    summary["duration"].clone(),
-                    summary["track_distance_m"].clone(),
-                )
-            }
-        };
-        let Ok(track) = prepared_track(&prepared) else {
+        let Some(points) = data.points else {
             continue;
         };
-        if track["points"].as_array().is_none_or(|p| p.is_empty()) {
-            continue;
-        }
         segments.push(json!({
             "id": seg_id,
             "segment": segment,
-            "duration": duration,
-            "distance_m": distance_m,
-            "points": track["points"],
+            "duration": data.summary.duration,
+            "distance_m": data.summary.track_distance_m,
+            "points": points.as_ref(),
         }));
     }
     let mut value = json!({"id": id, "segments": segments});
@@ -644,11 +716,11 @@ pub fn build_single_track(
 
 /// Builds the `/api/tracks` response using the three-tier in-memory cache
 /// (per-segment `simplified_150`, per-route `simplified_300`, and serialized response + lightweight ETag).
-pub fn build_tracks(
+pub(crate) fn build_tracks(
     root: &Path,
     metas: &[Value],
     wanted: Option<&BTreeSet<String>>,
-    paths: &PreparedPaths,
+    nas: &NasSegments,
     if_none_match: &str,
 ) -> TracksAnswer {
     // Group all recordings by route key, preserving `metas` ordering (sorted by recording id).
@@ -684,7 +756,7 @@ pub fn build_tracks(
         let ready_segments = ready
             .into_iter()
             .map(|(segment, seg_id)| {
-                let sig = segment_sig(prepared_path(root, &seg_id, paths).as_deref());
+                let sig = segment_sig(&root.join(&seg_id), &seg_id, nas);
                 (seg_id, segment, sig)
             })
             .collect::<Vec<_>>();
@@ -706,7 +778,7 @@ pub fn build_tracks(
                     hasher.update(n.to_le_bytes());
                 }
             }
-            hash_segment_sig(&mut hasher, *sig);
+            hash_segment_sig(&mut hasher, sig);
         }
         stamped_groups.push((
             key,
@@ -747,6 +819,7 @@ pub fn build_tracks(
         cache
             .routes
             .retain(|(r, k), _| r != root || keep_keys.contains(k.as_str()));
+        cache.retain_points(|p| !p.starts_with(root) || keep_folders.contains(p));
     }
 
     let mut routes = vec![];
@@ -766,11 +839,10 @@ pub fn build_tracks(
                 let mut points = vec![];
                 let mut distance_m = 0.0f64;
                 for (seg_id, _, seg_sig) in &sig.ready_segments {
-                    let seg = load_segment(
-                        &root.join(seg_id),
-                        prepared_path(root, seg_id, paths).as_deref(),
-                        *seg_sig,
-                    );
+                    let Some(data) = load_segment(root, seg_id, seg_sig, nas, false) else {
+                        continue;
+                    };
+                    let seg = &data.summary;
                     if !seg.has_track {
                         continue;
                     }

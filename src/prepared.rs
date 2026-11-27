@@ -24,6 +24,7 @@ const CONFIG: &str = ".prepared-storage.json";
 const NAMESPACE: &str = ".roadviewer-prepared";
 const OWNER: &str = "roadviewer-hars-prepared";
 pub(crate) const PROBE: Duration = Duration::from_secs(3);
+const TRACK_READ: Duration = Duration::from_secs(30);
 const PLAYBACK: Duration = Duration::from_secs(45);
 pub const MOVE_JOURNAL: &str = ".prepared-move.json";
 const COPY_IDLE: Duration = Duration::from_secs(60);
@@ -133,6 +134,7 @@ pub struct Prepared {
     // Blocked syscalls keep their slots even when HTTP has timed out.
     readers: Arc<Semaphore>,
     writer: Arc<Semaphore>,
+    track_queries: Arc<Semaphore>,
     playback: Mutex<BTreeMap<String, (Instant, Arc<()>)>>,
     migration: Mutex<Value>,
 }
@@ -164,6 +166,7 @@ impl Prepared {
             allow_any_path: archive::settings::allow_any_path(),
             readers: Arc::new(Semaphore::new(8)),
             writer: Arc::new(Semaphore::new(1)),
+            track_queries: Arc::new(Semaphore::new(2)),
             playback: Mutex::default(),
             migration: Mutex::new(json!({"state":"idle"})),
         })
@@ -268,6 +271,28 @@ impl Prepared {
             .await
             .map_err(|_| unavailable())?
             .map_err(io::Error::other)?
+    }
+
+    pub(crate) async fn run_track_query<T: Send + 'static>(
+        &self,
+        op: impl FnOnce() -> io::Result<T> + Send + 'static,
+    ) -> io::Result<T> {
+        timeout(TRACK_READ, async {
+            let slot = self
+                .track_queries
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(io::Error::other)?;
+            tokio::task::spawn_blocking(move || {
+                let _slot = slot;
+                op()
+            })
+            .await
+            .map_err(io::Error::other)?
+        })
+        .await
+        .map_err(|_| unavailable())?
     }
 
     pub(crate) fn read_slot(&self) -> io::Result<tokio::sync::OwnedSemaphorePermit> {
@@ -869,38 +894,98 @@ impl Share {
     }
 }
 
-/// Pins each share once per track query. The callback reads the resulting paths
-/// while their mount descriptors are still alive.
-pub(crate) fn with_track_dirs<T>(
-    shares: BTreeMap<String, (NasLocation, Share)>,
-    require: Option<&str>,
-    use_dirs: impl FnOnce(&BTreeMap<String, Option<PathBuf>>) -> T,
-) -> io::Result<T> {
-    let mut pins = BTreeMap::new();
-    let mut dirs = BTreeMap::new();
-    for (record, (target, share)) in shares {
-        let pin = pins.entry(target.share).or_insert_with(|| share.owned());
-        let dir = match pin {
-            Ok(pin) => {
-                let dir = pin.path.join(&record).join(&target.generation);
-                if valid_id(&record) && valid_id(&target.generation) {
-                    checked_dir(dir.parent().unwrap(), false)
-                        .and_then(|()| checked_dir(&dir, false))
-                        .map(|()| dir)
-                } else {
-                    Err(io::Error::other("invalid_prepared_generation"))
-                }
+/// Published NAS generations are immutable. Only cache misses need to open the
+/// share and acquire a NAS reader slot.
+pub(crate) struct TrackReads {
+    cached: crate::track::NasSegments,
+    cold: BTreeMap<String, (NasLocation, Share)>,
+    detail: bool,
+}
+
+impl TrackReads {
+    pub(crate) fn new(
+        root: &Path,
+        mut shares: BTreeMap<String, (NasLocation, Share)>,
+        detail: bool,
+    ) -> Self {
+        let mut cached = BTreeMap::new();
+        shares.retain(|record, (target, _)| {
+            let sig = crate::track::SegmentSig::Nas(target.clone());
+            if let Some(data) = crate::track::cached_segment(&root.join(record), &sig, detail) {
+                cached.insert(record.clone(), Some((sig, data)));
+                false
+            } else {
+                true
             }
-            Err(_) => Err(unavailable()),
-        };
-        let path = match dir {
-            Ok(dir) => Some(dir),
-            Err(e) if require == Some(record.as_str()) => return Err(e),
-            Err(_) => None,
-        };
-        dirs.insert(record, path);
+        });
+        Self {
+            cached,
+            cold: shares,
+            detail,
+        }
     }
-    Ok(use_dirs(&dirs))
+
+    pub(crate) fn needs_nas(&self) -> bool {
+        !self.cold.is_empty()
+    }
+
+    pub(crate) fn load(
+        self,
+        root: &Path,
+        require: Option<&str>,
+    ) -> io::Result<crate::track::NasSegments> {
+        use crate::track::{SegmentSig, read_segment};
+
+        let Self {
+            cached: mut segments,
+            cold: shares,
+            detail,
+        } = self;
+        let mut pins = BTreeMap::new();
+        let mut cold = Vec::with_capacity(shares.len());
+        for (record, (target, share)) in shares {
+            pins.entry(target.share.clone())
+                .or_insert_with(|| share.owned());
+            let folder = root.join(&record);
+            cold.push((record, folder, target));
+        }
+        // At most four readers per query, with two NAS queries allowed at once.
+        let read = |(record, folder, target): &(String, PathBuf, NasLocation)| {
+            let sig = SegmentSig::Nas(target.clone());
+            let result = (|| {
+                let pin = pins[&target.share].as_ref().map_err(|_| unavailable())?;
+                let parent = pin.record(record, false)?;
+                let dir = parent.generation(&target.generation)?;
+                // Keep the generation pinned while opening its files; reject directory symlinks.
+                let prepared = Pinned::open(&dir)?;
+                // Older prepared generations can lack the track files. As with local
+                // recordings, omit them and leave a later request free to try again.
+                Ok(
+                    read_segment(folder, &prepared.path, sig.clone(), detail, true)
+                        .ok()
+                        .map(|data| (sig, data)),
+                )
+            })();
+            (record.to_owned(), result)
+        };
+        let loaded = std::thread::scope(|scope| {
+            cold.chunks(cold.len().div_ceil(4).max(1))
+                .map(|chunk| scope.spawn(|| chunk.iter().map(&read).collect::<Vec<_>>()))
+                .collect::<Vec<_>>()
+                .into_iter()
+                .flat_map(|worker| worker.join().unwrap())
+                .collect::<Vec<_>>()
+        });
+        for (record, result) in loaded {
+            let data = match result {
+                Ok(data) => data,
+                Err(e) if require == Some(record.as_str()) => return Err(e),
+                Err(_) => None,
+            };
+            segments.insert(record, data);
+        }
+        Ok(segments)
+    }
 }
 
 fn checked_dir(path: &Path, create: bool) -> io::Result<()> {

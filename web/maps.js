@@ -80,6 +80,40 @@
   const entry=sessionCache.logTracks.get(logId);if(!entry)return;
   for(const [k,v] of [...sessionCache.logTracks])if(v===entry)sessionCache.logTracks.delete(k);
  }
+ // MapLibre styles are shared across the list, drive dialog and replay. Keep in-flight
+ // requests too, so a page swap does not start the same download again.
+ const basemaps=globalThis.__rvBasemapStyleCache??=new Map();
+ function fetchBasemap(url){
+  if(!basemaps.has(url))basemaps.set(url,globalThis.fetch(url,{signal:AbortSignal.timeout(10000)}).then(async response=>{
+   if(!response.ok)throw Error('기본 지도를 불러오지 못했습니다.');
+   const style=await response.json();
+   if(style.version!==8||!Array.isArray(style.layers))throw Error('기본 지도 형식이 올바르지 않습니다.');
+   return style;
+  }).catch(error=>{basemaps.delete(url);throw error}));
+  return basemaps.get(url);
+ }
+ function retryTask(run,limit=Infinity){
+  let timer=0,attempts=0;
+  const cancel=()=>{clearTimeout(timer);timer=0};
+  return {
+   get pending(){return !!timer},
+   cancel,
+   reset(){cancel();attempts=0},
+   schedule(){if(!timer&&attempts<limit)timer=setTimeout(()=>{timer=0;run()},Math.min(30000,1000*2**Math.min(5,attempts++)))},
+  };
+ }
+ let showPage;
+ const pageShown=document.body.hidden?new Promise(resolve=>{showPage=resolve;addEventListener('pageshow',()=>resolve(true),{once:true})}):Promise.resolve(true);
+ if(typeof onPageDispose==='function')onPageDispose(()=>showPage?.(false));
+ const trackSignal=signal=>signal?AbortSignal.any([signal,AbortSignal.timeout(35000)]):AbortSignal.timeout(35000);
+ async function readLogTrack(url,cached,signal){
+  const response=await fetch(url,{cache:'no-cache',signal:trackSignal(signal),headers:cached?.etag?{'If-None-Match':cached.etag}:{}});
+  if(response.status===304&&cached)return cached;
+  if(!response.ok)throw Error('주행 경로를 불러오지 못했습니다.');
+  const value=await response.json();
+  if(!Array.isArray(value.segments))throw Error('주행 경로 형식이 올바르지 않습니다.');
+  return {etag:response.headers.get('ETag'),value};
+ }
  // Load the vendor assets once, including overlapping replay initialization.
  const mapAssets=globalThis.__rvMapAssets??=new Map();
  function loadMapAsset(id,name,tag){
@@ -141,11 +175,13 @@
   maps.add(map);
   if(zoom){map.rvSimpleControl=simpleControl(L).addTo(map)}
   map.rvCreditCleanup=compactCredit(L,map,container);
-  new ResizeObserver(()=>{if(container.isConnected)map.invalidateSize({animate:false})}).observe(container);
+  watchLeaflet(map,container);
   applyTiles(map);
  }
  function detachMapFromPage(map){
   maps.delete(map);
+  map.rvObserver?.disconnect();map.rvObserver=null;
+  map.rvStyleRetry?.cancel();map.rvStyleRetry=null;map.rvSetStyle=null;map.rvStyleRequest=null;
   if(map.rvSimpleControl){try{map.removeControl(map.rvSimpleControl)}catch{}map.rvSimpleControl=null}
   if(map.rvCreditCleanup){try{map.rvCreditCleanup()}catch{}map.rvCreditCleanup=null}
   map.rvShowLabels=null;map.rvTiles=null;map.rvTileKey=null;map.rvPlain=null;map.rvGrey=null;map.rvHold=null;map.rvOnGlReady=null;
@@ -156,7 +192,7 @@
   map.rvMargin=initialPad||0;map.rvMarginMax=margin||0;map.rvWarmup=startWarmup;
   // Leaflet listens on the window and MapLibre keeps a WebGL context and workers: a map left standing when its page
   // goes kept the whole page alive.
-  if(autoDispose&&typeof onPageDispose==='function')onPageDispose(()=>map.remove());  // not there on a page loaded by itself
+  if(autoDispose&&typeof onPageDispose==='function')onPageDispose(()=>removeLeaflet(map));  // not there on a page loaded by itself
   // margin is the most asked for: each side gets as much of it as keeps the drawn canvas within GL_SIDE device pixels on
   // its longer side (MapLibre and phone GPUs stop at 4096; beyond, the map blurs or is cut), never under the default 0.1.
   // A phone's 지도 tab gets the full 0.5; a tablet's or a desktop's large map, or the small map enlarged on a big
@@ -188,15 +224,36 @@
    // The plugin redraws on every Leaflet move (throttled); map.rvHold (a hand drag of the 지도 tab while its margin
    // still covers) skips that: what is drawn moves with the map pane, re-centred by the caller.
    layer._throttledUpdate=L.Util.throttle(function(e){if(!map.rvHold?.())this._update(e)},layer.options.updateInterval,layer);
-   map.rvGlLayer=layer;layer.once('add',()=>{map.rvGl=layer.getMaplibreMap();map.rvGl.on('styledata',()=>map.rvShowLabels?.());setStyle(map);map.rvOnGlReady?.(map.rvGl)});
+   map.rvGlLayer=layer;layer.once('add',()=>{
+    map.rvGl=layer.getMaplibreMap();
+    map.rvGl.on('styledata',()=>map.rvShowLabels?.());
+    watchMapContext(map.rvGl,()=>{map.invalidateSize({animate:false});if(!map.rvGl.getStyle())map.rvStyleApplied=null;map.rvSetStyle?.()});
+    map.rvSetStyle?.();map.rvOnGlReady?.(map.rvGl);
+   });
    layer.addTo(map);
   }
   map.rvFitMargin?.();  // the basemap layer exists now: its padding too
   if(zoom){L.control.zoom({position:'topright',zoomInTitle:'확대',zoomOutTitle:'축소'}).addTo(map);map.rvSimpleControl=simpleControl(L).addTo(map)}
   map.rvCreditCleanup=compactCredit(L,map,container);
-  new ResizeObserver(()=>{if(container.isConnected)map.invalidateSize({animate:false})}).observe(container);
+  watchLeaflet(map,container);
   return map;
  }
+ function watchMapContext(gl,restore){
+  gl.on('webglcontextlost',event=>{event.originalEvent?.preventDefault();gl.rvContextLost=true});
+  // MapLibre rebuilds its renderer and style on restore. Repaint the page's overlays
+  // and retry a basemap request if the context was lost before its first paint.
+  gl.on('webglcontextrestored',()=>{gl.rvContextLost=false;gl.resize();restore()});
+ }
+ function watchLeaflet(map,container){
+  map.rvObserver=new globalThis.ResizeObserver(()=>{if(container.isConnected)map.invalidateSize({animate:false})});
+  map.rvObserver.observe(container);
+  map.rvSetStyle=()=>setStyle(map);
+  map.rvStyleRetry=retryTask(map.rvSetStyle);
+ }
+ function removeLeaflet(map){detachMapFromPage(map);map.remove()}
+ addEventListener('online',()=>{
+  for(const map of maps){map.rvStyleRetry?.reset();map.rvSetStyle?.()}
+ });
  // The map credit (OpenFreeMap, OpenMapTiles, OpenStreetMap) folds into an ⓘ button in the bottom-right corner on every
  // map (phones, tablets and the small map over the video alike), as MapLibre's compact attribution does: folded at
  // first, the button shows or hides it.
@@ -277,20 +334,32 @@
   if(kind==='grey')simple=on;else bare=on;try{localStorage.setItem(kind==='grey'?SIMPLE_KEY:BARE_KEY,on?'1':'0')}catch{}
   syncSimple();
  }
- function setStyle(map){
-  // 회색 지도: the calm style without the busy layers; 글자 숨기기: below, every symbol layer hidden.
-  const grey=map.rvGrey(),box=map.getContainer();box.dataset.simple=String(grey);box.dataset.grey=String(grey);
-  map.rvGl.setStyle((grey?SIMPLE_STYLES:STYLES)[map.rvTiles()],{diff:false,transformStyle:(previous,next)=>{
-   const busy=grey?next.layers.filter(layer=>layer.type==='fill-extrusion'||BUSY_LAYER.test(layer.id)).map(layer=>layer.id):[];
-   map.getContainer().dataset.removed=busy.join(' ');
-   if(busy.length)next={...next,layers:next.layers.filter(layer=>!busy.includes(layer.id))};
-   // The symbol layers the style itself shows: the ones 글자 숨기기 hides and shows again.
-   map.rvSymbols=next.layers.filter(layer=>layer.type==='symbol'&&layer.layout?.visibility!=='none').map(layer=>layer.id);
-   const plain=map.rvPlain();box.dataset.labels=plain?'hidden':'shown';
-   if(!plain)return next;
-   const hidden=new Set(map.rvSymbols);
-   return {...next,layers:next.layers.map(layer=>hidden.has(layer.id)?{...layer,layout:{...layer.layout,visibility:'none'}}:layer)};
-  }});
+ async function setStyle(map){
+  const gl=map.rvGl;
+  if(!gl||gl.rvContextLost||!map.rvSetStyle)return;
+  const grey=map.rvGrey(),plain=map.rvPlain(),box=map.getContainer(),url=(grey?SIMPLE_STYLES:STYLES)[map.rvTiles()];
+  const styleKey=map.rvTiles()+':'+grey;
+  if(map.rvStyleRequested!==styleKey){map.rvStyleRequested=styleKey;map.rvStyleRequest=null;map.rvStyleRetry.reset()}
+  if(map.rvStyleApplied===styleKey||map.rvStyleRequest)return;
+  const request=map.rvStyleRequest={key:styleKey};
+  box.dataset.simple=String(grey);box.dataset.grey=String(grey);
+  try{
+   const style=await fetchBasemap(url);
+   if(map.rvStyleRequest!==request||gl.rvContextLost)return;
+   gl.setStyle(structuredClone(style),{diff:false,transformStyle:(previous,next)=>{
+    const busy=grey?next.layers.filter(layer=>layer.type==='fill-extrusion'||BUSY_LAYER.test(layer.id)).map(layer=>layer.id):[];
+    box.dataset.removed=busy.join(' ');
+    if(busy.length)next={...next,layers:next.layers.filter(layer=>!busy.includes(layer.id))};
+    map.rvSymbols=next.layers.filter(layer=>layer.type==='symbol'&&layer.layout?.visibility!=='none').map(layer=>layer.id);
+    const hideLabels=map.rvPlain?.()??plain;box.dataset.labels=hideLabels?'hidden':'shown';
+    if(!hideLabels)return next;
+    const hidden=new Set(map.rvSymbols);
+    return {...next,layers:next.layers.map(layer=>hidden.has(layer.id)?{...layer,layout:{...layer.layout,visibility:'none'}}:layer)};
+   }});
+   map.rvStyleApplied=styleKey;map.rvStyleRetry.reset();
+  }catch{
+   if(map.rvStyleRequest===request)map.rvStyleRetry.schedule();
+  }finally{if(map.rvStyleRequest===request)map.rvStyleRequest=null}
  }
  // apply: set the symbol layers' visibility (a loaded style); always: data-labels tells what the map shows.
  function showLabels(map,apply=true){
@@ -302,9 +371,10 @@
  window.addEventListener('rv:themechange',()=>{markContrast();for(const map of maps){const box=map.getContainer();if(!box.isConnected){maps.delete(map);continue}applyTiles(map)}redrawColours()});
  // The theme (or the small map's tone) and 회색 지도 load another style; 글자 숨기기 only switches the symbol layers.
  function applyTiles(map){
-  const box=map.getContainer(),key=map.rvTileKey(),tiles=map.rvTiles(),styleChanged=box.dataset.tiles!==tiles||box.dataset.grey!==String(map.rvGrey());box.dataset.tiles=tiles;
-  if(box.dataset.tileKey===key)return;box.dataset.tileKey=key;
-  if(!map.rvGl)return;if(styleChanged)setStyle(map);else showLabels(map);
+  const box=map.getContainer(),key=map.rvTileKey(),changed=box.dataset.tileKey!==key;
+  box.dataset.tiles=map.rvTiles();box.dataset.tileKey=key;
+  if(changed&&map.rvGl)showLabels(map);
+  if(changed||!map.rvStyleRetry?.pending)setStyle(map);
  }
  let redrawColours=()=>{};
  const latlngs=points=>points.map(p=>[p[1],p[2]]);
@@ -384,29 +454,51 @@
    rest();
   }
   const groupRoute=group=>{for(const log of group.logs){const route=routeOf.get(log.id);if(route)return route}return null};
-  // tracksPending: the routes are on their way. wantDrive: a 지도 button pressed meanwhile; its map opens when they arrive.
-  let tracksPending=false,wantDrive=null;
+  let wantedTracks=null,wantedIds=[],wantDrive=null;
+  const tracksPending=()=>wantedTracks!==null&&wantedTracks!==trackSignature;
+  const tracksRetry=retryTask(fetchTracks);
   async function fetchTracks(){
-   trackRequest?.abort();const request=trackRequest=new AbortController();
-   tracksPending=true;syncCards();
+   if(trackRequest||!tracksPending())return;
+   const signature=wantedTracks,ids=wantedIds,request=trackRequest=new AbortController();
    try{
-    const response=await fetch('api/tracks',{cache:'no-store',signal:request.signal,headers:trackTag?{'If-None-Match':trackTag}:{}});
-    let text;if(response.status===304&&trackText)text=trackText;else{if(!response.ok)return;text=await response.text();trackTag=response.headers.get('ETag');trackText=text}
-    tracks=JSON.parse(text).routes||[];sessionCache.tracksTag=trackTag;sessionCache.tracksText=trackText;sessionCache.tracks=tracks;
-    routeOf.clear();for(const route of tracks)for(const id of route.ids)routeOf.set(id,route);
-    tracksPending=false;syncCards();if(mode==='map')drawOverview(false);
+    const response=await fetch('api/tracks',{cache:'no-store',signal:trackSignal(request.signal),headers:trackTag?{'If-None-Match':trackTag}:{}});
+    if(!response.ok&&response.status!==304)throw Error('주행 경로를 불러오지 못했습니다.');
+    const text=response.status===304?trackText:await response.text();
+    const next=JSON.parse(text).routes;
+    if(trackRequest!==request||signature!==wantedTracks)return;
+    const byId=new Map();
+    for(const route of next)for(const id of route.ids)byId.set(id,route);
+    const incomplete=ids.some(id=>!byId.get(id)?.segments.includes(id));
+    if(incomplete){
+     for(const [id,route] of byId)routeOf.set(id,route);
+     tracks??=next;syncCards();if(mode==='map')drawOverview(false);tracksRetry.schedule();return;
+    }
+    trackTag=sessionCache.tracksTag=response.headers.get('ETag')??trackTag;
+    trackText=sessionCache.tracksText=text;
+    tracks=sessionCache.tracks=next;trackSignature=sessionCache.tracksSignature=signature;
+    sessionCache.logTracks.clear();tracksRetry.reset();
+    routeOf.clear();for(const [id,route] of byId)routeOf.set(id,route);
+    syncCards();if(mode==='map')drawOverview(false);
     if(wantDrive){const {group,button}=wantDrive;wantDrive=null;if(button.isConnected&&logGroups.get(group.route.key)===group&&groupRoute(group))openDrive(group,{opener:button})}
-   }catch{}
-   finally{if(trackRequest===request&&tracksPending){tracksPending=false;wantDrive=null;syncCards()}}
+   }catch{
+    if(trackRequest===request&&signature===wantedTracks)tracksRetry.schedule();
+   }finally{if(trackRequest===request)trackRequest=null}
   }
+  addEventListener('online',()=>{tracksRetry.reset();fetchTracks()});
+  if(typeof onPageDispose==='function')onPageDispose(()=>{trackRequest?.abort();trackRequest=null;tracksRetry.cancel()});
   // After every list: the routes are fetched again only when the logs with GPS (or their conversions) changed.
   function listed(logs){
    const withTrack=logs.filter(log=>log.has_track);switcher.hidden=!withTrack.length&&mode==='list';
-   const signature=JSON.stringify(withTrack.map(log=>[log.id,log.conversion_revision??0,log.name]));
-   if(signature!==trackSignature||(!tracks&&withTrack.length)){
-    trackSignature=sessionCache.tracksSignature=signature;sessionCache.logTracks.clear();
-    if(withTrack.length)fetchTracks();else{tracks=sessionCache.tracks=[];trackTag=sessionCache.tracksTag=null;trackText=sessionCache.tracksText=null;routeOf.clear();syncCards()}
-   }else syncCards();
+   const signature=JSON.stringify(withTrack.map(log=>[log.id,log.conversion_revision??0,log.name,log.status]));
+   if(signature!==wantedTracks){
+    wantedTracks=signature;wantedIds=withTrack.map(log=>log.id);
+    trackRequest?.abort();trackRequest=null;tracksRetry.reset();
+    if(!withTrack.length){
+     trackSignature=sessionCache.tracksSignature=signature;sessionCache.logTracks.clear();
+     tracks=sessionCache.tracks=[];trackTag=sessionCache.tracksTag=null;trackText=sessionCache.tracksText=null;routeOf.clear();
+    }else fetchTracks();
+   }
+   syncCards();
    // The open drive map follows the list; it closes when its drive is gone.
    if(drive.open){if(driveGroup&&logGroups.get(driveGroup.route.key)===driveGroup&&groupRoute(driveGroup))syncDrive();else closeDrive()}
   }
@@ -460,7 +552,7 @@
     const route=groupRoute(group),summary=group.element.querySelector(':scope>summary');
     // While the routes are still on their way, a card whose logs have GPS already shows its 지도 button (without the
     // route's shape yet): it used to pop in beside 재생 seconds after the card.
-    const pending=!route&&tracksPending&&group.logs.some(log=>log.has_track);
+    const pending=!route&&tracksPending()&&group.logs.some(log=>log.has_track);
     if(!pending&&(!route||route.points.length<2)){
      if(pendingShapes.delete(group.element))shapeObserver?.unobserve(group.element);
      for(const part of group.shape||[])part.remove();group.shape=null;continue;
@@ -497,6 +589,13 @@
    if(pendingShapes.size)scheduleShapes();
    if(restoreDrive)restoreDrive();
   }
+  addEventListener('pageshow',()=>{
+   if(mode==='map')fitPanelHeight();
+   restoreDrive?.();
+   for(const el of pendingShapes.keys()){
+    const box=el.getBoundingClientRect();if(box.height&&box.bottom>0&&box.top<innerHeight)flushCardShape(el);
+   }
+  });
   const routeFacts=(group,showDriveNumber=false)=>{
    const route=groupRoute(group),date=logDate(group.firstLog),duration=group.logs.reduce((sum,log)=>sum+(Number.isFinite(log.duration)?log.duration:0),0);
    const dateTitle=date?`${localeDate(date)} ${clockText(date)}`:null;
@@ -605,7 +704,7 @@
      const url=new URL(window.location.href);if(!url.hash||url.hash===DRIVE_HASH){url.hash=libraryTab||'logs';history.replaceState(history.state,'',url)}
      url.hash=DRIVE_HASH;history.pushState({...(history.state||{}),rvScroll:scrollY,rvDrive:group.route.key,rvDriveSegment:segment},'',url);
     }
-    drawDrive(segment);
+    failedDrive=false;driveRetry.reset();drawDrive(segment);
    }else if(segment)markDrive(segment,{fit:true,scroll:true});
   }
   // The header and rows follow the list (polling): only changed rows are rebuilt.
@@ -621,21 +720,37 @@
    });
    driveRows=next;reconcileLogs(sheetList,rows);
   }
+  let driveRequest=null;
+  let failedDrive=false;
+  const driveRetry=retryTask(()=>{if(drive.open&&driveGroup)drawDrive(driveMarked)});
+  addEventListener('online',()=>{if(failedDrive&&drive.open&&driveGroup){driveRetry.reset();drawDrive(driveMarked)}});
   async function drawDrive(segment){
-   const ticket=++driveTicket,group=driveGroup,firstId=group.firstLog.id;
+   driveRequest?.abort();
+   const request=driveRequest=new AbortController(),ticket=++driveTicket,group=driveGroup,firstId=group.firstLog.id;
    const driveSig=JSON.stringify(group.logs.map(l=>[l.id,l.status,l.has_track?1:0,l.conversion_revision??0]));
    const cached=getCachedLogTrack(firstId);
-   const loadTrack=cached&&cached.driveSig===driveSig?Promise.resolve(cached.value):fetch(`api/logs/${firstId}/track`,{cache:'no-cache',headers:cached?.etag?{'If-None-Match':cached.etag}:{}}).then(async r=>{
-    if(r.status===304&&cached){cached.driveSig=driveSig;return cached.value}
-    if(!r.ok)return {segments:[]};
-    const value=await r.json();setCachedLogTrack(firstId,{etag:r.headers.get('ETag'),value,driveSig});return value;
-   });
-   let L,track;
-   try{[L,track]=await Promise.all([loadLeaflet(),loadTrack])}
-   catch(e){if(ticket===driveTicket)error(e.message);return}
+   const loadTrack=cached&&cached.driveSig===driveSig?Promise.resolve(cached):readLogTrack(`api/logs/${firstId}/track`,cached,request.signal);
+   const detail=loadTrack.catch(()=>null);
+   let L;
+   try{L=await loadLeaflet()}catch(e){if(ticket===driveTicket){failedDrive=true;driveRetry.schedule();error(e.message)}return}
+   if(!await pageShown||ticket!==driveTicket||!drive.open)return;
+   if(!driveMap){driveMap=createMap(L,driveCanvas,{autoDispose:false});driveLayer=L.layerGroup().addTo(driveMap);driveMap.on('click',event=>{const line=nearestLine(driveLines.values(),event);if(line)markDrive(line.rvId,{scroll:true});else markDrive(null,{fit:true})})}
+   if(!driveMap._loaded){
+    const points=groupRoute(group)?.points;
+    if(points?.length){
+     const line=L.polyline(points,{color:css('--accent'),weight:5,interactive:false}).addTo(driveLayer);
+     fitDrive(false,line.getBounds());
+    }else driveMap.setView([0,0],2);
+   }
+   const entry=await detail;
    if(ticket!==driveTicket||!drive.open)return;
-   if(!driveMap){driveMap=createMap(L,driveCanvas);driveLayer=L.layerGroup().addTo(driveMap);driveMap.on('click',event=>{const line=nearestLine(driveLines.values(),event);if(line)markDrive(line.rvId,{scroll:true});else markDrive(null,{fit:true})})}
+   driveRequest=null;
+   const found=new Set(entry?.value.segments.map(part=>part.id));
+   failedDrive=!entry||group.logs.some(log=>log.has_track&&log.status==='ready'&&!found.has(log.id));
+   if(failedDrive){driveRetry.schedule();if(!found.size)return}
+   else{driveRetry.reset();setCachedLogTrack(firstId,{...entry,driveSig})}
    driveLayer.clearLayers();driveLines.clear();
+   const track=entry.value;
    const colour=css('--accent')||'#3DCB92';
    for(const part of track.segments){
     if(!part.points.length)continue;
@@ -655,14 +770,15 @@
    if(!box?.width)return {left:0,right:0};
    return box.left>area.left+area.width/2?{left:0,right:Math.max(0,area.right-box.left)}:{left:Math.max(0,box.right-area.left),right:0};
   }
-  function fitDrive(animate=!reduced()){
+  function fitDrive(animate=!reduced(),fallback=null){
    if(!driveMap||!window.L)return;const line=driveMarked&&driveLines.get(driveMarked);
-   const bounds=line?line.getBounds():[...driveLines.values()].reduce((b,l)=>b.extend(l.getBounds()),window.L.latLngBounds([]));
+   const bounds=fallback??(line?line.getBounds():[...driveLines.values()].reduce((b,l)=>b.extend(l.getBounds()),window.L.latLngBounds([])));
    // The segments' glass floats over the map (a bottom sheet, or a card on the right on wide screens): fit beside it.
    const area=driveCanvas.getBoundingClientRect(),cover=sheet.getBoundingClientRect();
    const right=wide.matches?(driveFolded()?0:Math.max(0,area.right-cover.left)):0,bottom=wide.matches?0:Math.max(0,area.bottom-cover.top);
    const side=controlsSide(driveMap);
    if(bounds.isValid())driveMap.fitBounds(bounds,{paddingTopLeft:[28+side.left,28],paddingBottomRight:[28+Math.max(right,side.right),28+bottom],maxZoom:line?16:17,animate});
+   else if(!driveMap._loaded)driveMap.setView([0,0],2);
   }
   function paintDrive(){
    for(const [id,line] of driveLines){const on=!driveMarked||id===driveMarked;line.setStyle({opacity:on?.95:.3,weight:id===driveMarked?7:5});if(id===driveMarked)line.bringToFront()}
@@ -762,16 +878,22 @@
    return {set};
   }
   const driveSheet=bottomSheet(driveBody,sheet,handle,{column:sheetList,changed:()=>syncSegmentCard(),ready:()=>!!driveMap,
-   settled:fit=>{if(drive.open){driveMap.invalidateSize({animate:false});if(fit)fitDrive(false)}}});
+   settled:fit=>{if(drive.open&&driveMap){driveMap.invalidateSize({animate:false});if(fit)fitDrive(false)}}});
   const driveFolded=foldable(driveBody.querySelector('.drive-map-fold'),driveBody,'roadviewer-drive-list-folded',()=>syncSegmentCard(),sheetList);  // Folding keeps the map where it is.
   // Closing goes through history, so the system back, the header's back button and Escape all end the same way.
   function closeDrive(){if(!drive.open)return;if(window.location.hash===DRIVE_HASH&&history.state?.rvDrive)history.back();else finishDrive()}
   // Focus goes back to what opened it right away (not on the later close event, which could take it from a field).
-  function finishDrive(){driveTicket++;if(!drive.open)return;const opener=driveOpener;driveOpener=null;drive.close();if(opener?.isConnected)opener.focus({preventScroll:true})}
+  function releaseDrive(){
+   driveTicket++;driveRequest?.abort();driveRequest=null;failedDrive=false;driveRetry.reset();
+   if(driveMap)removeLeaflet(driveMap);driveMap=null;driveLayer=null;driveLines.clear();
+  }
+  if(typeof onPageDispose==='function')onPageDispose(releaseDrive);
+  function finishDrive(){if(!drive.open)return;releaseDrive();const opener=driveOpener;driveOpener=null;drive.close();if(opener?.isConnected)opener.focus({preventScroll:true})}
   document.getElementById('driveMapBack').onclick=closeDrive;
   drive.addEventListener('keydown',e=>{if(e.key==='Escape')escapeTaken=!!(drive.querySelector('.recording-more[open]')||document.querySelector('.tag-popover'))},true);
   drive.addEventListener('cancel',e=>{e.preventDefault();if(!escapeTaken)closeDrive();escapeTaken=false});
   drive.addEventListener('close',()=>{
+   if(drive.open)return;releaseDrive();
    document.body.style.overflow='';driveGroup=null;driveMarked=null;
    if(window.location.hash===DRIVE_HASH){const url=new URL(window.location.href);url.hash=libraryTab||'logs';history.replaceState({...history.state,rvDrive:null},'',url)}
    driveOpener=null;
@@ -782,9 +904,10 @@
   });
   // Reloaded or come back (from a replay) to #drive-map: the drive opens again once the list knows it.
   function restore(){
+   if(document.body.hidden)return;
    const key=history.state?.rvDrive,group=key&&logGroups.get(key);
    if(group&&groupRoute(group)){restoreDrive=null;selectTab('logs',{hash:false});openDrive(group,{segment:history.state.rvDriveSegment,push:false});return}
-   if(tracks||!key){restoreDrive=null;const url=new URL(window.location.href);url.hash=libraryTab||'logs';history.replaceState({...history.state,rvDrive:null},'',url)}
+   if((tracks&&!tracksPending())||!key){restoreDrive=null;const url=new URL(window.location.href);url.hash=libraryTab||'logs';history.replaceState({...history.state,rvDrive:null},'',url)}
   }
   if(window.location.hash===DRIVE_HASH)restoreDrive=restore;
   // ⋯ › 지도에서 보기: the drive's map with this segment marked.
@@ -863,7 +986,7 @@
    if(mode==='map')loadLeaflet().catch(()=>{});
    if(!tracks){empty.hidden=true;return}
    let L;try{L=await loadLeaflet()}catch(e){error(e.message);return}
-   if(mode!=='map')return;
+   if(!await pageShown||mode!=='map')return;
    if(!overview){
     overview=createMap(L,canvas);
     overviewCasingRenderer=L.canvas({padding:.1});
@@ -1027,11 +1150,11 @@
   const savedBookmarks=window.rvBookmarks?.();
   let bookmarks=savedBookmarks?.id===id?savedBookmarks.items:[];
   // Park both replay maps during SPA swaps within one drive.
-  const replayPool=globalThis.__rvReplayMapPool??={active:new Map(),parked:new Map()};
+  const replayPool=globalThis.__rvReplayMapPool??={parked:new Map()};
   function destroyParked(slot){
    const entry=replayPool.parked.get(slot);if(!entry)return;
    replayPool.parked.delete(slot);globalThis.clearTimeout(entry.timer);
-   try{entry.map.remove()}catch{}
+   if(slot==='big')removeLeaflet(entry.map);else entry.map.remove();
   }
   function destroyAllParked(){for(const slot of [...replayPool.parked.keys()])destroyParked(slot)}
   let route=null,unconverted=[],driveKey='',current=-1,big=null,small=null,bigPending=false,smallPending=false,lastKey='',following=true,mode='road';
@@ -1050,23 +1173,21 @@
     map.rvNarrow=false;detachMapFromPage(map);
    }
    destroyParked(slot);
-   const timer=globalThis.setTimeout(()=>destroyParked(slot),2500);
+   const timer=globalThis.setTimeout(()=>destroyParked(slot),8000);
    replayPool.parked.set(slot,{driveKey,ids:[...route,...unconverted].map(segment=>segment.id),map,container:map.getContainer(),timer,
-    styleKey:target.appliedStyle,basemaps:target.basemaps,pinned:slot==='small'&&pinned&&large});
+    styleKey:target.appliedStyle,pinned:slot==='small'&&pinned&&large});
   }
   function claimParked(slot){
    const entry=replayPool.parked.get(slot);if(!entry)return null;
    if(!sameDrive(entry)){destroyParked(slot);return null}
    replayPool.parked.delete(slot);globalThis.clearTimeout(entry.timer);return entry;
   }
-  const waitSwap=slot=>document.body.hidden&&replayPool.active.has(slot)?new Promise(resolve=>addEventListener('pageshow',resolve,{once:true})):Promise.resolve();
   if(typeof onPageDispose==='function')onPageDispose(()=>{
-   disposed=true;
+   disposed=true;trackRequest?.abort();replayRetry.cancel();miniRetry.cancel();smallRetry.cancel();
    for(const [slot,target] of [['big',big],['small',small]]){
     if(!target)continue;
-    replayPool.active.delete(slot);
     if(globalThis.__rvNavNext==='replay'&&driveKey)parkTarget(slot,target);
-    else{clearTimeout(target.widen);clearTimeout(target.warmupTimer);target.abort?.abort();try{target.map.remove()}catch{}}
+    else{clearTimeout(target.widen);clearTimeout(target.warmupTimer);target.abort?.abort();if(slot==='big')removeLeaflet(target.map);else target.map.remove()}
    }
    if(globalThis.__rvNavNext!=='replay')destroyAllParked();
    big=null;small=null;
@@ -1100,37 +1221,50 @@
    mapTab.hidden=false;let saved=null;try{saved=localStorage.getItem('roadviewer-analysis-tab')}catch{}
    if(saved==='map')window.selectAnalysisTab?.('map',false);syncMini();
   }
-  let asked=false,trackLoading=false,trackRequest=0;
-  function fetchReplayTrack(force=false,driveSig=null){
-   if(!force&&asked)return;
+  let asked=false,trackRequest=null,replayDriveSig=null,trackFailed=false,replayHasTrack=null;
+  const replayRetry=retryTask(()=>fetchReplayTrack(true));
+  async function fetchReplayTrack(force=false,driveSig=replayDriveSig){
+   if(disposed||(!force&&asked)||replayHasTrack===false)return;
    const cached=getCachedLogTrack(id);
-   if(!force&&cached&&(!driveSig||!cached.driveSig||cached.driveSig===driveSig)){
+   if(!force&&cached?.value.segments.some(part=>part.id===id)&&(!driveSig||!cached.driveSig||cached.driveSig===driveSig)){
     asked=true;applyTrack(cached.value);return;
    }
-   asked=true;trackLoading=true;
-   const request=++trackRequest;
-   const headers=cached?.etag?{'If-None-Match':cached.etag}:{};
-   return fetch(`../../api/logs/${id}/track`,{cache:'no-cache',headers}).then(async r=>{
-    if(request!==trackRequest)return null;
-    if(r.status===304&&cached){if(driveSig)cached.driveSig=driveSig;return route?undefined:cached.value}
-    if(!r.ok)return null;
-    const value=await r.json();
-    if(request===trackRequest&&!disposed)setCachedLogTrack(id,{etag:r.headers.get('ETag'),value,driveSig:driveSig??cached?.driveSig});
-    return value;
-   }).then(value=>{if(request!==trackRequest||disposed)return;trackLoading=false;if(value)applyTrack(value);else if(value===null)asked=false})
-    .catch(()=>{if(request===trackRequest){trackLoading=false;asked=false}});
+   replayDriveSig=driveSig;asked=true;
+   trackRequest?.abort();
+   const request=trackRequest=new AbortController();
+   try{
+    const entry=await readLogTrack(`../../api/logs/${id}/track`,cached,request.signal);
+    if(request!==trackRequest||disposed)return;
+    if(replayHasTrack&&!entry.value.segments.some(part=>part.id===id&&part.points.length))throw Error('아직 주행 경로를 읽을 수 없습니다.');
+    setCachedLogTrack(id,{...entry,driveSig:replayDriveSig??cached?.driveSig});
+    trackFailed=false;replayRetry.reset();
+    if(entry!==cached||!route)applyTrack(entry.value);
+   }catch{
+    if(request===trackRequest&&!disposed){trackFailed=true;replayRetry.schedule()}
+   }finally{if(request===trackRequest)trackRequest=null}
   }
+  addEventListener('online',()=>{
+   if(trackFailed){replayRetry.reset();fetchReplayTrack(true)}
+   smallRetry.reset();if(!small)syncMini();
+   miniRetry.reset();applyMiniStyle();
+  });
   // Start fetching the track immediately on replay entry (deferred to end of init so all const/let bindings exist).
   window.rvMaps={replayLog(log,logs){
    if(!log||log.id!==id)return;
-   if(!log.has_track){evictLogTrack(id);destroyAllParked();return}
+   replayHasTrack=!!log.has_track;
+   if(!replayHasTrack){evictLogTrack(id);trackRequest?.abort();trackRequest=null;trackFailed=false;asked=false;replayRetry.reset();destroyAllParked();return}
    const routeKey=typeof logSegmentInfo==='function'?logSegmentInfo(log.name)?.route:null;
    const sameRoute=Array.isArray(logs)&&routeKey?logs.filter(l=>logSegmentInfo(l.name)?.route===routeKey):[log];
    const driveSig=JSON.stringify(sameRoute.map(l=>[l.id,l.status,l.has_track?1:0,l.conversion_revision??0]));
    const cached=getCachedLogTrack(id);
-   if(cached&&cached.driveSig&&cached.driveSig!==driveSig){evictLogTrack(id);fetchReplayTrack(true,driveSig);return}
+   const changed=replayDriveSig!==driveSig;replayDriveSig=driveSig;
+   if(cached?.driveSig&&cached.driveSig!==driveSig){
+    if(changed||(!trackRequest&&!trackFailed)){replayRetry.reset();fetchReplayTrack(true,driveSig)}
+    return;
+   }
    if(cached&&!cached.driveSig)cached.driveSig=driveSig;
-   if(!asked&&!trackLoading)fetchReplayTrack(false,driveSig);
+   if(!asked)fetchReplayTrack(false,driveSig);
+   else if(!trackRequest&&!trackFailed&&!route){replayRetry.reset();fetchReplayTrack(true,driveSig)}
   }};
   function setMode(next){
    mode=next;
@@ -1165,9 +1299,8 @@
    if(held(points,to))to++;else if(held(points,from))from--;
    const a=points[from],b=points[to],span=b[0]-a[0],k=span>0?Math.max(0,Math.min(1,(time-a[0])/span)):0;
    const lat=a[1]+(b[1]-a[1])*k,lon=a[2]+(b[2]-a[2])*k,ha=heading(points,from),hb=heading(points,to);
-   const bearing=ha!==null&&hb!==null?ha+(((hb-ha)%360+540)%360-180)*k:ha??hb??0;
-   const course=legBearing(a,b)??legBearing(points[from-1],a)??bearing;
-   return {latlng:[lat,lon],course,bearing:(bearing%360+360)%360,speed:(a[3]??0)+((b[3]??0)-(a[3]??0))*k,index:i,k,from,to};
+   const bearing=ha!==null&&hb!==null?ha+shortArc(ha,hb)*k:ha??hb??0;
+   return {latlng:[lat,lon],bearing:(bearing%360+360)%360,speed:(a[3]??0)+((b[3]??0)-(a[3]??0))*k,index:i,k,from,to};
   }
   const carIcon=(L,bearing)=>L.divIcon({className:'map-car',html:`<span class="map-car-body" data-car-icon="${mapCar}" data-car-color="${mapCarColor}" style="${carColorStyle()}transform:rotate(${bearing.toFixed(2)}deg)">${carArt(mapCar)}</span>`,iconSize:[44,44],iconAnchor:[22,22]});
   // The drive's lines: this log's segment solid, the drive's other segments faded. Only the large map seeks on a tap
@@ -1209,8 +1342,7 @@
    bigPending=true;
    try{
     const L=await loadLeaflet().catch(e=>{showError(e.message);return null});
-    await waitSwap('big');
-    if(!L||disposed||big||!route)return;
+    if(!await pageShown||!L||disposed||mode!=='map'||big||!route)return;
     const slot=view.querySelector('.route-map-canvas');if(!slot)return;
     const reused=claimParked('big');
     let map;
@@ -1227,7 +1359,6 @@
     big.bookmarks=L.layerGroup().addTo(layerGroup);
     drawRouteBookmarks();
     routeControls.hidden=false;
-    replayPool.active.set('big',driveKey);
     bindMap(big,'dragstart',()=>{setFollow(false);big.held=true;big.anchor=dragAnchor(map)});
     bindMap(big,'move',()=>dragMove(big));
     bindMap(big,'moveend',()=>{if(big.held){big.held=false;recentre(big)}});
@@ -1348,14 +1479,24 @@
    if(body){const p=map.project(now,map.getZoom()),transform=`translate(${(p.x-Math.round(p.x)).toFixed(3)}px,${(p.y-Math.round(p.y)).toFixed(3)}px) rotate(${pos.bearing.toFixed(2)}deg)`;if(lines.transform!==transform){lines.transform=transform;body.style.transform=transform}}
    if(!target.zooming&&following)followCar(target,now,.5);
   }
-  function update(force=false){
+  function update(force=false,dt=0){
    if(!route||current<0||typeof t==='undefined')return;
    const pos=position(t),key=pos.index+':'+pos.k.toFixed(4),moved=force||key!==lastKey;lastKey=key;
    if(big&&mode==='map'&&moved)draw(big,pos,force);
-   if(small&&!mini.hidden&&(moved||small.smoothing))followMini(pos);
+   if(small&&!mini.hidden&&!small.map.rvContextLost&&(moved||small.smoothing)){
+    const snap=force||small.lastTime===undefined||Math.abs(t-small.lastTime)>.5;
+    small.lastTime=t;followMini(pos,dt,snap);
+   }
   }
-  // Follows playback: one cheap check per frame while a map is shown.
-  const loop=()=>{if(route&&current>=0&&hasVideo()!==miniVideo)syncMini();if((big&&mode==='map')||(small&&!mini.hidden))update();requestAnimationFrame(loop)};requestAnimationFrame(loop);
+  // Use wall-clock time so the camera responds the same way at different refresh rates.
+  let lastFrame=null;
+  const loop=now=>{
+   const dt=lastFrame===null?0:Math.min((now-lastFrame)/1000,.1);lastFrame=now;
+   if(route&&current>=0&&hasVideo()!==miniVideo)syncMini();
+   if((big&&mode==='map')||(small&&!mini.hidden))update(false,dt);
+   requestAnimationFrame(loop);
+  };
+  requestAnimationFrame(loop);
   // Tapping the route seeks there; a point of another segment of the drive opens that segment at that time.
   function seekTo(latlng){
    let best=null,bestD=Infinity;const k=Math.cos(latlng.lat*Math.PI/180);
@@ -1434,27 +1575,26 @@
    for(const name of sourceNames)sources['rv-'+name]={type:'geojson',data:collection(),tolerance:0};
    return {...base,version:8,sources,layers:[...layers,...overlayLayers]};
   }
-  async function applyMiniStyle(){
-   const target=small;if(!target)return;
+  const miniRetry=retryTask(applyMiniStyle);
+  const smallRetry=retryTask(ensureSmall,3);
+  function miniStyleChoice(){
    const tone=miniTone==='auto'?(mini.closest(':fullscreen')?'dark':theme()):miniTone;
-   const url=(miniGrey.checked?SIMPLE_STYLES:STYLES)[tone],key=[tone,miniGrey.checked,miniPlain.checked].join(':');
-   if(target.styleKey===key)return;
-   target.styleKey=key;
-   const revision=target.styleRevision=(target.styleRevision||0)+1;
+   return {tone,url:(miniGrey.checked?SIMPLE_STYLES:STYLES)[tone],key:[tone,miniGrey.checked,miniPlain.checked].join(':')};
+  }
+  async function applyMiniStyle(){
+   const target=small;if(!target||target.map.rvContextLost)return;
+   const {tone,url,key}=miniStyleChoice();
+   if(target.requestedStyle!==key){target.requestedStyle=key;target.styleRequest=null;miniRetry.reset()}
+   if(target.appliedStyle===key||target.styleRequest)return;
+   const request=target.styleRequest={};
    try{
-    let base=target.basemaps.get(url);
-    if(!base){
-     const response=await fetch(url,{signal:AbortSignal.timeout(10000)});
-     if(!response.ok)throw Error('basemap unavailable');
-     base=await response.json();target.basemaps.set(url,base);
-    }
-    if(target!==small||target.styleRevision!==revision)return;
-    target.map.setStyle(miniStyle(base,tone==='dark'),{diff:false});target.appliedStyle=key;
+    const base=await fetchBasemap(url);
+    if(target!==small||target.styleRequest!==request||target.map.rvContextLost)return;
+    target.map.setStyle(miniStyle(structuredClone(base),tone==='dark'),{diff:false});target.appliedStyle=key;
+    miniRetry.reset();
    }catch{
-    if(target!==small||target.styleRevision!==revision)return;
-    target.styleKey=null;target.appliedStyle=null;
-    target.map.setStyle(miniStyle(null,tone==='dark'),{diff:false});
-   }
+    if(target===small&&target.styleRequest===request)miniRetry.schedule();
+   }finally{if(target.styleRequest===request)target.styleRequest=null}
   }
   const miniData=(name,features)=>small?.map.getSource('rv-'+name)?.setData(collection(features));
   let routeGeometry=[],bridgeGeometry=[],bounds=null,screenRoute=null;
@@ -1548,13 +1688,16 @@
    const padding={top:Math.min(clientHeight*.22,hud.offsetTop+hud.offsetHeight+12),bottom:0,left:clientWidth*.4,right:0};
    return {center:lngLat(pos),pitch:56,bearing,zoom,padding};
   }
-  function followMini(pos){
+  function followMini(pos,dt=0,snap=false){
    const {map}=small,speed=pos.speed*3.6,targetZoom=zoomAt(speed);
-   small.bearing??=pos.course;small.zoom??=targetZoom;
-   const delta=speed>=3?shortArc(small.bearing,pos.course):0,zoomDelta=targetZoom-small.zoom;
-   small.bearing+=Math.abs(delta)<.05?delta:delta*.14;
-   small.zoom+=Math.abs(zoomDelta)<.005?zoomDelta:zoomDelta*.14;
-   small.smoothing=Math.abs(delta)>=.05||Math.abs(zoomDelta)>=.005;
+   small.bearing??=pos.bearing;small.zoom??=targetZoom;
+   const delta=speed>=3?shortArc(small.bearing,pos.bearing):0,zoomDelta=targetZoom-small.zoom;
+   const rate=Math.max(1,Number(document.getElementById('speed').value)||1);
+   const maxTurn=55*rate*dt;
+   const turn=delta*(1-Math.exp(-dt*rate/.5));
+   small.bearing+=snap||Math.abs(delta)<.05?delta:Math.max(-maxTurn,Math.min(maxTurn,turn));
+   small.zoom+=snap||Math.abs(zoomDelta)<.005?zoomDelta:zoomDelta*(1-Math.exp(-dt*rate/.6));
+   small.smoothing=!snap&&(Math.abs(delta)>=.05||Math.abs(zoomDelta)>=.005);
    if(!resizing&&!large)map.jumpTo(cameraAt(pos));
    if(!resizing&&large&&miniFollowing&&!map.isMoving()){
     const center=map.getCenter(),[lng,lat]=lngLat(pos);
@@ -1577,21 +1720,24 @@
    smallPending=true;
    try{
     const gl=await loadMapLibre();
-    await waitSwap('small');
-    if(disposed||small||!route||mini.hidden||mini.classList.contains('no-room'))return;
+    if(!await pageShown||disposed||small||!route||mini.hidden)return;
+    measureSmall();
+    if(mini.classList.contains('no-room'))return;
     const slot=mini.querySelector('.video-map-canvas'),reused=claimParked('small');
     const initial=position(typeof t==='number'?t:0);
     let map;
     if(reused){slot.replaceWith(reused.container);map=reused.map}
     else map=new gl.Map({
-     container:slot,style:miniStyle(null,true),center:lngLat(initial),bearing:initial.course,pitch:56,
+     container:slot,style:miniStyle(null,true),center:lngLat(initial),bearing:initial.bearing,pitch:56,
      zoom:zoomAt(initial.speed*3.6),attributionControl:false,trackResize:false,
      dragPan:false,dragRotate:false,boxZoom:false,touchZoomRotate:false,touchPitch:false,
      scrollZoom:false,doubleClickZoom:false,keyboard:false,renderWorldCopies:false,
     });
-    small={map,handlers:[],abort:new AbortController(),styleKey:reused?.styleKey,appliedStyle:reused?.styleKey,basemaps:reused?.basemaps||new Map()};
-    replayPool.active.set('small',driveKey);
+    small={map,handlers:[],abort:new AbortController(),appliedStyle:reused?.styleKey};
+    smallRetry.reset();
     const ready=()=>{drawMiniCar();paintMiniRoute();followMini(position(typeof t==='number'?t:0));if(selection)showPreview(selection)};
+    if(!reused)watchMapContext(map,()=>map.fire('rv:contextrestored'));
+    bindMap(small,'rv:contextrestored',()=>{lastKey='';if(!map.getStyle())small.appliedStyle=null;miniRetry.reset();applyMiniStyle()});
     bindMap(small,'style.load',ready);
     bindMap(small,'move',()=>{screenRoute=null});
     for(const event of ['dragstart','zoomstart','movestart'])bindMap(small,event,e=>{if(large&&e.originalEvent)setMiniFollow(false)});
@@ -1604,7 +1750,7 @@
     resizeMini();drawMiniRoute();ready();applyMiniStyle();
     if(reused?.pinned){setPinned(true);setLarge(true,true)}
    }catch{
-    if(!disposed&&!small){mini.hidden=true;stage.classList.remove('has-video-map')}
+    if(!disposed&&!small)smallRetry.schedule()
    }finally{smallPending=false}
   }
 
@@ -1629,7 +1775,7 @@
    const on=!!route&&current>=0&&miniToggle.checked&&miniVideo&&mode!=='map';
    if(!on&&large)setLarge(false,true);
    mini.hidden=!on;stage.classList.toggle('has-video-map',on);
-   if(on){measureSmall();if(small){resizeMini();lastKey=''}else ensureSmall()}
+   if(on&&!document.body.hidden){measureSmall();if(small){resizeMini();lastKey=''}else if(!smallRetry.pending)ensureSmall()}
   }
   function resizeMini(){
    if(!small||mini.hidden)return false;
@@ -1639,14 +1785,14 @@
    return true;
   }
   const resizeWatch=new ResizeObserver(()=>{
-   if(mini.hidden)return;
+   if(mini.hidden||document.body.hidden)return;
    measureSmall();
    if(resizing)return;
-   if(!small)ensureSmall();
-   else resizeMini();
+   if(!small){if(!smallRetry.pending)ensureSmall()}else resizeMini();
   });
   resizeWatch.observe(stage);resizeWatch.observe(mini);resizeWatch.observe(hud);
-  miniToggle.addEventListener('change',syncMini);
+  addEventListener('pageshow',syncMini);
+  miniToggle.addEventListener('change',()=>{smallRetry.reset();syncMini()});
   addEventListener('fullscreenchange',applyMiniStyle);
   function holdCanvas(width,height){
    Object.assign(small.map.getContainer().style,{inset:'auto',left:'50%',top:'50%',width:width+'px',height:height+'px',transform:'translate(-50%,-50%)'});
@@ -1883,6 +2029,7 @@
    big.lines.others.forEach(line=>line.setStyle({color:css('--muted')}));
    big.lines.current.setStyle({color:css('--accent')});
   };
+  if(miniToggle.checked)fetchBasemap(miniStyleChoice().url).catch(()=>{});
   if(/^[0-9a-f]{32}$/.test(id))fetchReplayTrack();
  }
 })();

@@ -197,8 +197,8 @@ async fn qw1_single_track_reads_only_target_route_and_preserves_order_and_errors
     let body: Value = serde_json::from_slice(&bytes).unwrap();
     assert_eq!(body["unconverted"][0]["status"], "queued");
 
-    // Unrelated route B was never scanned into segment cache by single-route query
-    assert_eq!(cache_counts(&a.store.root), (0, 0, false));
+    // Only the two ready segments belonging to the requested route were read and cached.
+    assert_eq!(cache_counts(&a.store.root), (2, 0, false));
     assert_ne!(b0, a0);
 
     // GPS-less log returns 200 with empty segments
