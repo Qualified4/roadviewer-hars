@@ -1517,6 +1517,8 @@
   // ④ The video stage owns the overlay geometry. The canvas is native MapLibre and has its own lifetime.
   const stage=document.getElementById('videoStage'),hud=stage.querySelector('.video-hud');
   const openMap=mini.querySelector('.video-map-open'),closeMap=mini.querySelector('.video-map-close');
+  const grip=mini.querySelector('.video-map-grip'),fade=mini.querySelector('#videoMapFade path');
+  const feather=mini.querySelector('#videoMapFeather feGaussianBlur');
   const controls=mini.querySelector('.video-map-controls'),pin=mini.querySelector('.video-map-pin');
   const followMiniButton=mini.querySelector('.video-map-follow'),overviewMiniButton=mini.querySelector('.video-map-overview'),preview=mini.querySelector('.video-map-preview');
   const previewButton=preview.querySelector('button'),previewStatus=preview.querySelector('small');
@@ -1681,12 +1683,22 @@
   const shortArc=(from,to)=>((to-from)%360+540)%360-180;
   const zoomAt=speed=>Math.max(14.6,Math.min(17.1,17.35-speed*.022));
   const hasVideo=()=>typeof data!=='undefined'&&!!data?.video;
-  function cameraAt(pos){
-   const {map,bearing,zoom}=small;
-   const {clientWidth,clientHeight}=map.getContainer();
+  function cameraAt(pos,viewport=small.map.getContainer()){
+   const {bearing,zoom}=small;
+   const {clientWidth,clientHeight}=viewport;
    // Keep the vehicle marker below the HUD and inside the darker part of the corner fade.
    const padding={top:Math.min(clientHeight*.22,hud.offsetTop+hud.offsetHeight+12),bottom:0,left:clientWidth*.4,right:0};
    return {center:lngLat(pos),pitch:56,bearing,zoom,padding};
+  }
+  function collapsedCamera(pos){
+   // Resolve the saved size in the current stage without changing the on-screen transition.
+   const viewport=mini.cloneNode(false);
+   viewport.removeAttribute('id');viewport.classList.remove('is-large');
+   viewport.style.visibility='hidden';
+   stage.append(viewport);
+   const camera=cameraAt(pos,viewport);
+   viewport.remove();
+   return camera;
   }
   function followMini(pos,dt=0,snap=false){
    const {map}=small,speed=pos.speed*3.6,targetZoom=zoomAt(speed);
@@ -1764,11 +1776,23 @@
   }
   function measureSmall(){
    const frame=stage.getBoundingClientRect(),box=inStage(frame,frame),speed=inStage(hud.getBoundingClientRect(),frame);
-   stage.style.setProperty('--vmap-min-w',Math.ceil(speed.width)+'px');
+   mini.style.setProperty('--vmap-min-w',Math.max(104,Math.ceil(speed.width))+'px');
+   mini.style.setProperty('--vmap-min-h',Math.max(86,Math.ceil(speed.top+speed.height+28))+'px');
    const rows=[...stage.querySelectorAll('.video-tools,.video-fullscreen')].map(el=>el.getBoundingClientRect()).filter(row=>row.width&&row.height);
-   const room=Math.min(box.height,...rows.map(row=>inStage(row,frame).top-8));
+   const room=Math.max(0,Math.min(box.height,...rows.map(row=>inStage(row,frame).top-8)));
    mini.style.setProperty('--vmap-room',Math.floor(room)+'px');
    mini.classList.toggle('no-room',room<speed.height+28);
+  }
+  let maskWidth=0,maskHeight=0;
+  function updateMiniMask(){
+   const w=mini.clientWidth,h=mini.clientHeight;
+   if(!w||!h||(w===maskWidth&&h===maskHeight))return;
+   maskWidth=w;maskHeight=h;
+   const short=Math.min(w,h),radius=short*.46,blur=short*.043;
+   const left=3*blur,bottom=h-left,top=-4*blur,right=w-top;
+   // Extend past the two video edges. The inset edges have room to fade to transparency.
+   feather.setAttribute('stdDeviation',blur);
+   fade.setAttribute('d',`M ${left} ${top} H ${right} V ${bottom} H ${left+radius} A ${radius} ${radius} 0 0 1 ${left} ${bottom-radius} Z`);
   }
   function syncMini(){
    miniVideo=hasVideo();
@@ -1787,6 +1811,7 @@
   const resizeWatch=new ResizeObserver(()=>{
    if(mini.hidden||document.body.hidden)return;
    measureSmall();
+   if(!large)updateMiniMask();
    if(resizing)return;
    if(!small){if(!smallRetry.pending)ensureSmall()}else resizeMini();
   });
@@ -1821,7 +1846,13 @@
    setExpandedInput(false);setMiniFollow(true);showPreview(null);
    if(!moving)resizeMini();
    if(large)centreMini(moving?280:0);
-   else map.easeTo({...cameraAt(position(t)),duration:moving?280:0});
+   else{
+    const pos=position(t);
+    // The large canvas is centered behind the shrinking frame. Aim for the final frame's padding
+    // so the car stays in the same place when that canvas is replaced by the small one.
+    const camera=moving?collapsedCamera(pos):cameraAt(pos);
+    map.easeTo({...camera,duration:moving?280:0});
+   }
    const finish=()=>{
     resizing=false;releaseCanvas();
     if(large)setExpandedInput(true);
@@ -1833,6 +1864,7 @@
      if(disposed||revision!==resizeRevision)return;
      const transitions=mini.getAnimations().filter(animation=>animation.pending||animation.playState==='running');
      if(transitions.length)Promise.allSettled(transitions.map(animation=>animation.finished)).then(afterTransition);
+     else if(map.isMoving())map.once('moveend',afterTransition);
      else finish();
     };
     afterTransition();
@@ -2001,29 +2033,62 @@
   });
   for(const type of ['pointerup','pointercancel','lostpointercapture'])openMap.addEventListener(type,()=>{openStart=null});
 
-  // The bottom-left corner resizes the small map (mouse or touch), anchored at its top-right: from its least
-  // width up to the picture's width or the room above the bottom row. Kept in this browser as a share of the picture's
-  // width; a double tap on the corner goes back to the default size. Dragging never toggles 크게 보기.
-  const SIZE_KEY='roadviewer-minimap-size',grip=document.createElement('span');grip.className='video-map-grip';grip.setAttribute('aria-hidden','true');mini.append(grip);
-  const applySize=f=>{if(f){stage.style.setProperty('--vmap-f',f.toFixed(4));stage.classList.add('vmap-sized')}else{stage.style.removeProperty('--vmap-f');stage.classList.remove('vmap-sized')}};
-  try{const f=Number(localStorage.getItem(SIZE_KEY));if(f>0&&f<1)applySize(f)}catch{}
+  // Store the two dimensions as shares of the stage. Legacy saves only supplied a width.
+  const SIZE_KEY='roadviewer-minimap-size';
+  const share=value=>Number.isFinite(value)&&value>0&&value<=1;
+  function applySize(width,height){
+   if(width!=null)mini.style.setProperty('--vmap-saved-w',`${width*100}cqw`);
+   else mini.style.removeProperty('--vmap-saved-w');
+   if(height!=null)mini.style.setProperty('--vmap-saved-h',`${height*100}%`);
+   else mini.style.removeProperty('--vmap-saved-h');
+  }
+  function rememberSize(){
+   const width=mini.clientWidth/stage.clientWidth,height=mini.clientHeight/stage.clientHeight;
+   if(share(width)&&share(height)){
+    applySize(width,height);
+    try{localStorage.setItem(SIZE_KEY,JSON.stringify({width,height}))}catch{}
+   }
+  }
+  try{
+   const saved=JSON.parse(localStorage.getItem(SIZE_KEY));
+   if(share(saved))applySize(saved);
+   else if(share(saved?.width)&&share(saved?.height))applySize(saved.width,saved.height);
+  }catch{}
+  const resizeTo=(width,height)=>applySize(Math.max(0,width)/stage.clientWidth,Math.max(0,height)/stage.clientHeight);
   let sizing=null;
   grip.addEventListener('pointerdown',e=>{
-   if(mini.classList.contains('is-large')||e.button>0)return;e.preventDefault();e.stopPropagation();try{grip.setPointerCapture(e.pointerId)}catch{}
-   const frame=stage.getBoundingClientRect(),r=inStage(mini.getBoundingClientRect(),frame),box=inStage(frame,frame),room=parseFloat(mini.style.getPropertyValue('--vmap-room'))||box.height,at=point(e);
-   const style=getComputedStyle(mini),ratio=Number(style.getPropertyValue('--vmap-ratio'));
-   const min=Math.max(104,parseFloat(stage.style.getPropertyValue('--vmap-min-w'))||0),max=Math.max(min,Math.min(box.width,room/ratio));
-   sizing={id:e.pointerId,x:at.x,y:at.y,w:r.width,min,max,ratio,stageW:box.width,moved:false,f:null};mini.classList.add('is-sizing');
+   if(large||resizing||sizing||e.button!==0)return;
+   e.preventDefault();grip.setPointerCapture(e.pointerId);
+   sizing={id:e.pointerId,...point(e),width:mini.clientWidth,height:mini.clientHeight,moved:false};
+   mini.classList.add('is-sizing');
   });
   grip.addEventListener('pointermove',e=>{
-   if(!sizing||e.pointerId!==sizing.id)return;const at=point(e),dx=sizing.x-at.x,dy=(at.y-sizing.y)/sizing.ratio;
-   if(!sizing.moved&&Math.hypot(dx,dy)<3)return;sizing.moved=true;e.preventDefault();
-   const w=Math.min(sizing.max,Math.max(sizing.min,sizing.w+(Math.abs(dx)>=Math.abs(dy)?dx:dy)));sizing.f=w/sizing.stageW;applySize(sizing.f);
+   if(!sizing||e.pointerId!==sizing.id)return;
+   const at=point(e),dx=sizing.x-at.x,dy=at.y-sizing.y;
+   if(!sizing.moved&&Math.hypot(dx,dy)<3)return;
+   sizing.moved=true;resizeTo(sizing.width+dx,sizing.height+dy);
   });
-  const endSizing=e=>{if(!sizing||e.pointerId!==sizing.id)return;mini.classList.remove('is-sizing');if(sizing.moved&&sizing.f)try{localStorage.setItem(SIZE_KEY,String(sizing.f))}catch{}sizing=null};
-  grip.addEventListener('pointerup',endSizing);grip.addEventListener('pointercancel',endSizing);
-  grip.addEventListener('click',e=>e.stopPropagation());
-  grip.addEventListener('dblclick',e=>{e.stopPropagation();applySize(0);try{localStorage.removeItem(SIZE_KEY)}catch{}});
+  function endSizing(e){
+   if(!sizing||e.pointerId!==sizing.id)return;
+   if(sizing.moved&&!large&&!mini.hidden)rememberSize();
+   sizing=null;mini.classList.remove('is-sizing');
+  }
+  for(const type of ['pointerup','pointercancel','lostpointercapture'])grip.addEventListener(type,endSizing);
+  function resetSize(){
+   applySize(null,null);
+   try{localStorage.removeItem(SIZE_KEY)}catch{}
+  }
+  grip.addEventListener('dblclick',resetSize);
+  grip.addEventListener('click',e=>{if(e.detail===0)resetSize()});
+  grip.addEventListener('keydown',e=>{
+   if(!e.altKey||!/^Arrow/.test(e.key))return;
+   e.preventDefault();
+   const dx=e.key==='ArrowLeft'?12:e.key==='ArrowRight'?-12:0;
+   const dy=e.key==='ArrowDown'?12:e.key==='ArrowUp'?-12:0;
+   mini.classList.add('is-sizing');
+   resizeTo(mini.clientWidth+dx,mini.clientHeight+dy);rememberSize();
+   mini.classList.remove('is-sizing');
+  });
   redrawColours=()=>{
    applyMiniStyle();if(!big)return;
    big.lines.others.forEach(line=>line.setStyle({color:css('--muted')}));

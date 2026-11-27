@@ -771,8 +771,8 @@ select,.rv-choice-trigger{font-weight:500}
 .video-hud .ego-speed strong{color:#F2F4F6;font-weight:500}.video-hud .ego-speed span{color:rgba(242,244,246,.92)}
 @container(max-width:520px){.video-title{top:8px;left:8px;max-width:calc(100% - 150px)}.video-title h1{font-size:12.5px}.video-title .app-title-button{padding:0 10px 0 12px}.video-tools{top:auto;bottom:8px}.video-messages{bottom:calc(8px + var(--hud-h) + 6px)}}
 /* Playing: those controls fade out until the video is touched (app.js); the speed, wheel and messages stay. */
-.video-title,.video-tools,.video-fullscreen{transition:opacity .18s var(--m2-standard,ease)}
-.replay-page.hud-idle :is(.video-title,.video-tools,.video-fullscreen){opacity:0;pointer-events:none;transition-duration:.3s}
+.video-title,.video-tools,.video-fullscreen,.video-map-grip{transition:opacity .18s var(--m2-standard,ease)}
+.replay-page.hud-idle :is(.video-title,.video-tools,.video-fullscreen,.video-map-grip){opacity:0;pointer-events:none;transition-duration:.3s}
 /* The gap bars and gear row stack above the bottom-left controls. With the controls idle, the two rows
    settle into the corner. --gap-cover lifts them when the transport bar covers the bottom of the picture. */
 .video-gap{--hud-h:36px;--gear-size:clamp(16.5px,1.875cqw,19.5px);--drive-hud-shadow:0 0 3px rgba(0,0,0,.55);position:absolute;left:12px;bottom:12px;z-index:3;display:flex;flex-direction:column;align-items:flex-start;gap:4px;border-radius:999px;pointer-events:none;translate:0 calc(-1 * (var(--hud-h) + 8px + var(--gap-cover,0px)));transition:translate .3s var(--m2-standard,ease),opacity .18s var(--m2-standard,ease)}
@@ -813,7 +813,7 @@ select,.rv-choice-trigger{font-weight:500}
 .replay-page.bar-folded .camera-panel:not(:fullscreen) .video-wrap{width:min(100%,calc(var(--video-room-folded,calc(100dvh - var(--transport-height,150px) - 60px)) * var(--video-ar,1.594)))}
 /* Loading: the message sits in the middle of the bar, which keeps its controls' height (app.js sizeTransport). */
 .replay-page .playback:has(#playbackControls[hidden]){display:flex;flex-direction:column;justify-content:center}
-@media(prefers-reduced-motion:reduce){.replay-page .app-bar,.video-title,.video-tools,.video-fullscreen{transition:none}}
+@media(prefers-reduced-motion:reduce){.replay-page .app-bar,.video-title,.video-tools,.video-fullscreen,.video-map-grip{transition:none}}
 /* Short phone screens (app.js): the sticky video has an explicit height so it can shrink to 60% while scrolling the analysis
    (letterboxed, controls keep their corners), and the transport folds into one row: play · seek · time. */
 /* Stacked: the card keeps the full video height in the page and sticks once it has slid 40% under the app bar; the video
@@ -1075,9 +1075,9 @@ select,.rv-choice-trigger{font-weight:500}
 .rv-map.is-credit-compact:not(.is-credit-open) .leaflet-control-attribution{display:none}
 .rv-map.is-credit-compact.is-credit-open .leaflet-control-attribution{margin:0 32px 6px 0;border-radius:6px}
 /* The canvas fades into the video. The controls sit outside the mask so their targets stay visible. */
-.video-map{--vmap-inset:14px;--vmap-ratio:.774;--vmap-w:min(310px,calc(100cqw * .41));position:absolute;top:0;right:0;margin:0;z-index:3;width:var(--vmap-w);height:min(calc(var(--vmap-w) * var(--vmap-ratio)),var(--vmap-room,240px));transition:width .28s var(--m2-standard,ease),height .28s var(--m2-standard,ease),top .28s,right .28s;color:#F0F4F8;color-scheme:dark;font-weight:500;letter-spacing:.015em;font-variant-numeric:tabular-nums;--focus:#5BE3AE}
-.video-map-surface{--vmap-mask:radial-gradient(ellipse 99% 99% at 100% 0%,#000 43%,rgba(0,0,0,.84) 61%,rgba(0,0,0,.47) 77%,rgba(0,0,0,.09) 93%,transparent 100%);position:absolute;inset:0;
- -webkit-mask-image:var(--vmap-mask);mask-image:var(--vmap-mask)}
+.video-map{--vmap-inset:14px;--vmap-ratio:.774;--vmap-default-w:min(310px,41cqw);--vmap-w:var(--vmap-saved-w,var(--vmap-default-w));position:absolute;top:0;right:0;margin:0;z-index:3;width:clamp(min(100%,var(--vmap-min-w,104px)),var(--vmap-w),100%);height:clamp(min(var(--vmap-min-h,86px),var(--vmap-room,240px)),var(--vmap-saved-h,calc(var(--vmap-w) * var(--vmap-ratio))),var(--vmap-room,240px));transition:width .28s var(--m2-standard,ease),height .28s var(--m2-standard,ease),top .28s,right .28s;color:#F0F4F8;color-scheme:dark;font-weight:500;letter-spacing:.015em;font-variant-numeric:tabular-nums;--focus:#5BE3AE}
+.video-map-mask{position:absolute;pointer-events:none}
+.video-map-surface{position:absolute;inset:0;-webkit-mask-image:url(#videoMapFade);mask-image:url(#videoMapFade)}
 .video-map .video-map-canvas{position:absolute;inset:0}
 .video-map-open{position:absolute;inset:0;width:100%;background:none;border:0;border-radius:0;box-shadow:none;cursor:zoom-in;touch-action:none}
 .video-map .video-map-open:where(:enabled):is(:hover,:active){background:none;filter:none}
@@ -1087,12 +1087,11 @@ select,.rv-choice-trigger{font-weight:500}
 .video-map.is-large .maplibregl-canvas:active{cursor:grabbing}
 .video-map:is(.is-sizing,.is-instant){transition:none}
 .video-map.no-room:not(.is-large){display:none}
-.video-map-grip{position:absolute;left:0;bottom:0;z-index:2;width:32px;height:32px;padding:6px;display:grid;place-items:end start;touch-action:none;cursor:nesw-resize}
-.video-map-grip::before{content:"";width:11px;height:11px;border-left:2px solid #DBE2EA;border-bottom:2px solid #DBE2EA;border-bottom-left-radius:7px;opacity:0;transition:opacity .15s}
-@media(hover:hover) and (pointer:fine){.video-map:hover .video-map-grip::before{opacity:.9}}
-.video-map.is-sizing .video-map-grip::before{opacity:.9}
+.video-map .video-map-grip{position:absolute;left:0;bottom:0;z-index:2;width:44px;height:44px;padding:10px;display:grid;place-items:end start;background:none;border:0;box-shadow:none;touch-action:none;cursor:nesw-resize}
+.video-map-grip::before{content:"";width:13px;height:13px;border-left:2px solid #F0F4F8;border-bottom:2px solid #F0F4F8;border-bottom-left-radius:5px;opacity:.72;filter:drop-shadow(0 1px 2px #000b);transition:opacity .15s}
+.video-map-grip:is(:hover,:active,:focus-visible)::before,.video-map.is-sizing .video-map-grip::before{opacity:1}
+.video-map .video-map-grip:focus-visible{outline-offset:-4px}
 .video-map.is-large .video-map-grip{display:none}
-.video-wrap.vmap-sized .video-map{--vmap-w:clamp(max(104px,var(--vmap-min-w,0px)),calc(100cqw * var(--vmap-f)),100cqw)}
 .video-map-controls{position:absolute;inset:0;pointer-events:none}
 .video-map-toolbar{position:absolute;top:10px;left:10px;right:10px;display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}
 .video-map-toolbar>div{display:flex;gap:8px}
@@ -1114,7 +1113,7 @@ select,.rv-choice-trigger{font-weight:500}
 .video-map-credit a{color:#D3E1F3}
 .video-map:not(.is-large) .video-map-credit{display:none}
 @media(max-width:600px){
- .video-map{--vmap-w:min(174px,calc(100cqw * .48));--vmap-ratio:.816;--vmap-inset:0px}
+ .video-map{--vmap-default-w:min(174px,48cqw);--vmap-ratio:.816;--vmap-inset:0px}
  .video-map.is-large .video-map-surface{border-radius:0}
  .video-map-legend{display:none}
  .video-map-preview{left:8px;right:8px;bottom:33px;max-width:none}
