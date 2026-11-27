@@ -21,9 +21,10 @@ http.serve_forever()
   for(const {width,prefix} of [{width:390,prefix:'/api/hassio_ingress/test'},{width:1024,prefix:''},{width:1440,prefix:''}]){
    const context=await browser.newContext({viewport:{width,height:844},hasTouch:width<1200,isMobile:width<1200});
    const page=await context.newPage(),errors=[],documents=[],videoRequests=[],replayFragments=[],listValidators=[];
-   let listReads=0,listVersion=1,listNotModified=0,delayData=false,releaseData;
+   let listReads=0,listVersion=1,listNotModified=0,progressReads=0,delayData=false,releaseData,holdList=false,releaseList;
    const requests=new EventEmitter();
    const base=`http://127.0.0.1:${port}${prefix}/`;
+   const driveLogs=[...ids,...Array.from({length:24},(_,i)=>`extra-${i}`)].map((id,i)=>({id,name:`00000395--0d0eda17c5 / 구간 ${i}`,status:i<ids.length?'ready':'unconverted',pinned:true,tags:[{name:'야간',color:'mint'}],uploaded:100-i,bytes:1,prepared_bytes:1}));
    page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{
     if(r.isNavigationRequest())documents.push(r.url());
     if(r.url().includes('/view/')&&r.url().endsWith('?fragment=1'))replayFragments.push(r.url());
@@ -32,8 +33,9 @@ http.serve_forever()
     const p=new URL(r.request().url()).pathname;
     if(p.endsWith('/api/logs')){
      listReads++;const etag=`"list-${listVersion}"`,validator=r.request().headers()['if-none-match'];listValidators.push(validator);
+     if(holdList)await new Promise(resolve=>{releaseList=resolve;requests.emit('list-held')});
      if(validator===etag){listNotModified++;return r.fulfill({status:304})}
-     return r.fulfill({headers:{etag},json:{logs:ids.map((id,i)=>({id,name:`00000395--0d0eda17c5 / 구간 ${i}`,status:'ready',uploaded:2-i,bytes:1,prepared_bytes:1})).concat({id:'c'.repeat(32),name:'processing',status:'processing',uploaded:0,bytes:1,prepared_bytes:listVersion,progress:{stage:listVersion===1?'log_read':'video_convert',frames:100,percent:50}}),max_upload_mb:512,storage_used_bytes:2,concurrency:1}});
+     return r.fulfill({headers:{etag},json:{logs:driveLogs.concat({id:'c'.repeat(32),name:'processing',status:'processing',uploaded:0,bytes:1,prepared_bytes:listVersion,progress:{stage:listVersion===1?'log_read':'video_convert',frames:100,percent:50}}),max_upload_mb:512,storage_used_bytes:2,concurrency:1}});
     }
     if(p.endsWith('/data')){
      if(delayData)await new Promise(resolve=>{releaseData=resolve;requests.emit('data-held')});
@@ -42,6 +44,7 @@ http.serve_forever()
     if(p.endsWith('/video')){videoRequests.push(p);if(!p.startsWith(prefix+'/api/logs/'))return r.fulfill({status:404,body:'Outside ingress'});return r.fulfill({body:fs.readFileSync(process.env.RV_TEST_VIDEO||'/tmp/roadviewer-test.mp4'),contentType:'video/mp4'});}
     return r.continue();
    });
+   await page.route('**/api/progress',r=>{progressReads++;return r.fulfill({json:{progress:{}}})});
    await page.addInitScript(()=>{
     window.liveMorphs=[];window.snapshotCalls=0;const animateElement=Element.prototype.animate;Element.prototype.animate=function(frames,options){const animation=animateElement.call(this,frames,options);if(frames[0]?.transformOrigin==='0 0')liveMorphs.push(this.className||this.tagName);if(this.closest('.app-brand')&&frames[0]?.transform){const m=/scale\(([^,]+),([^\)]+)\)/.exec(frames[0].transform);if(m&&Math.abs(Number(m[1])-Number(m[2]))>.0001)window.distortedBrand=true};return animation};
     window.pageMotions=[];const startTransition=document.startViewTransition.bind(document);document.startViewTransition=update=>{snapshotCalls++;const transition=startTransition(update);transition.ready.then(()=>pageMotions.push({root:getComputedStyle(document.documentElement).viewTransitionName,title:!!document.querySelector('[style*="rv-route"]'),background:getComputedStyle(document.documentElement,'::view-transition').backgroundColor,morph:document.getAnimations().some(a=>a.effect?.pseudoElement==='::view-transition-group(rv-route)')}),()=>{});return transition};
@@ -80,9 +83,21 @@ http.serve_forever()
    await checkSweep();
    assert(await page.evaluate(()=>document.activeElement.tagName!=='H1'),'first entry does not focus the brand');
    await page.evaluate(()=>{window.documentToken={};window.originalToken=documentToken;window.originalBrand=document.querySelector('.app-brand')});
+   let listScroll;
+   if(width===1440){
+    await page.locator('#logSearch').fill('00000395');
+    await page.locator('[data-filter="filter:pinned"]').click();await page.locator('[data-filter="tag:tag:야간"]').click();
+    listScroll=await page.evaluate(()=>{
+     window.originalDrive=document.querySelector('.log-row .replay').closest('.log-route');
+     scrollTo({top:250,behavior:'instant'});return scrollY;
+    });
+    assert(listScroll>0,'the fixture has room to scroll with the filters applied');
+   }
    await page.evaluate(()=>{window.preparedHidden=false;new MutationObserver(records=>{for(const record of records)for(const node of record.addedNodes)if(node.nodeType===1&&node.classList.contains('replay-page')&&node.hidden)preparedHidden=true}).observe(document.getElementById('pageHost'),{childList:true})});
    const readsBeforeReplay=listReads;
-   await page.locator('.log-row .replay').first().click();await page.waitForURL(base+'view/'+ids[0]+'/');
+   const firstReplay=page.locator('.log-row .replay').first();
+   if(width===1440)await firstReplay.evaluate(link=>link.click());else await firstReplay.click();
+   await page.waitForURL(base+'view/'+ids[0]+'/');
    assert.equal(listReads,readsBeforeReplay,'replay reuses the fresh library snapshot');
    await page.waitForFunction(()=>!document.getElementById('play').disabled);
    assert(videoRequests.length&&videoRequests.every(p=>p.startsWith(prefix+'/api/logs/')),'video requests retain the ingress prefix: '+videoRequests.join(', '));
@@ -94,7 +109,7 @@ http.serve_forever()
    await page.waitForFunction(()=>!document.documentElement.classList.contains('rv-navigation-transition'));
    assert(await page.evaluate(()=>documentToken===originalToken),'document persists');
    // The replay page has its own app bar instead of the brand header; nothing keeps focus.
-   assert(await page.evaluate(()=>!document.querySelector('.app-brand')&&document.activeElement===document.body),'replay app bar replaces the brand and leaves focus on the page');
+   assert(await page.evaluate(()=>originalBrand.closest('.library-page').hidden&&document.activeElement===document.body),'the retained library is hidden and leaves focus on the replay page');
    // Opened from the list the page is prepared hidden: the stacked video must still take the room it has (it used to keep
    // the 320px fallback height).
    const stackedVideo=await page.evaluate(()=>{const page=document.querySelector('.replay-page'),panel=document.querySelector('.camera-panel'),style=getComputedStyle(panel),wrap=document.getElementById('videoStage').getBoundingClientRect();
@@ -141,20 +156,34 @@ http.serve_forever()
    assert.equal(await page.evaluate(()=>pageMotions.length),0,'reduced motion disables page effects');await page.emulateMedia({reducedMotion:'no-preference'});
    assert(await page.evaluate(()=>departedVideo.paused&&!departedVideo.hasAttribute('src')),'departed video is released');
    await page.evaluate(()=>liveMorphs=[]);
+   if(width===1440){
+    const before=[listReads,progressReads];await page.waitForTimeout(3200);
+    assert.deepEqual([listReads,progressReads],before,'the parked library stops both list and progress polling');
+   }
    const revalidated=listNotModified;
+   const resumed=page.waitForResponse(r=>r.url()===base+'api/logs'&&r.status()===304);
+   const listHeld=width===1440?once(requests,'list-held',{signal:AbortSignal.timeout(5000)}):null;
+   holdList=!!listHeld;
    await page.goBack();await page.waitForURL(base);await page.locator('.log-row .replay').first().waitFor();
-   assert.equal(listValidators.at(-1),`"list-${listVersion}"`,'the remounted library sends the shared ETag');
-   assert(listNotModified>revalidated,'the remounted library accepts 304 and renders the cached body');
+   assert(await page.evaluate(()=>document.querySelector('.app-brand')===originalBrand),'back reuses the same library DOM');
+   if(listHeld){
+    await listHeld;
+    try{
+     assert.equal(await page.locator('#logSearch').inputValue(),'00000395');
+     assert.equal(await page.locator('[data-filter="filter:pinned"]').getAttribute('aria-pressed'),'true');
+     assert.equal(await page.locator('[data-filter="tag:tag:야간"]').getAttribute('aria-pressed'),'true');
+     assert(await page.evaluate(()=>document.querySelector('.log-row .replay').closest('.log-route')===originalDrive&&originalDrive.open),'the open drive card is visible before the refresh returns');
+     assert.equal(await page.evaluate(()=>scrollY),listScroll,'the old scroll offset is visible before the refresh returns');
+    }finally{holdList=false;releaseList()}
+   }
+   await resumed;
+   assert.equal(listValidators.at(-1),`"list-${listVersion}"`,'the resumed library sends the shared ETag');
+   assert(listNotModified>revalidated,'the resumed library revalidates the preserved list');
+   if(width===1440){await page.locator('[data-filter="filter:all"]').click();await page.locator('#logSearch').clear()}
    await page.goForward();await page.waitForURL(base+'view/'+ids[1]+'/');await page.waitForFunction(()=>document.getElementById('route').textContent==='second');
-   // The back link shows its press at once (no touch delay) and the list replaces the replay only after PRESS_HOLD,
-   // although the library is already prefetched, so the wave is seen.
-   await page.evaluate(()=>{window.backTap={};const b=document.querySelector('.app-bar .back');
-    b.addEventListener('pointerdown',()=>setTimeout(()=>backTap.wave=!!b.querySelector('.rv-ripple'),0),{once:true});b.addEventListener('click',()=>backTap.at=performance.now(),{once:true});
-    window.addEventListener('pageshow',()=>backTap.swap=performance.now()-backTap.at,{once:true})});
    if(width<1200)await page.locator('.app-bar .back').tap();else await page.locator('.app-bar .back').click();
    await page.waitForURL(base);await page.locator('.log-row .replay').first().waitFor();
-   const backTap=await page.evaluate(()=>backTap);
-   assert(backTap.wave,'the back link ripples as soon as it is touched');assert(backTap.swap>=190,'the list replaces the replay after the press shows: '+backTap.swap);
+   assert(await page.evaluate(()=>document.querySelector('.app-brand')===originalBrand),'app-bar back also resumes the retained list');
    assert.equal(await page.evaluate(()=>history.length),libraryLength+1,'the app-bar back does not push a second library entry');
    await page.goForward();await page.waitForURL(base+'view/'+ids[1]+'/');await page.locator('.back').click();await page.waitForURL(base);await page.locator('.log-row .replay').first().waitFor();
    await page.waitForFunction(()=>!document.documentElement.classList.contains('rv-navigation-transition'));

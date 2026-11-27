@@ -3,7 +3,7 @@ const host=document.getElementById('pageHost'),notice=document.getElementById('n
 // after an update, an older page scope under newer page scripts.
 const {pageScope}=await import(new URL('page-scope.js'+version,assets));
 const base=new URL('../',assets),libraryStyle=document.getElementById('libraryStyle');
-let current=null,revision=0,pending=null,libraryScroll=0,backPress=0;
+let current=null,libraryPage=null,revision=0,pending=null,backPress=0;
 // Both fragments are static. Keep the parsed templates and resolve their links against each destination on mount.
 const shells=new Map();
 let libraryRequest;
@@ -30,6 +30,21 @@ const route=url=>url.origin===base.origin&&(url.pathname===base.pathname?'librar
 function saveScroll(){history.replaceState({...history.state,rvScroll:scrollY},'',location.href)}
 // A tap on a link that shows its press ([data-ripple-now], [data-glow]: back and the list's 재생) keeps the page this long, so the wave is seen before the swap.
 const PRESS_HOLD=200;
+async function prepare(url,kind,signal,ticket,previous){
+ const [html,module]=await Promise.all([shell(url,kind,signal),import(new URL('page-'+kind+'.js'+version,assets))]);
+ if(ticket!==revision)return;
+ const root=document.createElement('div');root.className=html.body.className;
+ root.append(...html.body.cloneNode(true).childNodes);
+ for(const element of root.querySelectorAll('[href],[src]'))for(const attr of ['href','src'])if(element.hasAttribute(attr))element.setAttribute(attr,new URL(element.getAttribute(attr),url).href);
+ root.hidden=true;host.append(root);
+ const scope=pageScope(root,url,navigate);
+ try{
+  const api=module.mount(scope.env);
+  if(previous){let timer;try{await Promise.race([api.ready,new Promise(resolve=>timer=setTimeout(resolve,400))])}finally{clearTimeout(timer)}}
+  if(ticket===revision)return {url,kind,root,scope,api,title:html.title};
+ }catch(error){scope.dispose();root.remove();throw error}
+ scope.dispose();root.remove();
+}
 async function navigate(to,{replace=false,pop=false,pressed=0}={}){
  const url=new URL(to,location.href),kind=route(url);if(!kind)return;
  if(current&&!current.api.canLeave()){
@@ -38,46 +53,46 @@ async function navigate(to,{replace=false,pop=false,pressed=0}={}){
  }
  const ticket=++revision;pending?.abort();
  pending=new AbortController();notice.setAttribute('role','status');notice.textContent='';
+ const previous=current,retained=kind==='library'&&previous!==libraryPage&&libraryPage?.url.search===url.search;
  try{
-  busy(true);
-  const [html,module]=await Promise.all([shell(url,kind,pending.signal),import(new URL('page-'+kind+'.js'+version,assets))]);if(ticket!==revision)return;
-  const root=document.createElement('div');root.className=html.body.className;
-  root.append(...html.body.cloneNode(true).childNodes);
-  for(const element of root.querySelectorAll('[href],[src]'))for(const attr of ['href','src'])if(element.hasAttribute(attr))element.setAttribute(attr,new URL(element.getAttribute(attr),url).href);
-  const previous=current;
-  if(previous&&route(previous.url)==='library')libraryScroll=scrollY;
-  // Prepare the next page out of view while the current page remains painted.
-  root.hidden=true;host.append(root);
-  const scope=pageScope(root,url,navigate);let api;
-  try{
-   api=module.mount(scope.env);
-   if(previous){let timer;try{await Promise.race([api.ready,new Promise(resolve=>timer=setTimeout(resolve,400))])}finally{clearTimeout(timer)}}
-   if(ticket!==revision){scope.dispose();root.remove();return}
-  }catch(error){scope.dispose();root.remove();throw error}
-  const hold=pressed&&!matchMedia('(prefers-reduced-motion: reduce)').matches?PRESS_HOLD-(performance.now()-pressed):0;
-  if(hold>0){await new Promise(resolve=>setTimeout(resolve,hold));if(ticket!==revision){scope.dispose();root.remove();return}}
-  const brand=previous&&host.querySelector('.app-brand');
+  if(!retained)busy(true);
+  const page=retained?libraryPage:await prepare(url,kind,pending.signal,ticket,previous);
+  if(!page)return;
+  const hold=!retained&&pressed&&!matchMedia('(prefers-reduced-motion: reduce)').matches?PRESS_HOLD-(performance.now()-pressed):0;
+  if(hold>0)await new Promise(resolve=>setTimeout(resolve,hold));
+  if(ticket!==revision){page.scope.dispose();page.root.remove();return}
+  if(previous?.kind==='library')previous.scroll=scrollY;
   if(!pop){
    let state=previous?{}:history.state;
    if(previous&&kind==='replay'){
     // A segment replacement keeps its predecessor. Different drives keep their own replay entries.
     const back=history.state?.rvLibraryBack||0;
-    const distance=route(previous.url)==='library'?1:back&&back+1;
+    const distance=previous.kind==='library'?1:back&&back+1;
     state={rvLibraryBack:replace?back:distance};
    }
    if(!replace)saveScroll();
    history[replace?'replaceState':'pushState'](state,'',url);
   }
-  if(brand)root.querySelector('.app-brand')?.replaceWith(brand);
   globalThis.__rvNavNext=kind;
-  try{previous?.scope.dispose()}finally{globalThis.__rvNavNext=null}
+  try{
+   if(previous?.kind==='library'&&kind==='replay'){
+    previous.scope.suspend();previous.root.hidden=true;
+   }else if(previous){previous.scope.dispose();previous.root.remove()}
+   if(kind==='library'){
+    if(libraryPage&&libraryPage!==previous&&libraryPage!==page){libraryPage.scope.dispose();libraryPage.root.remove()}
+    libraryPage=page;
+   }
+  }finally{globalThis.__rvNavNext=null}
   document.getElementById('pageBase').href=url.href;
-  host.replaceChildren(root);libraryStyle.disabled=kind!=='library';document.documentElement.dataset.page=kind;current={url,scope,api,state:history.state};
-  root.hidden=false;
-  document.title=html.title;notice.textContent='';
-  scrollTo(0,pop?(history.state?.rvScroll||0):kind==='library'?libraryScroll:0);
+  if(host.firstElementChild!==page.root)host.prepend(page.root);
+  libraryStyle.disabled=kind!=='library';document.documentElement.dataset.page=kind;
+  current=page;page.url=url;page.state=history.state;page.root.hidden=false;
+  document.title=page.title;notice.textContent='';
+  const scroll=(pop?history.state?.rvScroll:null)??page.scroll??0;
+  if(retained)page.scope.resume();
+  scrollTo({left:0,top:scroll,behavior:'instant'});
   dispatchEvent(new Event('pageshow'));busy(false);
-  if(kind==='replay')prefetchLibrary();
+  if(kind==='replay'&&!libraryPage)prefetchLibrary();
 
  }catch(error){
   if(ticket!==revision||error.name==='AbortError')return;
@@ -99,6 +114,6 @@ document.addEventListener('click',event=>{
  }
  void navigate(url,{pressed});
 });
-addEventListener('popstate',()=>{const pressed=backPress;backPress=0;if(location.hash&&samePage(new URL(location.href)))return;void navigate(location.href,{pop:true,pressed})});
+addEventListener('popstate',()=>{const pressed=backPress;backPress=0;if(samePage(new URL(location.href)))return;void navigate(location.href,{pop:true,pressed})});
 history.scrollRestoration='manual';
 void navigate(location.href,{replace:true});
