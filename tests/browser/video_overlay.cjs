@@ -40,9 +40,77 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
    ['modelPathWidth',280,'186','roadviewer-path-width','1.86'],
    ['bsdHeight',250,'80','roadviewer-bsd-height','0.8']]){
    assert.equal(await page.locator('#'+id).inputValue(),expected,'first visit uses the default');
-   await page.locator('#'+id).evaluate((e,value)=>{e.value=value;e.dispatchEvent(new Event('input'))},changed);
+   await page.locator('#'+id).evaluate((e,value)=>{e.value=value;e.dispatchEvent(new Event('input'));e.dispatchEvent(new Event('change'))},changed);
    await page.locator('#'+id+'Reset').click();assert.equal(await page.locator('#'+id).inputValue(),expected);
    assert.equal(await page.evaluate(key=>localStorage.getItem(key),key),saved,'reset saves default');
+  }
+  // Touch-scroll guard: sliders allow vertical panning, separate label wrapping, preview on input without saving,
+  // revert on vertical touch scroll or pointercancel, and still commit on horizontal touch drag, mouse and keyboard.
+  {const sliderMeta=await page.evaluate(()=>['ccncBoxHeight','ccncOpacity','modelPathWidth','bsdHeight','overlayHeightRange'].map(id=>{
+    const input=document.getElementById(id),row=input.parentElement;
+    return {id,touchAction:getComputedStyle(input).touchAction,rowTag:row.tagName,labelFor:row.querySelector('label')?.getAttribute('for')};
+   }));
+   for(const m of sliderMeta){
+    assert.equal(m.touchAction,'pan-y',m.id+' allows vertical touch panning');
+    assert.equal(m.rowTag,'DIV',m.id+' is not wrapped in a full-row <label>');
+    assert.equal(m.labelFor,m.id,m.id+' keeps an associated <label>');
+   }
+   await page.locator('label[for="ccncBoxHeight"]').click();
+   assert.equal(await page.locator('#ccncBoxHeight').inputValue(),'130','clicking label text does not jump slider');
+   // Preview on input does not write to localStorage until change.
+   await page.locator('#ccncBoxHeight').evaluate(e=>{e.value='195';e.dispatchEvent(new Event('input',{bubbles:true}))});
+   assert.equal(await page.locator('#ccncBoxHeightValue').textContent(),'1.95 m','input previews live');
+   assert.equal(await page.evaluate(()=>localStorage.getItem('roadviewer-ccnc-box-height')),'1.3','input alone does not persist');
+   await page.locator('#ccncBoxHeightReset').click();
+   // Vertical touch scroll reverts accidental jump (e.g. 0.15 m) and never persists it.
+   await page.evaluate(()=>{
+    const el=document.getElementById('ccncBoxHeight'),r=el.getBoundingClientRect();
+    el.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:11,pointerType:'touch',clientX:r.left+12,clientY:r.top+10}));
+    el.value='15';el.dispatchEvent(new Event('input',{bubbles:true}));
+    window.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:11,pointerType:'touch',clientX:r.left+13,clientY:r.top+36}));
+    window.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:11,pointerType:'touch',clientX:r.left+13,clientY:r.top+36}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+   });
+   assert.equal(await page.locator('#ccncBoxHeight').inputValue(),'130','vertical touch scroll reverts slider value');
+   assert.equal(await page.locator('#ccncBoxHeightValue').textContent(),'1.30 m','vertical touch scroll reverts displayed value');
+   assert.equal(await page.evaluate(()=>localStorage.getItem('roadviewer-ccnc-box-height')),'1.3','vertical touch scroll does not overwrite saved value');
+   // pointercancel also reverts without saving.
+   await page.evaluate(()=>{
+    const el=document.getElementById('ccncBoxHeight'),r=el.getBoundingClientRect();
+    el.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:12,pointerType:'touch',clientX:r.right-8,clientY:r.top+10}));
+    el.value='290';el.dispatchEvent(new Event('input',{bubbles:true}));
+    window.dispatchEvent(new PointerEvent('pointercancel',{bubbles:true,pointerId:12,pointerType:'touch',clientX:r.right-8,clientY:r.top+20}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+   });
+   assert.equal(await page.locator('#ccncBoxHeight').inputValue(),'130','pointercancel reverts slider value');
+   assert.equal(await page.evaluate(()=>localStorage.getItem('roadviewer-ccnc-box-height')),'1.3','pointercancel does not overwrite saved value');
+   // Intentional horizontal touch drag commits and saves.
+   await page.evaluate(()=>{
+    const el=document.getElementById('ccncBoxHeight'),r=el.getBoundingClientRect();
+    el.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:13,pointerType:'touch',clientX:r.left+40,clientY:r.top+10}));
+    window.dispatchEvent(new PointerEvent('pointermove',{bubbles:true,pointerId:13,pointerType:'touch',clientX:r.left+90,clientY:r.top+11}));
+    el.value='215';el.dispatchEvent(new Event('input',{bubbles:true}));
+    window.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:13,pointerType:'touch',clientX:r.left+90,clientY:r.top+11}));
+   });
+   assert.equal(await page.locator('#ccncBoxHeight').inputValue(),'215','horizontal touch drag keeps value');
+   assert.equal(await page.evaluate(()=>localStorage.getItem('roadviewer-ccnc-box-height')),'2.15','horizontal touch drag persists value');
+   // Keyboard adjustment commits and saves.
+   await page.locator('#ccncBoxHeight').focus();
+   await page.keyboard.press('ArrowRight');
+   assert.equal(await page.locator('#ccncBoxHeight').inputValue(),'220','keyboard ArrowRight increments slider');
+   assert.equal(await page.evaluate(()=>localStorage.getItem('roadviewer-ccnc-box-height')),'2.2','keyboard adjustment persists value');
+   // Mouse drag commits and saves.
+   await page.evaluate(()=>{
+    const el=document.getElementById('ccncBoxHeight'),r=el.getBoundingClientRect();
+    el.dispatchEvent(new PointerEvent('pointerdown',{bubbles:true,pointerId:14,pointerType:'mouse',clientX:r.left+40,clientY:r.top+10}));
+    el.value='170';el.dispatchEvent(new Event('input',{bubbles:true}));
+    el.dispatchEvent(new Event('change',{bubbles:true}));
+    window.dispatchEvent(new PointerEvent('pointerup',{bubbles:true,pointerId:14,pointerType:'mouse',clientX:r.left+40,clientY:r.top+10}));
+   });
+   assert.equal(await page.locator('#ccncBoxHeight').inputValue(),'170','mouse drag updates slider');
+   assert.equal(await page.evaluate(()=>localStorage.getItem('roadviewer-ccnc-box-height')),'1.7','mouse drag persists value');
+   await page.locator('#ccncBoxHeightReset').click();
+   assert.equal(await page.locator('#ccncBoxHeight').inputValue(),'130');
   }
   await page.locator('#vehicleBoxes').uncheck();
   await page.locator('#overlayHeightClose').click();await page.locator('#overlayHeightDialog').waitFor({state:'hidden'});
@@ -69,7 +137,7 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   await settingAction('#overlayHeight','click');
   await page.locator('#overlayHeightSettings').click();
   assert(await page.locator('#overlayHeightDialog').isVisible());
-  const setHeight=async cm=>page.locator('#overlayHeightRange').evaluate((e,cm)=>{e.value=cm;e.dispatchEvent(new Event('input'))},cm);
+  const setHeight=async cm=>page.locator('#overlayHeightRange').evaluate((e,cm)=>{e.value=cm;e.dispatchEvent(new Event('input'));e.dispatchEvent(new Event('change'))},cm);
   await setHeight(0);assert.equal(await alphaAt(.65),0);assert.equal(await page.locator('#overlayHeightValue').textContent(),'0 cm');
   await setHeight(30);assert(await alphaAt(.65)>0);
   await setHeight(200);assert.equal(await page.locator('#overlayHeightValue').textContent(),'200 cm');
@@ -120,7 +188,7 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   await page.evaluate(()=>{data.frames[0].ccncTargets[0].slot='FF';data.frames[0].ccncTargets[0].detect=4});
   await page.locator('#layerMenu').evaluate(d=>{d.open=true});await page.locator('#hideLabels').check();
   const overlayImage=()=>page.locator('#videoOverlay').evaluate(c=>c.toDataURL());
-  const setBoxHeight=async value=>page.locator('#ccncBoxHeight').evaluate((e,v)=>{e.value=v;e.dispatchEvent(new Event('input'))},value);
+  const setBoxHeight=async value=>page.locator('#ccncBoxHeight').evaluate((e,v)=>{e.value=v;e.dispatchEvent(new Event('input'));e.dispatchEvent(new Event('change'))},value);
   await setBoxHeight(0);const flat=await overlayImage();assert(await pixels(),'zero height keeps the footprint');
   await page.evaluate(()=>{window.savedBoxDistance=data.frames[0].ccncTargets[0].x;data.frames[0].ccncTargets[0].x=100;render()});assert(await pixels(),'camera boxes beyond the road range remain visible');
   await page.evaluate(()=>{data.frames[0].ccncTargets[0].x=savedBoxDistance;render()});
@@ -129,7 +197,7 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   const beforeHeight=await overlayImage();
   await settingAction('#overlayHeight','click');assert.equal(await overlayImage(),beforeHeight,'3D box ignores height toggle');
   await settingAction('#overlayHeight','click');
-  const setOpacity=async value=>page.locator('#ccncOpacity').evaluate((e,v)=>{e.value=v;e.dispatchEvent(new Event('input'))},value);
+  const setOpacity=async value=>page.locator('#ccncOpacity').evaluate((e,v)=>{e.value=v;e.dispatchEvent(new Event('input'));e.dispatchEvent(new Event('change'))},value);
   // Box edges are 1 px lines of light, added to the picture; the far face and depth edges are dimmer.
   const boxEdges=()=>page.evaluate(()=>{const edges=[],original=CanvasRenderingContext2D.prototype.stroke;CanvasRenderingContext2D.prototype.stroke=function(){if(this.canvas.id==='videoOverlay'&&this.lineWidth===1)edges.push([this.globalAlpha,this.globalCompositeOperation,this.shadowBlur]);return original.call(this)};try{render()}finally{CanvasRenderingContext2D.prototype.stroke=original}return edges});
   await setOpacity(0);{const e=await boxEdges();assert.equal(e.filter(([a])=>a>0).length,12,'all twelve edges drawn');assert(e.every(([,mode,blur])=>mode==='lighter'&&blur===0),'additive, no shadow blur')}
@@ -312,9 +380,9 @@ const fs=require('fs'),assert=require('node:assert/strict'),{chromium}=require('
   await settingAction('#overlayHeight','click');
   await page.evaluate(()=>{data.frames[0].overlay=null;render()});
   assert((await page.locator('#overlayStatus').textContent()).includes('보정'));
-  await page.locator('#modelPathWidth').evaluate(e=>{e.value=200;e.dispatchEvent(new Event('input'))});
+  await page.locator('#modelPathWidth').evaluate(e=>{e.value=200;e.dispatchEvent(new Event('input'));e.dispatchEvent(new Event('change'))});
   await settingAction('#boxLabels','uncheck');
-  await settingAction('#bsdWalls','uncheck');await page.locator('#bsdHeight').evaluate(e=>{e.value=240;e.dispatchEvent(new Event('input'))});
+  await settingAction('#bsdWalls','uncheck');await page.locator('#bsdHeight').evaluate(e=>{e.value=240;e.dispatchEvent(new Event('input'));e.dispatchEvent(new Event('change'))});
   await page.evaluate(()=>{document.querySelector('#leadMark [data-mark=line]').click();document.getElementById('gapTarget').click()});
   assert.equal(await page.evaluate(()=>JSON.parse(localStorage.getItem('roadviewer-display-preferences')).leadMark),'line','앞차거리 choice saved with the display preferences');
   await page.reload();await page.waitForFunction(()=>!document.getElementById('play').disabled);
