@@ -1831,8 +1831,8 @@
    const w=mini.clientWidth,h=mini.clientHeight;
    if(!w||!h||(w===maskWidth&&h===maskHeight))return;
    maskWidth=w;maskHeight=h;
-   const short=Math.min(w,h),radius=short*.46,blur=short*.043;
-   const left=3*blur,bottom=h-left,top=-4*blur,right=w-top;
+   const short=Math.min(w,h),radius=short*.54,blur=short*.16;
+   const left=2.3*blur,bottom=h-left,top=-4*blur,right=w-top;
    // Extend past the two video edges. The inset edges have room to fade to transparency.
    feather.setAttribute('stdDeviation',blur);
    fade.setAttribute('d',`M ${left} ${top} H ${right} V ${bottom} H ${left+radius} A ${radius} ${radius} 0 0 1 ${left} ${bottom-radius} Z`);
