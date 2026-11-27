@@ -110,12 +110,18 @@ async function assertMiniCorner(page,kind='vehicle'){
   const mapHit=stack.indexOf(mini.querySelector('.video-map-open'));
   return {top:mapBox.top-stageBox.top,right:stageBox.right-mapBox.right,margin:getComputedStyle(mini).margin,
    mask:getComputedStyle(mini.querySelector('.video-map-surface')).maskImage,
+   maskRepeat:getComputedStyle(mini.querySelector('.video-map-surface')).maskRepeat,
+   maskSize:getComputedStyle(mini.querySelector('.video-map-surface')).maskSize,
+   surfaceOverflow:getComputedStyle(mini.querySelector('.video-map-surface')).overflow,
    hudAbove:stack.includes(speed)&&mapHit>stack.indexOf(speed),
    speedShadow:getComputedStyle(speed).textShadow,unitShadow:getComputedStyle(unit).textShadow,
    carBelowHud:mapBox.top+car.y>hud.getBoundingClientRect().bottom};
  });
  assert(Math.abs(state.top)<.5&&Math.abs(state.right)<.5&&state.margin==='0px','3D map is flush with the video corner '+JSON.stringify(state));
  assert.match(state.mask,/#videoMapFade/);
+ assert.equal(state.maskRepeat,'no-repeat','mask never tiles during resize '+JSON.stringify(state));
+ assert.equal(state.maskSize,'100% 100%','mask scales 1:1 with the surface '+JSON.stringify(state));
+ assert.equal(state.surfaceOverflow,'hidden','held canvas stays clipped to the surface '+JSON.stringify(state));
  assert(state.hudAbove&&state.carBelowHud,'the HUD remains above the map and clear of the vehicle '+JSON.stringify(state));
  assert.match(state.speedShadow,/rgba\(0, 0, 0, 0\.55\) 0px 1px 3px/,'speed retains its soft shadow');
  assert.equal(state.unitShadow,state.speedShadow,'the speed unit shares the shadow');
