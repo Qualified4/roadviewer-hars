@@ -1,4 +1,4 @@
-'use strict';const $=id=>document.getElementById(id);let selected=[],busy=false,cleaning=false,refreshing=false,progressRefreshing=false,listRevision=0,listRequest=null;const logRows=new Map(),logGroups=new Map();
+'use strict';const $=id=>document.getElementById(id);let selected=[],busy=false,cleaning=false,refreshing=false,progressRequest=null,listRevision=0,listRequest=null;const logRows=new Map(),logGroups=new Map();
 // Every drive starts folded when the list opens; what was unfolded is not remembered (an older build saved it).
 try{localStorage.removeItem('roadviewer-expanded-routes')}catch{}
 let uploadController=null,networkRestarting=false;
@@ -138,7 +138,11 @@ document.querySelector('.lib-tabs').addEventListener('keydown',e=>{
 });
 for(const button of tabButtons)button.onclick=()=>selectTab(button.dataset.tab);
 document.addEventListener('click',e=>{const target=e.target.closest?.('[data-goto-tab]');if(target)selectTab(target.dataset.gotoTab)});
-window.addEventListener('hashchange',()=>{const tab=window.location.hash.slice(1);if(LIBRARY_TABS.includes(tab)&&tab!==libraryTab)selectTab(tab,{hash:false})});
+function readLinkedTab(){
+ if(window.location.pathname!==location.pathname)return;
+ const tab=window.location.hash.slice(1);if(LIBRARY_TABS.includes(tab)&&tab!==libraryTab)selectTab(tab,{hash:false});
+}
+window.addEventListener('hashchange',readLinkedTab);
 {
  let saved=null;try{saved=sessionStorage.getItem('roadviewer-library-tab')}catch{}
  const linked=window.location.hash.slice(1);
@@ -699,20 +703,20 @@ async function refresh({poll=false}={}){
  }finally{if(revision===listRevision){refreshing=false;$('refresh').classList.remove('is-loading')}}
 }
 async function refreshProgress(){
- if(document.hidden||busy||networkRestarting||progressRefreshing||refreshing||![...logRows.values()].some(row=>row.status==='processing'||row.status==='queued'))return;
- progressRefreshing=true;const revision=listRevision;
+ if(document.hidden||busy||networkRestarting||progressRequest||refreshing||![...logRows.values()].some(row=>row.status==='processing'||row.status==='queued'))return;
+ const request=progressRequest=new AbortController(),revision=listRevision;
  try{
-  const response=await fetch('api/progress',{cache:'no-store'});
+  const response=await fetch('api/progress',{cache:'no-store',signal:request.signal});
   if(!response.ok)return;
   const data=await response.json();
   // A newer full list owns status transitions and must not be overwritten.
-  if(refreshing||revision!==listRevision)return;
+  if(refreshing||request.signal.aborted||revision!==listRevision)return;
   for(const [id,progress] of Object.entries(data.progress||{})){
    const cached=logRows.get(id);
    if(cached?.status==='processing'&&cached.state)showState(cached.state,{status:'processing',progress,video:cached.video,conversion_revision:cached.conversion_revision});
   }
   for(const group of logGroups.values())syncRouteBar(group);
- }catch{}finally{progressRefreshing=false}
+ }catch{}finally{if(progressRequest===request)progressRequest=null}
 }
 
 // Filters: one built-in chip, any number of tag chips (a log must carry all of them; 태그 없음 stands alone) and the
@@ -932,6 +936,8 @@ $('upload').onclick=async()=>{
 // Screen mode lives in the 설정 tab (theme.js owns the state).
 {const theme=window.RoadViewerTheme?.control();if(theme)document.getElementById('themeControl').append(theme)}
 const pageReady=refresh();setInterval(()=>refresh({poll:true}),3000);setInterval(refreshProgress,1000);
+if(typeof onPageSuspend==='function')onPageSuspend(()=>{listRequest?.abort();progressRequest?.abort()});
+if(typeof onPageResume==='function')onPageResume(()=>{readLinkedTab();void refresh()});
 // A hidden tab stops polling (each list request scans storage); catch up as soon as it is shown again.
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
 

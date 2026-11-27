@@ -347,6 +347,24 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
     await settleLayout(page,'#driveMap');
    };
    const driveClosed=()=>page.waitForFunction(()=>!document.getElementById('driveMap').open&&!document.querySelector('#driveMap canvas.maplibregl-canvas'));
+   async function replayAndBack(target,play){
+    const from=page.url(),url=await play.evaluate(link=>link.href);
+    await page.evaluate(target=>{
+     const root=document.querySelector(target),map=rvTestMaps.findLast(m=>root.contains(m.getContainer()));
+     map.panBy([22,-16],{animate:false});
+     window.retainedMap={map,center:map.getCenter(),zoom:map.getZoom(),gl:map.rvGl};
+    },target);
+    await play.tap();await page.waitForURL(url);
+    assert(await page.evaluate(()=>{
+     const {map,gl}=retainedMap;
+     return map.getContainer().closest('.library-page').hidden&&(!gl||!matchMedia('(pointer:coarse)').matches||!map.rvGl);
+    }),'the hidden library retains Leaflet and releases the touch device WebGL layer');
+    await page.locator('.app-bar .back').tap();await page.waitForURL(from);
+    assert(await page.evaluate(target=>{
+     const root=document.querySelector(target),{map,center,zoom}=retainedMap;
+     return rvTestMaps.findLast(m=>root.contains(m.getContainer()))===map&&map.getCenter().distanceTo(center)<.5&&map.getZoom()===zoom;
+    },target),'back keeps the same map, center and zoom');
+   }
    // The geometry that matters: the map stays on screen above the sheet and the marked line lies inside it.
    const layout=()=>page.evaluate(()=>{
     const d=document.getElementById('driveMap'),r=s=>d.querySelector(s).getBoundingClientRect(),area=r('.drive-map-area'),bar=r('.drive-map-bar'),sheet=r('.drive-map-sheet'),list=r('.drive-map-list'),body=r('.drive-map-body');
@@ -435,10 +453,8 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
     await drag(-160);await drive.locator('.drive-map-handle').tap();await page.waitForTimeout(150);assert(await hidden(),'from the top height too, a tap hides it')
     await drive.locator('.drive-map-handle').tap();await page.waitForTimeout(150)}
    if(scheme==='light'){
-    const mapURL=page.url(),play=drive.locator('.log-row a.replay').first();
-    const replayURL=await play.evaluate(link=>link.href);
-    await play.tap();await page.waitForURL(replayURL);
-    await page.locator('.app-bar .back').tap();await page.waitForURL(mapURL);await driveOpen();
+    await replayAndBack('#driveMap',drive.locator('.log-row a.replay').first());
+    await driveOpen();
    }
    // The system back closes it (back in the list, the card's shape focused again).
    await page.goBack();await driveClosed();assert.notEqual(new URL(page.url()).hash,'#drive-map');
@@ -575,6 +591,11 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    assert.deepEqual(await card.locator('.map-card-actions>:is(a,button):not(.map-card-close)').allInnerTexts(),['재생','주행 지도','목록에서 보기']);
    assert.equal((await routeLines.evaluateAll(lines=>lines.map(l=>Number(l.getAttribute('stroke-opacity'))<.5))).filter(Boolean).length,1,'the others dim');
    await shot('list-map');tilesUsed();
+   if(scheme==='light'){
+    const title=await card.locator('.map-card-title').textContent();
+    await replayAndBack('#logMap',card.locator('.map-card-play'));
+    assert(await card.isVisible());assert.equal(await card.locator('.map-card-title').textContent(),title,'back keeps the selected drive');
+   }
    // The card's 주행 지도 opens the same view for that drive; back returns to the list's map.
    {const facts=await card.locator('.map-card-facts').innerText(),count=Number(/(\d+)개 구간/.exec(facts)[1]);
     await card.getByRole('button',{name:'주행 지도'}).tap();

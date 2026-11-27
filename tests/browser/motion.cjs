@@ -80,7 +80,7 @@ const running=page=>page.evaluate(()=>document.getAnimations().filter(a=>a.playS
    logs[0].progress={stage:'log_analysis',frames:15,total_frames:20};
    const light=await page.evaluate(async()=>{
     for(let i=0;i<20;i++){
-     await new Promise(idle=>{const check=()=>progressRefreshing||refreshing?setTimeout(check,10):idle();check()});
+     await new Promise(idle=>{const check=()=>progressRequest||refreshing?setTimeout(check,10):idle();check()});
      const revision=listRevision;await refreshProgress();
      if(revision===listRevision)return document.querySelector('.state-progress>span').style.getPropertyValue('--progress');
     }

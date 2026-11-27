@@ -188,7 +188,7 @@
  }
  function createMap(L,container,{zoom=true,interactive=true,attribution=ATTRIBUTION,tone=null,labels=null,grey=null,margin=null,warmup=false,autoDispose=true}={}){
   const startWarmup=!!(margin&&warmup&&webgl()),initialPad=startWarmup?.1:margin;
-  const map=L.map(container,{zoomControl:false,attributionControl:true,dragging:interactive,touchZoom:interactive,scrollWheelZoom:interactive,doubleClickZoom:interactive,boxZoom:interactive,keyboard:interactive,tap:interactive,zoomSnap:.25,maxZoom:19,fadeAnimation:!reduced(),zoomAnimation:!reduced(),markerZoomAnimation:!reduced(),...(margin?{renderer:L.svg({padding:initialPad})}:{})});
+  const map=L.map(container,{zoomControl:false,attributionControl:true,trackResize:!library,dragging:interactive,touchZoom:interactive,scrollWheelZoom:interactive,doubleClickZoom:interactive,boxZoom:interactive,keyboard:interactive,tap:interactive,zoomSnap:.25,maxZoom:19,fadeAnimation:!reduced(),zoomAnimation:!reduced(),markerZoomAnimation:!reduced(),...(margin?{renderer:L.svg({padding:initialPad})}:{})});
   map.rvMargin=initialPad||0;map.rvMarginMax=margin||0;map.rvWarmup=startWarmup;
   // Leaflet listens on the window and MapLibre keeps a WebGL context and workers: a map left standing when its page
   // goes kept the whole page alive.
@@ -219,8 +219,9 @@
   // the layer (and MapLibre's map) once the map has a view, so this waits for it. No WebGL (rare): the routes are
   // still drawn, on the plain background.
   map.rvGl=null;map.rvSymbols=[];
-  if(webgl()){
-   const layer=L.maplibreGL({attributionControl:{customAttribution:attribution},pixelRatio:Math.min(window.devicePixelRatio||1,2),fadeDuration:reduced()?0:300,renderWorldCopies:false,...(margin?{padding:initialPad}:{})});
+  if(webgl())map.rvAttachBasemap=()=>{
+   if(map.rvGlLayer)return;
+   const layer=L.maplibreGL({attributionControl:{customAttribution:attribution},pixelRatio:Math.min(window.devicePixelRatio||1,2),fadeDuration:reduced()?0:300,renderWorldCopies:false,...(margin?{padding:map.rvMargin}:{})});
    // The plugin redraws on every Leaflet move (throttled); map.rvHold (a hand drag of the 지도 tab while its margin
    // still covers) skips that: what is drawn moves with the map pane, re-centred by the caller.
    layer._throttledUpdate=L.Util.throttle(function(e){if(!map.rvHold?.())this._update(e)},layer.options.updateInterval,layer);
@@ -231,7 +232,8 @@
     map.rvSetStyle?.();map.rvOnGlReady?.(map.rvGl);
    });
    layer.addTo(map);
-  }
+  };
+  map.rvAttachBasemap?.();
   map.rvFitMargin?.();  // the basemap layer exists now: its padding too
   if(zoom){L.control.zoom({position:'topright',zoomInTitle:'확대',zoomOutTitle:'축소'}).addTo(map);map.rvSimpleControl=simpleControl(L).addTo(map)}
   map.rvCreditCleanup=compactCredit(L,map,container);
@@ -245,7 +247,7 @@
   gl.on('webglcontextrestored',()=>{gl.rvContextLost=false;gl.resize();restore()});
  }
  function watchLeaflet(map,container){
-  map.rvObserver=new globalThis.ResizeObserver(()=>{if(container.isConnected)map.invalidateSize({animate:false})});
+  map.rvObserver=new globalThis.ResizeObserver(()=>{if(container.isConnected&&!document.body.hidden&&container.offsetWidth)map.invalidateSize({animate:false})});
   map.rvObserver.observe(container);
   map.rvSetStyle=()=>setStyle(map);
   map.rvStyleRetry=retryTask(map.rvSetStyle);
@@ -397,7 +399,7 @@
 
  if(library){
   // ---- ① 전체 주행 경로, ② the card's route shape and 주행 지도.
-  let tracks=sessionCache.tracks,trackTag=sessionCache.tracksTag,trackText=sessionCache.tracksText,trackSignature=sessionCache.tracksSignature,trackRequest=null,mode='list',overview=null,overviewLines=new Map(),selected=null;
+  let tracks=sessionCache.tracks,trackTag=sessionCache.tracksTag,trackText=sessionCache.tracksText,trackSignature=sessionCache.tracksSignature,trackRequest=null,mode='list',overview=null,overviewLines=new Map(),selected=null,parkedDrive=null;
   const switcher=document.getElementById('logView'),panel=document.getElementById('logMap'),canvas=panel.querySelector('.log-map-canvas'),card=document.getElementById('logMapCard'),empty=panel.querySelector('.log-map-empty');
   const routeOf=new Map();  // log id -> route of /api/tracks
   if(tracks)for(const route of tracks)for(const id of route.ids)routeOf.set(id,route);
@@ -936,12 +938,13 @@
   drive.addEventListener('keydown',e=>{if(e.key==='Escape')escapeTaken=!!(drive.querySelector('.recording-more[open]')||document.querySelector('.tag-popover'))},true);
   drive.addEventListener('cancel',e=>{e.preventDefault();if(!escapeTaken)closeDrive();escapeTaken=false});
   drive.addEventListener('close',()=>{
-   if(drive.open)return;releaseDrive();
+   if(drive.open||parkedDrive)return;releaseDrive();
    document.body.style.overflow='';driveGroup=null;driveMarked=null;
    if(window.location.hash===DRIVE_HASH){const url=new URL(window.location.href);url.hash=libraryTab||'logs';history.replaceState({...history.state,rvDrive:null},'',url)}
    driveOpener=null;
   });
   window.addEventListener('popstate',()=>{
+   if(window.location.pathname!==location.pathname)return;
    if(drive.open&&window.location.hash!==DRIVE_HASH)finishDrive();
    else if(!drive.open&&window.location.hash===DRIVE_HASH)restore();
   });
@@ -1029,12 +1032,13 @@
    if(mode==='map')loadLeaflet().catch(()=>{});
    if(!tracks){empty.hidden=true;return}
    let L;try{L=await loadLeaflet()}catch(e){error(e.message);return}
-   if(!await pageShown||mode!=='map')return;
+   if(!await pageShown||document.body.hidden||mode!=='map')return;
    if(!overview){
     overview=createMap(L,canvas);
     overviewCasingRenderer=L.canvas({padding:.1});
     overview.on('click',event=>{const line=nearestLine(overviewLines.values(),event);if(line)select(line.rvGroup,{scroll:true});else select(null)});
    }
+   overview.rvAttachBasemap?.();
    const shown=visibleGroups().map(group=>({group,route:groupRoute(group)})).filter(item=>item.route&&item.route.points.length>1);
    const keys=new Set(shown.map(item=>item.route.key));
    let changed=false;
@@ -1180,6 +1184,38 @@
   }
   card.querySelector('.map-card-close').onclick=()=>select(null);
   card.querySelector('.map-card-drive').onclick=event=>{if(selected)openDrive(selected,{opener:event.currentTarget})};
+  const coarse=matchMedia('(pointer:coarse)');
+  if(typeof onPageSuspend==='function')onPageSuspend(()=>{
+   trackRequest?.abort();trackRequest=null;
+   if(drive.open){
+    parkedDrive={scroll:sheetList.scrollTop,pending:!!driveRequest};
+    driveTicket++;driveRequest?.abort();driveRequest=null;drive.close();
+   }
+   for(const map of maps){
+    map.stop();
+    // Release GPU contexts on touch devices. Keep Leaflet's view, routes and selection in the DOM.
+    if(!coarse.matches||!map.rvGlLayer)continue;
+    map.rvStyleRequest=null;map.rvStyleApplied=null;map.rvStyleRetry?.cancel();
+    map.removeLayer(map.rvGlLayer);map.rvGl=null;map.rvGlLayer=null;
+   }
+  });
+  if(typeof onPageResume==='function')onPageResume(()=>{
+   const fromDrive=window.location.hash===DRIVE_HASH;
+   if(parkedDrive){
+    const {scroll,pending}=parkedDrive;parkedDrive=null;
+    if(fromDrive&&driveGroup?.route.key===history.state?.rvDrive){
+     drive.showModal();document.body.style.overflow='hidden';sheetList.scrollTop=scroll;
+     if(!driveMap||pending)drawDrive(driveMarked);
+    }else{releaseDrive();driveGroup=null;driveMarked=null;driveOpener=null}
+   }
+   if(fromDrive&&!drive.open){restoreDrive=restore;restore()}
+   for(const map of maps){
+    if(!map.getContainer().offsetWidth)continue;
+    map.invalidateSize({animate:false});map.rvAttachBasemap?.();applyTiles(map);
+   }
+   if(mode==='map')drawOverview(false);
+   if(!tracksRetry.pending)fetchTracks();
+  });
   window.rvMaps={listed,filtered:()=>{if(mode==='map')drawOverview(false)},showSegment,mode:()=>mode};
   {let saved=null;try{saved=sessionStorage.getItem('roadviewer-log-view')}catch{}if(saved==='map')setMode('map')}
  }
