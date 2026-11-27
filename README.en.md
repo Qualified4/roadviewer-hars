@@ -2,7 +2,7 @@
 
 [한국어](README.md) · English
 
-> **This repository is Road Viewer 2.x, rebuilt in Rust.** The current version is **2.1.2**.
+> **This repository is Road Viewer 2.x, rebuilt in Rust.** The current version is **2.1.3**.
 >
 > It succeeds the Python [Road Viewer 1.x](https://github.com/Qualified4/roadviewer-ha), whose repository no longer receives new features. The Home Assistant app store and sidebar show it as **Road Viewer**. It is a separate app with a different slug, so the 1.x app is not updated to it automatically. To move from 1.x, see [cutover and rollback](docs/hars/CUTOVER.md) (Korean). Unverified environments and remaining risks are listed in the [implementation and validation status](docs/hars/STATUS.md) (Korean).
 >
