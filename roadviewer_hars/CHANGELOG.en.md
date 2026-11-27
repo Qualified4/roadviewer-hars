@@ -1,3 +1,8 @@
+## 2.1.5
+
+- Synced playback minimap resize handle auto-hide with player controls, added free-aspect resizing with rounded-rectangle edge fade, and fixed shrink-animation jitter.
+- Improved mobile log-list map button responsiveness by opening the modal immediately and loading tracks in two stages.
+
 ## 2.1.4
 
 - Guarded range sliders in the overlay settings dialog against accidental value jumps and immediate persistence during mobile vertical touch scrolling.
