@@ -1,3 +1,7 @@
+## 2.1.3
+
+- Improved map loading with NAS prepared track caching and parallel cold reads, added automatic retry and WebGL context-restore recovery for basemap styles and track fetches, and smoothed minimap heading rotation between GPS samples.
+
 ## 2.1.2
 
 - Applied the vehicle icon setting to the 3D faded minimap and restored the top-right speed HUD layer with a soft drop shadow.
