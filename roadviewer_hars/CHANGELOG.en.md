@@ -1,3 +1,8 @@
+## 2.1.9
+
+- Eliminated the 1px right/top-edge subpixel seam on the collapsed playback minimap so the map sits flush against the video frame boundary across all DPRs and sizes (#81).
+- Raised the minimap top-right starting opacity from `0.80` to `0.90` while keeping the nonlinear accelerated fade curve (`1 - (1 - a)^2.6`) (#81).
+
 ## 2.1.8
 
 - Kept the log list alive across navigation and polished mobile map/replay back-navigation history (#77, #78).
