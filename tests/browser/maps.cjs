@@ -102,6 +102,7 @@ async function assertMiniCorner(page,kind='vehicle'){
  const state=await page.evaluate(()=>{
   const mini=document.getElementById('videoMap'),stage=document.getElementById('videoStage');
   const mapBox=mini.getBoundingClientRect(),stageBox=stage.getBoundingClientRect(),hud=stage.querySelector('.video-hud');
+  const surfaceBox=mini.querySelector('.video-map-surface').getBoundingClientRect(),canvasBox=rvTestMini.getCanvas().getBoundingClientRect();
   const map=rvTestMini,car=map.project(map.getCenter()),speed=hud.querySelector('#egoSpeed'),unit=hud.querySelector('.ego-speed span');
   const speedBox=speed.getBoundingClientRect();
   hud.style.pointerEvents='auto';
@@ -109,6 +110,8 @@ async function assertMiniCorner(page,kind='vehicle'){
   hud.style.removeProperty('pointer-events');
   const mapHit=stack.indexOf(mini.querySelector('.video-map-open'));
   return {top:mapBox.top-stageBox.top,right:stageBox.right-mapBox.right,margin:getComputedStyle(mini).margin,
+   surfaceTop:surfaceBox.top-stageBox.top,surfaceRight:stageBox.right-surfaceBox.right,
+   canvasTop:canvasBox.top-stageBox.top,canvasRight:stageBox.right-canvasBox.right,
    mask:getComputedStyle(mini.querySelector('.video-map-surface')).maskImage,
    maskRepeat:getComputedStyle(mini.querySelector('.video-map-surface')).maskRepeat,
    maskSize:getComputedStyle(mini.querySelector('.video-map-surface')).maskSize,
@@ -118,6 +121,7 @@ async function assertMiniCorner(page,kind='vehicle'){
    carBelowHud:mapBox.top+car.y>hud.getBoundingClientRect().bottom};
  });
  assert(Math.abs(state.top)<.5&&Math.abs(state.right)<.5&&state.margin==='0px','3D map is flush with the video corner '+JSON.stringify(state));
+ assert(state.surfaceTop<=0&&state.surfaceRight<=0&&state.canvasTop<=0&&state.canvasRight<=0,'minimap surface and canvas fully cover top-right stage edge with no gap '+JSON.stringify(state));
  assert.match(state.mask,/#videoMapFade/);
  assert.equal(state.maskRepeat,'no-repeat','mask never tiles during resize '+JSON.stringify(state));
  assert.equal(state.maskSize,'100% 100%','mask scales 1:1 with the surface '+JSON.stringify(state));
@@ -241,12 +245,12 @@ async function assertMiniFade(page,mini){
   const {width:w,height:h}=img,s=Math.min(w,h);
   const canvas=new OffscreenCanvas(w,h),ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);
   const at=(x,y)=>ctx.getImageData(Math.floor(x),Math.floor(y),1,1).data[0];
-  return {top:at(w-.15*s,1),right:at(w-2,.15*s),left:[1,.37*s,.72*s].map(x=>at(x,.14*s)),
+  return {top:at(w-.15*s,0),right:at(w-1,.15*s),left:[1,.37*s,.72*s].map(x=>at(x,.14*s)),
    bottom:[1,.37*s,.72*s].map(y=>at(w-.12*s,h-y)),corner:at(.37*s,h-.37*s),grip:at(11,h-20)};
  },png.toString('base64'));
- assert(light.top>=195&&light.top<=215&&light.right>=195&&light.right<=215,'top-right corner keeps subtle ~20% transparency '+JSON.stringify(light));
+ assert(light.top>=220&&light.top<=238&&light.right>=220&&light.right<=238,'top-right corner reaches 0.90 opacity right up to the frame edge '+JSON.stringify(light));
  for(const edge of [light.left,light.bottom]){
-  assert(edge[0]<8&&edge[1]>110&&edge[1]<185&&edge[2]>185&&edge[2]<=215&&edge[1]-edge[0]>edge[2]-edge[1],'inner edges follow a nonlinear accelerated fade '+JSON.stringify(light));
+  assert(edge[0]<8&&edge[1]>125&&edge[1]<205&&edge[2]>208&&edge[2]<=238&&edge[1]-edge[0]>edge[2]-edge[1],'inner edges follow a nonlinear accelerated fade '+JSON.stringify(light));
  }
  assert(light.corner<45,'the feather follows a rounded lower-left corner '+JSON.stringify(light));
  assert(light.grip>130,'the thin resize grip paints over the transparent corner '+JSON.stringify(light));
@@ -1069,6 +1073,8 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    },tall);
    await open.click();await page.waitForFunction(()=>!document.querySelector('.video-map-canvas').style.width&&!rvTestMini.isMoving());
    await assertMiniClose(page);
+   await assertMiniCorner(page,'arrow');
+   await assertMiniFade(page,mini);
    await grip.dblclick();
    await page.waitForFunction(([w,h])=>{const el=document.getElementById('videoMap');return Math.abs(el.clientWidth-w)<1&&Math.abs(el.clientHeight-h)<1&&!el.getAnimations().length},[collapsed.width,collapsed.height]);
    assert.equal(await page.evaluate(key=>localStorage.getItem(key),key),null,'double-click restores the default size');
@@ -1126,6 +1132,8 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await close.click();
    await page.waitForFunction(()=>!document.querySelector('.video-map-canvas').style.width&&!rvTestMini.isMoving());
    assert.equal(await page.evaluate(()=>rvNativeResizes)-beforeClose,1,'closing resizes the WebGL canvas once');
+   await assertMiniCorner(page,'arrow');
+   await assertMiniFade(page,mini);
    await page.getByRole('link',{name:'로그 목록'}).click();await page.waitForURL(base);
    assert.equal(await page.evaluate(()=>rvNativeRemoved),1,'leaving the drive releases the native map');
    assert.deepEqual(errors,[]);
