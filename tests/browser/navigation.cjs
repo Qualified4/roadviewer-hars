@@ -24,6 +24,10 @@ http.serve_forever()
    let listReads=0,listVersion=1,listNotModified=0,progressReads=0,delayData=false,releaseData,holdList=false,releaseList;
    const requests=new EventEmitter();
    const base=`http://127.0.0.1:${port}${prefix}/`;
+   if(width===390)await page.route(/\/assets\/page-replay\.js(?:\?|$)/,async route=>{
+    const response=await route.fetch(),source=await response.text();
+    await route.fulfill({response,body:source.replace('export function mount(env) {',"export function mount(env) {\nif(globalThis.failReplayMount)throw Error('fixture replay mount failed');")});
+   });
    const driveLogs=[...ids,...Array.from({length:24},(_,i)=>`extra-${i}`)].map((id,i)=>({id,name:`00000395--0d0eda17c5 / 구간 ${i}`,status:i<ids.length?'ready':'unconverted',pinned:true,tags:[{name:'야간',color:'mint'}],uploaded:100-i,bytes:1,prepared_bytes:1}));
    page.on('pageerror',e=>errors.push(e.message));page.on('request',r=>{
     if(r.isNavigationRequest())documents.push(r.url());
@@ -213,6 +217,14 @@ http.serve_forever()
    const abandonedFinished=once(requests,'data-finished',{signal:AbortSignal.timeout(5000)});releaseData();await abandonedFinished;
    await page.locator('.log-row .replay').first().waitFor();
    assert.equal(await page.locator('#play').count(),0);assert.equal(await page.locator('.rv-choice-dialog').count(),1,'dialogs do not accumulate');
+   const replayURL=base+'view/'+ids[0]+'/';
+   if(width===390){
+    // Build a stack with a replay on either side of the library using ordinary shell links.
+    await page.goForward();await page.waitForURL(replayURL);
+    await page.locator('.replay-page').evaluate((root,base)=>{const link=document.createElement('a');link.href=base;root.append(link);link.click()},base);
+    await page.waitForURL(base);await page.locator('.log-row .replay').first().click();await page.waitForURL(replayURL);
+    await page.goBack();await page.waitForURL(base);
+   }
    // Internal navigation must not abort an active upload or strand its server reservation.
    let uploadRequest,releaseUpload;
    await page.route('**/api/uploads',async r=>{uploadRequest=r;await new Promise(resolve=>{releaseUpload=resolve;requests.emit('upload-held')});await r.fulfill({status:400,json:{error:'Test upload cancelled'}})});
@@ -223,9 +235,34 @@ http.serve_forever()
    await page.locator('#tab-logs').click();assert(await page.locator('#uploadPill').isVisible(),'the app bar shows the running upload');
    await page.locator('.log-row .replay').first().click();await page.waitForFunction(()=>document.getElementById('navigationStatus').textContent.includes('업로드 또는 정리'));
    assert.equal(page.url(),base+'#logs','still on the library (tab in the hash)');assert(await page.locator('#upload').isDisabled());
+   const libraryURL=base+'#logs',beforeTraversal=await page.evaluate(()=>history.length);
+   if(width===390){
+    await page.evaluate(()=>{window.traversed=[];addEventListener('popstate',()=>traversed.push(location.href),true)});
+    for(const direction of ['back','forward']){
+     await page.evaluate(direction=>{traversed.length=0;history[direction]()},direction);
+     await page.waitForFunction(([attempt,restored])=>traversed.includes(attempt)&&location.href===restored,[replayURL,libraryURL],{timeout:8000}).catch(async error=>{
+      const state=await page.evaluate(()=>({url:location.href,traversed,state:history.state,notice:document.getElementById('navigationStatus').textContent}));
+      error.message+=` (${direction}: ${JSON.stringify(state)})`;throw error;
+     });
+     assert(await page.locator('#upload').isDisabled(),'the blocked traversal leaves the upload running');
+     assert.equal(await page.evaluate(()=>history.length),beforeTraversal,'recovery keeps the same history entries');
+    }
+   }
    assert(uploadRequest,'upload request is still active');releaseUpload();
    await page.waitForFunction(()=>!document.getElementById('upload').disabled);
    await page.unroute('**/api/uploads');
+   if(width===390){
+    // A genuine mount error on Forward returns to the library. Retry traverses the original entry.
+    await page.evaluate(()=>{window.failReplayMount=true;history.forward()});
+    const retry=page.getByRole('button',{name:'다시 시도',exact:true});await retry.waitFor();
+    await page.waitForURL(libraryURL);
+    assert.match(await page.locator('#navigationStatus').textContent(),/fixture replay mount failed/);
+    assert(await page.locator('.log-row .replay').first().isVisible());
+    await page.evaluate(()=>failReplayMount=false);await retry.tap();await page.waitForURL(replayURL);
+    assert.equal(await page.evaluate(()=>history.length),beforeTraversal,'retry reaches the old entry without pushing');
+    await page.goBack();await page.waitForURL(libraryURL);
+    await page.goBack();await page.waitForURL(replayURL);
+   }
    assert.equal(await page.evaluate(()=>snapshotCalls),0,'all routes avoid snapshots');
    assert.equal(documents.length,1,'all internal navigation stays in one document');assert.deepEqual(errors,[]);
    // Direct replay entry and refresh still load a working shell.
