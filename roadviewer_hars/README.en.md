@@ -6,7 +6,7 @@
 >
 > [Implementation and validation status](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) · [Side-by-side install, cutover and rollback](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md) · [Real HAOS validation](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/HAOS-VALIDATION.md) (Korean)
 
-Current version: **2.1.5**
+Current version: **2.1.6**
 
 Replay and analyze openpilot logs with front/wide camera video inside Home Assistant.
 
