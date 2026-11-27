@@ -35,10 +35,11 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
   assert((await page.locator('body').evaluate(e=>getComputedStyle(e).fontFamily)).includes('Pretendard Variable'));
   await page.locator(`.log-row[data-id="${ids[0]}"] .replay`).click();await page.locator('#play:enabled').waitFor();
   const modal=page.locator('.bookmark-dialog'),panel=page.locator('#bookmarkView');
+  const selectedTab=page.locator('.replay-page [role=tab][aria-selected=true]');
   const open=async()=>{
-   const tab=await page.locator('[role=tab][aria-selected=true]').getAttribute('id');
+   const tab=await selectedTab.getAttribute('id');
    await page.locator('#bookmarkOpen').click();await modal.locator('.bookmark-title:enabled').waitFor();
-   assert.equal(await page.locator('[role=tab][aria-selected=true]').getAttribute('id'),tab,'recording never moves away from the video/analysis tab');
+   assert.equal(await selectedTab.getAttribute('id'),tab,'recording never moves away from the video/analysis tab');
    assert(await modal.locator('.bookmark-title').evaluate(e=>e!==document.activeElement),'touch recording does not automatically open the keyboard');
   };
   const seek=async time=>page.locator('#seek').evaluate((e,time)=>{e.value=time;e.dispatchEvent(new Event('input',{bubbles:true}))},time);

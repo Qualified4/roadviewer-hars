@@ -3,7 +3,7 @@ const host=document.getElementById('pageHost'),notice=document.getElementById('n
 // after an update, an older page scope under newer page scripts.
 const {pageScope}=await import(new URL('page-scope.js'+version,assets));
 const base=new URL('../',assets),libraryStyle=document.getElementById('libraryStyle');
-let current=null,revision=0,pending=null,libraryScroll=0,backPress=0;
+let current=null,libraryPage=null,revision=0,pending=null,entry=null,restoring=null,traversing=false;
 // Both fragments are static. Keep the parsed templates and resolve their links against each destination on mount.
 const shells=new Map();
 let libraryRequest;
@@ -27,78 +27,128 @@ function busy(on){clearTimeout(busyTimer);if(on)busyTimer=setTimeout(()=>documen
 // Library tabs live in the hash (#upload, #storage …): a hash-only change stays on the mounted page.
 const samePage=url=>!!current&&url.origin===current.url.origin&&url.pathname===current.url.pathname&&url.search===current.url.search;
 const route=url=>url.origin===base.origin&&(url.pathname===base.pathname?'library':new RegExp('^'+base.pathname.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')+'view/[^/]+/$').test(url.pathname)?'replay':null);
-function saveScroll(){history.replaceState({...history.state,rvScroll:scrollY},'',location.href)}
-// A tap on a link that shows its press ([data-ripple-now], [data-glow]: back and the list's 재생) keeps the page this long, so the wave is seen before the swap.
-const PRESS_HOLD=200;
-async function navigate(to,{replace=false,pop=false,pressed=0}={}){
- const url=new URL(to,location.href),kind=route(url);if(!kind)return;
- if(current&&!current.api.canLeave()){
-  notice.textContent='업로드 또는 정리 작업이 끝난 뒤 이동해 주세요.';
-  if(pop)history.pushState(current.state,'',current.url);return;
+const readEntry=()=>({url:new URL(location.href),state:history.state});
+function acceptEntry(next){if(next.url.href!==entry?.url.href)notice.textContent='';entry=next}
+function writeHistory(state,url,replace){
+ const position=history.state?.rvPosition??0,trail=history.state?.rvTrail??Math.random().toString(36).slice(2);
+ if(!replace&&!history.state?.rvTrail)history.replaceState({...history.state,rvTrail:trail,rvPosition:position},'',location.href);
+ history[replace?'replaceState':'pushState']({...state,rvTrail:trail,rvPosition:position+(replace?0:1)},'',url);
+ acceptEntry(readEntry());
+}
+function saveScroll(){writeHistory({...history.state,rvScroll:scrollY},location.href,true)}
+function traverse(delta){if(!traversing){traversing=true;history.go(delta)}}
+function recover(destination){
+ const distance=entry.state?.rvPosition-destination.state?.rvPosition;
+ if(entry.state?.rvTrail===destination.state?.rvTrail&&Number.isInteger(distance)&&distance){
+  // Move the browser back to the entry that is still on screen. The failed destination remains reachable.
+  restoring=entry;traverse(distance);
+  return ()=>{if(!restoring)traverse(-distance)};
  }
+ // An untracked fragment has no known offset. Keep the stack length and the entries ahead of it.
+ history.replaceState(entry.state,'',entry.url);
+ return ()=>navigate(destination.url,{replace:true});
+}
+async function prepare(url,kind,signal,ticket,previous){
+ const [html,module]=await Promise.all([shell(url,kind,signal),import(new URL('page-'+kind+'.js'+version,assets))]);
+ if(ticket!==revision)return;
+ const root=document.createElement('div');root.className=html.body.className;
+ root.append(...html.body.cloneNode(true).childNodes);
+ for(const element of root.querySelectorAll('[href],[src]'))for(const attr of ['href','src'])if(element.hasAttribute(attr))element.setAttribute(attr,new URL(element.getAttribute(attr),url).href);
+ root.hidden=true;host.append(root);
+ const scope=pageScope(root,url,navigate,writeHistory);
+ try{
+  const api=module.mount(scope.env);
+  if(previous){let timer;try{await Promise.race([api.ready,new Promise(resolve=>timer=setTimeout(resolve,400))])}finally{clearTimeout(timer)}}
+  if(ticket===revision)return {url,kind,root,scope,api,title:html.title};
+ }catch(error){scope.dispose();root.remove();throw error}
+ scope.dispose();root.remove();
+}
+async function navigate(to,{replace=false,pop=false}={}){
+ if(!pop&&(restoring||current&&!samePage(new URL(location.href))))return;
+ const url=new URL(to,location.href),kind=route(url);if(!kind)return;
  const ticket=++revision;pending?.abort();
  pending=new AbortController();notice.setAttribute('role','status');notice.textContent='';
+ const previous=current,destination=pop?readEntry():null,retained=kind==='library'&&previous!==libraryPage&&libraryPage?.url.search===url.search;
+ const blocked=()=>{
+  if(!previous||previous.api.canLeave())return false;
+  busy(false);notice.textContent='업로드 또는 정리 작업이 끝난 뒤 이동해 주세요.';
+  if(destination)recover(destination);
+  return true;
+ };
+ if(blocked())return;
  try{
-  busy(true);
-  const [html,module]=await Promise.all([shell(url,kind,pending.signal),import(new URL('page-'+kind+'.js'+version,assets))]);if(ticket!==revision)return;
-  const root=document.createElement('div');root.className=html.body.className;
-  root.append(...html.body.cloneNode(true).childNodes);
-  for(const element of root.querySelectorAll('[href],[src]'))for(const attr of ['href','src'])if(element.hasAttribute(attr))element.setAttribute(attr,new URL(element.getAttribute(attr),url).href);
-  const previous=current;
-  if(previous&&route(previous.url)==='library')libraryScroll=scrollY;
-  // Prepare the next page out of view while the current page remains painted.
-  root.hidden=true;host.append(root);
-  const scope=pageScope(root,url,navigate);let api;
-  try{
-   api=module.mount(scope.env);
-   if(previous){let timer;try{await Promise.race([api.ready,new Promise(resolve=>timer=setTimeout(resolve,400))])}finally{clearTimeout(timer)}}
-   if(ticket!==revision){scope.dispose();root.remove();return}
-  }catch(error){scope.dispose();root.remove();throw error}
-  const hold=pressed&&!matchMedia('(prefers-reduced-motion: reduce)').matches?PRESS_HOLD-(performance.now()-pressed):0;
-  if(hold>0){await new Promise(resolve=>setTimeout(resolve,hold));if(ticket!==revision){scope.dispose();root.remove();return}}
-  const brand=previous&&host.querySelector('.app-brand');
+  if(!retained)busy(true);
+  const page=retained?libraryPage:await prepare(url,kind,pending.signal,ticket,previous);
+  if(!page)return;
+  if(ticket!==revision||blocked()){
+   if(!retained){page.scope.dispose();page.root.remove()}
+   return;
+  }
+  if(previous?.kind==='library')previous.scroll=scrollY;
   if(!pop){
    let state=previous?{}:history.state;
    if(previous&&kind==='replay'){
     // A segment replacement keeps its predecessor. Different drives keep their own replay entries.
     const back=history.state?.rvLibraryBack||0;
-    const distance=route(previous.url)==='library'?1:back&&back+1;
+    const distance=previous.kind==='library'?1:back&&back+1;
     state={rvLibraryBack:replace?back:distance};
    }
    if(!replace)saveScroll();
-   history[replace?'replaceState':'pushState'](state,'',url);
-  }
-  if(brand)root.querySelector('.app-brand')?.replaceWith(brand);
+   writeHistory(state,url,replace);
+  }else acceptEntry(destination);
   globalThis.__rvNavNext=kind;
-  try{previous?.scope.dispose()}finally{globalThis.__rvNavNext=null}
+  try{
+   if(previous?.kind==='library'&&kind==='replay'){
+    previous.scope.suspend();previous.root.hidden=true;
+   }else if(previous){previous.scope.dispose();previous.root.remove()}
+   if(kind==='library'){
+    if(libraryPage&&libraryPage!==previous&&libraryPage!==page){libraryPage.scope.dispose();libraryPage.root.remove()}
+    libraryPage=page;
+   }
+  }finally{globalThis.__rvNavNext=null}
   document.getElementById('pageBase').href=url.href;
-  host.replaceChildren(root);libraryStyle.disabled=kind!=='library';document.documentElement.dataset.page=kind;current={url,scope,api,state:history.state};
-  root.hidden=false;
-  document.title=html.title;notice.textContent='';
-  scrollTo(0,pop?(history.state?.rvScroll||0):kind==='library'?libraryScroll:0);
+  if(host.firstElementChild!==page.root)host.prepend(page.root);
+  libraryStyle.disabled=kind!=='library';document.documentElement.dataset.page=kind;
+  current=page;page.url=url;page.root.hidden=false;
+  document.title=page.title;notice.textContent='';
+  const scroll=(pop?history.state?.rvScroll:null)??page.scroll??0;
+  if(retained)page.scope.resume();
+  scrollTo({left:0,top:scroll,behavior:'instant'});
   dispatchEvent(new Event('pageshow'));busy(false);
-  if(kind==='replay')prefetchLibrary();
+  if(kind==='replay'&&!libraryPage)prefetchLibrary();
 
  }catch(error){
   if(ticket!==revision||error.name==='AbortError')return;
   busy(false);
-  if(pop&&current)history.pushState(current.state,'',current.url);
+  const retryNavigation=destination&&previous?recover(destination):()=>navigate(url,{replace});
   notice.setAttribute('role','alert');notice.textContent=error.message||'화면을 불러오지 못했습니다.';
-  const retry=document.createElement('button');retry.type='button';retry.textContent='다시 시도';retry.onclick=()=>navigate(url,{replace});notice.append(' ',retry);
+  const retry=document.createElement('button');retry.type='button';retry.textContent='다시 시도';retry.onclick=retryNavigation;notice.append(' ',retry);
  }
 }
 document.addEventListener('click',event=>{
  const link=event.target.closest('a[href]');if(!link||event.defaultPrevented||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey||link.target||link.hasAttribute('download'))return;
  const url=new URL(link.href);if(!route(url)||(url.hash&&samePage(url)))return;event.preventDefault();
- const pressed=link.matches('[data-ripple-now],[data-glow]')?performance.now():0;
  if(link.matches('.replay-page .back')){
-  if(backPress||!samePage(new URL(location.href)))return;
+  if(traversing||!samePage(new URL(location.href)))return;
   const back=history.state?.rvLibraryBack;
-  if(back){saveScroll();backPress=pressed;if(back===1)history.back();else history.go(-back);return}
-  void navigate(url,{replace:true,pressed});return;
+  if(back){saveScroll();traverse(-back);return}
+  void navigate(url,{replace:true});return;
  }
- void navigate(url,{pressed});
+ void navigate(url);
 });
-addEventListener('popstate',()=>{const pressed=backPress;backPress=0;if(location.hash&&samePage(new URL(location.href)))return;void navigate(location.href,{pop:true,pressed})});
+addEventListener('popstate',event=>{
+ traversing=false;
+ const destination=readEntry();
+ if(restoring){
+  const restored=destination.state?.rvTrail===restoring.state?.rvTrail&&destination.state?.rvPosition===restoring.state?.rvPosition&&destination.url.href===restoring.url.href;
+  restoring=null;
+  if(restored){event.stopImmediatePropagation();return}
+ }
+ if(samePage(destination.url)){
+  ++revision;pending?.abort();busy(false);acceptEntry(destination);return;
+ }
+ void navigate(destination.url,{pop:true});
+});
 history.scrollRestoration='manual';
+writeHistory(history.state,location.href,true);
 void navigate(location.href,{replace:true});

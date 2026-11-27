@@ -571,7 +571,7 @@ async fn asset(
             ]
         };
         let mut source = String::from(
-            "export function mount(env) {\nconst {window,document,location,fetch,setTimeout,clearTimeout,setInterval,clearInterval,requestAnimationFrame,cancelAnimationFrame,ResizeObserver,MutationObserver,XMLHttpRequest,matchMedia}=env;\nconst addEventListener=env.addEventListener||globalThis.addEventListener.bind(globalThis),removeEventListener=env.removeEventListener||globalThis.removeEventListener.bind(globalThis),IntersectionObserver=env.IntersectionObserver||globalThis.IntersectionObserver,onPageDispose=env.onPageDispose||(()=>{});\n",
+            "export function mount(env) {\nconst {window,document,history,location,fetch,setTimeout,clearTimeout,setInterval,clearInterval,requestAnimationFrame,cancelAnimationFrame,requestIdleCallback,ResizeObserver,MutationObserver,XMLHttpRequest,matchMedia}=env;\nconst addEventListener=env.addEventListener||globalThis.addEventListener.bind(globalThis),removeEventListener=env.removeEventListener||globalThis.removeEventListener.bind(globalThis),IntersectionObserver=env.IntersectionObserver||globalThis.IntersectionObserver,onPageDispose=env.onPageDispose||(()=>{}),onPageSuspend=env.onPageSuspend||(()=>{}),onPageResume=env.onPageResume||(()=>{});\n",
         );
         for script in scripts {
             source

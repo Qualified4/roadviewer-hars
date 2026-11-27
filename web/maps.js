@@ -188,7 +188,7 @@
  }
  function createMap(L,container,{zoom=true,interactive=true,attribution=ATTRIBUTION,tone=null,labels=null,grey=null,margin=null,warmup=false,autoDispose=true}={}){
   const startWarmup=!!(margin&&warmup&&webgl()),initialPad=startWarmup?.1:margin;
-  const map=L.map(container,{zoomControl:false,attributionControl:true,dragging:interactive,touchZoom:interactive,scrollWheelZoom:interactive,doubleClickZoom:interactive,boxZoom:interactive,keyboard:interactive,tap:interactive,zoomSnap:.25,maxZoom:19,fadeAnimation:!reduced(),zoomAnimation:!reduced(),markerZoomAnimation:!reduced(),...(margin?{renderer:L.svg({padding:initialPad})}:{})});
+  const map=L.map(container,{zoomControl:false,attributionControl:true,trackResize:!library,dragging:interactive,touchZoom:interactive,scrollWheelZoom:interactive,doubleClickZoom:interactive,boxZoom:interactive,keyboard:interactive,tap:interactive,zoomSnap:.25,maxZoom:19,fadeAnimation:!reduced(),zoomAnimation:!reduced(),markerZoomAnimation:!reduced(),...(margin?{renderer:L.svg({padding:initialPad})}:{})});
   map.rvMargin=initialPad||0;map.rvMarginMax=margin||0;map.rvWarmup=startWarmup;
   // Leaflet listens on the window and MapLibre keeps a WebGL context and workers: a map left standing when its page
   // goes kept the whole page alive.
@@ -219,8 +219,9 @@
   // the layer (and MapLibre's map) once the map has a view, so this waits for it. No WebGL (rare): the routes are
   // still drawn, on the plain background.
   map.rvGl=null;map.rvSymbols=[];
-  if(webgl()){
-   const layer=L.maplibreGL({attributionControl:{customAttribution:attribution},pixelRatio:Math.min(window.devicePixelRatio||1,2),fadeDuration:reduced()?0:300,renderWorldCopies:false,...(margin?{padding:initialPad}:{})});
+  if(webgl())map.rvAttachBasemap=()=>{
+   if(map.rvGlLayer)return;
+   const layer=L.maplibreGL({attributionControl:{customAttribution:attribution},pixelRatio:Math.min(window.devicePixelRatio||1,2),fadeDuration:reduced()?0:300,renderWorldCopies:false,...(margin?{padding:map.rvMargin}:{})});
    // The plugin redraws on every Leaflet move (throttled); map.rvHold (a hand drag of the 지도 tab while its margin
    // still covers) skips that: what is drawn moves with the map pane, re-centred by the caller.
    layer._throttledUpdate=L.Util.throttle(function(e){if(!map.rvHold?.())this._update(e)},layer.options.updateInterval,layer);
@@ -231,7 +232,8 @@
     map.rvSetStyle?.();map.rvOnGlReady?.(map.rvGl);
    });
    layer.addTo(map);
-  }
+  };
+  map.rvAttachBasemap?.();
   map.rvFitMargin?.();  // the basemap layer exists now: its padding too
   if(zoom){L.control.zoom({position:'topright',zoomInTitle:'확대',zoomOutTitle:'축소'}).addTo(map);map.rvSimpleControl=simpleControl(L).addTo(map)}
   map.rvCreditCleanup=compactCredit(L,map,container);
@@ -245,7 +247,7 @@
   gl.on('webglcontextrestored',()=>{gl.rvContextLost=false;gl.resize();restore()});
  }
  function watchLeaflet(map,container){
-  map.rvObserver=new globalThis.ResizeObserver(()=>{if(container.isConnected)map.invalidateSize({animate:false})});
+  map.rvObserver=new globalThis.ResizeObserver(()=>{if(container.isConnected&&!document.body.hidden&&container.offsetWidth)map.invalidateSize({animate:false})});
   map.rvObserver.observe(container);
   map.rvSetStyle=()=>setStyle(map);
   map.rvStyleRetry=retryTask(map.rvSetStyle);
@@ -397,7 +399,7 @@
 
  if(library){
   // ---- ① 전체 주행 경로, ② the card's route shape and 주행 지도.
-  let tracks=sessionCache.tracks,trackTag=sessionCache.tracksTag,trackText=sessionCache.tracksText,trackSignature=sessionCache.tracksSignature,trackRequest=null,mode='list',overview=null,overviewLines=new Map(),selected=null;
+  let tracks=sessionCache.tracks,trackTag=sessionCache.tracksTag,trackText=sessionCache.tracksText,trackSignature=sessionCache.tracksSignature,trackRequest=null,mode='list',overview=null,overviewLines=new Map(),selected=null,parkedDrive=null;
   const switcher=document.getElementById('logView'),panel=document.getElementById('logMap'),canvas=panel.querySelector('.log-map-canvas'),card=document.getElementById('logMapCard'),empty=panel.querySelector('.log-map-empty');
   const routeOf=new Map();  // log id -> route of /api/tracks
   if(tracks)for(const route of tracks)for(const id of route.ids)routeOf.set(id,route);
@@ -733,7 +735,8 @@
    new MutationObserver(records=>{if(records.some(r=>r.type==='childList'))childrenDirty=true;later()}).observe(column,{childList:true,subtree:true,attributes:true,attributeFilter:['class','hidden','open']});
    return later;
   }
-  const DRIVE_HASH='#drive-map',SNAPS=[.36,.54,.7],wide=matchMedia('(min-width:1024px),(min-width:600px) and (orientation:landscape)');
+  const DRIVE_HASH='#drive-map',MAP_HASH='#map',SNAPS=[.36,.54,.7],wide=matchMedia('(min-width:1024px),(min-width:600px) and (orientation:landscape)');
+  const logsHash=()=>mode==='map'?MAP_HASH:'#logs';
   fadeEdges(sheetList);fadeEdges(document.getElementById('logMapRows'));
   let driveGroup=null,driveMap=null,driveLayer=null,driveLines=new Map(),driveRows=new Map(),driveMarked=null,driveDistance=null,driveTicket=0,driveOpener=null,restoreDrive=null,escapeTaken=false;
   function openDrive(group,{segment=null,push=true,opener=null}={}){
@@ -742,8 +745,9 @@
     driveMarked=segment;driveDistance=null;driveRows.clear();sheetList.replaceChildren();syncDrive();sheetList.scrollTop=0;
     if(!drive.open){driveOpener=opener||document.activeElement;drive.showModal();document.body.style.overflow='hidden';driveSheet.set(1,{fit:true})}
     if(push){
-     const url=new URL(window.location.href);if(!url.hash||url.hash===DRIVE_HASH){url.hash=libraryTab||'logs';history.replaceState(history.state,'',url)}
-     url.hash=DRIVE_HASH;history.pushState({...(history.state||{}),rvScroll:scrollY,rvDrive:group.route.key,rvDriveSegment:segment},'',url);
+     const url=new URL(window.location.href);if(!url.hash||url.hash===DRIVE_HASH)url.hash=logsHash();
+     history.replaceState({...history.state,rvScroll:scrollY},'',url);
+     url.hash=DRIVE_HASH;history.pushState({rvOverview:mode,rvScroll:scrollY,rvDrive:group.route.key,rvDriveSegment:segment},'',url);
     }
     failedDrive=false;driveRetry.reset();drawDrive(segment);
    }else if(segment)markDrive(segment,{fit:true,scroll:true});
@@ -936,21 +940,18 @@
   drive.addEventListener('keydown',e=>{if(e.key==='Escape')escapeTaken=!!(drive.querySelector('.recording-more[open]')||document.querySelector('.tag-popover'))},true);
   drive.addEventListener('cancel',e=>{e.preventDefault();if(!escapeTaken)closeDrive();escapeTaken=false});
   drive.addEventListener('close',()=>{
-   if(drive.open)return;releaseDrive();
+   if(drive.open||parkedDrive)return;releaseDrive();
    document.body.style.overflow='';driveGroup=null;driveMarked=null;
-   if(window.location.hash===DRIVE_HASH){const url=new URL(window.location.href);url.hash=libraryTab||'logs';history.replaceState({...history.state,rvDrive:null},'',url)}
+   if(window.location.hash===DRIVE_HASH)clearDriveHash();
    driveOpener=null;
   });
-  window.addEventListener('popstate',()=>{
-   if(drive.open&&window.location.hash!==DRIVE_HASH)finishDrive();
-   else if(!drive.open&&window.location.hash===DRIVE_HASH)restore();
-  });
+  function clearDriveHash(){const url=new URL(window.location.href);url.hash=logsHash();history.replaceState({...history.state,rvDrive:null},'',url)}
   // Reloaded or come back (from a replay) to #drive-map: the drive opens again once the list knows it.
   function restore(){
-   if(document.body.hidden)return;
+   if(document.body.hidden||window.location.hash!==DRIVE_HASH)return;
    const key=history.state?.rvDrive,group=key&&logGroups.get(key);
    if(group&&groupCanMap(group)){restoreDrive=null;selectTab('logs',{hash:false});openDrive(group,{segment:history.state.rvDriveSegment,push:false});return}
-   if((tracks&&!tracksPending())||!key){restoreDrive=null;const url=new URL(window.location.href);url.hash=libraryTab||'logs';history.replaceState({...history.state,rvDrive:null},'',url)}
+   if((tracks&&!tracksPending())||!key){restoreDrive=null;clearDriveHash()}
   }
   if(window.location.hash===DRIVE_HASH)restoreDrive=restore;
   // ⋯ › 지도에서 보기: the drive's map with this segment marked.
@@ -981,9 +982,41 @@
    document.getElementById('list').hidden=mode==='map';panel.hidden=mode!=='map';
    if(mode==='map')fitPanelHeight();
    if(mode==='map'){document.getElementById('empty').hidden=true;listSheet.set(1);drawOverview(true)}else{card.rvPill=(card.rvPill||0)+1;card.classList.remove('is-leaving');card.hidden=true;selected=null;applyFilters()}
-   try{sessionStorage.setItem('roadviewer-log-view',mode)}catch{}
   }
-  switcher.addEventListener('click',e=>{const button=e.target.closest('button[data-view]');if(button&&button.dataset.view!==mode)setMode(button.dataset.view)});
+  function linkedMode(hash){
+   return hash===MAP_HASH||(hash&&hash!=='#logs'&&history.state?.rvOverview==='map')?'map':'list';
+  }
+  let listReturn=null;
+  function changeMode(next,after){
+   if(next===mode||listReturn)return;
+   const url=new URL(window.location.href);
+   if(next==='map'){
+    history.replaceState({...history.state,rvOverview:'list',rvScroll:scrollY},'',url);
+    url.hash=MAP_HASH;history.pushState({rvOverview:'map',rvMapBack:true},'',url);
+   }else if(url.hash===MAP_HASH&&history.state?.rvMapBack){
+    listReturn=()=>{if(libraryTab!=='logs')selectTab('logs');after?.()};history.back();return;
+   }else{
+    url.hash='#logs';history.replaceState({...history.state,rvOverview:'list',rvMapBack:false},'',url);
+   }
+   setMode(next);after?.();
+  }
+  function syncHistoryMode(){
+   const next=linkedMode(window.location.hash);
+   if(next!==mode){
+    setMode(next);
+    if(history.state?.rvScroll!=null)scrollTo({left:0,top:history.state.rvScroll,behavior:'instant'});
+   }
+   if(next==='list'&&listReturn){const after=listReturn;listReturn=null;after()}
+  }
+  function syncLibraryHistory(){
+   if(window.location.pathname!==location.pathname)return;
+   syncHistoryMode();
+   if(window.location.hash===DRIVE_HASH){if(!drive.open){restoreDrive=restore;restore()}}
+   else{restoreDrive=null;if(drive.open)finishDrive()}
+  }
+  window.addEventListener('popstate',syncLibraryHistory);
+  window.addEventListener('hashchange',syncLibraryHistory);
+  switcher.addEventListener('click',e=>{const button=e.target.closest('button[data-view]');if(button)changeMode(button.dataset.view)});
   const visibleGroups=()=>[...logGroups.values()].filter(group=>!group.element.hidden&&group.element.closest('.log-day')&&!group.element.closest('.log-day').hidden);
   let overviewFit=true,hovered=null,rowsKey='';
   const mapList=document.getElementById('logMapList'),mapRows=document.getElementById('logMapRows'),mapRow=new Map();  // route key -> row
@@ -1029,12 +1062,13 @@
    if(mode==='map')loadLeaflet().catch(()=>{});
    if(!tracks){empty.hidden=true;return}
    let L;try{L=await loadLeaflet()}catch(e){error(e.message);return}
-   if(!await pageShown||mode!=='map')return;
+   if(!await pageShown||document.body.hidden||mode!=='map')return;
    if(!overview){
     overview=createMap(L,canvas);
     overviewCasingRenderer=L.canvas({padding:.1});
     overview.on('click',event=>{const line=nearestLine(overviewLines.values(),event);if(line)select(line.rvGroup,{scroll:true});else select(null)});
    }
+   overview.rvAttachBasemap?.();
    const shown=visibleGroups().map(group=>({group,route:groupRoute(group)})).filter(item=>item.route&&item.route.points.length>1);
    const keys=new Set(shown.map(item=>item.route.key));
    let changed=false;
@@ -1166,8 +1200,8 @@
    box.append(driveButton,button('목록에서 보기',()=>showInList(group)));return box;
   }
   card.querySelector('.map-card-list').onclick=()=>showInList(selected);
-  function showInList(group){
-   setMode('list');if(!group)return;
+  function showInList(group){changeMode('list',()=>{if(group)locateGroup(group)})}
+  function locateGroup(group){
    // Centred, or its top near the top of the screen when the card is taller than the screen (an open drive). The list is
    // drawn again as it comes back and rows above can still change height (thumbnails, route shapes), so the drive is
    // brought back twice more if its top ended up off screen, unless the user has scrolled since.
@@ -1180,8 +1214,41 @@
   }
   card.querySelector('.map-card-close').onclick=()=>select(null);
   card.querySelector('.map-card-drive').onclick=event=>{if(selected)openDrive(selected,{opener:event.currentTarget})};
+  const coarse=matchMedia('(pointer:coarse)');
+  if(typeof onPageSuspend==='function')onPageSuspend(()=>{
+   trackRequest?.abort();trackRequest=null;
+   if(drive.open){
+    parkedDrive={scroll:sheetList.scrollTop,pending:!!driveRequest};
+    driveTicket++;driveRequest?.abort();driveRequest=null;drive.close();
+   }
+   for(const map of maps){
+    map.stop();
+    // Release GPU contexts on touch devices. Keep Leaflet's view, routes and selection in the DOM.
+    if(!coarse.matches||!map.rvGlLayer)continue;
+    map.rvStyleRequest=null;map.rvStyleApplied=null;map.rvStyleRetry?.cancel();
+    map.removeLayer(map.rvGlLayer);map.rvGl=null;map.rvGlLayer=null;
+   }
+  });
+  if(typeof onPageResume==='function')onPageResume(()=>{
+   syncHistoryMode();
+   const fromDrive=window.location.hash===DRIVE_HASH;
+   if(parkedDrive){
+    const {scroll,pending}=parkedDrive;parkedDrive=null;
+    if(fromDrive&&driveGroup?.route.key===history.state?.rvDrive){
+     drive.showModal();document.body.style.overflow='hidden';sheetList.scrollTop=scroll;
+     if(!driveMap||pending)drawDrive(driveMarked);
+    }else{releaseDrive();driveGroup=null;driveMarked=null;driveOpener=null}
+   }
+   if(fromDrive&&!drive.open){restoreDrive=restore;restore()}
+   for(const map of maps){
+    if(!map.getContainer().offsetWidth)continue;
+    map.invalidateSize({animate:false});map.rvAttachBasemap?.();applyTiles(map);
+   }
+   if(mode==='map')drawOverview(false);
+   if(!tracksRetry.pending)fetchTracks();
+  });
   window.rvMaps={listed,filtered:()=>{if(mode==='map')drawOverview(false)},showSegment,mode:()=>mode};
-  {let saved=null;try{saved=sessionStorage.getItem('roadviewer-log-view')}catch{}if(saved==='map')setMode('map')}
+  if(linkedMode(new URL(location.href).hash)==='map')setMode('map');
  }
 
  if(replay){
