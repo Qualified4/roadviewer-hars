@@ -115,12 +115,36 @@ async function assertMiniCorner(page,kind='vehicle'){
    carBelowHud:mapBox.top+car.y>hud.getBoundingClientRect().bottom};
  });
  assert(Math.abs(state.top)<.5&&Math.abs(state.right)<.5&&state.margin==='0px','3D map is flush with the video corner '+JSON.stringify(state));
- assert.match(state.mask,/^radial-gradient/);
+ assert.match(state.mask,/#videoMapFade/);
  assert(state.hudAbove&&state.carBelowHud,'the HUD remains above the map and clear of the vehicle '+JSON.stringify(state));
  assert.match(state.speedShadow,/rgba\(0, 0, 0, 0\.55\) 0px 1px 3px/,'speed retains its soft shadow');
  assert.equal(state.unitShadow,state.speedShadow,'the speed unit shares the shadow');
  assert(await page.locator('#videoMap').getByLabel('지도 출처').isHidden());
  await assertMiniCar(page,kind);
+}
+async function assertMiniFade(page,mini){
+ // Use solid layers to measure the actual composited SVG alpha independently of tiles, HUD and video content.
+ const probe=await page.addStyleTag({content:`
+  #videoStage{background:#000}
+  #videoStage>:not(#videoMap),#videoMap .video-map-canvas{visibility:hidden}
+  #videoMap .video-map-surface{background:#fff}
+ `});
+ let png;
+ try{png=await mini.screenshot({scale:'css'})}finally{await probe.evaluate(el=>el.remove())}
+ const light=await page.evaluate(async png=>{
+  const img=await createImageBitmap(await (await fetch('data:image/png;base64,'+png)).blob());
+  const {width:w,height:h}=img,s=Math.min(w,h);
+  const canvas=new OffscreenCanvas(w,h),ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);
+  const at=(x,y)=>ctx.getImageData(Math.floor(x),Math.floor(y),1,1).data[0];
+  return {top:at(w*.65,1),right:at(w-2,h*.4),left:[1,.13*s,.24*s].map(x=>at(x,h*.14)),
+   bottom:[1,.13*s,.24*s].map(y=>at(w*.88,h-y)),corner:at(.21*s,h-.21*s),grip:at(11,h-20)};
+ },png.toString('base64'));
+ assert(light.top>=254&&light.right>=254,'video edges stay opaque '+JSON.stringify(light));
+ for(const edge of [light.left,light.bottom]){
+  assert(edge[0]<8&&edge[1]>65&&edge[1]<190&&edge[2]>235,'inner edges feather through intermediate alpha '+JSON.stringify(light));
+ }
+ assert(light.corner<55,'the feather follows a rounded lower-left corner '+JSON.stringify(light));
+ assert(light.grip>130,'the thin resize grip paints over the transparent corner '+JSON.stringify(light));
 }
 
 (async()=>{
@@ -697,7 +721,18 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    const snapCard=mini.locator('.video-map-preview');
    assert.match(await snapCard.innerText(),/구간 1.*45 km\/h/s,'turned fullscreen snaps to the same GPS timeline');
    await page.waitForTimeout(400);assert(await close.isVisible(),'pinned remains expanded after the seek');
-   await close.tap();await page.evaluate(()=>document.exitFullscreen());
+   await close.tap();
+   if(scheme==='dark'){
+    const grip=mini.getByRole('button',{name:'작은 지도 크기 조절'}),before=await mini.boundingBox();
+    const box=await grip.boundingBox(),x=box.x+box.width/2,y=box.y+box.height/2;
+    await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
+    await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y-30}]});
+    await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    await settleLayout(page);
+    const after=await mini.boundingBox();
+    assert(after.height>before.height+28&&Math.abs(after.width-before.width)<1&&await open.isVisible(),'touch drag follows the rotated stage axes');
+   }
+   await page.evaluate(()=>document.exitFullscreen());
    await page.waitForFunction(()=>!document.fullscreenElement);
    await mapTab.tap();await page.locator('#videoMap').waitFor({state:'hidden'});await page.locator('#routeMapView .map-car').waitFor();
    // Tapping segment 0 of the drive on the map opens that segment at that point.
@@ -805,6 +840,45 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await assertMiniCorner(page,'arrow');
    await screenshot(page,'01-desktop-3d-minimap');
 
+   const grip=mini.getByRole('button',{name:'작은 지도 크기 조절'});
+   const dragGrip=async (dx,dy)=>{
+    const {x,y,width,height}=await grip.boundingBox(),at=[x+width/2,y+height/2];
+    await page.mouse.move(...at);await page.mouse.down();
+    await page.mouse.move(at[0]+dx,at[1]+dy,{steps:4});
+    await page.mouse.up();await page.mouse.move(5,5);await settleLayout(page);
+   };
+   const collapsed=await mini.boundingBox(),key='roadviewer-minimap-size';
+   assert((await grip.boundingBox()).width>=44,'the resize grip has a touch-sized hit area');
+   await assertMiniFade(page,mini);
+   await dragGrip(-135,0);
+   const wide=await mini.boundingBox();
+   assert(wide.width>collapsed.width+130&&Math.abs(wide.height-collapsed.height)<1,'horizontal drag changes only width');
+   await assertMiniFade(page,mini);
+   await screenshot(page,'05-desktop-wide-minimap');
+   await dragGrip(255,0);
+   const narrow=await mini.boundingBox();
+   assert(Math.abs(narrow.height-wide.height)<1,'shrinking width does not change height');
+   await dragGrip(0,85);
+   const tall=await mini.boundingBox();
+   assert(tall.height>narrow.height+80&&Math.abs(tall.width-narrow.width)<1&&tall.height>tall.width,'vertical drag changes only height');
+   await assertMiniFade(page,mini);
+   await assertMiniCorner(page,'arrow');
+   await screenshot(page,'06-desktop-tall-minimap');
+   const saved=await page.evaluate(key=>JSON.parse(localStorage.getItem(key)),key);
+   assert(saved.width>0&&saved.height>0&&await open.isVisible(),'dragging saves both dimensions without expanding the map');
+   await page.reload();
+   await page.waitForFunction(()=>window.rvTestMini?.getSource('rv-car')&&rvTestMini.getPadding().left>0);
+   const restored=await mini.boundingBox();
+   assert(Math.abs(restored.width-tall.width)<1&&Math.abs(restored.height-tall.height)<1,'both dimensions survive a reload');
+   await page.waitForFunction(()=>{const map=rvTestMini,box=map.getContainer(),canvas=map.getCanvas();
+    return canvas.clientWidth===box.clientWidth&&canvas.clientHeight===box.clientHeight&&Math.abs(map.getPadding().left-box.clientWidth*.4)<1
+     &&Math.abs(map.getPadding().top-Math.min(box.clientHeight*.22,document.querySelector('.video-hud').offsetTop+document.querySelector('.video-hud').offsetHeight+12))<1;
+   });
+   await grip.dblclick();
+   await page.waitForFunction(([w,h])=>{const el=document.getElementById('videoMap');return Math.abs(el.clientWidth-w)<1&&Math.abs(el.clientHeight-h)<1&&!el.getAnimations().length},[collapsed.width,collapsed.height]);
+   assert.equal(await page.evaluate(key=>localStorage.getItem(key),key),null,'double-click restores the default size');
+   await seek(14);await waitSeek(page,14,.02);
+
    const geometry=()=>page.locator('#videoStage').boundingBox();
    const frame=await geometry(),initialResizes=await page.evaluate(()=>rvNativeResizes);
    await open.click();await page.waitForFunction(()=>!document.querySelector('.video-map-canvas').style.width&&!rvTestMini.isMoving());
@@ -874,7 +948,10 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await page.locator('#overlayHeightSettings').tap();await page.getByLabel('영상 위 작은 지도').check();await page.locator('#overlayHeightClose').tap();
    await page.waitForFunction(()=>window.rvTestMini?.getLayer('background')&&rvTestMini.getPaintProperty('background','background-color')==='#0E1219'&&rvTestMini.hasImage('rv-vehicle'));
    await screenshot(page,'03-mobile-3d-minimap');
+   await page.locator('#seek').evaluate(el=>{el.value='34';el.dispatchEvent(new Event('input'))});
+   await waitSeek(page,34,.02);
    await page.locator('.video-map-open').tap();await page.locator('.video-map-pin').tap();
+   await assertFollow(page,true);
    await tapNative(page,routeA[1][35]);await page.locator('.video-map-preview').waitFor();
    await screenshot(page,'04-mobile-expanded-snap');
    await context.close();
