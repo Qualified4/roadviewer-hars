@@ -1651,6 +1651,7 @@
   async function applyMiniStyle(){
    const target=small;if(!target||target.map.rvContextLost)return;
    const {tone,url,key}=miniStyleChoice();
+   mini.dataset.tone=tone;
    if(target.requestedStyle!==key){target.requestedStyle=key;target.styleRequest=null;miniRetry.reset()}
    if(target.appliedStyle===key||target.styleRequest)return;
    const request=target.styleRequest={};
