@@ -42,7 +42,7 @@
  try{const saved=localStorage.getItem('roadviewer-ccnc-opacity');if(saved!==null&&Number.isFinite(Number(saved)))boxOpacity=Math.max(0,Math.min(1,Number(saved)))}catch{}
  const syncOpacity=()=>{opacitySlider.value=String(Math.round(boxOpacity*100));opacityValue.textContent=opacitySlider.value+'%'};
  syncOpacity();
- opacitySlider.oninput=()=>{boxOpacity=Number(opacitySlider.value)/100;syncOpacity();try{localStorage.setItem('roadviewer-ccnc-opacity',String(boxOpacity))}catch{}render()};
+ guardRangeSlider(opacitySlider,()=>{boxOpacity=Number(opacitySlider.value)/100;syncOpacity();render()},()=>{try{localStorage.setItem('roadviewer-ccnc-opacity',String(boxOpacity))}catch{}});
  // The car ahead in radar metres: the cluster TARGET, or without one (longitudinal control off) the cluster's FF car.
 const carAheadDistance=frame=>{
  const road=frame.ccncRoad;
@@ -54,12 +54,12 @@ let bsdHeight=.8;
  const bsdSlider=document.getElementById('bsdHeight'),bsdValue=document.getElementById('bsdHeightValue');
  try{const saved=localStorage.getItem('roadviewer-bsd-height');if(saved!==null&&Number.isFinite(Number(saved)))bsdHeight=Math.max(0,Math.min(3,Number(saved)))}catch{}
  const syncBsdHeight=()=>{bsdSlider.value=String(Math.round(bsdHeight*100));bsdValue.textContent=bsdHeight.toFixed(2)+' m'};
- syncBsdHeight();bsdSlider.oninput=()=>{bsdHeight=Number(bsdSlider.value)/100;syncBsdHeight();try{localStorage.setItem('roadviewer-bsd-height',String(bsdHeight))}catch{}render()};
+ syncBsdHeight();guardRangeSlider(bsdSlider,()=>{bsdHeight=Number(bsdSlider.value)/100;syncBsdHeight();render()},()=>{try{localStorage.setItem('roadviewer-bsd-height',String(bsdHeight))}catch{}});
  let boxHeight=1.3;
  const boxHeightSlider=document.getElementById('ccncBoxHeight'),boxHeightValue=document.getElementById('ccncBoxHeightValue');
  try{const saved=localStorage.getItem('roadviewer-ccnc-box-height');if(saved!==null&&Number.isFinite(Number(saved)))boxHeight=Math.max(0,Math.min(3,Number(saved)))}catch{}
  const syncBoxHeight=()=>{boxHeightSlider.value=String(Math.round(boxHeight*100));boxHeightValue.textContent=boxHeight.toFixed(2)+' m'};
- syncBoxHeight();boxHeightSlider.oninput=()=>{boxHeight=Number(boxHeightSlider.value)/100;syncBoxHeight();try{localStorage.setItem('roadviewer-ccnc-box-height',String(boxHeight))}catch{}render()};
+ syncBoxHeight();guardRangeSlider(boxHeightSlider,()=>{boxHeight=Number(boxHeightSlider.value)/100;syncBoxHeight();render()},()=>{try{localStorage.setItem('roadviewer-ccnc-box-height',String(boxHeight))}catch{}});
  // The box height and opacity only shape the 3D box: disabled (still shown) while 차량 박스 is off.
  const boxSwitch=document.getElementById('vehicleBoxes'),syncBoxControls=()=>{for(const id of ['ccncBoxHeight','ccncOpacity'])for(const control of [document.getElementById(id),document.getElementById(id+'Reset')])control.disabled=!boxSwitch.checked};
  syncBoxControls();boxSwitch.addEventListener('change',syncBoxControls);
@@ -694,8 +694,8 @@ let bsdHeight=.8;
  const heightDialog=document.getElementById('overlayHeightDialog'),settings=document.getElementById('overlayHeightSettings'),slider=document.getElementById('overlayHeightRange'),value=document.getElementById('overlayHeightValue');
  let oldOverflow='';
  const syncHeight=()=>{slider.value=String(heightCm);value.textContent=heightCm+' cm';heightButton.title='차량 위치 표식을 지면에서 '+heightCm+'cm 높이고 바닥까지 연결합니다.'};
- const setHeight=cm=>{heightCm=Math.max(0,Math.min(200,Math.round(Number(cm)||0)));syncHeight();try{localStorage.setItem('roadviewer-overlay-height-cm',String(heightCm))}catch{}moveHeight()};
- slider.oninput=()=>setHeight(slider.value);document.getElementById('overlayHeightReset').onclick=()=>setHeight(60);
+ const setHeight=(cm,save=false)=>{heightCm=Math.max(0,Math.min(200,Math.round(Number(cm)||0)));syncHeight();if(save)try{localStorage.setItem('roadviewer-overlay-height-cm',String(heightCm))}catch{}moveHeight()};
+ guardRangeSlider(slider,()=>setHeight(slider.value,false),()=>setHeight(slider.value,true));document.getElementById('overlayHeightReset').onclick=()=>setHeight(60,true);
  settings.onclick=()=>{if(heightDialog.open)return;oldOverflow=document.body.style.overflow;document.body.style.overflow='hidden';heightDialog.showModal();document.getElementById('overlayHeightClose').focus({preventScroll:true})};
  const closeHeight=()=>heightDialog.close();document.getElementById('overlayHeightClose').onclick=closeHeight;
  heightDialog.addEventListener('cancel',e=>{e.preventDefault();closeHeight()});
@@ -703,7 +703,7 @@ let bsdHeight=.8;
  heightDialog.addEventListener('click',e=>{if(e.target!==heightDialog)return;const r=heightDialog.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)closeHeight()});
  syncHeight();
  for(const id of ['ccncBoxHeight','ccncOpacity','modelPathWidth','bsdHeight'])document.getElementById(id+'Reset').onclick=()=>{
-  const input=document.getElementById(id);input.value=input.defaultValue;input.dispatchEvent(new Event('input',{bubbles:true}));
+  const input=document.getElementById(id);input.value=input.defaultValue;input.dispatchEvent(new Event('input',{bubbles:true}));input.dispatchEvent(new Event('change',{bubbles:true}));
  };
  new ResizeObserver(()=>{measureStage();render()}).observe(layer.parentElement);
  video.addEventListener('loadedmetadata',()=>render());

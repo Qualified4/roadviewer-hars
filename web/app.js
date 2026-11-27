@@ -1737,9 +1737,44 @@ function saveDisplayPreferences(){
 for(const control of displayControls)control.addEventListener('change',saveDisplayPreferences);
 leadMarkSwitch.addEventListener('click',event=>{const b=event.target.closest('button[data-mark]');if(!b||b.dataset.mark===leadMark)return;leadMark=b.dataset.mark;showLeadMark();saveDisplayPreferences();render()});
 $('modelPath').addEventListener('change',render);
+function guardRangeSlider(input,onPreview,onCommit){
+ let touch=null,suppressChange=false,clearTimer=0;
+ const scroller=input.closest('.overlay-settings-body,.camera-info-body,dialog');
+ const restore=()=>{if(touch&&input.value!==touch.startValue)input.value=touch.startValue;onPreview()};
+ const cancelTouch=()=>{if(!touch||touch.cancelled)return;touch.cancelled=true;suppressChange=true;restore()};
+ const onScroll=()=>{if(!touch||touch.cancelled||touch.dragged)return;if(scroller&&Math.abs(scroller.scrollTop-touch.startScroll)>1)cancelTouch()};
+ const endSuppressSoon=()=>{clearTimeout(clearTimer);clearTimer=setTimeout(()=>{suppressChange=false},0)};
+ const onMove=event=>{
+  if(!touch||event.pointerId!==touch.id||touch.cancelled)return;
+  const dx=Math.abs(event.clientX-touch.x),dy=Math.abs(event.clientY-touch.y);
+  if(!touch.dragged&&(dy>=6&&dy>dx||scroller&&Math.abs(scroller.scrollTop-touch.startScroll)>1))cancelTouch();
+  else if(dx>=8&&dx>dy)touch.dragged=true;
+ };
+ const onCancel=event=>{if(!touch||event.pointerId!==touch.id)return;cancelTouch();touch=null;endSuppressSoon()};
+ const onUp=event=>{
+  if(!touch||event.pointerId!==touch.id)return;
+  const active=touch;touch=null;
+  if(active.cancelled){if(input.value!==active.startValue)input.value=active.startValue;onPreview();endSuppressSoon();return}
+  if(active.dragged||input.value!==active.startValue){onPreview();onCommit()}
+ };
+ if(scroller)scroller.addEventListener('scroll',onScroll,{passive:true});
+ addEventListener('pointermove',onMove);addEventListener('pointercancel',onCancel);addEventListener('pointerup',onUp);
+ input.addEventListener('pointerdown',event=>{
+  clearTimeout(clearTimer);suppressChange=false;
+  if(event.pointerType!=='touch'){touch=null;return}
+  touch={id:event.pointerId,x:event.clientX,y:event.clientY,startValue:input.value,startScroll:scroller?scroller.scrollTop:0,dragged:false,cancelled:false};
+ });
+ input.addEventListener('keydown',()=>{clearTimeout(clearTimer);suppressChange=false;touch=null});
+ input.addEventListener('input',()=>{if(touch?.cancelled){restore();return}onPreview()});
+ input.addEventListener('change',()=>{
+  if(touch?.cancelled||suppressChange){suppressChange=false;if(touch)restore();return}
+  onPreview();onCommit();
+ });
+}
 const pathWidthSlider=$('modelPathWidth'),pathWidthValue=$('modelPathWidthValue');
 const syncPathWidth=()=>{pathWidthSlider.value=String(Math.round(modelPathWidth*100));pathWidthValue.textContent=modelPathWidth.toFixed(2)+' m'};
-syncPathWidth();pathWidthSlider.oninput=()=>{modelPathWidth=Number(pathWidthSlider.value)/100;syncPathWidth();try{localStorage.setItem('roadviewer-path-width',String(modelPathWidth))}catch{}render()};
+syncPathWidth();
+guardRangeSlider(pathWidthSlider,()=>{modelPathWidth=Number(pathWidthSlider.value)/100;syncPathWidth();render()},()=>{try{localStorage.setItem('roadviewer-path-width',String(modelPathWidth))}catch{}});
 render();
 
 try{const saved=localStorage.getItem('roadviewer-lateral-range');if([...$('lateralRange').options].some(option=>option.value===saved))$('lateralRange').value=saved}catch{}
