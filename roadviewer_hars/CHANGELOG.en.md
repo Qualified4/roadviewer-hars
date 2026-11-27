@@ -1,3 +1,7 @@
+## 2.1.6
+
+- Widened and softened the playback minimap rounded-rectangle edge fade to restore the airy 2.1.4 mist blend across default, wide, and tall aspect ratios.
+
 ## 2.1.5
 
 - Synced playback minimap resize handle auto-hide with player controls, added free-aspect resizing with rounded-rectangle edge fade, and fixed shrink-animation jitter.
