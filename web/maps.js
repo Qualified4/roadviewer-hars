@@ -1638,14 +1638,14 @@
    transfer.append(fadeAlphaFunc);
    feather.parentElement.append(transfer);
   }
-  const MINI_MAX_ALPHA=.8;
+  const MINI_MAX_ALPHA=.9;
   let lastCurveKey='';
   function updateMaskCurve(blend){
    if(!fadeAlphaFunc)return;
    const key=blend.toFixed(2);
    if(key===lastCurveKey)return;
    lastCurveKey=key;
-   // Minimap (blend=0): cap top-right opacity at 0.80 so video softly shows through, with nonlinear curve 1-(1-a)^2.6.
+   // Minimap (blend=0): cap top-right opacity at 0.90 so video subtly shows through, with nonlinear curve 1-(1-a)^2.6.
    // Expanded (blend=1): reach full 1.0 opacity inside with a clean linear feather along all 4 edges.
    const maxAlpha=lerp(MINI_MAX_ALPHA,1,blend),power=lerp(2.6,1,blend);
    const curve=Array.from({length:21},(_,i)=>+(maxAlpha*(1-(1-i/20)**power)).toFixed(4)).join(' ');
@@ -1961,9 +1961,10 @@
    mini.style.setProperty('--vmap-room',Math.floor(room)+'px');
    mini.classList.toggle('no-room',room<speed.height+28);
   }
+  const surface=mini.querySelector('.video-map-surface');
   let maskWidth=0,maskHeight=0,maskBlend=0,lastMaskBlend=-1;
   function updateMiniMask(){
-   const w=mini.clientWidth,h=mini.clientHeight;
+   const w=surface.clientWidth,h=surface.clientHeight;
    if(!w||!h||(w===maskWidth&&h===maskHeight&&maskBlend===lastMaskBlend))return;
    maskWidth=w;maskHeight=h;lastMaskBlend=maskBlend;
    const short=Math.min(w,h),b=maskBlend;
