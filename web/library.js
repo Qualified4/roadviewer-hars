@@ -644,20 +644,26 @@ function buildSlice(deadline){
 // A card opened by code (or anything else that sets [open]) gets its rows before the next paint.
 new MutationObserver(records=>{for(const {target} of records)if(target.open&&target.matches('details.log-route'))buildGroupRows(logGroups.get(target.dataset.route))}).observe($('list'),{subtree:true,attributes:true,attributeFilter:['open']});
 // Keep the row/title/state connected when metadata changes so CSS animations retain their live timeline.
-const listError='로그 목록을 읽을 수 없습니다.';let listFailures=0,listErrorShown=null,listBody=null,listShown=null;
+const listError='로그 목록을 읽을 수 없습니다.';let listFailures=0,listErrorShown=null,listShown=null;
 async function refresh({poll=false}={}){
  if(busy||networkRestarting||bulkSelection?.running||document.hidden||(poll&&refreshing))return;
  // A user action supersedes any list snapshot taken before that action completed.
  listRequest?.abort();const request=listRequest=new AbortController(),revision=++listRevision;
  refreshing=true;const settingsRevision=concurrencyRevision;$('refresh').classList.add('is-loading');
  try{
-  // The server answers 304 when the list is the one this page already holds: the kept text is read again, so an
-  // unchanged list is handled exactly as a received one, without sending it.
-  const r=await fetch('api/logs',{cache:'no-store',signal:request.signal,headers:listBody?{'If-None-Match':listBody.tag}:{}});
-  let text;if(r.status===304&&listBody)text=listBody.text;else{if(!r.ok)throw Error(listError);text=await r.text();const tag=r.headers.get('ETag');listBody=tag?{tag,text}:null}
+  const cached=globalThis.__rvLogListCache;
+  const r=await fetch('api/logs',{cache:'no-store',signal:request.signal,headers:cached?.tag?{'If-None-Match':cached.tag}:{}});
+  let snapshot=cached;
+  if(r.status!==304||!cached){
+   if(!r.ok)throw Error(listError);
+   const data=await r.json();if(!Array.isArray(data?.logs))throw Error(listError);
+   snapshot={tag:r.headers.get('ETag'),data};
+  }
+  if(revision!==listRevision||request.signal.aborted)return;
+  if(globalThis.__rvLogListCache===cached){snapshot.checked=performance.now();globalThis.__rvLogListCache=snapshot}
   // The 3-second poll of a list already on the page stops here: reading it again cost a phone about a tenth of its
   // time with 900 logs. A refresh after an action (not a poll) always goes through the list again.
-  const shown=poll&&r.status===304&&!!listBody&&listShown===listBody.tag,data=shown?null:JSON.parse(text);if(revision!==listRevision)return;
+  const shown=poll&&r.status===304&&listShown===snapshot.tag,{data}=snapshot;
   // A list that reads again clears its own earlier failure (other messages stay).
   listFailures=0;if(listErrorShown!==null&&$('error').textContent===listErrorShown)error('');listErrorShown=null;
   if(shown)return;
@@ -685,7 +691,7 @@ async function refresh({poll=false}={}){
   const motion=window.RoadViewerMotion,before=new Map([...logRows].filter(([,cached])=>cached.row?.parentNode?.parentNode?.open).map(([id,cached])=>[id,motion.capture(cached.row)]));
   const ids=new Set(data.logs.map(m=>m.id));for(const id of logRows.keys())if(!ids.has(id))logRows.delete(id);
   arrangeLogGroups(data.logs,entries);renderChips();applyFilters();window.rvMaps?.listed(data.logs);if(motion.allowed())entries.forEach(entry=>entry.row&&before.has(entry.log.id)&&motion.play(entry.row,before.get(entry.log.id)));
-  scheduleRowBuild();listShown=listBody?.tag??null;
+  scheduleRowBuild();listShown=snapshot.tag;
  }catch(e){
   // Back from a long time in the background, the first request can fail before Home Assistant renews the ingress
   // session or the connection wakes up: one failure retries in a second, only a repeated one is shown.

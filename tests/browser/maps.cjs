@@ -403,6 +403,12 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
     await drive.locator('.drive-map-handle').tap();await page.waitForTimeout(150);{const l=await layout();assert(!await hidden()&&Math.abs(l.share-.54)<.02,'a tap on the hidden sheet brings the middle height: '+JSON.stringify(l))}
     await drag(-160);await drive.locator('.drive-map-handle').tap();await page.waitForTimeout(150);assert(await hidden(),'from the top height too, a tap hides it')
     await drive.locator('.drive-map-handle').tap();await page.waitForTimeout(150)}
+   if(scheme==='light'){
+    const mapURL=page.url(),play=drive.locator('.log-row a.replay').first();
+    const replayURL=await play.evaluate(link=>link.href);
+    await play.tap();await page.waitForURL(replayURL);
+    await page.locator('.app-bar .back').tap();await page.waitForURL(mapURL);await driveOpen();
+   }
    // The system back closes it (back in the list, the card's shape focused again).
    await page.goBack();await driveClosed();assert.notEqual(new URL(page.url()).hash,'#drive-map');
    assert(await page.locator('#list').isVisible());
