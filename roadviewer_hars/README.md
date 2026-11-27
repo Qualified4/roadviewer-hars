@@ -6,7 +6,7 @@
 >
 > [구현·검증 현황](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/STATUS.md) · [병행 설치·전환·롤백 절차](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/CUTOVER.md) · [실제 HAOS 검증](https://github.com/Qualified4/roadviewer-hars/blob/main/docs/hars/HAOS-VALIDATION.md)
 
-현재 버전: **2.1.7**
+현재 버전: **2.1.8**
 
 openpilot 로그와 전방·와이드 카메라 영상을 Home Assistant 안에서 함께 재생하고 분석하는 앱입니다.
 
