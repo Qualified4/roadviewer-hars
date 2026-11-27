@@ -1,3 +1,7 @@
+## 2.1.4
+
+- Guarded range sliders in the overlay settings dialog against accidental value jumps and immediate persistence during mobile vertical touch scrolling.
+
 ## 2.1.3
 
 - Improved map loading with NAS prepared track caching and parallel cold reads, added automatic retry and WebGL context-restore recovery for basemap styles and track fetches, and smoothed minimap heading rotation between GPS samples.
