@@ -726,7 +726,12 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
     const grip=mini.getByRole('button',{name:'작은 지도 크기 조절'}),before=await mini.boundingBox();
     const box=await grip.boundingBox(),x=box.x+box.width/2,y=box.y+box.height/2;
     await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
-    await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y-30}]});
+    for(let step=1;step<=6;step++){
+     await page.waitForTimeout(16);
+     await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y-step*5}]});
+    }
+    // A stationary release keeps Chromium from treating the next tap as a fling stop.
+    await page.waitForTimeout(120);
     await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
     await settleLayout(page);
     const after=await mini.boundingBox();
