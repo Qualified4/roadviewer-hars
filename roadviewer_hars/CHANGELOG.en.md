@@ -1,3 +1,9 @@
+## 2.1.8
+
+- Kept the log list alive across navigation and polished mobile map/replay back-navigation history (#77, #78).
+- Applied a symmetric 4-side subtle edge fade to the expanded playback map, synchronized bidirectional 3D↔2D interpolation with CSS transition easing, and fixed SVG mask tiling glitches during transitions (#79).
+- Restored subtle top-right minimap transparency (`maxAlpha = 0.80`) and refined expanded map controls into translucent frosted glass pills with a crisp mint active dot for both dark and light themes (#79).
+
 ## 2.1.7
 
 - Applied a nonlinear transparency curve to the playback minimap corner fade so the top-right core stays crisp while accelerating smoothly to full transparency at the outer edge.
