@@ -1263,7 +1263,13 @@ try{autoNext=localStorage.getItem(AUTO_NEXT_KEY)==='1';pauseOnJump=localStorage.
 {const show=()=>{$('autoNext').setAttribute('aria-pressed',String(autoNext));$('pauseOnJump').setAttribute('aria-pressed',String(pauseOnJump))};show();
  $('autoNext').onclick=()=>{autoNext=!autoNext;try{localStorage.setItem(AUTO_NEXT_KEY,autoNext?'1':'0')}catch{}show()};
  $('pauseOnJump').onclick=()=>{pauseOnJump=!pauseOnJump;try{localStorage.setItem(PAUSE_ON_JUMP_KEY,pauseOnJump?'1':'0')}catch{}show()}}
-const goToLog=(log,resume=playing&&!pauseOnJump)=>{try{if(resume)sessionStorage.setItem(RESUME_KEY,log.id);else sessionStorage.removeItem(RESUME_KEY)}catch{}location.assign('../'+encodeURIComponent(log.id)+'/')};
+function goToLog(log,resume=playing&&!pauseOnJump){
+ try{if(resume)sessionStorage.setItem(RESUME_KEY,log.id);else sessionStorage.removeItem(RESUME_KEY)}catch{}
+ const drive=logSegmentInfo(replayLog?.name)?.route;
+ // The replay map passes only an ID, taken from the current drive's track.
+ const replace=!('name' in log)||(drive&&logSegmentInfo(log.name)?.route===drive);
+ location[replace?'replace':'assign']('../'+encodeURIComponent(log.id)+'/');
+}
 // Played to the end (not sought there): on to the next segment when 끝나면 다음 구간 재생 is on.
 function playedToEnd(){if(autoNext&&nextDriveSegment)goToLog(nextDriveSegment,true)}
 // App bar title: when the route starts (its first segment's time, as in the log list), which segment this is and of how many.
@@ -1556,6 +1562,7 @@ $('pinLog').onclick=async()=>{
  try{
   const response=await fetch('../../api/logs/'+encodeURIComponent(current)+'/pin',{method:'POST',headers:{'Content-Type':'application/json','X-RoadViewer-Request':'1'},body:JSON.stringify({pinned:button.getAttribute('aria-pressed')!=='true'})});
   if(!response.ok)throw Error('구간 고정 설정을 저장하지 못했습니다. 다시 시도해 주세요.');
+  globalThis.__rvLogListCache=null;
   const result=await response.json();syncReplayPin(result.pinned);
  }catch(e){showError(e.message)}finally{button.disabled=false}
 };
@@ -1569,6 +1576,7 @@ async function replayDelete(url,expected){
  const response=await fetch(url,{method:'DELETE',headers:{'X-RoadViewer-Request':'1'}});
  const body=await response.json().catch(()=>({}));
  if(!response.ok)throw Error(body.message||'요청을 처리하지 못했습니다. 다시 시도해 주세요.');
+ globalThis.__rvLogListCache=null;
  if(expected&&body.status!==expected)throw Error('변환 데이터 제거가 완료되지 않았습니다. 로그 목록에서 상태를 확인해 주세요.');
 }
 function renderReplayDownloads(log){
@@ -1643,14 +1651,24 @@ let replaySegmentNeighbors=[];
 // rather than the page's placeholder.
 let logNavigationRetry=0,logNavigationTimer=null;
 function placeholderTitle(){if(data?.route&&$('titleText').textContent==='로그 재생')renderTitle({name:data.route},[])}
-async function loadLogNavigation(){
+async function loadLogNavigation({reuseRecent=false}={}){
  clearTimeout(logNavigationTimer);
  const buttons=[$('previousLog'),$('nextLog')];
  const label=(button,text,title)=>{button.querySelector('.neighbor-label').textContent=text;button.setAttribute('aria-label',text);button.title=title};
  try{
-  const response=await fetch('../../api/logs');
-  if(!response.ok)throw Error('로그 목록을 불러오지 못했습니다.');
-  const {logs}=await response.json(),current=location.pathname.split('/').filter(Boolean).at(-1);
+  const current=location.pathname.split('/').filter(Boolean).at(-1),cached=globalThis.__rvLogListCache;
+  let list=cached;
+  // Reuse the snapshot during quick segment changes, within the library's normal poll interval.
+  if(!reuseRecent||!cached||performance.now()-cached.checked>=3000||!cached.data.logs.some(log=>log.id===current)){
+   const response=await fetch('../../api/logs',{cache:'no-store',headers:cached?.tag?{'If-None-Match':cached.tag}:{}});
+   if(response.status!==304||!cached){
+    if(!response.ok)throw Error('로그 목록을 불러오지 못했습니다.');
+    const data=await response.json();if(!Array.isArray(data?.logs))throw Error('로그 목록을 불러오지 못했습니다.');
+    list={tag:response.headers.get('ETag'),data};
+   }
+   if(globalThis.__rvLogListCache===cached){list.checked=performance.now();globalThis.__rvLogListCache=list}
+  }
+  const {logs}=list.data;
   const active=logs.find(log=>log.id===current);
   window.rvMaps?.replayLog?.(active,logs);  // Reconcile eager track load / cache revision with the live list.
   recordingNameFiles=active?.files||{};
@@ -1658,7 +1676,7 @@ async function loadLogNavigation(){
   const tagButton=$('editReplayTags');tagButton.disabled=!active;
   tagButton.innerHTML=RECORDING_TAG_ICON;
   replayTagList=active?.tags||[];fitReplayTags();
-  tagButton.onclick=()=>editRecordingTags([active],()=>loadLogNavigation());
+  tagButton.onclick=()=>editRecordingTags([active],()=>{globalThis.__rvLogListCache=null;return loadLogNavigation()});
   syncReplayPin(!!active?.pinned);$('pinLog').disabled=!active;
   renderReplayDownloads(active);
   if(data||active)renderRecordingName($('routeName'),data?.route||active.name,recordingNameFiles).id='route';
@@ -1681,7 +1699,8 @@ async function loadLogNavigation(){
   logNavigationTimer=setTimeout(loadLogNavigation,Math.min(30000,1000*2**logNavigationRetry++));
  }
 }
-const pageReady=loadLogNavigation();
+// The list can already be in memory. Let the rest of the page mount (including rvMaps) before using it.
+const pageReady=Promise.resolve().then(()=>loadLogNavigation({reuseRecent:true}));
 
 // Full screen keeps the video and its transport bar together; hidden where the browser cannot do it (iPhone).
 (()=>{
