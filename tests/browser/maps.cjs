@@ -122,6 +122,19 @@ async function assertMiniCorner(page,kind='vehicle'){
  assert(await page.locator('#videoMap').getByLabel('지도 출처').isHidden());
  await assertMiniCar(page,kind);
 }
+function setHudPlaying(page,playing){
+ // Follow the real HUD observer while the short fixture stays paused.
+ return page.evaluate(playing=>{
+  document.body.classList.remove('hud-awake');
+  document.getElementById('play').dataset.playing=String(playing);
+ },playing);
+}
+function assertReplayHud(page,shown){
+ return page.waitForFunction(shown=>['.video-title','.video-tools','.video-fullscreen','.video-map-grip'].every(selector=>{
+  const style=getComputedStyle(document.querySelector(selector));
+  return style.opacity===(shown?'1':'0')&&(style.pointerEvents!=='none')===shown;
+ }),shown);
+}
 async function assertMiniFade(page,mini){
  // Use solid layers to measure the actual composited SVG alpha independently of tiles, HUD and video content.
  const probe=await page.addStyleTag({content:`
@@ -669,6 +682,16 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await assertMiniCorner(page);
    assert.equal(await page.evaluate(()=>rvTestMini.getPitch()),56);
    assert((await mini.boundingBox()).width<=174.5);
+   if(scheme==='dark'){
+    await setHudPlaying(page,true);await assertReplayHud(page,false);
+    const picture=async()=>{
+     const box=await page.locator('#videoStage').boundingBox();
+     await page.touchscreen.tap(box.x+box.width*.42,box.y+box.height*.55);
+    };
+    await page.waitForTimeout(450);await picture();await assertReplayHud(page,true);
+    await page.waitForTimeout(450);await picture();await assertReplayHud(page,false);
+    await setHudPlaying(page,false);await assertReplayHud(page,true);
+   }
    // The analysis tab's basemap preferences remain independent.
    await page.locator('#overlayHeightSettings').tap();await dialog.waitFor();
    await dialog.getByRole('button',{name:'라이트',exact:true}).tap();
@@ -723,16 +746,25 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await page.waitForTimeout(400);assert(await close.isVisible(),'pinned remains expanded after the seek');
    await close.tap();
    if(scheme==='dark'){
-    const grip=mini.getByRole('button',{name:'작은 지도 크기 조절'}),before=await mini.boundingBox();
+    const grip=mini.getByRole('button',{name:'작은 지도 크기 조절'});
+    await grip.evaluate(el=>{
+     document.getElementById('play').dataset.playing='true';
+     el.focus({preventScroll:true});el.blur();
+    });
+    await assertReplayHud(page,true);
+    const before=await mini.boundingBox();
     const box=await grip.boundingBox(),x=box.x+box.width/2,y=box.y+box.height/2;
     await touch.send('Input.dispatchTouchEvent',{type:'touchStart',touchPoints:[{x,y}]});
     for(let step=1;step<=6;step++){
      await page.waitForTimeout(16);
      await touch.send('Input.dispatchTouchEvent',{type:'touchMove',touchPoints:[{x,y:y-step*5}]});
     }
-    // A stationary release keeps Chromium from treating the next tap as a fling stop.
-    await page.waitForTimeout(120);
+    // Hold past the auto-hide delay, then release at rest so Chromium delivers the next tap.
+    await page.waitForTimeout(3200);
+    assert.equal(await page.evaluate(()=>document.body.classList.contains('hud-idle')),false,'holding the grip keeps the video controls awake');
+    assert.equal(await grip.evaluate(el=>getComputedStyle(el,'::before').opacity),'1','dragging highlights the resize grip');
     await touch.send('Input.dispatchTouchEvent',{type:'touchEnd',touchPoints:[]});
+    await setHudPlaying(page,false);
     await settleLayout(page);
     const after=await mini.boundingBox();
     assert(after.height>before.height+28&&Math.abs(after.width-before.width)<1&&await open.isVisible(),'touch drag follows the rotated stage axes');
@@ -846,6 +878,17 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await screenshot(page,'01-desktop-3d-minimap');
 
    const grip=mini.getByRole('button',{name:'작은 지도 크기 조절'});
+   const picture=await page.locator('#videoStage').boundingBox();
+   await page.mouse.move(5,5);
+   await setHudPlaying(page,true);await assertReplayHud(page,false);
+   await page.mouse.move(picture.x+picture.width*.42,picture.y+picture.height*.55);
+   await assertReplayHud(page,true);await assertReplayHud(page,false);
+   const handle=await grip.boundingBox();
+   await page.mouse.move(handle.x+handle.width/2,handle.y+handle.height/2);
+   await assertReplayHud(page,true);
+   // The first movement wakes the controls while the hidden grip still passes pointer events through.
+   await grip.hover({position:{x:12,y:24}});
+   await page.waitForFunction(()=>getComputedStyle(document.querySelector('.video-map-grip'),'::before').opacity==='1');
    const dragGrip=async (dx,dy)=>{
     const {x,y,width,height}=await grip.boundingBox(),at=[x+width/2,y+height/2];
     await page.mouse.move(...at);await page.mouse.down();
@@ -856,6 +899,7 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    assert((await grip.boundingBox()).width>=44,'the resize grip has a touch-sized hit area');
    await assertMiniFade(page,mini);
    await dragGrip(-135,0);
+   await setHudPlaying(page,false);await assertReplayHud(page,true);
    const wide=await mini.boundingBox();
    assert(wide.width>collapsed.width+130&&Math.abs(wide.height-collapsed.height)<1,'horizontal drag changes only width');
    await assertMiniFade(page,mini);

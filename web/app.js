@@ -1095,10 +1095,12 @@ let barFoldChanged=()=>{};
 // the app bar folds away so the picture gets the room. A touch, mouse movement or keyboard focus on the video shows the video
 // controls for a few seconds; pausing shows everything. Open menus and focused controls keep them up.
 (()=>{
- const root=document.body,stage=$('videoStage'),short=matchMedia('(max-height:820px),(pointer:coarse)'),SHOW=3000;
+ const root=document.body,stage=$('videoStage'),short=matchMedia('(max-height:820px),(pointer:coarse)'),hover=matchMedia('(hover:hover)'),SHOW=3000;
  let timer=0;
  const playing=()=>$('play').dataset.playing==='true';
- const busy=()=>!!(appBar.querySelector('details[open]')||stage.querySelector(':focus-visible')||document.querySelector('.rv-choice-dialog[open]'));
+ const resizingMap=()=>stage.querySelector('.video-map.is-sizing');
+ const busy=()=>!!(appBar.querySelector('details[open]')||stage.querySelector(':focus-visible')||resizingMap()
+  ||(hover.matches&&stage.querySelector('.video-map-grip:hover'))||document.querySelector('.rv-choice-dialog[open]'));
  function sync(){
   const idle=playing()&&!root.classList.contains('hud-awake');
   root.classList.toggle('hud-idle',idle);
@@ -1116,7 +1118,7 @@ let barFoldChanged=()=>{};
  function tap(e){
   const now=performance.now();if(now-lastTap<450)return;lastTap=now;
   const onPicture=stage.contains(e.target)&&!e.target.closest('button,select,input,label,a,summary,[role=button],.video-map,.glass,.video-tools,.video-title,.video-hud,.video-messages');
-  if(onPicture&&playing()&&!root.classList.contains('hud-idle')){clearTimeout(timer);root.classList.remove('hud-awake');dismissed=now;sync();return}
+  if(onPicture&&playing()&&!root.classList.contains('hud-idle')&&!resizingMap()){clearTimeout(timer);root.classList.remove('hud-awake');dismissed=now;sync();return}
   wake();
  }
  for(const type of ['pointerdown','touchstart','click'])cameraPanel.addEventListener(type,tap,{capture:true,passive:true});
