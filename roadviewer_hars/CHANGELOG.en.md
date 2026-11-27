@@ -1,3 +1,9 @@
+## 2.1.7
+
+- Applied a nonlinear transparency curve to the playback minimap corner fade so the top-right core stays crisp while accelerating smoothly to full transparency at the outer edge.
+- Added smooth `rAF` 3D↔2D (`pitch` and `bearing`) angle interpolation during minimap expand/collapse, keeping the top-right corner flush with the video frame and adding a subtle inner-edge fade when expanded.
+- Optimized segment navigation history handling and log list cache responses.
+
 ## 2.1.6
 
 - Widened and softened the playback minimap rounded-rectangle edge fade to restore the airy 2.1.4 mist blend across default, wide, and tall aspect ratios.
