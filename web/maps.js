@@ -1522,13 +1522,13 @@
    if(body){const p=map.project(now,map.getZoom()),transform=`translate(${(p.x-Math.round(p.x)).toFixed(3)}px,${(p.y-Math.round(p.y)).toFixed(3)}px) rotate(${pos.bearing.toFixed(2)}deg)`;if(lines.transform!==transform){lines.transform=transform;body.style.transform=transform}}
    if(!target.zooming&&following)followCar(target,now,.5);
   }
-  function update(force=false,dt=0){
+  function update(force=false,dt=0,now=performance.now()){
    if(!route||current<0||typeof t==='undefined')return;
    const pos=position(t),key=pos.index+':'+pos.k.toFixed(4),moved=force||key!==lastKey;lastKey=key;
    if(big&&mode==='map'&&moved)draw(big,pos,force);
    if(small&&!mini.hidden&&!small.map.rvContextLost&&(moved||small.smoothing||cameraTween)){
     const snap=force||small.lastTime===undefined||Math.abs(t-small.lastTime)>.5;
-    small.lastTime=t;followMini(pos,dt,snap);
+    small.lastTime=t;followMini(pos,dt,snap,now);
    }
   }
   // Use wall-clock time so the camera responds the same way at different refresh rates.
@@ -1536,7 +1536,7 @@
   const loop=now=>{
    const dt=lastFrame===null?0:Math.min((now-lastFrame)/1000,.1);lastFrame=now;
    if(route&&current>=0&&hasVideo()!==miniVideo)syncMini();
-   if((big&&mode==='map')||(small&&!mini.hidden))update(false,dt);
+   if((big&&mode==='map')||(small&&!mini.hidden))update(false,dt,now);
    requestAnimationFrame(loop);
   };
   requestAnimationFrame(loop);
@@ -1562,17 +1562,27 @@
   const openMap=mini.querySelector('.video-map-open'),closeMap=mini.querySelector('.video-map-close');
   const grip=mini.querySelector('.video-map-grip'),fade=mini.querySelector('#videoMapFade path');
   const feather=mini.querySelector('#videoMapFeather feGaussianBlur');
-  if(feather?.parentElement&&!feather.parentElement.querySelector('feComponentTransfer')){
+  let fadeAlphaFunc=feather?.parentElement?.querySelector('feComponentTransfer feFuncA')||null;
+  if(feather?.parentElement&&!fadeAlphaFunc){
    const svgNs='http://www.w3.org/2000/svg';
    const transfer=document.createElementNS(svgNs,'feComponentTransfer');
-   const funcA=document.createElementNS(svgNs,'feFuncA');
-   // Concave-up transparency curve T(x) = x^2.6 => alpha(a) = 1 - (1 - a)^2.6:
-   // preserves the solid top-right core, then accelerates smoothly to 0 at the outer edge.
-   const curve=Array.from({length:21},(_,i)=>+(1-(1-i/20)**2.6).toFixed(4)).join(' ');
-   funcA.setAttribute('type','table');
-   funcA.setAttribute('tableValues',curve);
-   transfer.append(funcA);
+   fadeAlphaFunc=document.createElementNS(svgNs,'feFuncA');
+   fadeAlphaFunc.setAttribute('type','table');
+   transfer.append(fadeAlphaFunc);
    feather.parentElement.append(transfer);
+  }
+  const MINI_MAX_ALPHA=.8;
+  let lastCurveKey='';
+  function updateMaskCurve(blend){
+   if(!fadeAlphaFunc)return;
+   const key=blend.toFixed(2);
+   if(key===lastCurveKey)return;
+   lastCurveKey=key;
+   // Minimap (blend=0): cap top-right opacity at 0.80 so video softly shows through, with nonlinear curve 1-(1-a)^2.6.
+   // Expanded (blend=1): reach full 1.0 opacity inside with a clean linear feather along all 4 edges.
+   const maxAlpha=lerp(MINI_MAX_ALPHA,1,blend),power=lerp(2.6,1,blend);
+   const curve=Array.from({length:21},(_,i)=>+(maxAlpha*(1-(1-i/20)**power)).toFixed(4)).join(' ');
+   fadeAlphaFunc.setAttribute('tableValues',curve);
   }
   const controls=mini.querySelector('.video-map-controls'),pin=mini.querySelector('.video-map-pin');
   const followMiniButton=mini.querySelector('.video-map-follow'),overviewMiniButton=mini.querySelector('.video-map-overview'),preview=mini.querySelector('.video-map-preview');
@@ -1756,13 +1766,26 @@
    return camera;
   }
   const MINI_TRANSITION_MS=280;
-  const easeInOutCubic=k=>k<.5?4*k*k*k:1-(-2*k+2)**3/2;
+  // Exact Material 2 standard easing cubic-bezier(0.4, 0, 0.2, 1) to match CSS .video-map transitions.
+  function easeStandard(x){
+   if(x<=0)return 0;if(x>=1)return 1;
+   let t=x;
+   for(let i=0;i<6;i++){
+    const mt=1-t,bx=3*mt*mt*t*.4+3*mt*t*t*.2+t*t*t;
+    const dx=3*mt*mt*.4+6*mt*t*(-.2)+3*t*t*.8;
+    if(Math.abs(dx)<1e-6)break;
+    t=Math.max(0,Math.min(1,t-(bx-x)/dx));
+   }
+   const mt=1-t;
+   return 3*mt*t*t+t*t*t;
+  }
   const lerp=(a,b,k)=>a+(b-a)*k;
   let cameraTween=null;
-  function stepMiniTween(pos){
+  function stepMiniTween(pos,now=performance.now()){
    const tween=cameraTween;if(!tween)return;
-   const raw=Math.min(1,(performance.now()-tween.start)/tween.duration);
-   const k=easeInOutCubic(raw);
+   if(tween.start===null)tween.start=now;
+   const raw=Math.min(1,(now-tween.start)/tween.duration);
+   const k=easeStandard(raw);
    const {from,toLarge,targetPadding}=tween;
    const toCenter=lngLat(pos);
    const pitch=lerp(from.pitch,toLarge?0:56,k);
@@ -1786,7 +1809,7 @@
     tween.onDone?.();
    }
   }
-  function followMini(pos,dt=0,snap=false){
+  function followMini(pos,dt=0,snap=false,now=performance.now()){
    const {map}=small,speed=pos.speed*3.6,targetZoom=zoomAt(speed);
    small.bearing??=pos.bearing;small.zoom??=targetZoom;
    const delta=speed>=3?shortArc(small.bearing,pos.bearing):0,zoomDelta=targetZoom-small.zoom;
@@ -1796,7 +1819,7 @@
    small.bearing+=snap||Math.abs(delta)<.05?delta:Math.max(-maxTurn,Math.min(maxTurn,turn));
    small.zoom+=snap||Math.abs(zoomDelta)<.005?zoomDelta:zoomDelta*(1-Math.exp(-dt*rate/.6));
    small.smoothing=!snap&&(Math.abs(delta)>=.05||Math.abs(zoomDelta)>=.005);
-   if(cameraTween){stepMiniTween(pos);return}
+   if(cameraTween){stepMiniTween(pos,now);return}
    if(!resizing&&!large)map.jumpTo(cameraAt(pos));
    if(!resizing&&large&&miniFollowing&&!map.isMoving()){
     const center=map.getCenter(),[lng,lat]=lngLat(pos);
@@ -1875,13 +1898,25 @@
    const w=mini.clientWidth,h=mini.clientHeight;
    if(!w||!h||(w===maskWidth&&h===maskHeight&&maskBlend===lastMaskBlend))return;
    maskWidth=w;maskHeight=h;lastMaskBlend=maskBlend;
-   const short=Math.min(w,h);
-   const blur=lerp(short*.16,Math.min(11,short*.04),maskBlend);
-   const radius=lerp(short*.54,Math.min(32,short*.08),maskBlend);
-   const left=2.55*blur,bottom=h-left,top=-4*blur,right=w-top;
-   // Extend past the two video edges. The inset edges have room to fade to transparency.
+   const short=Math.min(w,h),b=maskBlend;
+   const collapsedBlur=short*.16,expandedBlur=Math.min(5,short*.012);
+   const blur=lerp(collapsedBlur,expandedBlur,b);
+   const expandedInset=Math.min(12,Math.max(7,2.4*expandedBlur));
+   // Collapsed (b=0): flush with top-right video corner, wide feather along left & bottom.
+   // Expanded (b=1): 4-side symmetric subtle edge fade so video never leaks unevenly.
+   const left=lerp(2.55*collapsedBlur,expandedInset,b);
+   const bottom=lerp(h-2.55*collapsedBlur,h-expandedInset,b);
+   const top=lerp(-4*collapsedBlur,expandedInset,b);
+   const right=lerp(w+4*collapsedBlur,w-expandedInset,b);
+   const maxR=Math.max(0,Math.min((right-left)/2,(bottom-top)/2));
+   const expandedRadius=Math.min(14,short*.03);
+   const rBL=Math.min(maxR,lerp(short*.54,expandedRadius,b));
+   const rOther=Math.min(maxR,lerp(0,expandedRadius,b));
+   updateMaskCurve(b);
    feather.setAttribute('stdDeviation',blur);
-   fade.setAttribute('d',`M ${left} ${top} H ${right} V ${bottom} H ${left+radius} A ${radius} ${radius} 0 0 1 ${left} ${bottom-radius} Z`);
+   fade.setAttribute('d',rOther>.1
+    ?`M ${left+rOther} ${top} H ${right-rOther} A ${rOther} ${rOther} 0 0 1 ${right} ${top+rOther} V ${bottom-rOther} A ${rOther} ${rOther} 0 0 1 ${right-rOther} ${bottom} H ${left+rBL} A ${rBL} ${rBL} 0 0 1 ${left} ${bottom-rBL} V ${top+rOther} A ${rOther} ${rOther} 0 0 1 ${left+rOther} ${top} Z`
+    :`M ${left} ${top} H ${right} V ${bottom} H ${left+rBL} A ${rBL} ${rBL} 0 0 1 ${left} ${bottom-rBL} Z`);
   }
   function syncMini(){
    miniVideo=hasVideo();
@@ -1899,7 +1934,7 @@
   }
   const resizeWatch=new ResizeObserver(()=>{
    if(mini.hidden||document.body.hidden)return;
-   measureSmall();
+   if(!resizing)measureSmall();
    updateMiniMask();
    if(resizing)return;
    if(!small){if(!smallRetry.pending)ensureSmall()}else resizeMini();
@@ -1939,14 +1974,14 @@
    if(moving){
     // Smoothly interpolate 3D <-> 2D pitch, bearing, zoom, padding, and mask in rAF while tracking the live car.
     const targetPadding=large?{top:0,bottom:0,left:0,right:0}:collapsedCamera(pos).padding;
-    cameraTween={toLarge:large,start:performance.now(),duration:MINI_TRANSITION_MS,from,targetPadding,onDone:null};
+    cameraTween={toLarge:large,start:null,duration:MINI_TRANSITION_MS,from,targetPadding,onDone:null};
    }else{
     maskBlend=large?1:0;updateMiniMask();
     if(large)centreMini(0);else map.jumpTo(cameraAt(pos));
     miniData('car',[feature('Point',lngLat(pos),{bearing:large?pos.bearing-map.getBearing():0})]);
    }
    const finish=()=>{
-    resizing=false;releaseCanvas();
+    resizing=false;measureSmall();releaseCanvas();
     maskBlend=large?1:0;updateMiniMask();
     if(large)setExpandedInput(true);
     lastKey='';watchConversion();

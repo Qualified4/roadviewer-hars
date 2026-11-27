@@ -167,7 +167,7 @@ async function assertMiniClose(page){
   for(const animation of transitions)animation.play();
   await Promise.all(transitions.map(animation=>animation.finished));
   await nextFrame();await nextFrame();
-  return {start,middle,end,closed:measure(),midPitch:pitches.find(p=>p>5&&p<51)??null};
+  return {start,middle,end,closed:measure(),midPitch:pitches.find(p=>p>10&&p<45)??null};
  });
  const samples=JSON.stringify({start,middle,end,closed,midPitch});
  for(const sample of [start,middle,end,closed]){
@@ -179,6 +179,25 @@ async function assertMiniClose(page){
  assert.equal(end.resizes,start.resizes,'the canvas does not resize before the transition finishes');
  assert.equal(closed.resizes,start.resizes+1,'closing resizes the WebGL canvas once');
  assert(!closed.held&&Math.abs(closed.x-closed.w*.7)<1&&Math.hypot(end.x-closed.x,end.y-closed.y)<2,'the car keeps its position when the held canvas is released '+samples);
+}
+async function assertMiniOpen(page){
+ const {startPitch,midPitch,endPitch,endBearing,resizesBefore,resizesAfter}=await page.evaluate(async()=>{
+  const mini=document.getElementById('videoMap'),map=rvTestMini;
+  const nextFrame=()=>new Promise(requestAnimationFrame);
+  const startPitch=map.getPitch(),resizesBefore=rvNativeResizes;
+  mini.querySelector('.video-map-open').click();
+  const pitches=[];
+  const deadline=performance.now()+2000;
+  while((document.querySelector('.video-map-canvas').style.width||map.isMoving()||map.getPitch()>.5)&&performance.now()<deadline){
+   await nextFrame();
+   pitches.push(map.getPitch());
+  }
+  await nextFrame();
+  return {startPitch,midPitch:pitches.find(p=>p>10&&p<45)??null,endPitch:map.getPitch(),endBearing:map.getBearing(),resizesBefore,resizesAfter:rvNativeResizes};
+ });
+ const info=JSON.stringify({startPitch,midPitch,endPitch,endBearing,resizesBefore,resizesAfter});
+ assert(Math.abs(startPitch-56)<.5&&midPitch!==null&&Math.abs(endPitch)<.5&&Math.abs(endBearing)<.5,'opening smoothly interpolates 3D -> 2D pitch and bearing '+info);
+ assert.equal(resizesAfter-resizesBefore,1,'opening resizes the WebGL canvas once '+info);
 }
 async function assertExpandedFade(page,mini){
  const probe=await page.addStyleTag({content:`
@@ -193,12 +212,14 @@ async function assertExpandedFade(page,mini){
   const {width:w,height:h}=img;
   const canvas=new OffscreenCanvas(w,h),ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);
   const at=(x,y)=>ctx.getImageData(Math.floor(x),Math.floor(y),1,1).data[0];
-  return {top:at(w-40,1),right:at(w-2,40),left:[1,48].map(x=>at(x,h*.4)),bottom:[1,48].map(y=>at(w*.6,h-y))};
+  return {top:[1,32].map(y=>at(w*.5,y)),bottom:[1,32].map(y=>at(w*.5,h-1-y)),
+   left:[1,32].map(x=>at(x,h*.5)),right:[1,32].map(x=>at(w-1-x,h*.5)),center:at(w*.5,h*.5)};
  },png.toString('base64'));
- assert(light.top>=254&&light.right>=254,'expanded top-right edges stay flush and opaque '+JSON.stringify(light));
- for(const edge of [light.left,light.bottom]){
-  assert(edge[0]<10&&edge[1]>245,'expanded inner edges have a subtle thin fade '+JSON.stringify(light));
+ assert(light.center>=254,'expanded interior stays fully opaque '+JSON.stringify(light));
+ for(const edge of [light.top,light.bottom,light.left,light.right]){
+  assert(edge[0]<20&&edge[1]>245,'expanded edges have a subtle 4-side symmetric fade '+JSON.stringify(light));
  }
+ assert(Math.abs(light.left[0]-light.right[0])<=8&&Math.abs(light.top[0]-light.bottom[0])<=8,'expanded fade is symmetric across opposite edges '+JSON.stringify(light));
 }
 async function assertMiniFade(page,mini){
  // Use solid layers to measure the actual composited SVG alpha independently of tiles, HUD and video content.
@@ -217,9 +238,9 @@ async function assertMiniFade(page,mini){
   return {top:at(w-.15*s,1),right:at(w-2,.15*s),left:[1,.37*s,.72*s].map(x=>at(x,.14*s)),
    bottom:[1,.37*s,.72*s].map(y=>at(w-.12*s,h-y)),corner:at(.37*s,h-.37*s),grip:at(11,h-20)};
  },png.toString('base64'));
- assert(light.top>=254&&light.right>=254,'video edges stay opaque '+JSON.stringify(light));
+ assert(light.top>=195&&light.top<=215&&light.right>=195&&light.right<=215,'top-right corner keeps subtle ~20% transparency '+JSON.stringify(light));
  for(const edge of [light.left,light.bottom]){
-  assert(edge[0]<8&&edge[1]>145&&edge[1]<225&&edge[2]>240&&edge[1]-edge[0]>edge[2]-edge[1],'inner edges follow a nonlinear accelerated fade '+JSON.stringify(light));
+  assert(edge[0]<8&&edge[1]>110&&edge[1]<185&&edge[2]>185&&edge[2]<=215&&edge[1]-edge[0]>edge[2]-edge[1],'inner edges follow a nonlinear accelerated fade '+JSON.stringify(light));
  }
  assert(light.corner<45,'the feather follows a rounded lower-left corner '+JSON.stringify(light));
  assert(light.grip>130,'the thin resize grip paints over the transparent corner '+JSON.stringify(light));
@@ -1009,11 +1030,8 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    await seek(14);await waitSeek(page,14,.02);
 
    const geometry=()=>page.locator('#videoStage').boundingBox();
-   const frame=await geometry(),initialResizes=await page.evaluate(()=>rvNativeResizes);
-   await open.click();await page.waitForFunction(()=>!document.querySelector('.video-map-canvas').style.width&&!rvTestMini.isMoving());
-   assert.equal(await page.evaluate(()=>rvNativeResizes)-initialResizes,1,'opening resizes the WebGL canvas once');
-   assert.equal(await page.evaluate(()=>rvTestMini.getPitch()),0);
-   assert.equal(await page.evaluate(()=>rvTestMini.getBearing()),0);
+   const frame=await geometry();
+   await assertMiniOpen(page);
    await assertFollow(page,true);
    await assertExpandedFade(page,mini);
    assert.deepEqual(await geometry(),frame,'the overlay leaves the video geometry intact');

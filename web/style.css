@@ -1077,7 +1077,7 @@ select,.rv-choice-trigger{font-weight:500}
 /* The canvas fades into the video. The controls sit outside the mask so their targets stay visible. */
 .video-map{--vmap-ratio:.774;--vmap-default-w:min(310px,41cqw);--vmap-w:var(--vmap-saved-w,var(--vmap-default-w));position:absolute;top:0;right:0;margin:0;z-index:3;width:clamp(min(100%,var(--vmap-min-w,104px)),var(--vmap-w),100%);height:clamp(min(var(--vmap-min-h,86px),var(--vmap-room,240px)),var(--vmap-saved-h,calc(var(--vmap-w) * var(--vmap-ratio))),var(--vmap-room,240px));transition:width .28s var(--m2-standard,ease),height .28s var(--m2-standard,ease);color:#F0F4F8;color-scheme:dark;font-weight:500;letter-spacing:.015em;font-variant-numeric:tabular-nums;--focus:#5BE3AE}
 .video-map-mask{position:absolute;pointer-events:none}
-.video-map-surface{position:absolute;inset:0;-webkit-mask-image:url(#videoMapFade);mask-image:url(#videoMapFade)}
+.video-map-surface{position:absolute;inset:0;overflow:hidden;-webkit-mask-image:url(#videoMapFade);mask-image:url(#videoMapFade)}
 .video-map .video-map-canvas{position:absolute;inset:0}
 .video-map-open{position:absolute;inset:0;width:100%;background:none;border:0;border-radius:0;box-shadow:none;cursor:zoom-in;touch-action:none}
 .video-map .video-map-open:where(:enabled):is(:hover,:active){background:none;filter:none}
