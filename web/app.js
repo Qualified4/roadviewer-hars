@@ -1651,7 +1651,7 @@ let replaySegmentNeighbors=[];
 // rather than the page's placeholder.
 let logNavigationRetry=0,logNavigationTimer=null;
 function placeholderTitle(){if(data?.route&&$('titleText').textContent==='로그 재생')renderTitle({name:data.route},[])}
-async function loadLogNavigation(){
+async function loadLogNavigation({reuseRecent=false}={}){
  clearTimeout(logNavigationTimer);
  const buttons=[$('previousLog'),$('nextLog')];
  const label=(button,text,title)=>{button.querySelector('.neighbor-label').textContent=text;button.setAttribute('aria-label',text);button.title=title};
@@ -1659,7 +1659,7 @@ async function loadLogNavigation(){
   const current=location.pathname.split('/').filter(Boolean).at(-1),cached=globalThis.__rvLogListCache;
   let list=cached;
   // Reuse the snapshot during quick segment changes, within the library's normal poll interval.
-  if(!cached||performance.now()-cached.checked>=3000||!cached.data.logs.some(log=>log.id===current)){
+  if(!reuseRecent||!cached||performance.now()-cached.checked>=3000||!cached.data.logs.some(log=>log.id===current)){
    const response=await fetch('../../api/logs',{cache:'no-store',headers:cached?.tag?{'If-None-Match':cached.tag}:{}});
    if(response.status!==304||!cached){
     if(!response.ok)throw Error('로그 목록을 불러오지 못했습니다.');
@@ -1700,7 +1700,7 @@ async function loadLogNavigation(){
  }
 }
 // The list can already be in memory. Let the rest of the page mount (including rvMaps) before using it.
-const pageReady=Promise.resolve().then(loadLogNavigation);
+const pageReady=Promise.resolve().then(()=>loadLogNavigation({reuseRecent:true}));
 
 // Full screen keeps the video and its transport bar together; hidden where the browser cannot do it (iPhone).
 (()=>{
