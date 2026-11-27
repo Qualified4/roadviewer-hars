@@ -1526,7 +1526,7 @@
    if(!route||current<0||typeof t==='undefined')return;
    const pos=position(t),key=pos.index+':'+pos.k.toFixed(4),moved=force||key!==lastKey;lastKey=key;
    if(big&&mode==='map'&&moved)draw(big,pos,force);
-   if(small&&!mini.hidden&&!small.map.rvContextLost&&(moved||small.smoothing)){
+   if(small&&!mini.hidden&&!small.map.rvContextLost&&(moved||small.smoothing||cameraTween)){
     const snap=force||small.lastTime===undefined||Math.abs(t-small.lastTime)>.5;
     small.lastTime=t;followMini(pos,dt,snap);
    }
@@ -1562,6 +1562,18 @@
   const openMap=mini.querySelector('.video-map-open'),closeMap=mini.querySelector('.video-map-close');
   const grip=mini.querySelector('.video-map-grip'),fade=mini.querySelector('#videoMapFade path');
   const feather=mini.querySelector('#videoMapFeather feGaussianBlur');
+  if(feather?.parentElement&&!feather.parentElement.querySelector('feComponentTransfer')){
+   const svgNs='http://www.w3.org/2000/svg';
+   const transfer=document.createElementNS(svgNs,'feComponentTransfer');
+   const funcA=document.createElementNS(svgNs,'feFuncA');
+   // Concave-up transparency curve T(x) = x^2.6 => alpha(a) = 1 - (1 - a)^2.6:
+   // preserves the solid top-right core, then accelerates smoothly to 0 at the outer edge.
+   const curve=Array.from({length:21},(_,i)=>+(1-(1-i/20)**2.6).toFixed(4)).join(' ');
+   funcA.setAttribute('type','table');
+   funcA.setAttribute('tableValues',curve);
+   transfer.append(funcA);
+   feather.parentElement.append(transfer);
+  }
   const controls=mini.querySelector('.video-map-controls'),pin=mini.querySelector('.video-map-pin');
   const followMiniButton=mini.querySelector('.video-map-follow'),overviewMiniButton=mini.querySelector('.video-map-overview'),preview=mini.querySelector('.video-map-preview');
   const previewButton=preview.querySelector('button'),previewStatus=preview.querySelector('small');
@@ -1743,6 +1755,37 @@
    viewport.remove();
    return camera;
   }
+  const MINI_TRANSITION_MS=280;
+  const easeInOutCubic=k=>k<.5?4*k*k*k:1-(-2*k+2)**3/2;
+  const lerp=(a,b,k)=>a+(b-a)*k;
+  let cameraTween=null;
+  function stepMiniTween(pos){
+   const tween=cameraTween;if(!tween)return;
+   const raw=Math.min(1,(performance.now()-tween.start)/tween.duration);
+   const k=easeInOutCubic(raw);
+   const {from,toLarge,targetPadding}=tween;
+   const toCenter=lngLat(pos);
+   const pitch=lerp(from.pitch,toLarge?0:56,k);
+   const bearing=from.bearing+shortArc(from.bearing,toLarge?0:small.bearing)*k;
+   const zoom=lerp(from.zoom,toLarge?FOLLOW_ZOOM:small.zoom,k);
+   const padding={
+    top:lerp(from.padding.top,targetPadding.top,k),
+    bottom:lerp(from.padding.bottom,targetPadding.bottom,k),
+    left:lerp(from.padding.left,targetPadding.left,k),
+    right:lerp(from.padding.right,targetPadding.right,k),
+   };
+   const center=[lerp(from.center.lng,toCenter[0],k),lerp(from.center.lat,toCenter[1],k)];
+   small.map.jumpTo({center,pitch,bearing,zoom,padding});
+   miniData('car',[feature('Point',toCenter,{bearing:pos.bearing-bearing})]);
+   maskBlend=lerp(from.mask,toLarge?1:0,k);
+   updateMiniMask();
+   if(raw>=1){
+    cameraTween=null;
+    maskBlend=large?1:0;
+    updateMiniMask();
+    tween.onDone?.();
+   }
+  }
   function followMini(pos,dt=0,snap=false){
    const {map}=small,speed=pos.speed*3.6,targetZoom=zoomAt(speed);
    small.bearing??=pos.bearing;small.zoom??=targetZoom;
@@ -1753,6 +1796,7 @@
    small.bearing+=snap||Math.abs(delta)<.05?delta:Math.max(-maxTurn,Math.min(maxTurn,turn));
    small.zoom+=snap||Math.abs(zoomDelta)<.005?zoomDelta:zoomDelta*(1-Math.exp(-dt*rate/.6));
    small.smoothing=!snap&&(Math.abs(delta)>=.05||Math.abs(zoomDelta)>=.005);
+   if(cameraTween){stepMiniTween(pos);return}
    if(!resizing&&!large)map.jumpTo(cameraAt(pos));
    if(!resizing&&large&&miniFollowing&&!map.isMoving()){
     const center=map.getCenter(),[lng,lat]=lngLat(pos);
@@ -1826,13 +1870,15 @@
    mini.style.setProperty('--vmap-room',Math.floor(room)+'px');
    mini.classList.toggle('no-room',room<speed.height+28);
   }
-  let maskWidth=0,maskHeight=0;
+  let maskWidth=0,maskHeight=0,maskBlend=0,lastMaskBlend=-1;
   function updateMiniMask(){
    const w=mini.clientWidth,h=mini.clientHeight;
-   if(!w||!h||(w===maskWidth&&h===maskHeight))return;
-   maskWidth=w;maskHeight=h;
-   const short=Math.min(w,h),radius=short*.54,blur=short*.16;
-   const left=2.3*blur,bottom=h-left,top=-4*blur,right=w-top;
+   if(!w||!h||(w===maskWidth&&h===maskHeight&&maskBlend===lastMaskBlend))return;
+   maskWidth=w;maskHeight=h;lastMaskBlend=maskBlend;
+   const short=Math.min(w,h);
+   const blur=lerp(short*.16,Math.min(11,short*.04),maskBlend);
+   const radius=lerp(short*.54,Math.min(32,short*.08),maskBlend);
+   const left=2.55*blur,bottom=h-left,top=-4*blur,right=w-top;
    // Extend past the two video edges. The inset edges have room to fade to transparency.
    feather.setAttribute('stdDeviation',blur);
    fade.setAttribute('d',`M ${left} ${top} H ${right} V ${bottom} H ${left+radius} A ${radius} ${radius} 0 0 1 ${left} ${bottom-radius} Z`);
@@ -1854,7 +1900,7 @@
   const resizeWatch=new ResizeObserver(()=>{
    if(mini.hidden||document.body.hidden)return;
    measureSmall();
-   if(!large)updateMiniMask();
+   updateMiniMask();
    if(resizing)return;
    if(!small){if(!smallRetry.pending)ensureSmall()}else resizeMini();
   });
@@ -1878,9 +1924,10 @@
    if(!small||next===large)return;
    const map=small.map,box=map.getContainer(),moving=!(instant||reduced()),wasFocused=mini.contains(document.activeElement);
    clearTimeout(returnTimer);const revision=++resizeRevision;resizing=moving;cancelGesture();
+   const from={pitch:map.getPitch(),bearing:map.getBearing(),zoom:map.getZoom(),padding:map.getPadding(),center:map.getCenter(),mask:maskBlend};
+   cameraTween=null;map.stop();
    if(moving){
-    const inset=parseFloat(getComputedStyle(mini).getPropertyValue('--vmap-inset'))||0;
-    holdCanvas(next?stage.clientWidth-2*inset:box.clientWidth,next?stage.clientHeight-2*inset:box.clientHeight);
+    holdCanvas(next?stage.clientWidth:box.clientWidth,next?stage.clientHeight:box.clientHeight);
    }else{mini.classList.add('is-instant');releaseCanvas()}
    large=next;
    mini.classList.toggle('is-large',large);stage.classList.toggle('video-map-large',large);
@@ -1888,25 +1935,29 @@
    credit.open=false;
    setExpandedInput(false);setMiniFollow(true);showPreview(null);
    if(!moving)resizeMini();
-   if(large)centreMini(moving?280:0);
-   else{
-    const pos=position(t);
-    // The large canvas is centered behind the shrinking frame. Aim for the final frame's padding
-    // so the car stays in the same place when that canvas is replaced by the small one.
-    const camera=moving?collapsedCamera(pos):cameraAt(pos);
-    map.easeTo({...camera,duration:moving?280:0});
+   const pos=position(t);
+   if(moving){
+    // Smoothly interpolate 3D <-> 2D pitch, bearing, zoom, padding, and mask in rAF while tracking the live car.
+    const targetPadding=large?{top:0,bottom:0,left:0,right:0}:collapsedCamera(pos).padding;
+    cameraTween={toLarge:large,start:performance.now(),duration:MINI_TRANSITION_MS,from,targetPadding,onDone:null};
+   }else{
+    maskBlend=large?1:0;updateMiniMask();
+    if(large)centreMini(0);else map.jumpTo(cameraAt(pos));
+    miniData('car',[feature('Point',lngLat(pos),{bearing:large?pos.bearing-map.getBearing():0})]);
    }
    const finish=()=>{
     resizing=false;releaseCanvas();
+    maskBlend=large?1:0;updateMiniMask();
     if(large)setExpandedInput(true);
     lastKey='';watchConversion();
    };
    if(moving){
-    // CSS can start a frame late or retarget during a window resize. Release when it actually finishes.
+    // CSS can start a frame late or retarget during a window resize. Release when both CSS and camera tween finish.
     const afterTransition=()=>{
      if(disposed||revision!==resizeRevision)return;
      const transitions=mini.getAnimations().filter(animation=>animation.pending||animation.playState==='running');
      if(transitions.length)Promise.allSettled(transitions.map(animation=>animation.finished)).then(afterTransition);
+     else if(cameraTween)cameraTween.onDone=afterTransition;
      else if(map.isMoving())map.once('moveend',afterTransition);
      else finish();
     };

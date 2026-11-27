@@ -136,13 +136,15 @@ function assertReplayHud(page,shown){
  }),shown);
 }
 async function assertMiniClose(page){
- const {start,middle,end,closed}=await page.evaluate(async()=>{
-  const mini=document.getElementById('videoMap'),map=rvTestMini,canvas=map.getContainer();
+ const {start,middle,end,closed,midPitch}=await page.evaluate(async()=>{
+  const mini=document.getElementById('videoMap'),stage=document.getElementById('videoStage'),map=rvTestMini,canvas=map.getContainer();
   const turned=!!mini.closest('.is-turned'),data=await map.getSource('rv-car').getData();
   const measure=()=>{
-   const frame=mini.getBoundingClientRect(),box=canvas.getBoundingClientRect();
+   const frame=mini.getBoundingClientRect(),box=canvas.getBoundingClientRect(),host=stage.getBoundingClientRect();
    const p=map.project(data.features[0].geometry.coordinates);
-   return {w:mini.clientWidth,h:mini.clientHeight,canvasWidth:canvas.clientWidth,
+   const top=turned?host.right-frame.right:frame.top-host.top;
+   const right=turned?host.bottom-frame.bottom:host.right-frame.right;
+   return {w:mini.clientWidth,h:mini.clientHeight,canvasWidth:canvas.clientWidth,top,right,pitch:map.getPitch(),
     x:p.x+(turned?box.top-frame.top:box.left-frame.left),y:p.y+(turned?frame.right-box.right:box.top-frame.top),
     held:!!canvas.style.width,resizes:rvNativeResizes};
   };
@@ -153,21 +155,50 @@ async function assertMiniClose(page){
   if(!transitions.some(animation=>animation.transitionProperty==='width'))throw Error('expected an animated minimap close');
   // Sample the clipping frame at fixed points even when a busy runner skips a rendered frame.
   for(const animation of transitions){animation.pause();animation.currentTime=animation.effect.getTiming().duration/2}
-  while(map.isMoving())await nextFrame();
+  const pitches=[];
+  const deadline=performance.now()+2000;
+  while((map.isMoving()||Math.abs(map.getPitch()-56)>.5)&&performance.now()<deadline){
+   await nextFrame();
+   pitches.push(map.getPitch());
+  }
   const middle=measure();
   for(const animation of transitions)animation.currentTime=animation.effect.getTiming().duration-1;
   const end=measure();
   for(const animation of transitions)animation.play();
   await Promise.all(transitions.map(animation=>animation.finished));
   await nextFrame();await nextFrame();
-  return {start,middle,end,closed:measure()};
+  return {start,middle,end,closed:measure(),midPitch:pitches.find(p=>p>5&&p<51)??null};
  });
- const samples=JSON.stringify({start,middle,end,closed});
+ const samples=JSON.stringify({start,middle,end,closed,midPitch});
+ for(const sample of [start,middle,end,closed]){
+  assert(Math.abs(sample.top)<.5&&Math.abs(sample.right)<.5,'top-right corner stays flush with the video frame '+samples);
+ }
+ assert(midPitch!==null&&Math.abs(closed.pitch-56)<.5,'closing smoothly interpolates 2D -> 3D pitch '+samples);
  assert(middle.w<start.w&&middle.w>closed.w&&middle.held&&middle.canvasWidth===start.w,'the full canvas stays centered behind the shrinking frame '+samples);
  assert(middle.x<middle.w&&middle.x>0&&middle.y<middle.h&&middle.y>0,'the car stays within the shrinking viewport '+samples);
  assert.equal(end.resizes,start.resizes,'the canvas does not resize before the transition finishes');
  assert.equal(closed.resizes,start.resizes+1,'closing resizes the WebGL canvas once');
  assert(!closed.held&&Math.abs(closed.x-closed.w*.7)<1&&Math.hypot(end.x-closed.x,end.y-closed.y)<2,'the car keeps its position when the held canvas is released '+samples);
+}
+async function assertExpandedFade(page,mini){
+ const probe=await page.addStyleTag({content:`
+  #videoStage{background:#000}
+  #videoStage>:not(#videoMap),#videoMap .video-map-canvas,#videoMap .video-map-controls,#videoMap .video-map-credit{visibility:hidden}
+  #videoMap .video-map-surface{background:#fff}
+ `});
+ let png;
+ try{png=await mini.screenshot({scale:'css'})}finally{await probe.evaluate(el=>el.remove())}
+ const light=await page.evaluate(async png=>{
+  const img=await createImageBitmap(await (await fetch('data:image/png;base64,'+png)).blob());
+  const {width:w,height:h}=img;
+  const canvas=new OffscreenCanvas(w,h),ctx=canvas.getContext('2d');ctx.drawImage(img,0,0);
+  const at=(x,y)=>ctx.getImageData(Math.floor(x),Math.floor(y),1,1).data[0];
+  return {top:at(w-40,1),right:at(w-2,40),left:[1,48].map(x=>at(x,h*.4)),bottom:[1,48].map(y=>at(w*.6,h-y))};
+ },png.toString('base64'));
+ assert(light.top>=254&&light.right>=254,'expanded top-right edges stay flush and opaque '+JSON.stringify(light));
+ for(const edge of [light.left,light.bottom]){
+  assert(edge[0]<10&&edge[1]>245,'expanded inner edges have a subtle thin fade '+JSON.stringify(light));
+ }
 }
 async function assertMiniFade(page,mini){
  // Use solid layers to measure the actual composited SVG alpha independently of tiles, HUD and video content.
@@ -188,7 +219,7 @@ async function assertMiniFade(page,mini){
  },png.toString('base64'));
  assert(light.top>=254&&light.right>=254,'video edges stay opaque '+JSON.stringify(light));
  for(const edge of [light.left,light.bottom]){
-  assert(edge[0]<8&&edge[1]>80&&edge[1]<175&&edge[2]>235,'inner edges feather through intermediate alpha '+JSON.stringify(light));
+  assert(edge[0]<8&&edge[1]>145&&edge[1]<225&&edge[2]>240&&edge[1]-edge[0]>edge[2]-edge[1],'inner edges follow a nonlinear accelerated fade '+JSON.stringify(light));
  }
  assert(light.corner<45,'the feather follows a rounded lower-left corner '+JSON.stringify(light));
  assert(light.grip>130,'the thin resize grip paints over the transparent corner '+JSON.stringify(light));
@@ -984,6 +1015,7 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    assert.equal(await page.evaluate(()=>rvTestMini.getPitch()),0);
    assert.equal(await page.evaluate(()=>rvTestMini.getBearing()),0);
    await assertFollow(page,true);
+   await assertExpandedFade(page,mini);
    assert.deepEqual(await geometry(),frame,'the overlay leaves the video geometry intact');
    assert.equal(await page.evaluate(()=>!!window.L),false,'native replay loads without Leaflet');
    const pin=mini.locator('.video-map-pin'),follow=mini.locator('.video-map-follow'),overview=mini.locator('.video-map-overview'),card=mini.locator('.video-map-preview');
