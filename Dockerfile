@@ -9,7 +9,7 @@ COPY resources ./resources
 RUN cargo build --locked --release && strip target/release/roadviewer-hars
 
 FROM debian:bookworm-slim
-ARG BUILD_VERSION=2.1.8
+ARG BUILD_VERSION=2.1.9
 ARG BUILD_ARCH=amd64
 LABEL io.hass.version="${BUILD_VERSION}" \
       io.hass.type="app" \
