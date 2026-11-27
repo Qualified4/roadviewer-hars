@@ -188,7 +188,7 @@ async function assertMiniFade(page,mini){
  },png.toString('base64'));
  assert(light.top>=254&&light.right>=254,'video edges stay opaque '+JSON.stringify(light));
  for(const edge of [light.left,light.bottom]){
-  assert(edge[0]<8&&edge[1]>80&&edge[1]<175&&edge[2]>235,'inner edges feather through intermediate alpha '+JSON.stringify(light));
+  assert(edge[0]<8&&edge[1]>145&&edge[1]<225&&edge[2]>240&&edge[1]-edge[0]>edge[2]-edge[1],'inner edges follow a nonlinear accelerated fade '+JSON.stringify(light));
  }
  assert(light.corner<45,'the feather follows a rounded lower-left corner '+JSON.stringify(light));
  assert(light.grip>130,'the thin resize grip paints over the transparent corner '+JSON.stringify(light));

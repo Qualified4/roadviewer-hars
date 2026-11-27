@@ -1562,6 +1562,18 @@
   const openMap=mini.querySelector('.video-map-open'),closeMap=mini.querySelector('.video-map-close');
   const grip=mini.querySelector('.video-map-grip'),fade=mini.querySelector('#videoMapFade path');
   const feather=mini.querySelector('#videoMapFeather feGaussianBlur');
+  if(feather?.parentElement&&!feather.parentElement.querySelector('feComponentTransfer')){
+   const svgNs='http://www.w3.org/2000/svg';
+   const transfer=document.createElementNS(svgNs,'feComponentTransfer');
+   const funcA=document.createElementNS(svgNs,'feFuncA');
+   // Concave-up transparency curve T(x) = x^2.6 => alpha(a) = 1 - (1 - a)^2.6:
+   // preserves the solid top-right core, then accelerates smoothly to 0 at the outer edge.
+   const curve=Array.from({length:21},(_,i)=>+(1-(1-i/20)**2.6).toFixed(4)).join(' ');
+   funcA.setAttribute('type','table');
+   funcA.setAttribute('tableValues',curve);
+   transfer.append(funcA);
+   feather.parentElement.append(transfer);
+  }
   const controls=mini.querySelector('.video-map-controls'),pin=mini.querySelector('.video-map-pin');
   const followMiniButton=mini.querySelector('.video-map-follow'),overviewMiniButton=mini.querySelector('.video-map-overview'),preview=mini.querySelector('.video-map-preview');
   const previewButton=preview.querySelector('button'),previewStatus=preview.querySelector('small');
@@ -1832,7 +1844,7 @@
    if(!w||!h||(w===maskWidth&&h===maskHeight))return;
    maskWidth=w;maskHeight=h;
    const short=Math.min(w,h),radius=short*.54,blur=short*.16;
-   const left=2.3*blur,bottom=h-left,top=-4*blur,right=w-top;
+   const left=2.55*blur,bottom=h-left,top=-4*blur,right=w-top;
    // Extend past the two video edges. The inset edges have room to fade to transparency.
    feather.setAttribute('stdDeviation',blur);
    fade.setAttribute('d',`M ${left} ${top} H ${right} V ${bottom} H ${left+radius} A ${radius} ${radius} 0 0 1 ${left} ${bottom-radius} Z`);
