@@ -3,15 +3,22 @@ const host=document.getElementById('pageHost'),notice=document.getElementById('n
 // after an update, an older page scope under newer page scripts.
 const {pageScope}=await import(new URL('page-scope.js'+version,assets));
 const base=new URL('../',assets),libraryStyle=document.getElementById('libraryStyle');
-let current=null,revision=0,pending=null,libraryScroll=0;
-// The library's page shell is static per version: fetch it ahead (when idle on a replay) so going back skips a round trip.
+let current=null,revision=0,pending=null,libraryScroll=0,backPress=0;
+// Both fragments are static. Keep the parsed templates and resolve their links against each destination on mount.
 const shells=new Map();
-function shell(url,kind,signal){
+let libraryRequest;
+async function loadShell(url,kind,signal){
  const request=new URL(url);request.searchParams.set('fragment','1');
- if(kind!=='library')return fetch(request,{signal,cache:'no-store'}).then(r=>{if(!r.ok)throw Error('화면을 불러오지 못했습니다. 다시 시도해 주세요.');return r.text()});
- const key=request.pathname+request.search;
- if(!shells.has(key))shells.set(key,fetch(request,{cache:'no-store'}).then(r=>{if(!r.ok)throw Error('화면을 불러오지 못했습니다. 다시 시도해 주세요.');return r.text()}).catch(e=>{shells.delete(key);throw e}));
- return shells.get(key);
+ const response=await fetch(request,{signal,cache:'no-store'});
+ if(!response.ok)throw Error('화면을 불러오지 못했습니다. 다시 시도해 주세요.');
+ const html=new DOMParser().parseFromString(await response.text(),'text/html');
+ if(!html.querySelector('main')||!html.body.classList.contains(kind+'-page'))throw Error('예상하지 못한 응답입니다. 연결 상태를 확인해 주세요.');
+ html.querySelectorAll('script').forEach(s=>s.remove());shells.set(kind,html);return html;
+}
+async function shell(url,kind,signal){
+ const cached=shells.get(kind);if(cached)return cached;
+ if(kind==='library')return libraryRequest??=loadShell(url,kind).finally(()=>{libraryRequest=null});
+ return loadShell(url,kind,signal);
 }
 function prefetchLibrary(){const idle=window.requestIdleCallback||(f=>setTimeout(f,800));idle(()=>{shell(base,'library').catch(()=>{});import(new URL('page-library.js'+version,assets)).catch(()=>{})})}
 // A slim progress line shows that a tap started a page change when it takes more than a moment.
@@ -27,17 +34,15 @@ async function navigate(to,{replace=false,pop=false,pressed=0}={}){
  const url=new URL(to,location.href),kind=route(url);if(!kind)return;
  if(current&&!current.api.canLeave()){
   notice.textContent='업로드 또는 정리 작업이 끝난 뒤 이동해 주세요.';
-  if(pop)history.pushState({},'',current.url);return;
+  if(pop)history.pushState(current.state,'',current.url);return;
  }
  const ticket=++revision;pending?.abort();
  pending=new AbortController();notice.setAttribute('role','status');notice.textContent='';
  try{
   busy(true);
-  const [text,module]=await Promise.all([shell(url,kind,pending.signal),import(new URL('page-'+kind+'.js'+version,assets))]);
-  const html=new DOMParser().parseFromString(text,'text/html');if(ticket!==revision)return;
-  if(!html.querySelector('main')||!html.body.classList.contains(kind==='library'?'library-page':'replay-page'))throw Error('예상하지 못한 응답입니다. 연결 상태를 확인해 주세요.');
+  const [html,module]=await Promise.all([shell(url,kind,pending.signal),import(new URL('page-'+kind+'.js'+version,assets))]);if(ticket!==revision)return;
   const root=document.createElement('div');root.className=html.body.className;
-  html.querySelectorAll('script').forEach(s=>s.remove());root.append(...html.body.childNodes);
+  root.append(...html.body.cloneNode(true).childNodes);
   for(const element of root.querySelectorAll('[href],[src]'))for(const attr of ['href','src'])if(element.hasAttribute(attr))element.setAttribute(attr,new URL(element.getAttribute(attr),url).href);
   const previous=current;
   if(previous&&route(previous.url)==='library')libraryScroll=scrollY;
@@ -52,12 +57,22 @@ async function navigate(to,{replace=false,pop=false,pressed=0}={}){
   const hold=pressed&&!matchMedia('(prefers-reduced-motion: reduce)').matches?PRESS_HOLD-(performance.now()-pressed):0;
   if(hold>0){await new Promise(resolve=>setTimeout(resolve,hold));if(ticket!==revision){scope.dispose();root.remove();return}}
   const brand=previous&&host.querySelector('.app-brand');
-  if(!pop){saveScroll();history[replace?'replaceState':'pushState']({},'',url)}
+  if(!pop){
+   let state=previous?{}:history.state;
+   if(previous&&kind==='replay'){
+    // A segment replacement keeps its predecessor. Different drives keep their own replay entries.
+    const back=history.state?.rvLibraryBack||0;
+    const distance=route(previous.url)==='library'?1:back&&back+1;
+    state={rvLibraryBack:replace?back:distance};
+   }
+   if(!replace)saveScroll();
+   history[replace?'replaceState':'pushState'](state,'',url);
+  }
   if(brand)root.querySelector('.app-brand')?.replaceWith(brand);
   globalThis.__rvNavNext=kind;
   try{previous?.scope.dispose()}finally{globalThis.__rvNavNext=null}
   document.getElementById('pageBase').href=url.href;
-  host.replaceChildren(root);libraryStyle.disabled=kind!=='library';document.documentElement.dataset.page=kind;current={url,scope,api};
+  host.replaceChildren(root);libraryStyle.disabled=kind!=='library';document.documentElement.dataset.page=kind;current={url,scope,api,state:history.state};
   root.hidden=false;
   document.title=html.title;notice.textContent='';
   scrollTo(0,pop?(history.state?.rvScroll||0):kind==='library'?libraryScroll:0);
@@ -67,15 +82,23 @@ async function navigate(to,{replace=false,pop=false,pressed=0}={}){
  }catch(error){
   if(ticket!==revision||error.name==='AbortError')return;
   busy(false);
-  if(pop&&current)history.pushState({},'',current.url);
+  if(pop&&current)history.pushState(current.state,'',current.url);
   notice.setAttribute('role','alert');notice.textContent=error.message||'화면을 불러오지 못했습니다.';
   const retry=document.createElement('button');retry.type='button';retry.textContent='다시 시도';retry.onclick=()=>navigate(url,{replace});notice.append(' ',retry);
  }
 }
 document.addEventListener('click',event=>{
  const link=event.target.closest('a[href]');if(!link||event.defaultPrevented||event.button!==0||event.ctrlKey||event.metaKey||event.shiftKey||event.altKey||link.target||link.hasAttribute('download'))return;
- const url=new URL(link.href);if(!route(url)||(url.hash&&samePage(url)))return;event.preventDefault();void navigate(url,{pressed:link.matches('[data-ripple-now],[data-glow]')?performance.now():0});
+ const url=new URL(link.href);if(!route(url)||(url.hash&&samePage(url)))return;event.preventDefault();
+ const pressed=link.matches('[data-ripple-now],[data-glow]')?performance.now():0;
+ if(link.matches('.replay-page .back')){
+  if(backPress||!samePage(new URL(location.href)))return;
+  const back=history.state?.rvLibraryBack;
+  if(back){saveScroll();backPress=pressed;if(back===1)history.back();else history.go(-back);return}
+  void navigate(url,{replace:true,pressed});return;
+ }
+ void navigate(url,{pressed});
 });
-addEventListener('popstate',()=>{if(location.hash&&samePage(new URL(location.href)))return;void navigate(location.href,{pop:true})});
+addEventListener('popstate',()=>{const pressed=backPress;backPress=0;if(location.hash&&samePage(new URL(location.href)))return;void navigate(location.href,{pop:true,pressed})});
 history.scrollRestoration='manual';
 void navigate(location.href,{replace:true});

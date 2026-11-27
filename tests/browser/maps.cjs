@@ -403,6 +403,12 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
     await drive.locator('.drive-map-handle').tap();await page.waitForTimeout(150);{const l=await layout();assert(!await hidden()&&Math.abs(l.share-.54)<.02,'a tap on the hidden sheet brings the middle height: '+JSON.stringify(l))}
     await drag(-160);await drive.locator('.drive-map-handle').tap();await page.waitForTimeout(150);assert(await hidden(),'from the top height too, a tap hides it')
     await drive.locator('.drive-map-handle').tap();await page.waitForTimeout(150)}
+   if(scheme==='light'){
+    const mapURL=page.url(),play=drive.locator('.log-row a.replay').first();
+    const replayURL=await play.evaluate(link=>link.href);
+    await play.tap();await page.waitForURL(replayURL);
+    await page.locator('.app-bar .back').tap();await page.waitForURL(mapURL);await driveOpen();
+   }
    // The system back closes it (back in the list, the card's shape focused again).
    await page.goBack();await driveClosed();assert.notEqual(new URL(page.url()).hash,'#drive-map');
    assert(await page.locator('#list').isVisible());
@@ -955,13 +961,15 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    const saved=await page.evaluate(key=>JSON.parse(localStorage.getItem(key)),key);
    assert(saved.width>0&&saved.height>0&&await open.isVisible(),'dragging saves both dimensions without expanding the map');
    await page.reload();
-   await page.waitForFunction(()=>window.rvTestMini?.getSource('rv-car')&&rvTestMini.getPadding().left>0);
-   const restored=await mini.boundingBox();
-   assert(Math.abs(restored.width-tall.width)<1&&Math.abs(restored.height-tall.height)<1,'both dimensions survive a reload');
-   await page.waitForFunction(()=>{const map=rvTestMini,box=map.getContainer(),canvas=map.getCanvas();
-    return canvas.clientWidth===box.clientWidth&&canvas.clientHeight===box.clientHeight&&Math.abs(map.getPadding().left-box.clientWidth*.4)<1
+   // MapLibre can be ready while the minimap is still transitioning to its saved size after reload.
+   await page.waitForFunction(function restoredMinimapSizeAndPadding({width,height}){
+    const map=window.rvTestMini,mini=document.getElementById('videoMap');
+    if(!map?.getSource('rv-car')||!mini)return false;
+    const restored=mini.getBoundingClientRect(),box=map.getContainer(),canvas=map.getCanvas();
+    return Math.abs(restored.width-width)<1&&Math.abs(restored.height-height)<1
+     &&canvas.clientWidth===box.clientWidth&&canvas.clientHeight===box.clientHeight&&Math.abs(map.getPadding().left-box.clientWidth*.4)<1
      &&Math.abs(map.getPadding().top-Math.min(box.clientHeight*.22,document.querySelector('.video-hud').offsetTop+document.querySelector('.video-hud').offsetHeight+12))<1;
-   });
+   },tall);
    await open.click();await page.waitForFunction(()=>!document.querySelector('.video-map-canvas').style.width&&!rvTestMini.isMoving());
    await assertMiniClose(page);
    await grip.dblclick();
