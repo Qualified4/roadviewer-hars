@@ -295,6 +295,30 @@ impl Prepared {
         .map_err(|_| unavailable())?
     }
 
+    pub(crate) async fn run_track_warm<T: Send + 'static>(
+        &self,
+        op: impl FnOnce() -> io::Result<T> + Send + 'static,
+    ) -> io::Result<Option<T>> {
+        // Yield whenever a user track query is active so prewarming never competes with live requests.
+        if self.track_queries.available_permits() < 2 {
+            return Ok(None);
+        }
+        let Ok(slot) = self.track_queries.clone().try_acquire_owned() else {
+            return Ok(None);
+        };
+        timeout(TRACK_READ, async move {
+            tokio::task::spawn_blocking(move || {
+                let _slot = slot;
+                op()
+            })
+            .await
+            .map_err(io::Error::other)?
+        })
+        .await
+        .map_err(|_| unavailable())?
+        .map(Some)
+    }
+
     pub(crate) fn read_slot(&self) -> io::Result<tokio::sync::OwnedSemaphorePermit> {
         self.readers
             .clone()

@@ -153,6 +153,11 @@ impl App {
     pub fn background(&self) -> tokio::task::JoinHandle<()> {
         let app = self.clone();
         app.archive.start();
+        let warm_app = self.clone();
+        tokio::spawn(async move {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            warm_track_cache(&warm_app).await;
+        });
         tokio::spawn(async move {
             let mut interval = tokio::time::interval(std::time::Duration::from_secs(1));
             let mut tick = 0u64;
@@ -1367,6 +1372,122 @@ async fn run_tracks(
             .await
             .map_err(|_| bad("invalid_track_data"))?
             .map_err(prepared_storage::api_error)
+    }
+}
+
+/// Prewarms the in-memory track cache in small newest-first batches after startup.
+/// Yields whenever a live user track query is active and stops gracefully on NAS errors.
+pub async fn warm_track_cache(app: &App) {
+    const WARM_ROUTES_PER_BATCH: usize = 8;
+    const BATCH_PAUSE: std::time::Duration = std::time::Duration::from_millis(150);
+    const BUSY_PAUSE: std::time::Duration = std::time::Duration::from_secs(1);
+
+    let ready_metas = app
+        .store
+        .records
+        .read()
+        .await
+        .values()
+        .filter(|m| m["status"] == "ready")
+        .cloned()
+        .collect::<Vec<_>>();
+    if ready_metas.is_empty() {
+        return;
+    }
+
+    let mut by_route: BTreeMap<String, (f64, Vec<Value>)> = BTreeMap::new();
+    for meta in ready_metas {
+        let key = crate::track::route_order(&meta).0;
+        let uploaded = meta["uploaded"].as_f64().unwrap_or(0.0);
+        let entry = by_route
+            .entry(key)
+            .or_insert_with(|| (uploaded, Vec::new()));
+        if uploaded > entry.0 {
+            entry.0 = uploaded;
+        }
+        entry.1.push(meta);
+    }
+    let mut routes = by_route.into_values().collect::<Vec<_>>();
+    routes.sort_by(|a, b| b.0.total_cmp(&a.0));
+
+    let root = app.store.root.clone();
+    for chunk in routes.chunks(WARM_ROUTES_PER_BATCH) {
+        let batch_metas = chunk
+            .iter()
+            .flat_map(|(_, metas)| metas.iter().cloned())
+            .collect::<Vec<_>>();
+        let batch_ids = batch_metas
+            .iter()
+            .filter_map(|m| m["id"].as_str().map(str::to_owned))
+            .collect::<std::collections::BTreeSet<_>>();
+        if batch_ids.is_empty() {
+            continue;
+        }
+        let Ok(shares) = app.store.prepared.track_shares(&batch_metas).await else {
+            return;
+        };
+        let reads = prepared_storage::TrackReads::new(&root, shares, false);
+        let has_nas = reads.needs_nas();
+        if has_nas {
+            let mut warmed = false;
+            let mut reads = Some(reads);
+            for _ in 0..3 {
+                let current_reads = reads.take().unwrap();
+                let op_root = root.clone();
+                let op_metas = batch_metas.clone();
+                let op_ids = batch_ids.clone();
+                let op = move || {
+                    let segments = current_reads.load(&op_root, None)?;
+                    let _ = crate::track::build_tracks(
+                        &op_root,
+                        &op_metas,
+                        Some(&op_ids),
+                        &segments,
+                        "",
+                    );
+                    Ok(())
+                };
+                match app.store.prepared.run_track_warm(op).await {
+                    Ok(Some(())) => {
+                        warmed = true;
+                        break;
+                    }
+                    Ok(None) => {
+                        tokio::time::sleep(BUSY_PAUSE).await;
+                        let Ok(retry_shares) = app.store.prepared.track_shares(&batch_metas).await
+                        else {
+                            return;
+                        };
+                        let retry_reads =
+                            prepared_storage::TrackReads::new(&root, retry_shares, false);
+                        if !retry_reads.needs_nas() {
+                            warmed = true;
+                            break;
+                        }
+                        reads = Some(retry_reads);
+                    }
+                    Err(_) => return,
+                }
+            }
+            if !warmed {
+                continue;
+            }
+        } else {
+            let root = root.clone();
+            let op = move || {
+                let segments = reads.load(&root, None)?;
+                let _ = crate::track::build_tracks(
+                    &root,
+                    &batch_metas,
+                    Some(&batch_ids),
+                    &segments,
+                    "",
+                );
+                Ok::<(), std::io::Error>(())
+            };
+            let _ = tokio::task::spawn_blocking(op).await;
+        }
+        tokio::time::sleep(BATCH_PAUSE).await;
     }
 }
 async fn video(

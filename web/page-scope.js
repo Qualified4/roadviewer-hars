@@ -33,7 +33,7 @@ export function pageScope(root,url,navigate){
   if(!active)return 0;const set=repeat?intervals:timers;
   const id=(repeat?setInterval:setTimeout)(()=>{if(!repeat)set.delete(id);if(active)callback(...args)},delay);set.add(id);return id;
  };
- const observer=Type=>class extends Type{constructor(callback){super(live(callback));observers.add(this)}};
+ const observer=Type=>class extends Type{constructor(callback,...rest){super(live(callback),...rest);observers.add(this)}};
  const env={window:windowProxy,document:doc,location:{href:url.href,pathname:url.pathname,origin:url.origin,search:url.search,assign:to=>navigate(new URL(to,url)),reload:()=>navigate(url,{replace:true})},
   fetch:(input,options={})=>fetch(new URL(input,url),{...options,signal:options.signal?AbortSignal.any([controller.signal,options.signal]):controller.signal}),
   setTimeout:(...args)=>timer(false,...args),clearTimeout:id=>{timers.delete(id);clearTimeout(id)},

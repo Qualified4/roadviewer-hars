@@ -306,6 +306,7 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
      await page.waitForFunction(([id,was])=>document.querySelector(`.log-route[data-route*="${id}"]`).open!==was,['00000395',open]);
      await actions.tap({position});await page.waitForFunction(([id,was])=>document.querySelector(`.log-route[data-route*="${id}"]`).open===was,['00000395',open])}
     assert(await card.locator('.route-inset').isHidden()&&await card.locator('.route-strip').isHidden(),'phones: nothing in the thumbnail');
+    assert.equal(await card.locator('.route-inset svg, .route-strip svg').count(),0,'phones skip unused desktop route SVGs');
     if(shots){await card.evaluate(e=>e.scrollIntoView({block:'center'}));await settleLayout(page);await card.screenshot({path:path.join(shots,`card-phone-${scheme}.png`)})}}
    assert.equal(tiles.length,0,'the shape draws no tiles');
    const cardA=page.locator('.log-route[data-route*="00000395"]'),drive=page.locator('#driveMap');
@@ -1071,6 +1072,7 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
     await page.waitForTimeout(300);const {thumb:t,inset,strip:rest,main:title}=await rects();
     assert(Math.round(inset.w)===46&&Math.abs(t.x+t.w-inset.x-inset.w-6)<1.5&&Math.abs(inset.y-t.y-6)<1.5&&rest.w===0,JSON.stringify({t,inset,rest}));
     assert(await c.locator('.route-map-button').isHidden(),'no 지도 button with a mouse');
+    assert.equal(await c.locator('.route-map-button svg .shape-line').count(),0,'desktop skips unused mobile route SVG');
     assert.equal(await page.locator('.log-route[data-route*="00000397"] :is(.route-inset,.route-strip,.route-map-button)').count(),0);
     if(shots){await settleLayout(page);await c.screenshot({path:path.join(shots,`card-rest-${scheme}.png`)})}
     await thumb.hover();await page.waitForTimeout(400);
@@ -1255,6 +1257,56 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
     await shot('drive-wide-folded');await button.click();assert(await page.locator('#driveMap .drive-map-sheet').isVisible())}
    assert.deepEqual(errors,[]);
    await context.close();
+   if(scheme==='dark'){
+    // Mobile regression checks on a 63-drive list:
+    // ① pageScope forwards IntersectionObserver options (rootMargin: '240px 0px'),
+    // ② mobile skips desktop SVGs (.route-inset, .route-strip),
+    // ③ 2-stage /api/tracks?ids=... fills top cards while full /api/tracks is still pending,
+    // ④ tapping a pending card's 지도 button opens 주행 지도 immediately via /api/logs/{id}/track.
+    const mContext=await browser.newContext({viewport:{width:390,height:844},hasTouch:true,isMobile:true,colorScheme:'dark',reducedMotion:'reduce'});
+    await mContext.addInitScript(()=>{
+     window.rvObserverOptions=[];
+     const Orig=window.IntersectionObserver;
+     window.IntersectionObserver=class extends Orig{constructor(cb,opts){super(cb,opts);window.rvObserverOptions.push(opts)}};
+    });
+    await mContext.addInitScript(hookMaps);
+    if(!REAL)await mContext.route(OFM+'**',stubTiles);
+    const mPage=await mContext.newPage(),mErrors=[];
+    mPage.on('pageerror',e=>mErrors.push(e.message));
+    const trackUrls=[];let releaseFull;const fullHeld=new Promise(r=>{releaseFull=r});
+    await mPage.route('**/api/tracks*',async route=>{
+     const url=route.request().url();trackUrls.push(url);
+     if(!url.includes('?ids='))await fullHeld;
+     await route.continue();
+    });
+    await mPage.goto(base);
+    await mPage.locator('.route-map-button svg .shape-line').first().waitFor();
+    // ① pageScope forwarded IntersectionObserver options.
+    assert(await mPage.evaluate(()=>window.rvObserverOptions.some(o=>o&&o.rootMargin==='240px 0px')),'IntersectionObserver receives rootMargin 240px 0px');
+    // ② Mobile skips unused desktop SVGs.
+    assert.equal(await mPage.locator('.route-inset svg, .route-strip svg').count(),0,'mobile skips desktop inset/strip SVGs');
+    // ③ Stage 1 (?ids= with 12 drives) completed while full /api/tracks is still held.
+    const firstStageUrl=trackUrls.find(u=>u.includes('?ids='));
+    assert(firstStageUrl,'two-stage loading requests ?ids= first: '+JSON.stringify(trackUrls));
+    assert.equal(new URL(firstStageUrl).searchParams.get('ids').split(',').length,12,'priority batch requests 12 drives');
+    assert(await mPage.locator('.route-map-button svg .shape-line').count()>=6,'top cards rendered shapes from stage 1 before full /api/tracks');
+    // ④ Card outside the first 12 (still pending full /api/tracks) shows placeholder and opens 주행 지도 immediately on tap.
+    const pendingCard=mPage.locator('.log-route').nth(20);
+    await pendingCard.scrollIntoViewIfNeeded();
+    assert.equal(await pendingCard.locator('.route-map-button svg .shape-line').count(),0,'card outside priority batch has no route shape yet');
+    assert.equal(await pendingCard.locator('.route-map-button .route-placeholder').count(),1,'pending button displays placeholder icon');
+    await pendingCard.locator('.route-map-button').tap();
+    await mPage.waitForFunction(()=>{const d=document.getElementById('driveMap');return d.open&&d.querySelectorAll('.leaflet-overlay-pane path.leaflet-interactive').length>=1},{timeout:15000});
+    assert.match(await mPage.locator('#driveMapFacts').innerText(),/\d+\.\d km|m/,'drive dialog shows distance from single-drive track API');
+    await mPage.keyboard.press('Escape');
+    await mPage.waitForFunction(()=>!document.getElementById('driveMap').open);
+    // Release full /api/tracks and confirm the previously pending card now draws its route shape.
+    releaseFull();
+    await pendingCard.locator('.route-map-button svg .shape-line').waitFor({timeout:15000});
+    assert.equal(await mPage.locator('.route-inset svg, .route-strip svg').count(),0,'mobile still skips desktop SVGs after full load');
+    assert.deepEqual(mErrors,[]);
+    await mContext.close();
+   }
   }
   // Opening one segment after another does not keep the pages left behind: nodes, listeners and heap stay level (a
   // listener left on the window or on the connection object, or a map never removed, kept every page and its log:

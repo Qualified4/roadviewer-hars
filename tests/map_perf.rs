@@ -576,3 +576,36 @@ async fn bench_500_segments_tracks_single_track_and_compression() {
         );
     }
 }
+
+#[tokio::test]
+async fn warm_track_cache_populates_segments_and_routes() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    let a = app(root).await;
+    for r in 0..10u64 {
+        let pts = (0..20)
+            .map(|i| {
+                json!([
+                    i as f64,
+                    37.5 + r as f64 * 0.01 + i as f64 * 0.0001,
+                    127.0,
+                    10.0,
+                    0
+                ])
+            })
+            .collect::<Vec<_>>();
+        seed_recording(
+            &a,
+            &format!("0000{:04x}--warmroute0 / 구간 0", 100 + r),
+            "ready",
+            Some(pts),
+            Some(500),
+        )
+        .await;
+    }
+    assert_eq!(cache_counts(root), (0, 0, false));
+    roadviewer_hars::http::warm_track_cache(&a).await;
+    let (segs, routes, _) = cache_counts(root);
+    assert_eq!(segs, 10);
+    assert_eq!(routes, 10);
+}

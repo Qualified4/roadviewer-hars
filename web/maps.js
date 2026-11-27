@@ -454,14 +454,46 @@
    rest();
   }
   const groupRoute=group=>{for(const log of group.logs){const route=routeOf.get(log.id);if(route)return route}return null};
-  let wantedTracks=null,wantedIds=[],wantDrive=null;
+  const groupCanMap=group=>!!(groupRoute(group)||group.logs.some(log=>log.has_track));
+  const PRIORITY_TRACK_DRIVES=12;
+  let wantedTracks=null,wantedIds=[],priorityLoadedSignature=null;
   const tracksPending=()=>wantedTracks!==null&&wantedTracks!==trackSignature;
   const tracksRetry=retryTask(fetchTracks);
+  function priorityTrackIds(){
+   const ids=[];let total=0;
+   for(const group of logGroups.values()){
+    const first=group.logs.find(log=>log.has_track);
+    if(!first)continue;
+    total++;
+    const hidden=group.element.hidden||group.element.closest('.log-day')?.hidden;
+    if(!hidden&&ids.length<PRIORITY_TRACK_DRIVES)ids.push(first.id);
+   }
+   return total>PRIORITY_TRACK_DRIVES&&ids.length?ids:null;
+  }
   async function fetchTracks(){
    if(trackRequest||!tracksPending())return;
    const signature=wantedTracks,ids=wantedIds,request=trackRequest=new AbortController();
    try{
-    const response=await fetch('api/tracks',{cache:'no-store',signal:trackSignal(request.signal),headers:trackTag?{'If-None-Match':trackTag}:{}});
+    if(priorityLoadedSignature!==signature){
+     const priority=priorityTrackIds();
+     if(priority){
+      try{
+       const first=await fetch(`api/tracks?ids=${priority.join(',')}`,{cache:'no-cache',signal:trackSignal(request.signal)});
+       if(first.ok){
+        const part=JSON.parse(await first.text()).routes;
+        if(trackRequest!==request||signature!==wantedTracks)return;
+        priorityLoadedSignature=signature;
+        if(Array.isArray(part)&&part.length){
+         for(const route of part)for(const id of route.ids)routeOf.set(id,route);
+         syncCards();if(drive.open&&driveGroup)syncDrive();
+        }
+       }
+      }catch{
+       if(trackRequest!==request||signature!==wantedTracks)return;
+      }
+     }
+    }
+    const response=await fetch('api/tracks',{cache:'no-cache',signal:trackSignal(request.signal),headers:trackTag&&trackText?{'If-None-Match':trackTag}:{}});
     if(!response.ok&&response.status!==304)throw Error('주행 경로를 불러오지 못했습니다.');
     const text=response.status===304?trackText:await response.text();
     const next=JSON.parse(text).routes;
@@ -471,15 +503,15 @@
     const incomplete=ids.some(id=>!byId.get(id)?.segments.includes(id));
     if(incomplete){
      for(const [id,route] of byId)routeOf.set(id,route);
-     tracks??=next;syncCards();if(mode==='map')drawOverview(false);tracksRetry.schedule();return;
+     tracks??=next;syncCards();if(drive.open&&driveGroup)syncDrive();if(mode==='map')drawOverview(false);tracksRetry.schedule();return;
     }
     trackTag=sessionCache.tracksTag=response.headers.get('ETag')??trackTag;
     trackText=sessionCache.tracksText=text;
     tracks=sessionCache.tracks=next;trackSignature=sessionCache.tracksSignature=signature;
+    priorityLoadedSignature=signature;
     sessionCache.logTracks.clear();tracksRetry.reset();
     routeOf.clear();for(const [id,route] of byId)routeOf.set(id,route);
-    syncCards();if(mode==='map')drawOverview(false);
-    if(wantDrive){const {group,button}=wantDrive;wantDrive=null;if(button.isConnected&&logGroups.get(group.route.key)===group&&groupRoute(group))openDrive(group,{opener:button})}
+    syncCards();if(drive.open&&driveGroup)syncDrive();if(mode==='map')drawOverview(false);
    }catch{
     if(trackRequest===request&&signature===wantedTracks)tracksRetry.schedule();
    }finally{if(trackRequest===request)trackRequest=null}
@@ -491,7 +523,7 @@
    const withTrack=logs.filter(log=>log.has_track);switcher.hidden=!withTrack.length&&mode==='list';
    const signature=JSON.stringify(withTrack.map(log=>[log.id,log.conversion_revision??0,log.name,log.status]));
    if(signature!==wantedTracks){
-    wantedTracks=signature;wantedIds=withTrack.map(log=>log.id);
+    wantedTracks=signature;wantedIds=withTrack.map(log=>log.id);priorityLoadedSignature=null;
     trackRequest?.abort();trackRequest=null;tracksRetry.reset();
     if(!withTrack.length){
      trackSignature=sessionCache.tracksSignature=signature;sessionCache.logTracks.clear();
@@ -500,7 +532,7 @@
    }
    syncCards();
    // The open drive map follows the list; it closes when its drive is gone.
-   if(drive.open){if(driveGroup&&logGroups.get(driveGroup.route.key)===driveGroup&&groupRoute(driveGroup))syncDrive();else closeDrive()}
+   if(drive.open){if(driveGroup&&logGroups.get(driveGroup.route.key)===driveGroup&&groupCanMap(driveGroup))syncDrive();else closeDrive()}
   }
   // ② The route on each card with GPS (library.css shows one per layout): a glass inset in the video thumbnail's corner
   // and the map strip that grows out beside it on hover or focus (mouse screens), or a 지도 button left of 재생 (phones
@@ -508,15 +540,23 @@
   // SVGs are rendered lazily: initial viewport cards synchronously (no flash), cards scrolled near the viewport via
   // IntersectionObserver, and remaining off-screen cards in short idle slices so large lists never block the main thread.
   const SYNC_SHAPE_IMMEDIATE=6,pendingShapes=new Map();
+  const PENDING_GLYPH='<svg class="route-svg route-placeholder" viewBox="0 0 34 32" width="34" height="32" aria-hidden="true" focusable="false"><path class="shape-placeholder" d="M8 23c3-6 7-3 10-8s5-6 8-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" opacity=".38"/><circle cx="8" cy="23" r="2.2" fill="currentColor" opacity=".38"/><circle cx="26" cy="9" r="2.5" fill="currentColor" opacity=".55"/></svg>';
+  const desktopShape=matchMedia('(min-width:720px) and (hover:hover) and (pointer:fine)');
+  desktopShape.addEventListener('change',()=>syncCards());
   let shapeIdle=0,shapeIdleKind=0;
   function renderCardShape(group,route,key){
    if(!group.shape)return;
-   const [inset,strip,map]=group.shape;
-   if(inset.dataset.key===key)return;
-   inset.dataset.key=key;const points=route.points;
-   inset.innerHTML=shapeSvg(points,46,46,{pad:.2,stroke:2.6});
-   strip.innerHTML=shapeSvg(points,99,99,{grid:true,pad:.16,stroke:3});
-   map.firstChild.innerHTML=shapeSvg(points,34,32,{pad:.2,stroke:2.2});
+   const [inset,strip,map]=group.shape,points=route.points;
+   if(desktopShape.matches){
+    if(inset.dataset.key===key)return;
+    inset.dataset.key=key;
+    inset.innerHTML=shapeSvg(points,46,46,{pad:.2,stroke:2.6});
+    strip.innerHTML=shapeSvg(points,99,99,{grid:true,pad:.16,stroke:3});
+   }else{
+    if(map.dataset.key===key)return;
+    map.dataset.key=key;
+    map.firstChild.innerHTML=shapeSvg(points,34,32,{pad:.2,stroke:2.2});
+   }
   }
   function flushCardShape(element){
    const item=pendingShapes.get(element);if(!item)return;
@@ -558,12 +598,12 @@
      for(const part of group.shape||[])part.remove();group.shape=null;continue;
     }
     if(!group.shape){
-     const open=(button)=>event=>{event.preventDefault();event.stopPropagation();if(groupRoute(group))openDrive(group,{opener:button});else wantDrive={group,button}};
+     const open=(button)=>event=>{event.preventDefault();event.stopPropagation();if(groupCanMap(group))openDrive(group,{opener:button})};
      const inset=document.createElement('span');inset.className='route-inset';inset.setAttribute('aria-hidden','true');
      const strip=document.createElement('button');strip.type='button';strip.className='route-strip';strip.dataset.noRipple='';
      strip.setAttribute('aria-label','주행 지도 열기');strip.setAttribute('aria-haspopup','dialog');strip.title='주행 지도';strip.onclick=open(strip);
      const map=document.createElement('button');map.type='button';map.className='route-map-button';map.dataset.noRipple='';
-     map.setAttribute('aria-label','주행 지도 열기');map.setAttribute('aria-haspopup','dialog');map.innerHTML='<span class="route-glyph"></span><span>지도</span>';map.onclick=open(map);
+     map.setAttribute('aria-label','주행 지도 열기');map.setAttribute('aria-haspopup','dialog');map.innerHTML=`<span class="route-glyph">${PENDING_GLYPH}</span><span>지도</span>`;map.onclick=open(map);
      const hydrate=()=>flushCardShape(group.element);
      summary?.addEventListener('pointerenter',hydrate,{passive:true});summary?.addEventListener('focusin',hydrate,{passive:true});
      group.shape=[inset,strip,map];
@@ -573,8 +613,8 @@
     if(inset.parentNode!==group.thumb)group.thumb.append(inset);
     if(strip.parentNode!==summary)group.thumb.after(strip);
     if(map.parentNode!==group.actions)group.actions.prepend(map);
-    const key=route.points.length+':'+route.points[0]+':'+route.points.at(-1);
-    if(inset.dataset.key!==key){
+    const key=route.points.length+':'+route.points[0]+':'+route.points.at(-1),shapeTarget=desktopShape.matches?inset:map;
+    if(shapeTarget.dataset.key!==key){
      if(immediate<SYNC_SHAPE_IMMEDIATE||!shapeObserver){
       immediate++;
       if(pendingShapes.delete(group.element))shapeObserver?.unobserve(group.element);
@@ -596,11 +636,12 @@
     const box=el.getBoundingClientRect();if(box.height&&box.bottom>0&&box.top<innerHeight)flushCardShape(el);
    }
   });
-  const routeFacts=(group,showDriveNumber=false)=>{
+  const routeFacts=(group,showDriveNumber=false,distanceOverride=null)=>{
    const route=groupRoute(group),date=logDate(group.firstLog),duration=group.logs.reduce((sum,log)=>sum+(Number.isFinite(log.duration)?log.duration:0),0);
    const dateTitle=date?`${localeDate(date)} ${clockText(date)}`:null;
    const title=dateTitle&&showDriveNumber&&group.route.segment!==null?`${group.route.title} · ${dateTitle}`:dateTitle||group.route.title;
-   return {title,facts:[kmText(route?.distance_m),duration?durationText(duration):null,`${group.logs.length}개 구간`].filter(Boolean).join(' · ')};
+   const dist=Number.isFinite(route?.distance_m)?route.distance_m:distanceOverride;
+   return {title,facts:[kmText(dist),duration?durationText(duration):null,`${group.logs.length}개 구간`].filter(Boolean).join(' · ')};
   };
   // The fold button of a list card over a map (wide screens): folds the card away and back, kept on this browser.
   // Marks the cards of a list that are in sight (.is-seen): only those fade and slide when the list is put away or
@@ -694,11 +735,11 @@
   }
   const DRIVE_HASH='#drive-map',SNAPS=[.36,.54,.7],wide=matchMedia('(min-width:1024px),(min-width:600px) and (orientation:landscape)');
   fadeEdges(sheetList);fadeEdges(document.getElementById('logMapRows'));
-  let driveGroup=null,driveMap=null,driveLayer=null,driveLines=new Map(),driveRows=new Map(),driveMarked=null,driveTicket=0,driveOpener=null,restoreDrive=null,escapeTaken=false;
+  let driveGroup=null,driveMap=null,driveLayer=null,driveLines=new Map(),driveRows=new Map(),driveMarked=null,driveDistance=null,driveTicket=0,driveOpener=null,restoreDrive=null,escapeTaken=false;
   function openDrive(group,{segment=null,push=true,opener=null}={}){
    const same=drive.open&&driveGroup===group;driveGroup=group;
    if(!same){
-    driveMarked=segment;driveRows.clear();sheetList.replaceChildren();syncDrive();sheetList.scrollTop=0;
+    driveMarked=segment;driveDistance=null;driveRows.clear();sheetList.replaceChildren();syncDrive();sheetList.scrollTop=0;
     if(!drive.open){driveOpener=opener||document.activeElement;drive.showModal();document.body.style.overflow='hidden';driveSheet.set(1,{fit:true})}
     if(push){
      const url=new URL(window.location.href);if(!url.hash||url.hash===DRIVE_HASH){url.hash=libraryTab||'logs';history.replaceState(history.state,'',url)}
@@ -710,7 +751,7 @@
   // The header and rows follow the list (polling): only changed rows are rebuilt.
   function syncDrive(){
    const group=driveGroup;if(!group)return;
-   const {title,facts}=routeFacts(group);document.getElementById('driveMapTitle').textContent=title;document.getElementById('driveMapFacts').textContent=facts;
+   const {title,facts}=routeFacts(group,false,driveDistance);document.getElementById('driveMapTitle').textContent=title;document.getElementById('driveMapFacts').textContent=facts;
    handle.querySelector('.drive-map-count').textContent=`${group.logs.length}개 구간`;
    const logs=[...group.logs].sort((a,b)=>(logRoute(a).segment??0)-(logRoute(b).segment??0)),next=new Map();
    const rows=logs.map(log=>{
@@ -751,6 +792,8 @@
    else{driveRetry.reset();setCachedLogTrack(firstId,{...entry,driveSig})}
    driveLayer.clearLayers();driveLines.clear();
    const track=entry.value;
+   const dists=track.segments.map(part=>part.distance_m).filter(Number.isFinite);
+   if(dists.length){driveDistance=dists.reduce((a,b)=>a+b,0);syncDrive()}
    const colour=css('--accent')||'#3DCB92';
    for(const part of track.segments){
     if(!part.points.length)continue;
@@ -884,7 +927,7 @@
   function closeDrive(){if(!drive.open)return;if(window.location.hash===DRIVE_HASH&&history.state?.rvDrive)history.back();else finishDrive()}
   // Focus goes back to what opened it right away (not on the later close event, which could take it from a field).
   function releaseDrive(){
-   driveTicket++;driveRequest?.abort();driveRequest=null;failedDrive=false;driveRetry.reset();
+   driveTicket++;driveRequest?.abort();driveRequest=null;failedDrive=false;driveDistance=null;driveRetry.reset();
    if(driveMap)removeLeaflet(driveMap);driveMap=null;driveLayer=null;driveLines.clear();
   }
   if(typeof onPageDispose==='function')onPageDispose(releaseDrive);
@@ -906,7 +949,7 @@
   function restore(){
    if(document.body.hidden)return;
    const key=history.state?.rvDrive,group=key&&logGroups.get(key);
-   if(group&&groupRoute(group)){restoreDrive=null;selectTab('logs',{hash:false});openDrive(group,{segment:history.state.rvDriveSegment,push:false});return}
+   if(group&&groupCanMap(group)){restoreDrive=null;selectTab('logs',{hash:false});openDrive(group,{segment:history.state.rvDriveSegment,push:false});return}
    if((tracks&&!tracksPending())||!key){restoreDrive=null;const url=new URL(window.location.href);url.hash=libraryTab||'logs';history.replaceState({...history.state,rvDrive:null},'',url)}
   }
   if(window.location.hash===DRIVE_HASH)restoreDrive=restore;
