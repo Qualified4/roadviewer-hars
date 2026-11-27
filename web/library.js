@@ -118,6 +118,7 @@ $('clearSelection').onclick=()=>{if(busy)return;selected=[];pickerIds.forEach(id
 // In-page tabs (not page navigation): an upload keeps running while another tab is shown.
 const LIBRARY_TABS=['logs','upload','storage','devices','settings'],tabButtons=[...document.querySelectorAll('.lib-tab')];
 let libraryTab=null;
+const linkedTab=hash=>hash==='#map'||hash==='#drive-map'?'logs':hash.slice(1);
 function selectTab(tab,{focus=false,hash=true}={}){
  if(!LIBRARY_TABS.includes(tab))tab='logs';
  const changed=libraryTab!==null&&libraryTab!==tab;libraryTab=tab;
@@ -128,7 +129,8 @@ function selectTab(tab,{focus=false,hash=true}={}){
   if(panel.hidden===on){panel.hidden=!on;panel.dispatchEvent(new Event('toggle'))}
  }
  try{sessionStorage.setItem('roadviewer-library-tab',tab)}catch{}
- if(hash&&window.location.hash!=='#'+tab){const url=new URL(window.location.href);url.hash=tab;history.replaceState(history.state,'',url)}
+ const fragment=tab==='logs'&&window.rvMaps?.mode?.()==='map'?'#map':'#'+tab;
+ if(hash&&window.location.hash!==fragment){const url=new URL(window.location.href);url.hash=fragment;history.replaceState(history.state,'',url)}
  if(focus)$('tab-'+tab).focus();
  if(changed&&scrollY>0)scrollTo(0,0);
 }
@@ -140,12 +142,12 @@ for(const button of tabButtons)button.onclick=()=>selectTab(button.dataset.tab);
 document.addEventListener('click',e=>{const target=e.target.closest?.('[data-goto-tab]');if(target)selectTab(target.dataset.gotoTab)});
 function readLinkedTab(){
  if(window.location.pathname!==location.pathname)return;
- const tab=window.location.hash.slice(1);if(LIBRARY_TABS.includes(tab)&&tab!==libraryTab)selectTab(tab,{hash:false});
+ const tab=linkedTab(window.location.hash);if(LIBRARY_TABS.includes(tab)&&tab!==libraryTab)selectTab(tab,{hash:false});
 }
 window.addEventListener('hashchange',readLinkedTab);
 {
  let saved=null;try{saved=sessionStorage.getItem('roadviewer-library-tab')}catch{}
- const linked=window.location.hash.slice(1);
+ const linked=linkedTab(window.location.hash);
  selectTab(LIBRARY_TABS.includes(linked)?linked:saved,{hash:false});
 }
 

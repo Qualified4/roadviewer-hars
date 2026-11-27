@@ -315,6 +315,11 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
     await page.route('**/api/tracks',route=>++listAttempts===1?route.fulfill({status:503}):route.continue());
     await page.route(`**/api/logs/${logs[0].id}/track`,route=>++driveAttempts===1?route.fulfill({status:503}):route.continue());
    }
+   if(scheme==='light'){
+    const dashboard=base+'fixture-dashboard';
+    await page.route(dashboard,r=>r.fulfill({contentType:'text/html',body:'<title>Outside Road Viewer</title>'}));
+    await page.goto(dashboard);
+   }
    await page.goto(base);await page.locator('.log-route').first().waitFor();
    assert(!await page.evaluate(()=>!!(window.L||window.maplibregl)),'Leaflet and MapLibre load only when a map is first shown');
    // ② The cards with GPS show their route (SVGs, no tiles); phones: a 지도 button left of 재생, no route in the thumbnail.
@@ -347,7 +352,7 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
     await settleLayout(page,'#driveMap');
    };
    const driveClosed=()=>page.waitForFunction(()=>!document.getElementById('driveMap').open&&!document.querySelector('#driveMap canvas.maplibregl-canvas'));
-   async function replayAndBack(target,play){
+   async function replayAndBack(target,play,{systemBack=false}={}){
     const from=page.url(),url=await play.evaluate(link=>link.href);
     await page.evaluate(target=>{
      const root=document.querySelector(target),map=rvTestMaps.findLast(m=>root.contains(m.getContainer()));
@@ -359,7 +364,8 @@ http.serve_forever()`],{env:{...process.env,RV_DATA:dir,RV_INGRESS_ONLY:'0'},std
      const {map,gl}=retainedMap;
      return map.getContainer().closest('.library-page').hidden&&(!gl||!matchMedia('(pointer:coarse)').matches||!map.rvGl);
     }),'the hidden library retains Leaflet and releases the touch device WebGL layer');
-    await page.locator('.app-bar .back').tap();await page.waitForURL(from);
+    if(systemBack)await page.goBack();else await page.locator('.app-bar .back').tap();
+    await page.waitForURL(from);
     assert(await page.evaluate(target=>{
      const root=document.querySelector(target),{map,center,zoom}=retainedMap;
      return rvTestMaps.findLast(m=>root.contains(m.getContainer()))===map&&map.getCenter().distanceTo(center)<.5&&map.getZoom()===zoom;
@@ -483,7 +489,12 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
    const switcher=page.locator('#logView');await switcher.waitFor();
    assert.deepEqual(await switcher.locator('button').allTextContents(),['목록','지도']);
    {const head=await page.locator('.lib-panel-head').first().evaluate(h=>({scroll:h.scrollWidth<=h.clientWidth+1,page:document.documentElement.scrollWidth<=innerWidth}));assert.deepEqual(head,{scroll:true,page:true})}
-   await switcher.getByRole('button',{name:'지도'}).tap();
+   const listURL=page.url();
+   await switcher.getByRole('button',{name:'지도'}).tap();await page.waitForURL(base+'#map');
+   if(scheme==='light'){
+    await page.goBack();await page.waitForURL(listURL);await page.locator('#list').waitFor();
+    await page.goForward();await page.waitForURL(base+'#map');await page.locator('#logMap').waitFor();
+   }
    await page.waitForFunction(()=>document.querySelectorAll('#logMap .leaflet-overlay-pane path.leaflet-interactive').length===2);
    assert(await page.locator('#list').isHidden());
    const routeLines=page.locator('#logMap .leaflet-overlay-pane path.leaflet-interactive');
@@ -601,7 +612,14 @@ return {hidden:b.classList.contains('is-sheet-hidden'),now:h.getAttribute('aria-
     await card.getByRole('button',{name:'주행 지도'}).tap();
     await page.waitForFunction(count=>{const d=document.getElementById('driveMap');return d.open&&d.querySelectorAll('.drive-map-list>.log-row').length===count&&d.querySelectorAll('.leaflet-overlay-pane path.leaflet-interactive').length===count},count);
     assert.equal(await page.locator('#driveMapFacts').innerText(),facts);
-    await page.goBack();await driveClosed();assert(await page.locator('#logMap').isVisible())}
+    if(scheme==='light')await replayAndBack('#driveMap',drive.locator('.log-row a.replay').first(),{systemBack:true});
+    await page.goBack();await page.waitForURL(base+'#map');await driveClosed();assert(await page.locator('#logMap').isVisible());
+    if(scheme==='light'){
+     await page.goBack();await page.waitForURL(listURL);await page.locator('#list').waitFor();
+     await page.goForward();await page.waitForURL(base+'#map');await page.locator('#logMap').waitFor();
+     await page.locator('#logMap .log-map-handle').tap();
+     await page.waitForFunction(()=>document.getElementById('logMap').classList.contains('is-sheet-hidden'));
+    }}
    // The filters apply to the map too.
    await page.locator('#logSearch').fill('주말');await page.waitForFunction(()=>document.querySelectorAll('#logMap .leaflet-overlay-pane path.leaflet-interactive').length===1);
    await page.locator('#logSearch').fill('');await page.waitForFunction(()=>document.querySelectorAll('#logMap .leaflet-overlay-pane path.leaflet-interactive').length===2);

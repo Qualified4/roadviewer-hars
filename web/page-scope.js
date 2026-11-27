@@ -1,5 +1,5 @@
 // Resources belong to one mounted page; old asynchronous work must never address the next page.
-export function pageScope(root,url,navigate){
+export function pageScope(root,url,navigate,writeHistory){
  const controller=new AbortController(),listeners=new Set(),tasks=new Map(),observers=new Set(),requests=new Set(),transitions=new Set(),cleanups=new Set(),suspends=new Set(),resumes=new Set();
  let phase='active',nextTask=0;
  const active=()=>phase==='active';
@@ -20,12 +20,19 @@ export function pageScope(root,url,navigate){
   listeners.add(item);
   target.addEventListener(type,item.run,{passive:options?.passive,capture:item.capture,signal:options?.signal?AbortSignal.any([controller.signal,options.signal]):controller.signal});
  }
+ const scopedHistory=new Proxy(history,{get(target,key){
+  if(key==='pushState'||key==='replaceState')return (state,_title,to)=>{
+   if(active()&&!root.hidden&&location.pathname===url.pathname&&location.search===url.search)writeHistory(state,to??location.href,key==='replaceState');
+  };
+  const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
+ }});
  const scopedWindow=Object.create(null);
  const windowProxy=new Proxy(window,{
   get(target,key){
    if(key in scopedWindow)return scopedWindow[key];
    if(key==='addEventListener')return (...args)=>listen(window,...args);
    if(key==='removeEventListener')return (...args)=>unlisten(window,...args);
+   if(key==='history')return scopedHistory;
    if(key==='requestIdleCallback'||key==='cancelIdleCallback')return env[key];
    const value=Reflect.get(target,key,target);return typeof value==='function'?value.bind(target):value;
   },
@@ -57,7 +64,7 @@ export function pageScope(root,url,navigate){
  };
  const cancel=id=>{tasks.get(id)?.stop();tasks.delete(id)};
  const observer=Type=>class extends Type{constructor(callback,...rest){super(live(callback),...rest);observers.add(this)}};
- const env={window:windowProxy,document:doc,location:{href:url.href,pathname:url.pathname,origin:url.origin,search:url.search,assign:to=>navigate(new URL(to,url)),replace:to=>navigate(new URL(to,url),{replace:true}),reload:()=>navigate(url,{replace:true})},
+ const env={window:windowProxy,document:doc,history:scopedHistory,location:{href:url.href,pathname:url.pathname,origin:url.origin,search:url.search,assign:to=>navigate(new URL(to,url)),replace:to=>navigate(new URL(to,url),{replace:true}),reload:()=>navigate(url,{replace:true})},
   fetch:(input,options={})=>fetch(new URL(input,url),{...options,signal:options.signal?AbortSignal.any([controller.signal,options.signal]):controller.signal}),
   setTimeout:(callback,delay,...args)=>schedule(run=>setTimeout(run,delay,...args),clearTimeout,callback),clearTimeout:cancel,
   setInterval:(callback,delay,...args)=>schedule(run=>setInterval(run,delay,...args),clearInterval,callback,true),clearInterval:cancel,

@@ -735,7 +735,8 @@
    new MutationObserver(records=>{if(records.some(r=>r.type==='childList'))childrenDirty=true;later()}).observe(column,{childList:true,subtree:true,attributes:true,attributeFilter:['class','hidden','open']});
    return later;
   }
-  const DRIVE_HASH='#drive-map',SNAPS=[.36,.54,.7],wide=matchMedia('(min-width:1024px),(min-width:600px) and (orientation:landscape)');
+  const DRIVE_HASH='#drive-map',MAP_HASH='#map',SNAPS=[.36,.54,.7],wide=matchMedia('(min-width:1024px),(min-width:600px) and (orientation:landscape)');
+  const logsHash=()=>mode==='map'?MAP_HASH:'#logs';
   fadeEdges(sheetList);fadeEdges(document.getElementById('logMapRows'));
   let driveGroup=null,driveMap=null,driveLayer=null,driveLines=new Map(),driveRows=new Map(),driveMarked=null,driveDistance=null,driveTicket=0,driveOpener=null,restoreDrive=null,escapeTaken=false;
   function openDrive(group,{segment=null,push=true,opener=null}={}){
@@ -744,8 +745,9 @@
     driveMarked=segment;driveDistance=null;driveRows.clear();sheetList.replaceChildren();syncDrive();sheetList.scrollTop=0;
     if(!drive.open){driveOpener=opener||document.activeElement;drive.showModal();document.body.style.overflow='hidden';driveSheet.set(1,{fit:true})}
     if(push){
-     const url=new URL(window.location.href);if(!url.hash||url.hash===DRIVE_HASH){url.hash=libraryTab||'logs';history.replaceState(history.state,'',url)}
-     url.hash=DRIVE_HASH;history.pushState({...(history.state||{}),rvScroll:scrollY,rvDrive:group.route.key,rvDriveSegment:segment},'',url);
+     const url=new URL(window.location.href);if(!url.hash||url.hash===DRIVE_HASH)url.hash=logsHash();
+     history.replaceState({...history.state,rvScroll:scrollY},'',url);
+     url.hash=DRIVE_HASH;history.pushState({rvOverview:mode,rvScroll:scrollY,rvDrive:group.route.key,rvDriveSegment:segment},'',url);
     }
     failedDrive=false;driveRetry.reset();drawDrive(segment);
    }else if(segment)markDrive(segment,{fit:true,scroll:true});
@@ -940,20 +942,16 @@
   drive.addEventListener('close',()=>{
    if(drive.open||parkedDrive)return;releaseDrive();
    document.body.style.overflow='';driveGroup=null;driveMarked=null;
-   if(window.location.hash===DRIVE_HASH){const url=new URL(window.location.href);url.hash=libraryTab||'logs';history.replaceState({...history.state,rvDrive:null},'',url)}
+   if(window.location.hash===DRIVE_HASH)clearDriveHash();
    driveOpener=null;
   });
-  window.addEventListener('popstate',()=>{
-   if(window.location.pathname!==location.pathname)return;
-   if(drive.open&&window.location.hash!==DRIVE_HASH)finishDrive();
-   else if(!drive.open&&window.location.hash===DRIVE_HASH)restore();
-  });
+  function clearDriveHash(){const url=new URL(window.location.href);url.hash=logsHash();history.replaceState({...history.state,rvDrive:null},'',url)}
   // Reloaded or come back (from a replay) to #drive-map: the drive opens again once the list knows it.
   function restore(){
-   if(document.body.hidden)return;
+   if(document.body.hidden||window.location.hash!==DRIVE_HASH)return;
    const key=history.state?.rvDrive,group=key&&logGroups.get(key);
    if(group&&groupCanMap(group)){restoreDrive=null;selectTab('logs',{hash:false});openDrive(group,{segment:history.state.rvDriveSegment,push:false});return}
-   if((tracks&&!tracksPending())||!key){restoreDrive=null;const url=new URL(window.location.href);url.hash=libraryTab||'logs';history.replaceState({...history.state,rvDrive:null},'',url)}
+   if((tracks&&!tracksPending())||!key){restoreDrive=null;clearDriveHash()}
   }
   if(window.location.hash===DRIVE_HASH)restoreDrive=restore;
   // ⋯ › 지도에서 보기: the drive's map with this segment marked.
@@ -984,9 +982,41 @@
    document.getElementById('list').hidden=mode==='map';panel.hidden=mode!=='map';
    if(mode==='map')fitPanelHeight();
    if(mode==='map'){document.getElementById('empty').hidden=true;listSheet.set(1);drawOverview(true)}else{card.rvPill=(card.rvPill||0)+1;card.classList.remove('is-leaving');card.hidden=true;selected=null;applyFilters()}
-   try{sessionStorage.setItem('roadviewer-log-view',mode)}catch{}
   }
-  switcher.addEventListener('click',e=>{const button=e.target.closest('button[data-view]');if(button&&button.dataset.view!==mode)setMode(button.dataset.view)});
+  function linkedMode(hash){
+   return hash===MAP_HASH||(hash&&hash!=='#logs'&&history.state?.rvOverview==='map')?'map':'list';
+  }
+  let listReturn=null;
+  function changeMode(next,after){
+   if(next===mode||listReturn)return;
+   const url=new URL(window.location.href);
+   if(next==='map'){
+    history.replaceState({...history.state,rvOverview:'list',rvScroll:scrollY},'',url);
+    url.hash=MAP_HASH;history.pushState({rvOverview:'map',rvMapBack:true},'',url);
+   }else if(url.hash===MAP_HASH&&history.state?.rvMapBack){
+    listReturn=()=>{if(libraryTab!=='logs')selectTab('logs');after?.()};history.back();return;
+   }else{
+    url.hash='#logs';history.replaceState({...history.state,rvOverview:'list',rvMapBack:false},'',url);
+   }
+   setMode(next);after?.();
+  }
+  function syncHistoryMode(){
+   const next=linkedMode(window.location.hash);
+   if(next!==mode){
+    setMode(next);
+    if(history.state?.rvScroll!=null)scrollTo({left:0,top:history.state.rvScroll,behavior:'instant'});
+   }
+   if(next==='list'&&listReturn){const after=listReturn;listReturn=null;after()}
+  }
+  function syncLibraryHistory(){
+   if(window.location.pathname!==location.pathname)return;
+   syncHistoryMode();
+   if(window.location.hash===DRIVE_HASH){if(!drive.open){restoreDrive=restore;restore()}}
+   else{restoreDrive=null;if(drive.open)finishDrive()}
+  }
+  window.addEventListener('popstate',syncLibraryHistory);
+  window.addEventListener('hashchange',syncLibraryHistory);
+  switcher.addEventListener('click',e=>{const button=e.target.closest('button[data-view]');if(button)changeMode(button.dataset.view)});
   const visibleGroups=()=>[...logGroups.values()].filter(group=>!group.element.hidden&&group.element.closest('.log-day')&&!group.element.closest('.log-day').hidden);
   let overviewFit=true,hovered=null,rowsKey='';
   const mapList=document.getElementById('logMapList'),mapRows=document.getElementById('logMapRows'),mapRow=new Map();  // route key -> row
@@ -1170,8 +1200,8 @@
    box.append(driveButton,button('목록에서 보기',()=>showInList(group)));return box;
   }
   card.querySelector('.map-card-list').onclick=()=>showInList(selected);
-  function showInList(group){
-   setMode('list');if(!group)return;
+  function showInList(group){changeMode('list',()=>{if(group)locateGroup(group)})}
+  function locateGroup(group){
    // Centred, or its top near the top of the screen when the card is taller than the screen (an open drive). The list is
    // drawn again as it comes back and rows above can still change height (thumbnails, route shapes), so the drive is
    // brought back twice more if its top ended up off screen, unless the user has scrolled since.
@@ -1200,6 +1230,7 @@
    }
   });
   if(typeof onPageResume==='function')onPageResume(()=>{
+   syncHistoryMode();
    const fromDrive=window.location.hash===DRIVE_HASH;
    if(parkedDrive){
     const {scroll,pending}=parkedDrive;parkedDrive=null;
@@ -1217,7 +1248,7 @@
    if(!tracksRetry.pending)fetchTracks();
   });
   window.rvMaps={listed,filtered:()=>{if(mode==='map')drawOverview(false)},showSegment,mode:()=>mode};
-  {let saved=null;try{saved=sessionStorage.getItem('roadviewer-log-view')}catch{}if(saved==='map')setMode('map')}
+  if(linkedMode(new URL(location.href).hash)==='map')setMode('map');
  }
 
  if(replay){
